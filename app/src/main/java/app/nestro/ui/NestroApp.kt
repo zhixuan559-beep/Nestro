@@ -76,7 +76,7 @@ private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 private data class ChatMessage(val id: String, val role: String, val content: String)
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long)
-private data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
+internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
 
 @Composable
 fun NestroApp() {
@@ -399,7 +399,10 @@ fun NestroApp() {
                 if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            PhoneAgentTaskStore.create(database.dao(), requestProjectId, requestConversationId, phonePlan)
+                            val task = PhoneAgentTaskStore.create(database.dao(), requestProjectId, requestConversationId, phonePlan)
+                            if (PhoneAgentService.activeService?.hasValidGrant() == true) {
+                                PhoneAgentWorkScheduler.enqueue(context, task.id)
+                            }
                         }
                     }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
                 }
@@ -1243,7 +1246,7 @@ private object OpenAiClient {
         }
     }
 }
-private object LocalVault {
+internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
     fun write(context: Context, config: ModelConfig) {
         val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
