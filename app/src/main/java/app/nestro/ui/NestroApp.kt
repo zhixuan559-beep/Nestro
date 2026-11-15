@@ -142,6 +142,10 @@ fun NestroApp() {
         }
     }
 
+    LaunchedEffect(activeConversationId) {
+        draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
+    }
+
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
         conversations = loadConversations(prefs)
@@ -163,6 +167,7 @@ fun NestroApp() {
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
         draft = ""
+        prefs.edit().remove("draft_$activeConversationId").apply()
         val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         messages = messages + user
         conversations = saveConversationMessages(prefs, activeConversationId, messages)
@@ -327,7 +332,10 @@ fun NestroApp() {
                                         onStatus = { voiceStatus = it }
                                     )
                                     OutlinedTextField(
-                                        value = draft, onValueChange = { draft = it },
+                                        value = draft, onValueChange = { value ->
+                                            draft = value
+                                            if (activeConversationId.isNotBlank()) prefs.edit().putString("draft_$activeConversationId", value).apply()
+                                        },
                                         modifier = Modifier.weight(1f),
                                         placeholder = { Text("输入或按住说话…", color = Muted) },
                                         trailingIcon = {
