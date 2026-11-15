@@ -125,7 +125,20 @@ interface NestroDao {
             (:term11 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term11) || '%') OR
             (:term12 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term12) || '%')
           )
-        ORDER BY c.updatedAt DESC, m.position DESC LIMIT :limit
+        ORDER BY (
+            CASE WHEN :term1 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term1) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term2 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term2) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term3 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term3) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term4 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term4) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term5 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term5) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term6 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term6) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term7 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term7) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term8 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term8) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term9 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term9) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term10 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term10) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term11 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term11) || '%' THEN 1 ELSE 0 END +
+            CASE WHEN :term12 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term12) || '%' THEN 1 ELSE 0 END
+        ) DESC, c.updatedAt DESC, m.position DESC LIMIT :limit
     """)
     suspend fun searchConversationMessagesByTerms(
         projectId: String, currentConversationId: String,
