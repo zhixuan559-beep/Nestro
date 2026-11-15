@@ -66,11 +66,41 @@ data class ConversationWithMessages(
     val messages: List<MessageEntity>
 )
 
+data class ConversationMemoryHit(
+    val messageId: String,
+    val conversationId: String,
+    val conversationTitle: String,
+    val role: String,
+    val content: String,
+    val updatedAt: Long
+)
+
+
 @Dao
 interface NestroDao {
     @Transaction
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
     suspend fun loadConversations(): List<ConversationWithMessages>
+
+    @Query("""
+        SELECT m.id AS messageId, m.conversationId AS conversationId,
+               c.title AS conversationTitle, m.role AS role,
+               m.content AS content, c.updatedAt AS updatedAt
+        FROM messages AS m
+        INNER JOIN conversations AS c ON c.id = m.conversationId
+        WHERE c.projectId = :projectId
+          AND c.id != :currentConversationId
+          AND LOWER(m.content) LIKE '%' || LOWER(:term) || '%'
+        ORDER BY c.updatedAt DESC, m.position DESC
+        LIMIT :limit
+    """)
+    suspend fun searchConversationMessages(
+        projectId: String,
+        currentConversationId: String,
+        term: String,
+        limit: Int = 6
+    ): List<ConversationMemoryHit>
+
 
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>

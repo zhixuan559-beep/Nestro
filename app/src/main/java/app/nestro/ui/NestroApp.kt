@@ -5,6 +5,7 @@ import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.KnowledgeStore
+import app.nestro.data.ConversationMemoryStore
 import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentService
@@ -354,10 +355,9 @@ fun NestroApp() {
             scope.launch {
                 val partialAnswer = StringBuilder()
                 val result = runCatching {
-                    val knowledgeContext = withContext(Dispatchers.IO) {
-                        KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    }
-                    val requestSystemContext = listOf(baseSystemContext, knowledgeContext)
+                    val memoryContext = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, prompt)
+                    val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
+                    val requestSystemContext = listOf(baseSystemContext, memoryContext, knowledgeContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer.append(chunk)
@@ -374,7 +374,7 @@ fun NestroApp() {
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, activeProjectId)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
                     stopRequested -> "已停止生成"
