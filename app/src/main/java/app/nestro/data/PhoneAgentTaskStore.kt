@@ -72,6 +72,30 @@ object PhoneAgentTaskStore {
         }
     }
 
+    suspend fun recordActionResult(
+        dao: NestroDao,
+        taskId: String,
+        index: Int,
+        action: String,
+        success: Boolean,
+        detail: String
+    ) {
+        dao.insertPhoneAgentTaskLog(
+            PhoneAgentTaskLogEntity(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                actionIndex = index,
+                action = action.take(60),
+                success = success,
+                detail = detail.take(240),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun recentLogs(dao: NestroDao, taskId: String, limit: Int = 30): List<PhoneAgentTaskLogEntity> =
+        dao.phoneAgentTaskLogs(taskId, limit)
+
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
         require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
