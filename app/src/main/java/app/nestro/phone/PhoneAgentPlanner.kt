@@ -12,7 +12,7 @@ object PhoneAgentPlanner {
         val text = prompt.trim()
         val normalized = text.lowercase()
         val category = when {
-            listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any(normalized::contains) -> Category.SHOPPING
+            listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any { normalized.contains(it) } -> Category.SHOPPING
             listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any(normalized::contains) -> Category.FOOD_ORDER
             listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any(normalized::contains) -> Category.BOOKING
             listOf("搜索", "查找", "调查", "对比", "资料", "网页").any(normalized::contains) -> Category.WEB_RESEARCH
@@ -68,7 +68,7 @@ object PhoneAgentPlanner {
     fun contextFor(prompt: String): String {
         val plan = plan(prompt)
         if (plan.category == Category.GENERAL) return ""
-        val steps = plan.steps.joinToString("\\n") { "- ${it.title}" }
+        val steps = plan.steps.joinToString("\n") { "- ${it.title}" }
         return """
 Phone Agent 目标执行约束：
 - 当前用户目标分类：${plan.category.name}。
