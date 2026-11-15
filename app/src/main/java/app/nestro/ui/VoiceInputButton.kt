@@ -9,6 +9,7 @@ import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -44,6 +45,7 @@ fun VoiceInputButton(enabled: Boolean, onResult: (String) -> Unit) {
     var listening by remember { mutableStateOf(false) }
     var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
     val scale by animateFloatAsState(if (listening) 1.12f else 1f, label = "voice-button-scale")
+    val buttonColor by animateColorAsState(if (listening) Color(0xFFB45353) else Color(0xFF202A27), label = "voice-button-color")
     val buttonColor by animateColorAsState(if (listening) Color(0xFFB45353) else Color(0xFF202A27), label = "voice-button-color")
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
