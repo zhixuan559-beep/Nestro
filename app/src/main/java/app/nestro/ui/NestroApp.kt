@@ -75,7 +75,7 @@ fun NestroApp() {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
     var databaseReady by remember { mutableStateOf(false) }
-    val persistedConversationVersions = remember { mutableStateMapOf<String, Long>() }
+    val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
@@ -199,7 +199,7 @@ fun NestroApp() {
             conversations = data.first
             projects = data.second
             persistedConversationVersions.clear()
-            data.first.forEach { persistedConversationVersions[it.id] = it.updatedAt }
+            data.first.forEach { persistedConversationVersions[it.id] = it.hashCode() }
             databaseReady = true
         } else {
             conversations = loadConversations(prefs)
@@ -230,7 +230,7 @@ fun NestroApp() {
                     val currentIds = conversationSnapshot.map { it.id }
                     val removedIds = dao.conversationIds().filterNot { it in currentIds }
                     if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
-                    conversationSnapshot.filter { knownVersions[it.id] != it.updatedAt }.forEach { record ->
+                    conversationSnapshot.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
                         dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
                         dao.clearMessages(record.id)
                         val rows = record.messages.mapIndexed { index, message ->
