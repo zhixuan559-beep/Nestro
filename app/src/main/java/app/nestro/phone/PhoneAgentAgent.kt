@@ -33,9 +33,9 @@ object PhoneAgentAgent {
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
             }
-        } else if (task.status == PhoneAgentTaskStore.STATUS_RUNNING) {
+        } else if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
-            return Result(PhoneAgentExecutor.Outcome.PAUSED, "任务曾在规划期间中断，请重新启动任务。")
+            return Result(PhoneAgentExecutor.Outcome.PAUSED, "任务曾在规划期间中断，请核对当前页面后重新启动。")
         }
 
         val actionHistory = StringBuilder()
@@ -50,6 +50,7 @@ object PhoneAgentAgent {
             if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效")
             task = dao.phoneAgentTask(taskId)
                 ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+            PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
             val plan = try {
                 PhoneAgentModelClient.planNext(

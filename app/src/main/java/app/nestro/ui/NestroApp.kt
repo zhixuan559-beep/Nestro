@@ -1635,7 +1635,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED)
+                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
