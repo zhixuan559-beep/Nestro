@@ -18,13 +18,18 @@ object ConversationMemoryStore {
     suspend fun retrieve(dao: NestroDao, projectId: String, currentConversationId: String, prompt: String): ConversationRecallResult = withContext(Dispatchers.IO) {
         val terms = extractTerms(prompt)
         if (terms.isEmpty()) return@withContext ConversationRecallResult("", emptyList())
+        val padded = terms.take(MAX_TERMS).let { it + List(MAX_TERMS - it.size) { "" } }
+        val hits = dao.searchConversationMessagesByTerms(
+            projectId, currentConversationId,
+            padded[0], padded[1], padded[2], padded[3], padded[4], padded[5],
+            padded[6], padded[7], padded[8], padded[9], padded[10], padded[11],
+            limit = 40
+        )
         val scores = linkedMapOf<String, Pair<ConversationMemoryHit, Int>>()
-        terms.forEach { term ->
-            dao.searchConversationMessages(projectId, currentConversationId, term, 8).forEach { hit ->
-                val previous = scores[hit.messageId]
-                val exactBonus = if (prompt.length >= 4 && hit.content.contains(prompt, ignoreCase = true)) 3 else 0
-                scores[hit.messageId] = hit to ((previous?.second ?: 0) + 1 + exactBonus)
-            }
+        hits.forEach { hit ->
+            val matches = terms.count { term -> hit.content.contains(term, ignoreCase = true) }
+            val exactBonus = if (prompt.length >= 4 && hit.content.contains(prompt, ignoreCase = true)) 3 else 0
+            scores[hit.messageId] = hit to (matches + exactBonus)
         }
         val selected = scores.values
             .sortedWith(compareByDescending<Pair<ConversationMemoryHit, Int>> { it.second }.thenByDescending { it.first.updatedAt })

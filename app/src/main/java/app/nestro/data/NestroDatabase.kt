@@ -104,6 +104,45 @@ interface NestroDao {
     ): List<ConversationMemoryHit>
 
 
+    @Query("""
+        SELECT m.id AS messageId, m.conversationId AS conversationId,
+               c.title AS conversationTitle, m.role AS role,
+               m.content AS content, c.updatedAt AS updatedAt
+        FROM messages AS m INNER JOIN conversations AS c ON c.id = m.conversationId
+        WHERE c.projectId = :projectId AND c.id != :currentConversationId
+          AND m.role IN ('user', 'assistant') AND LENGTH(TRIM(m.content)) > 0
+          AND (
+            (:term1 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term1) || '%') OR
+            (:term2 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term2) || '%') OR
+            (:term3 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term3) || '%') OR
+            (:term4 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term4) || '%') OR
+            (:term5 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term5) || '%') OR
+            (:term6 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term6) || '%') OR
+            (:term7 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term7) || '%') OR
+            (:term8 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term8) || '%') OR
+            (:term9 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term9) || '%') OR
+            (:term10 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term10) || '%') OR
+            (:term11 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term11) || '%') OR
+            (:term12 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term12) || '%')
+          )
+        ORDER BY c.updatedAt DESC, m.position DESC LIMIT :limit
+    """)
+    suspend fun searchConversationMessagesByTerms(
+        projectId: String, currentConversationId: String,
+        term1: String,
+        term2: String,
+        term3: String,
+        term4: String,
+        term5: String,
+        term6: String,
+        term7: String,
+        term8: String,
+        term9: String,
+        term10: String,
+        term11: String,
+        term12: String,
+        limit: Int = 40
+    ): List<ConversationMemoryHit>
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 
