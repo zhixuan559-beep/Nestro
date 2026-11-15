@@ -12,6 +12,7 @@ import androidx.room.withTransaction
 import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
+import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.ui.VoiceInputButton
 
@@ -1635,22 +1636,12 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             ) {
                                 Button(
                                     onClick = {
-                                        scope.launch {
-                                            val result = withContext(Dispatchers.IO) {
-                                                PhoneAgentExecutor.resume(
-                                                    database.dao(),
-                                                    task.id,
-                                                    afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER
-                                                )
-                                            }
-                                            taskMessage = when (result.outcome) {
-                                                PhoneAgentExecutor.Outcome.COMPLETED -> "任务已完成并核验"
-                                                PhoneAgentExecutor.Outcome.WAITING_USER -> "需要你处理：${result.handoffReason}"
-                                                PhoneAgentExecutor.Outcome.PAUSED -> "任务已暂停：${result.handoffReason}"
-                                                PhoneAgentExecutor.Outcome.FAILED -> "任务失败：${result.handoffReason}"
-                                            }
-                                            refresh++
-                                        }
+                                        PhoneAgentWorkScheduler.enqueue(
+                                            context,
+                                            task.id,
+                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER
+                                        )
+                                        taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
