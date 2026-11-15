@@ -67,7 +67,7 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     private fun isHighRisk(value: String): Boolean {
-        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "立即购买", "发送")
+        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "立即购买", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕")
         return terms.any { value.contains(it, ignoreCase = true) }
     }
 
