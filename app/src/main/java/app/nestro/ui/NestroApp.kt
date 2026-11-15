@@ -111,7 +111,7 @@ fun NestroApp() {
                 require(raw.length <= 10_000_000) { "备份文件过大" }
                 restoreLocalBackup(prefs, raw)
                 conversations = loadConversations(prefs)
-                activeConversationId = prefs.getString("active_conversation_id", conversations.firstOrNull()?.id ?: "") ?: ""
+                activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
                 globalMemory = prefs.getString("global_memory_v1", "") ?: ""
                 memoryDraft = globalMemory
@@ -126,7 +126,7 @@ fun NestroApp() {
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
         conversations = loadConversations(prefs)
-        activeConversationId = prefs.getString("active_conversation_id", conversations.firstOrNull()?.id ?: "") ?: ""
+        activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
         messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
@@ -320,7 +320,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含最近 200 条对话、专家名称和专家提示词。导出文件可自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含全部本机对话、全局记忆、专家配置与技能。API Key 不会写入备份。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
