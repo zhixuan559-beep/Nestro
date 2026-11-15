@@ -609,6 +609,7 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
+    root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     return root.toString(2)
 }
 
@@ -627,6 +628,16 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
     require(experts.length() <= 100) { "专家数量超出限制" }
     for (i in 0 until experts.length()) require(experts.getString(i).length <= 80) { "专家名称过长" }
     val prompts = JSONObject(root.getString("expert_prompts"))
+    val skills = JSONObject(root.optString("skills", "{}"))
+    require(skills.length() <= 100) { "技能数量超出限制" }
+    val cleanSkills = JSONObject()
+    val skillKeys = skills.keys()
+    while (skillKeys.hasNext()) {
+        val name = skillKeys.next()
+        val prompt = skills.optString(name)
+        require(name.length <= 40 && prompt.length <= 8000) { "技能内容超出限制" }
+        cleanSkills.put(name, prompt)
+    }
     require(prompts.length() <= 100) { "专家提示词数量超出限制" }
     val cleanPrompts = JSONObject()
     val keys = prompts.keys()
@@ -640,6 +651,7 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         .putString("messages", messages.toString())
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
+        .putString("skills", cleanSkills.toString())
         .apply()
 }
 
