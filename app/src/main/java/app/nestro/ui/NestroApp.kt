@@ -74,6 +74,9 @@ fun NestroApp() {
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var activeConversationId by remember { mutableStateOf("") }
     var conversationSearch by remember { mutableStateOf("") }
+    var showRenameConversation by remember { mutableStateOf(false) }
+    var renameConversationId by remember { mutableStateOf("") }
+    var renameConversationDraft by remember { mutableStateOf("") }
     var globalMemory by remember { mutableStateOf("") }
     var memoryDraft by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
@@ -417,6 +420,11 @@ fun NestroApp() {
                                                     Text(record.messages.lastOrNull()?.content?.take(72) ?: "空白对话", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                 }
                                                 TextButton(onClick = {
+                                                    renameConversationId = record.id
+                                                    renameConversationDraft = record.title
+                                                    showRenameConversation = true
+                                                }) { Text("重命名", color = Mint) }
+                                                TextButton(onClick = {
                                                     if (conversations.size > 1) {
                                                         conversations = conversations.filterNot { it.id == record.id }
                                                         if (activeConversationId == record.id) {
@@ -489,6 +497,34 @@ fun NestroApp() {
                 }
             }
         }
+    }
+
+    if (showRenameConversation) {
+        AlertDialog(
+            onDismissRequest = { showRenameConversation = false },
+            title = { Text("重命名对话") },
+            text = {
+                OutlinedTextField(
+                    value = renameConversationDraft,
+                    onValueChange = { renameConversationDraft = it.take(80) },
+                    singleLine = true,
+                    label = { Text("对话名称") }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val title = renameConversationDraft.trim()
+                    if (title.isNotBlank()) {
+                        conversations = conversations.map { record ->
+                            if (record.id == renameConversationId) record.copy(title = title, updatedAt = System.currentTimeMillis()) else record
+                        }
+                        saveConversationList(prefs, conversations)
+                    }
+                    showRenameConversation = false
+                }) { Text("保存", color = Mint) }
+            },
+            dismissButton = { TextButton(onClick = { showRenameConversation = false }) { Text("取消") } }
+        )
     }
 
     if (showSkillDialog) {
