@@ -496,7 +496,19 @@ fun NestroApp() {
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(messages, key = { it.id }) { msg ->
-                                        MessageBubble(msg)
+                                        MessageBubble(msg, onRetry = {
+                                            if (messages.lastOrNull()?.id == msg.id) {
+                                                val lastUserIndex = messages.indexOfLast { it.role == "user" }
+                                                if (lastUserIndex >= 0) {
+                                                    val retryPrompt = messages[lastUserIndex].content
+                                                    messages = messages.take(lastUserIndex)
+                                                    conversations = saveConversationMessages(
+                                                        prefs, activeConversationId, messages, activeProjectId
+                                                    )
+                                                    sendPrompt(retryPrompt)
+                                                }
+                                            }
+                                        })
                                     }
                                     if (busy) item { Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp)) }
                                 }
@@ -965,15 +977,24 @@ private fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, onRetry: (() -> Unit)? = null) {
     val user = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
-        Surface(
-            color = if (user) androidx.compose.ui.graphics.Color(0xFF173B30) else Card,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
-        ) {
-            Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+        Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
+            Surface(
+                color = if (user) androidx.compose.ui.graphics.Color(0xFF173B30) else Card,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.widthIn(max = 320.dp)
+            ) {
+                Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!user && message.content.startsWith("请求失败：") && onRetry != null) {
+                TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("重试这条消息", color = Mint, style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
     }
 }
