@@ -249,7 +249,7 @@ fun NestroApp() {
             saveConversationList(prefs, conversationSnapshot)
             saveProjects(prefs, projectSnapshot)
         }.onFailure {
-            status = "本地数据保存失败：\${it.message ?: "未知错误"}"
+            status = "本地数据保存失败：${it.message ?: "未知错误"}"
         }
     }
 
