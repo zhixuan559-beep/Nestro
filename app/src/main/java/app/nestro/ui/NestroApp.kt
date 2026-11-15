@@ -159,10 +159,10 @@ fun NestroApp() {
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
             val requestSystemContext = listOf(
-                "全局记忆（跨会话共享，仅作为用户背景参考）：\\n" + globalMemory,
+                "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
                 skills[selectedSkill].orEmpty()
-            ).filter { it.isNotBlank() }.joinToString("\\n\\n")
+            ).filter { it.isNotBlank() }.joinToString("\n\n")
             scope.launch {
                 val answer = withContext(Dispatchers.IO) {
                     runCatching { OpenAiClient.complete(config, requestHistory, requestSystemContext) }
