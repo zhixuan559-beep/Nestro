@@ -67,6 +67,11 @@ fun NestroApp() {
     var status by remember { mutableStateOf("尚未配置模型") }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
+    var skills by remember { mutableStateOf(loadSkills(prefs)) }
+    var selectedSkill by remember { mutableStateOf("") }
+    var skillDraftName by remember { mutableStateOf("") }
+    var skillDraftPrompt by remember { mutableStateOf("") }
+    var showSkillDialog by remember { mutableStateOf(false) }
     var selectedExpert by remember { mutableStateOf("通用助手") }
     var expertDraft by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
@@ -98,6 +103,7 @@ fun NestroApp() {
                 messages = loadMessages(prefs)
                 experts = loadExperts(prefs)
                 expertPrompts = loadExpertPrompts(prefs)
+                skills = loadSkills(prefs)
                 "恢复完成。模型 Key 未被覆盖，请检查模型管理。"
             }.getOrElse { "恢复失败：${it.message ?: "文件格式无效"}" }
         }
@@ -202,6 +208,7 @@ fun NestroApp() {
                                 ) {
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
+                                    AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 OutlinedTextField(
                                     value = draft, onValueChange = { draft = it },
@@ -227,7 +234,7 @@ fun NestroApp() {
                                                     busy = true
                                                     scope.launch {
                                                         val answer = withContext(Dispatchers.IO) {
-                                                            runCatching { OpenAiClient.complete(config, messages, expertPrompts[selectedExpert].orEmpty()) }
+                                                            runCatching { OpenAiClient.complete(config, messages, listOf(expertPrompts[selectedExpert].orEmpty(), skills[selectedSkill].orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n")) }
                                                         }
                                                         messages = messages + ChatMessage(
                                                             UUID.randomUUID().toString(), "assistant",
@@ -303,12 +310,68 @@ fun NestroApp() {
                             }
                         }
                         "spaces" -> SimplePage("项目空间", "项目空间隔离与独立知识库尚未接入。当前版本不会把普通会话伪装成已隔离空间。")
-                        "skills" -> SimplePage("能力中心", "Skill / MCP 的来源校验、权限审查与隔离执行尚未接入。当前版本不执行未经审查的外部技能。")
+                        "skills" -> {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("技能是可复用的工作指令。选择后会与当前专家提示词组合，仅影响新发送的请求。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                skills.forEach { (name, prompt) ->
+                                    Surface(color = if (selectedSkill == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f).clickable { selectedSkill = if (selectedSkill == name) "" else name; page = "home" }) {
+                                                Text(name, color = if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                                Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            if (name !in DEFAULT_SKILLS.keys) {
+                                                TextButton(onClick = {
+                                                    skills = skills - name
+                                                    prefs.edit().putString("skills", skillMapToJson(skills)).apply()
+                                                    if (selectedSkill == name) selectedSkill = ""
+                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                            }
+                                        }
+                                    }
+                                }
+                                Button(onClick = { showSkillDialog = true }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                    Text("＋ 创建本地技能")
+                                }
+                                OutlinedButton(onClick = { selectedSkill = ""; page = "home" }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用技能") }
+                                Text("外部 Skill / MCP 仓库导入仍未开放。导入功能上线前不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
                     }
                 }
             }
         }
+    }
+
+    if (showSkillDialog) {
+        AlertDialog(
+            onDismissRequest = { showSkillDialog = false },
+            title = { Text("创建本地技能") },
+            text = {
+                Column {
+                    OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it }, label = { Text("技能名称") }, singleLine = true)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = skillDraftName.trim()
+                    val prompt = skillDraftPrompt.trim()
+                    if (name.isNotBlank() && prompt.isNotBlank() && name.length <= 40 && prompt.length <= 8000) {
+                        skills = skills + (name to prompt)
+                        prefs.edit().putString("skills", skillMapToJson(skills)).apply()
+                        selectedSkill = name
+                    }
+                    skillDraftName = ""
+                    skillDraftPrompt = ""
+                    showSkillDialog = false
+                }) { Text("保存", color = Mint) }
+            },
+            dismissButton = { TextButton(onClick = { showSkillDialog = false }) { Text("取消") } }
+        )
     }
 
     if (showExpertDialog) {
@@ -578,4 +641,28 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .apply()
+}
+
+
+private val DEFAULT_SKILLS = linkedMapOf(
+    "结构化总结" to "请提炼核心结论、关键事实、行动项与未解决问题。区分原文事实和你的推断，避免遗漏重要限制。",
+    "精简改写" to "请在不改变原意的前提下压缩冗余表达。保留关键事实与语气，优先给出可直接使用的成稿。",
+    "代码审查" to "请从正确性、安全性、边界条件、性能和可维护性审查代码。先指出确定的问题，再给最小修复建议，不要臆测未提供的上下文。"
+)
+
+private fun loadSkills(prefs: android.content.SharedPreferences): Map<String, String> = runCatching {
+    val json = JSONObject(prefs.getString("skills", "{}") ?: "{}")
+    val loaded = linkedMapOf<String, String>()
+    val keys = json.keys()
+    while (keys.hasNext()) {
+        val name = keys.next()
+        loaded[name] = json.optString(name)
+    }
+    DEFAULT_SKILLS + loaded
+}.getOrDefault(DEFAULT_SKILLS)
+
+private fun skillMapToJson(skills: Map<String, String>): String {
+    val json = JSONObject()
+    skills.forEach { (name, prompt) -> json.put(name, prompt) }
+    return json.toString()
 }
