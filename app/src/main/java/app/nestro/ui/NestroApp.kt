@@ -256,7 +256,7 @@ fun NestroApp() {
                 }
             }
             persistedConversationVersions.clear()
-            conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.updatedAt }
+            conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.hashCode() }
             saveConversationList(prefs, conversationSnapshot, markDirty = false)
             saveProjects(prefs, projectSnapshot, markDirty = false)
             prefs.edit().putLong("room_synced_at", snapshotTimestamp).apply()
