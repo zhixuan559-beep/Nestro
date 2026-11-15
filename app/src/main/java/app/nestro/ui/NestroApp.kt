@@ -4,6 +4,7 @@ import app.nestro.data.ConversationEntity
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
 import app.nestro.data.NestroDatabase
+import app.nestro.data.KnowledgeStore
 import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentService
@@ -274,6 +275,65 @@ fun NestroApp() {
         val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         messages = messages + user
         conversations = saveConversationMessages(prefs, activeConversationId, messages)
+        val creationKind = when {
+            isCreationIntent(prompt, "专家") -> "expert"
+            isCreationIntent(prompt, "技能") -> "skill"
+            else -> ""
+        }
+        if (creationKind.isNotBlank() && config.apiKey.isNotBlank() && config.model.isNotBlank()) {
+            busy = true
+            stopRequested = false
+            status = if (creationKind == "expert") "正在设计专家…" else "正在设计技能…"
+            val requestConversationId = activeConversationId
+            val requestProjectId = activeProjectId
+            val requestHistory = messages.toList()
+            val existingNames = if (creationKind == "expert") experts.joinToString("、") else skills.keys.joinToString("、")
+            val generatorPrompt = buildString {
+                append("你是 Nestro 的能力设计器。根据用户需求设计一个可直接使用的")
+                append(if (creationKind == "expert") "AI 专家" else "工作技能")
+                append("。只返回一个 JSON 对象，不要 Markdown 代码围栏或解释。字段必须是 name 和 prompt。name 是简短中文名称，prompt 是完整、具体、可执行的角色指令。不要要求扩大手机权限，不要包含可执行代码，不要虚构外部工具。现有名称：")
+                append(existingNames.ifBlank { "无" })
+                append("。名称必须与现有名称不同。")
+            }
+            scope.launch {
+                val generated = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val raw = OpenAiClient.complete(
+                            config,
+                            listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
+                            generatorPrompt
+                        )
+                        parseGeneratedDefinition(raw)
+                    }
+                }
+                val assistantText = when {
+                    stopRequested -> "能力设计已停止。"
+                    generated.isSuccess -> "草案已生成，已打开预览。你可以修改指令，确认后才会保存。"
+                    else -> "生成失败：${generated.exceptionOrNull()?.message ?: "请检查模型是否支持正常文本回复"}"
+                }
+                val completedHistory = requestHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                if (activeConversationId == requestConversationId) messages = completedHistory
+                if (!stopRequested && generated.isSuccess) {
+                    val definition = generated.getOrThrow()
+                    if (creationKind == "expert") {
+                        expertDraft = definition.first
+                        expertPromptDraft = definition.second
+                        showExpertDialog = true
+                    } else {
+                        skillDraftName = definition.first
+                        skillDraftPrompt = definition.second
+                        showSkillDialog = true
+                    }
+                    status = "草案待你确认"
+                } else {
+                    status = if (stopRequested) "已停止生成" else "能力设计失败"
+                }
+                busy = false
+                stopRequested = false
+            }
+            return@send
+        }
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
@@ -284,15 +344,21 @@ fun NestroApp() {
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
             val assistantId = UUID.randomUUID().toString()
-            val requestSystemContext = listOf(
+            val requestProjectId = activeProjectId
+            val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
-                projects.firstOrNull { it.id == activeProjectId }?.instructions.orEmpty(),
+                projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty()
-            ).filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
+            ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 val partialAnswer = StringBuilder()
                 val result = runCatching {
+                    val knowledgeContext = withContext(Dispatchers.IO) {
+                        KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
+                    }
+                    val requestSystemContext = listOf(baseSystemContext, knowledgeContext)
+                        .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
@@ -345,6 +411,7 @@ fun NestroApp() {
                         DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
                         DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
                         DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
+                        DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
@@ -497,7 +564,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含全部本机对话、全局记忆、专家配置与技能。API Key 不会写入备份。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含本机对话、全局记忆、专家配置与技能。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
@@ -662,6 +729,7 @@ fun NestroApp() {
                             }
                         }
                         "phone" -> PhoneAgentPage(context)
+                        "knowledge" -> KnowledgePage(database, activeProjectId)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -906,6 +974,25 @@ private fun SimplePage(title: String, description: String) {
     }
 }
 
+private fun isCreationIntent(prompt: String, target: String): Boolean {
+    val text = prompt.trim()
+    val hasCreationVerb = listOf("创建", "新建", "设计", "生成", "做一个", "帮我做").any { text.contains(it) }
+    val hasNegation = listOf("不要", "不需要", "取消", "别创建").any { text.contains(it) }
+    return text.contains(target) && hasCreationVerb && !hasNegation
+}
+
+private fun parseGeneratedDefinition(raw: String): Pair<String, String> {
+    val start = raw.indexOf('{')
+    val end = raw.lastIndexOf('}')
+    require(start >= 0 && end > start) { "模型没有返回有效 JSON" }
+    val json = JSONObject(raw.substring(start, end + 1))
+    val name = json.optString("name").trim()
+    val prompt = json.optString("prompt").trim()
+    require(name.isNotBlank() && name.length <= 40) { "能力名称为空或过长" }
+    require(prompt.length in 80..8000) { "能力指令长度不符合要求" }
+    return name to prompt
+}
+
 private fun boundedRequestHistory(history: List<ChatMessage>, maxChars: Int = 48000): List<ChatMessage> {
     var remaining = maxChars
     val selected = ArrayList<ChatMessage>(minOf(history.size, 40))
@@ -933,6 +1020,7 @@ private object OpenAiClient {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
         }
+        activeConnection = connection
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
@@ -955,6 +1043,7 @@ private object OpenAiClient {
             return JSONObject(response).getJSONArray("choices").getJSONObject(0)
                 .getJSONObject("message").getString("content")
         } finally {
+            if (activeConnection === connection) activeConnection = null
             connection.disconnect()
         }
     }
