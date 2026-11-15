@@ -167,6 +167,7 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     fun hasActiveWindow(): Boolean = rootInActiveWindow != null
+    fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
 
     fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
 

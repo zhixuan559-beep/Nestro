@@ -67,17 +67,42 @@ object PhoneAgentExecutor {
             }
             val attempt = runCatching {
                 when (action) {
-                    is Action.OpenUrl -> service.openUrl(action.url)
-                    is Action.LaunchApp -> service.launchPackage(action.packageName)
+                    is Action.OpenUrl -> {
+                        val before = service.captureVisibleText()
+                        val opened = service.openUrl(action.url)
+                        delay(1200)
+                        opened && service.screenTextChanged(before)
+                    }
+                    is Action.LaunchApp -> {
+                        val beforePackage = service.activePackageName()
+                        val beforeText = service.captureVisibleText()
+                        val launched = service.launchPackage(action.packageName)
+                        delay(1000)
+                        launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
+                    }
                     is Action.ClickText -> {
+                        val before = service.captureVisibleText()
                         val clicked = service.clickVisibleText(action.exactText)
-                        if (clicked && action.expectedAfter != null) { delay(500); service.verifyVisibleText(action.expectedAfter) } else clicked
+                        if (clicked) {
+                            delay(500)
+                            if (action.expectedAfter != null) service.verifyVisibleText(action.expectedAfter)
+                            else service.screenTextChanged(before)
+                        } else false
                     }
                     is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
-                    is Action.Scroll -> service.scroll(action.direction)
+                    is Action.Scroll -> {
+                        val before = service.captureVisibleText()
+                        val scrolled = service.scroll(action.direction)
+                        if (scrolled) { delay(350); service.screenTextChanged(before) } else false
+                    }
                     is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
                     is Action.VerifyText -> service.verifyVisibleText(action.expected)
-                    Action.Back -> service.pressBack()
+                    Action.Back -> {
+                        val beforePackage = service.activePackageName()
+                        val beforeText = service.captureVisibleText()
+                        val backed = service.pressBack()
+                        if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
+                    }
                     is Action.ConfirmSensitive -> false
                 }
             }
