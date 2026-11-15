@@ -78,6 +78,9 @@ interface NestroDao {
     @Query("DELETE FROM conversations WHERE id IN (:ids)")
     suspend fun deleteConversations(ids: List<String>)
 
+    @Query("SELECT * FROM projects ORDER BY createdAt DESC")
+    suspend fun loadProjects(): List<ProjectEntity>
+
     @Query("SELECT id FROM projects")
     suspend fun projectIds(): List<String>
 

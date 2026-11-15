@@ -1,5 +1,11 @@
 package app.nestro.ui
 
+import app.nestro.data.ConversationEntity
+import app.nestro.data.MessageEntity
+import app.nestro.data.ProjectEntity
+import app.nestro.data.NestroDatabase
+import androidx.room.withTransaction
+
 import app.nestro.phone.PhoneAgentService
 import app.nestro.ui.VoiceInputButton
 
@@ -67,6 +73,9 @@ fun NestroApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
+    val database = remember { NestroDatabase.get(context) }
+    var databaseReady by remember { mutableStateOf(false) }
+    val persistedConversationVersions = remember { mutableStateMapOf<String, Long>() }
     var page by remember { mutableStateOf("home") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
@@ -148,8 +157,54 @@ fun NestroApp() {
 
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
-        conversations = loadConversations(prefs)
-        projects = loadProjects(prefs)
+        val loaded = runCatching {
+            withContext(Dispatchers.IO) {
+                val dao = database.dao()
+                val stored = dao.loadConversations()
+                if (stored.isEmpty()) {
+                    val legacyConversations = loadConversations(prefs)
+                    val legacyProjects = loadProjects(prefs)
+                    database.withTransaction {
+                        legacyConversations.forEach { record ->
+                            dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
+                            val rows = record.messages.mapIndexed { index, message ->
+                                MessageEntity(message.id, record.id, index, message.role, message.content)
+                            }
+                            if (rows.isNotEmpty()) dao.putMessages(rows)
+                        }
+                        dao.putProjects(legacyProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
+                    }
+                    legacyConversations to legacyProjects
+                } else {
+                    val restoredConversations = stored.map { row ->
+                        val entity = row.conversation
+                        ConversationRecord(
+                            entity.id, entity.title, entity.updatedAt,
+                            row.messages.sortedBy { it.position }.map { message ->
+                                ChatMessage(message.id, message.role, message.content)
+                            },
+                            entity.projectId
+                        )
+                    }
+                    val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt) }
+                    val restoredProjects = if (storedProjects.isEmpty()) loadProjects(prefs) else storedProjects
+                    if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
+                    restoredConversations to restoredProjects
+                }
+            }
+        }
+        if (loaded.isSuccess) {
+            val data = loaded.getOrThrow()
+            conversations = data.first
+            projects = data.second
+            persistedConversationVersions.clear()
+            data.first.forEach { persistedConversationVersions[it.id] = it.updatedAt }
+            databaseReady = true
+        } else {
+            conversations = loadConversations(prefs)
+            projects = loadProjects(prefs)
+            status = "本地数据库暂不可用，已回退到本机旧存储"
+        }
         activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
         activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
         messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
@@ -159,7 +214,42 @@ fun NestroApp() {
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
         expertPrompts = loadExpertPrompts(prefs)
-        status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else "先连接你自己的模型"
+        status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else status
+    }
+
+    LaunchedEffect(conversations, projects, databaseReady) {
+        if (!databaseReady) return@LaunchedEffect
+        val conversationSnapshot = conversations.toList()
+        val projectSnapshot = projects.toList()
+        val knownVersions = persistedConversationVersions.toMap()
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val dao = database.dao()
+                database.withTransaction {
+                    val currentIds = conversationSnapshot.map { it.id }
+                    val removedIds = dao.conversationIds().filterNot { it in currentIds }
+                    if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
+                    conversationSnapshot.filter { knownVersions[it.id] != it.updatedAt }.forEach { record ->
+                        dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
+                        dao.clearMessages(record.id)
+                        val rows = record.messages.mapIndexed { index, message ->
+                            MessageEntity(message.id, record.id, index, message.role, message.content)
+                        }
+                        if (rows.isNotEmpty()) dao.putMessages(rows)
+                    }
+                    dao.putProjects(projectSnapshot.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
+                    val currentProjectIds = projectSnapshot.map { it.id }
+                    val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
+                    if (removedProjectIds.isNotEmpty()) dao.deleteProjects(removedProjectIds)
+                }
+            }
+            persistedConversationVersions.clear()
+            conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.updatedAt }
+            saveConversationList(prefs, conversationSnapshot)
+            saveProjects(prefs, projectSnapshot)
+        }.onFailure {
+            status = "本地数据保存失败：\${it.message ?: "未知错误"}"
+        }
     }
 
 
