@@ -60,14 +60,17 @@ fun NestroApp() {
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("尚未配置模型") }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
+    var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
     var selectedExpert by remember { mutableStateOf("通用助手") }
     var expertDraft by remember { mutableStateOf("") }
+    var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
         messages = loadMessages(prefs)
         experts = loadExperts(prefs)
+        expertPrompts = loadExpertPrompts(prefs)
         status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else "先连接你自己的模型"
     }
 
@@ -186,7 +189,7 @@ fun NestroApp() {
                                                     busy = true
                                                     scope.launch {
                                                         val answer = withContext(Dispatchers.IO) {
-                                                            runCatching { OpenAiClient.complete(config, messages) }
+                                                            runCatching { OpenAiClient.complete(config, messages, expertPrompts[selectedExpert].orEmpty()) }
                                                         }
                                                         messages = messages + ChatMessage(
                                                             UUID.randomUUID().toString(), "assistant",
@@ -247,17 +250,24 @@ fun NestroApp() {
             onDismissRequest = { showExpertDialog = false },
             title = { Text("创建专家") },
             text = {
-                OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it }, label = { Text("专家名称") }, singleLine = true)
+                Column {
+                    OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it }, label = { Text("专家名称") }, singleLine = true)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = expertPromptDraft, onValueChange = { expertPromptDraft = it }, label = { Text("专家角色与工作要求") }, placeholder = { Text("例如：你是一位严谨的中文文案编辑，先判断目标读者，再给出可直接发布的文案。") }, minLines = 4)
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val name = expertDraft.trim()
                     if (name.isNotEmpty() && name !in experts) {
                         experts = experts + name
-                        prefs.edit().putString("experts", JSONArray(experts).toString()).apply()
+                        expertPrompts = expertPrompts + (name to expertPromptDraft.trim())
+                        prefs.edit().putString("experts", JSONArray(experts).toString())
+                            .putString("expert_prompts", JSONObject(expertPrompts as Map<*, *>).toString()).apply()
                         selectedExpert = name
                     }
                     expertDraft = ""
+                    expertPromptDraft = ""
                     showExpertDialog = false
                     page = "experts"
                 }) { Text("创建", color = Mint) }
@@ -326,7 +336,7 @@ private fun SimplePage(title: String, description: String) {
 }
 
 private object OpenAiClient {
-    fun complete(config: ModelConfig, history: List<ChatMessage>): String {
+    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -340,6 +350,7 @@ private object OpenAiClient {
             val body = JSONObject().apply {
                 put("model", config.model)
                 put("messages", JSONArray().apply {
+                    if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     history.takeLast(40).forEach { msg ->
                         put(JSONObject().put("role", msg.role).put("content", msg.content))
                     }
@@ -421,3 +432,10 @@ private fun loadExperts(prefs: android.content.SharedPreferences): List<String> 
     val array = JSONArray(prefs.getString("experts", """["文案官","选题狐","代码佬"]"""))
     (0 until array.length()).map { array.getString(it) }
 }.getOrDefault(listOf("文案官", "选题狐", "代码佬"))
+
+
+private fun loadExpertPrompts(prefs: android.content.SharedPreferences): Map<String, String> = runCatching {
+    val raw = prefs.getString("expert_prompts", "{}") ?: "{}"
+    val json = JSONObject(raw)
+    buildMap { val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, json.optString(key)) } }
+}.getOrDefault(emptyMap())
