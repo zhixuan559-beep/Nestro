@@ -179,7 +179,7 @@ fun NestroApp() {
                 val finalText = when {
                     result.isSuccess -> result.getOrThrow()
                     partialAnswer.isNotBlank() -> partialAnswer
-                    else -> "请求失败：\${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
+                    else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
                 conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
