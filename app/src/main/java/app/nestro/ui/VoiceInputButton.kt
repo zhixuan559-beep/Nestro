@@ -8,6 +8,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -43,6 +44,7 @@ fun VoiceInputButton(enabled: Boolean, onResult: (String) -> Unit) {
     var listening by remember { mutableStateOf(false) }
     var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
     val scale by animateFloatAsState(if (listening) 1.12f else 1f, label = "voice-button-scale")
+    val buttonColor by animateColorAsState(if (listening) Color(0xFFB45353) else Color(0xFF202A27), label = "voice-button-color")
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* First press requests permission; press again to speak. */ }
@@ -86,7 +88,7 @@ fun VoiceInputButton(enabled: Boolean, onResult: (String) -> Unit) {
         android.content.pm.PackageManager.PERMISSION_GRANTED
     Box(
         modifier = Modifier.size(52.dp).scale(scale)
-            .background(if (listening) Color(0xFFB45353) else Color(0xFF202A27), CircleShape)
+            .background(buttonColor, CircleShape)
             .pointerInput(enabled, hasPermission) {
                 detectTapGestures(onPress = {
                     if (!enabled) return@detectTapGestures

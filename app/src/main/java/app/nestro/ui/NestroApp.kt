@@ -302,7 +302,7 @@ fun NestroApp() {
                                         )
                                     )
                                 }
-                                Text("语音在本机识别后发送；API Key 与对话记录保存在本机。", color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                Text("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。", color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
                         "models" -> ModelManager(config, onSave = { newConfig ->
