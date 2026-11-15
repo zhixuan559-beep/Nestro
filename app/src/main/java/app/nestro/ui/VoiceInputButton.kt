@@ -60,11 +60,17 @@ fun VoiceInputButton(enabled: Boolean, onResult: (String) -> Unit) {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() { listening = false }
-            override fun onError(error: Int) { listening = false }
+            override fun onError(error: Int) {
+                listening = false
+                engine.destroy()
+                if (recognizer === engine) recognizer = null
+            }
             override fun onResults(results: Bundle?) {
                 listening = false
                 val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 if (phrase.isNotBlank()) latestResult.value(phrase)
+                engine.destroy()
+                if (recognizer === engine) recognizer = null
             }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
