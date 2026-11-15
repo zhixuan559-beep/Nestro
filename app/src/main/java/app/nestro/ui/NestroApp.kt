@@ -285,7 +285,7 @@ fun NestroApp() {
         prefs.edit().remove("draft_$activeConversationId").apply()
         val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         messages = messages + user
-        conversations = saveConversationMessages(prefs, activeConversationId, messages)
+        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
         val creationKind = when {
             isCreationIntent(prompt, "专家") -> "expert"
             isCreationIntent(prompt, "技能") -> "skill"
@@ -348,7 +348,7 @@ fun NestroApp() {
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
-            conversations = saveConversationMessages(prefs, activeConversationId, messages)
+            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
         } else {
             busy = true
             stopRequested = false
