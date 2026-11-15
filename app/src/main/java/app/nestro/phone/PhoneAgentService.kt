@@ -1,6 +1,7 @@
 package app.nestro.phone
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -103,7 +104,7 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     fun launchPackage(packageName: String): Boolean {
-        require(packageName.matches(Regex("[A-Za-z0-9_]+(\\\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+        require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -152,7 +153,7 @@ class PhoneAgentService : AccessibilityService() {
     private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin").any { value.contains(it, true) }
 
     private fun isHighRisk(value: String): Boolean {
-        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "立即购买", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕")
+        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "立即购买", "提交订单", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款")
         return terms.any { value.contains(it, ignoreCase = true) }
     }
 

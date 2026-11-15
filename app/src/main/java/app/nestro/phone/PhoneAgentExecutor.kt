@@ -23,6 +23,21 @@ object PhoneAgentExecutor {
 
     suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         require(actions.size in 1..80) { "任务动作数量必须为 1 到 80" }
+        PhoneAgentTaskStore.persistActions(dao, taskId, actions)
+        return runFrom(dao, taskId, actions, 0, onProgress)
+    }
+
+    /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
+    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+        val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
+        val actions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }
+            .getOrElse { return ExecutionResult(Outcome.FAILED, 0, emptyList(), it.message ?: "动作计划无法恢复") }
+        val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
+            actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
+        return runFrom(dao, taskId, actions, start, onProgress)
+    }
+
+    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val service = PhoneAgentService.activeService ?: return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         if (!service.hasValidGrant()) {
@@ -31,25 +46,29 @@ object PhoneAgentExecutor {
         }
         service.clearTaskStop()
         val results = mutableListOf<ActionResult>()
-        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
-        for ((index, action) in actions.withIndex()) {
+        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
+        for (index in startIndex until actions.size) {
             if (service.isTaskStopped()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "用户已请求停止")
+                return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
             }
             if (!service.hasValidGrant()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "操作授权已失效")
+                return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
             }
+            val action = actions[index]
             if (action is Action.ConfirmSensitive) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
-                return ExecutionResult(Outcome.WAITING_USER, results.count { it.success }, results, action.description)
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
             val attempt = runCatching {
                 when (action) {
                     is Action.OpenUrl -> service.openUrl(action.url)
                     is Action.LaunchApp -> service.launchPackage(action.packageName)
-                    is Action.ClickText -> { val clicked = service.clickVisibleText(action.exactText); if (clicked && action.expectedAfter != null) { delay(350); service.verifyVisibleText(action.expectedAfter) } else clicked }
+                    is Action.ClickText -> {
+                        val clicked = service.clickVisibleText(action.exactText)
+                        if (clicked && action.expectedAfter != null) { delay(500); service.verifyVisibleText(action.expectedAfter) } else clicked
+                    }
                     is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
                     is Action.Scroll -> service.scroll(action.direction)
                     is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
