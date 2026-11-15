@@ -53,6 +53,7 @@ fun VoiceInputButton(enabled: Boolean, onResult: (String) -> Unit) {
 
     fun startRecognition() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) return
+        listening = true
         val engine = SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = engine
         engine.setRecognitionListener(object : RecognitionListener {
