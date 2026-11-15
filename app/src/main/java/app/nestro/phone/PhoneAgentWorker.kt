@@ -15,6 +15,7 @@ class PhoneAgentWorker(
         val taskId = inputData.getString(PhoneAgentWorkScheduler.KEY_TASK_ID)
             ?: return Result.failure()
         val afterUserHandoff = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_AFTER_HANDOFF, false)
+        val allowRetryCurrentAction = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_ALLOW_RETRY, false)
         val dao = NestroDatabase.get(applicationContext).dao()
         val task = dao.phoneAgentTask(taskId) ?: return Result.failure()
 
@@ -24,7 +25,7 @@ class PhoneAgentWorker(
         }
 
         return try {
-            val result = PhoneAgentExecutor.resume(dao, taskId, afterUserHandoff, allowRetryCurrentAction = true)
+            val result = PhoneAgentExecutor.resume(dao, taskId, afterUserHandoff, allowRetryCurrentAction)
             when (result.outcome) {
                 PhoneAgentExecutor.Outcome.COMPLETED,
                 PhoneAgentExecutor.Outcome.WAITING_USER,

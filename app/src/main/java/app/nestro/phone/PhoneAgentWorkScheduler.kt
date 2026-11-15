@@ -9,14 +9,16 @@ import androidx.work.WorkManager
 object PhoneAgentWorkScheduler {
     const val KEY_TASK_ID = "phone_agent_task_id"
     const val KEY_AFTER_HANDOFF = "phone_agent_after_handoff"
+    const val KEY_ALLOW_RETRY = "phone_agent_allow_retry"
 
-    fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false) {
+    fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false) {
         require(taskId.isNotBlank())
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
             .setInputData(
                 Data.Builder()
                     .putString(KEY_TASK_ID, taskId)
                     .putBoolean(KEY_AFTER_HANDOFF, afterUserHandoff)
+                    .putBoolean(KEY_ALLOW_RETRY, allowRetryCurrentAction)
                     .build()
             )
             .addTag(uniqueName(taskId))

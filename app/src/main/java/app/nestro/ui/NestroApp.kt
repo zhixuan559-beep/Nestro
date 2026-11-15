@@ -1639,7 +1639,8 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                         PhoneAgentWorkScheduler.enqueue(
                                             context,
                                             task.id,
-                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER
+                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
+                                            allowRetryCurrentAction = task.status == PhoneAgentTaskStore.STATUS_RUNNING
                                         )
                                         taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
                                     },
