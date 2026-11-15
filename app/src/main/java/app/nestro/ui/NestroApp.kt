@@ -354,8 +354,10 @@ fun NestroApp() {
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 val partialAnswer = StringBuilder()
+                var recalledCount = 0
                 val result = runCatching {
                     val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, prompt)
+                    recalledCount = recall.hitCount
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
                     val requestSystemContext = listOf(baseSystemContext, recall.context, knowledgeContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
@@ -378,7 +380,7 @@ fun NestroApp() {
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
                     stopRequested -> "已停止生成"
-                    result.isSuccess -> if (recall.hitCount > 0) "已连接 · 参考历史 ${recall.hitCount} 条 · 本地保存" else "已连接 · 本地保存"
+                    result.isSuccess -> if (recalledCount > 0) "已连接 · 参考历史 ${recalledCount} 条 · 本地保存" else "已连接 · 本地保存"
                     else -> "连接失败"
                 }
                 busy = false
