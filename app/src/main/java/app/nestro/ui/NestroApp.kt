@@ -362,7 +362,9 @@ fun NestroApp() {
                 val partialAnswer = StringBuilder()
                 var recalledCount = 0
                 val result = runCatching {
-                    val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, prompt)
+                    val recallQuery = requestHistory.takeLast(8)
+                        .joinToString("\n") { it.content.take(500) }.take(2400)
+                    val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, recallQuery)
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
