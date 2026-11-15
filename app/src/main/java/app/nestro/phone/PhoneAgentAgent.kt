@@ -39,6 +39,11 @@ object PhoneAgentAgent {
         }
 
         val actionHistory = StringBuilder()
+        PhoneAgentTaskStore.recentLogs(dao, taskId, 20).forEach { log ->
+            actionHistory.append("#").append(log.actionIndex + 1).append(" ")
+                .append(log.action).append("：").append(if (log.success) "成功" else "失败")
+                .append("，").append(log.detail.take(100)).append("\\n")
+        }
         var loop = 0
         while (loop < 8) {
             if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")

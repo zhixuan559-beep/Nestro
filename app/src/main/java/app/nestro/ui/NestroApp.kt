@@ -1542,6 +1542,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     var refresh by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
     var tasks by remember { mutableStateOf(emptyList<app.nestro.data.PhoneAgentTaskEntity>()) }
+    var taskLogs by remember { mutableStateOf(emptyMap<String, List<app.nestro.data.PhoneAgentTaskLogEntity>>()) }
     var taskMessage by remember { mutableStateOf("") }
     val enabledServices = Settings.Secure.getString(
         context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -1557,6 +1558,11 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     LaunchedEffect(refresh, projectId) {
         tasks = withContext(Dispatchers.IO) {
             runCatching { database.dao().phoneAgentTasks(projectId, 30) }.getOrDefault(emptyList())
+        }
+        taskLogs = withContext(Dispatchers.IO) {
+            tasks.associate { task ->
+                task.id to runCatching { PhoneAgentTaskStore.recentLogs(database.dao(), task.id, 12) }.getOrDefault(emptyList())
+            }
         }
     }
 
@@ -1634,6 +1640,13 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             color = Muted,
                             style = MaterialTheme.typography.bodySmall
                         )
+                        taskLogs[task.id].orEmpty().takeLast(3).forEach { log ->
+                            Text(
+                                "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
+                                color = if (log.success) Muted else androidx.compose.ui.graphics.Color(0xFFF87171),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if ((canResume && task.status in setOf(
                                     PhoneAgentTaskStore.STATUS_PLANNED,

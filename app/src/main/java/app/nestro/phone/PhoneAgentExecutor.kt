@@ -88,6 +88,7 @@ object PhoneAgentExecutor {
             val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
             val result = ActionResult(index, action.javaClass.simpleName, success, detail)
             results += result
+            PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
             if (!success) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
