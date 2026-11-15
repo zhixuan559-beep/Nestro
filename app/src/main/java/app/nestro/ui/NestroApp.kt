@@ -253,20 +253,26 @@ fun NestroApp() {
                                                     conversations = saveConversationMessages(prefs, activeConversationId, messages)
                                                 } else {
                                                     busy = true
+                                                    val requestConversationId = activeConversationId
+                                                    val requestHistory = messages.toList()
+                                                    val requestSystemContext = listOf(
+                                                        "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
+                                                        expertPrompts[selectedExpert].orEmpty(),
+                                                        skills[selectedSkill].orEmpty()
+                                                    ).filter { it.isNotBlank() }.joinToString("\n\n")
                                                     scope.launch {
-                                                        val systemContext = listOf(
-                                                            "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                                                            expertPrompts[selectedExpert].orEmpty(),
-                                                            skills[selectedSkill].orEmpty()
-                                                        ).filter { it.isNotBlank() }.joinToString("\n\n")
                                                         val answer = withContext(Dispatchers.IO) {
-                                                            runCatching { OpenAiClient.complete(config, messages, systemContext) }
+                                                            runCatching { OpenAiClient.complete(config, requestHistory, requestSystemContext) }
                                                         }
-                                                        messages = messages + ChatMessage(
+                                                        val assistantMessage = ChatMessage(
                                                             UUID.randomUUID().toString(), "assistant",
                                                             answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
                                                         )
-                                                        conversations = saveConversationMessages(prefs, activeConversationId, messages)
+                                                        val completedHistory = requestHistory + assistantMessage
+                                                        conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
+                                                        if (activeConversationId == requestConversationId) {
+                                                            messages = completedHistory
+                                                        }
                                                         status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
                                                         busy = false
                                                     }
