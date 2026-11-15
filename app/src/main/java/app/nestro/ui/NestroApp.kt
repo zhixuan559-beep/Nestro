@@ -162,19 +162,29 @@ fun NestroApp() {
             withContext(Dispatchers.IO) {
                 val dao = database.dao()
                 val stored = dao.loadConversations()
-                if (stored.isEmpty()) {
+                val hasPendingLocalSnapshot = prefs.getLong("local_snapshot_saved_at", 0L) >
+                    prefs.getLong("room_synced_at", 0L)
+                if (stored.isEmpty() || hasPendingLocalSnapshot) {
                     val legacyConversations = loadConversations(prefs)
                     val legacyProjects = loadProjects(prefs)
                     database.withTransaction {
+                        val conversationIds = legacyConversations.map { it.id }
+                        val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
+                        if (staleConversationIds.isNotEmpty()) dao.deleteConversations(staleConversationIds)
                         legacyConversations.forEach { record ->
                             dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
+                            dao.clearMessages(record.id)
                             val rows = record.messages.mapIndexed { index, message ->
                                 MessageEntity(message.id, record.id, index, message.role, message.content)
                             }
                             if (rows.isNotEmpty()) dao.putMessages(rows)
                         }
                         dao.putProjects(legacyProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
+                        val projectIds = legacyProjects.map { it.id }
+                        val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
+                        if (staleProjectIds.isNotEmpty()) dao.deleteProjects(staleProjectIds)
                     }
+                    prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
                     legacyConversations to legacyProjects
                 } else {
                     val restoredConversations = stored.map { row ->
@@ -223,6 +233,7 @@ fun NestroApp() {
         val conversationSnapshot = conversations.toList()
         val projectSnapshot = projects.toList()
         val knownVersions = persistedConversationVersions.toMap()
+        val snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
         runCatching {
             withContext(Dispatchers.IO) {
                 val dao = database.dao()
@@ -246,8 +257,9 @@ fun NestroApp() {
             }
             persistedConversationVersions.clear()
             conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.updatedAt }
-            saveConversationList(prefs, conversationSnapshot)
-            saveProjects(prefs, projectSnapshot)
+            saveConversationList(prefs, conversationSnapshot, markDirty = false)
+            saveProjects(prefs, projectSnapshot, markDirty = false)
+            prefs.edit().putLong("room_synced_at", snapshotTimestamp).apply()
         }.onFailure {
             status = "本地数据保存失败：${it.message ?: "未知错误"}"
         }
@@ -1076,7 +1088,7 @@ private fun loadConversations(prefs: android.content.SharedPreferences): List<Co
     return result
 }
 
-private fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>) {
+private fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>, markDirty: Boolean = true) {
     val array = JSONArray()
     conversations.take(100).forEach { conversation ->
         val messages = JSONArray()
@@ -1086,7 +1098,9 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
         array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
             .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messages))
     }
-    prefs.edit().putString("conversations_v1", array.toString()).apply()
+    val editor = prefs.edit().putString("conversations_v1", array.toString())
+    if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+    editor.apply()
 }
 
 private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>, projectId: String = "default"): List<ConversationRecord> {
@@ -1135,8 +1149,10 @@ private fun projectsToJson(projects: List<ProjectRecord>): String {
     return array.toString()
 }
 
-private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>) {
-    prefs.edit().putString("projects", projectsToJson(projects)).apply()
+private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
+    val editor = prefs.edit().putString("projects", projectsToJson(projects))
+    if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+    editor.apply()
 }
 
 private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
@@ -1254,6 +1270,7 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         .putString("skills", cleanSkills.toString())
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
         .putString("active_project_id", root.optString("active_project_id", "default"))
+        .putLong("local_snapshot_saved_at", System.currentTimeMillis())
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.optString("base_url")
         val restoredModel = root.optString("model")
