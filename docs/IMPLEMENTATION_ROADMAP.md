@@ -1,44 +1,150 @@
-# Nestro implementation status and roadmap
+# Nestro 实现状态与开发路线图
 
-This file separates implemented foundations from planned capabilities. A screen or placeholder is not considered a completed feature.
+> 状态口径：只有代码已落地且对应构建通过，才标记为「已实现」。UI 占位、设计说明、接口草稿不计入完成。实体设备相关行为在真机验收前仍标记为「待真机验证」。
 
-## Product-wide interaction model
-One conversation is the command surface. The orchestrator should infer and coordinate experts, teams, skills, workflows, MCP tools, project context, memory retrieval and Phone Agent. Switching conversations must not destroy shared memory or interrupt background tasks. Project data remains isolated unless the user explicitly requests cross-project retrieval.
+## 已实现
 
-## Implemented foundations
-- OpenAI-compatible chat endpoint and encrypted local API key.
-- Basic local chat history, custom expert prompts and local skills.
-- JSON backup/restore for the currently supported local preferences.
-- CI debug APK build.
-- Phone Agent accessibility-service declaration, explicit user-triggered screen text capture, temporary single/task grants, revocation, basic visible-text click primitive, high-risk keyword guard and local audit trail.
+### 核心与本地安全
+- [x] Kotlin + Jetpack Compose Android 应用。
+- [x] OpenAI Chat Completions 兼容模型配置与连接测试。
+- [x] Android Keystore AES-GCM API Key 加密。
+- [x] 模型网络请求运行于 IO dispatcher。
+- [x] 本地 JSON 备份/恢复初版，API Key 不进入备份。
 
-## In progress / incomplete
-- Phone Agent natural-language planner, task orchestration, robust action verification, stop control, exception recovery, sensitive-content redaction and complete risk review.
-- Basic multi-conversation persistence, switching, deletion, title/content search and legacy single-history migration.
-- Manual global memory editor injected into model system context. Automatic extraction, semantic retrieval, per-item editing and deletion remain incomplete.
-- Project spaces and project-level data isolation.
-- Expert lifecycle, expert teams and multi-agent coordination.
-- Skills repository import, provenance, version/dependency checks and sandboxing.
-- Workflow editor and durable task scheduler.
-- Knowledge ingestion, document parsing, vector indexing and RAG.
-- MCP local/remote transports and tool permission management.
-- Model provider profiles, routing, failover, budgets and usage metering.
-- Git provider integration and repository operations.
-- AI code workspace with patch review, isolated build/test, approval and rollback.
-- Works/artifact library and export.
-- Capability catalog/community.
-- Voice input/output, notifications and background task recovery.
-- Database migration, complete backup/restore and device migration.
-- Full automated tests and physical-device acceptance.
+### 对话与跨会话记忆
+- [x] 多会话本地持久化、创建、切换、删除。
+- [x] 会话标题/消息内容搜索。
+- [x] 旧版单一 messages 历史迁移为默认会话。
+- [x] 手动全局记忆编辑与跨会话 system context 注入。
+- [x] 请求绑定发起时的 conversation ID，切换会话不把迟到回复写入错误窗口。
+- [ ] 自动记忆抽取、语义召回、来源标注和单条记忆管理。
 
-## Phone Agent authorization decision
-- No forced per-step confirmation for ordinary low-risk actions.
-- User may grant a single operation or continuous authorization for the current task.
-- Temporary grants can be revoked and expire; they do not silently become permanent.
-- The service does not inspect accessibility event content automatically. Screen reading is initiated by the user or an explicitly authorized task.
-- Payment, transfer, credentials, verification codes and sensitive-data disclosure remain user-confirmed actions.
-- The user can interrupt execution. High-risk actions must be handed back to the user.
-- Accessibility APIs are not universal; use Android intents and supported app/system APIs where appropriate.
+### 专家与技能
+- [x] 内置专家入口与自定义专家提示词。
+- [x] 本地内置技能和自定义技能创建/删除。
+- [ ] 专家生命周期、专家团队、协作调度、导入导出。
+- [ ] 外部 Skill 导入、来源/版本/依赖验证、权限审查和隔离测试。
 
-## Validation rule
-A CI success means the APK compiled and packaged in GitHub Actions. It does not prove real-device behavior. Any feature depending on OEM accessibility behavior, background execution, networking or data migration needs physical-device testing.
+### 语音与交互
+- [x] Android 系统语音识别入口，按住录音、松开停止并发送。
+- [x] 麦克风运行时权限请求。
+- [x] 录音状态缩放/颜色动画与触觉反馈。
+- [x] adjustResize 与 IME inset 输入区避让。
+- [x] 新消息列表平滑滚动。
+- [ ] 流式语音转写预览、语音输出、语音设置。
+- [ ] 实体设备键盘、语音识别兼容性和交互流畅度验收。
+
+### Phone Agent
+- [x] AccessibilityService 注册与用户手动授权入口。
+- [x] 用户主动读取当前窗口可访问文本，跳过密码字段。
+- [x] 基础可见文本点击能力。
+- [x] 临时单次/任务授权、撤销和本地审计。
+- [ ] 自然语言任务规划与动作编排。
+- [ ] 动作前目标校验、动作后结果验证、停止控制和异常恢复。
+- [ ] 风险分类、敏感内容脱敏与真机应用适配。
+
+### 工程交付
+- [x] GitHub Actions debug APK 构建与 artifact 上传。
+- [ ] 自动化单元、集成和 UI 测试。
+- [ ] 实体设备安装、升级、数据迁移、权限和功耗验收。
+
+## 未实现能力清单
+
+### 1. 数据层与本地知识
+- Room 数据库替换当前 SharedPreferences/JSON 会话存储。
+- 数据库 schema 版本、可回滚迁移、崩溃安全写入。
+- 附件管理、文件引用、完整备份校验和设备迁移。
+- PDF、DOCX、XLSX、PPTX、TXT、Markdown、网页等导入与解析。
+- 文档分块、全文索引/向量索引、检索排序、RAG 上下文引用。
+- 删除文档时同步清理索引和派生缓存。
+
+### 2. 对话与记忆
+- 流式响应、停止生成、重试、超时取消。
+- 消息编辑、重新生成、版本分支、草稿持久化。
+- Token 预算、动态上下文裁剪、模型上下文窗口适配。
+- 自动记忆抽取、语义检索、来源/时间/置信度。
+- 单条记忆编辑、删除、导出和项目级记忆隔离。
+- 后台请求状态持久化，切换窗口或 Activity 重建不丢任务状态。
+
+### 3. 项目空间
+- 项目创建、重命名、归档、删除。
+- 项目内会话、记忆、知识库、专家、技能和文件关联。
+- 默认项目隔离，跨项目检索必须用户主动授权。
+
+### 4. 专家与多智能体
+- 专家配置生命周期与版本管理。
+- 专家团队角色、任务分解、并行执行、结果汇总。
+- 预算、超时、失败恢复与调用轨迹。
+- 专家模板安全导入导出。
+
+### 5. Skills 与工作流
+- 外部技能仓库导入、来源和版本校验。
+- 依赖声明、权限清单、风险提示、隔离验证。
+- 工作流可视化编辑器、条件/循环/审批节点。
+- 可持久化任务执行、暂停/恢复、重试、取消和日志。
+
+### 6. MCP 与模型路由
+- MCP 本地/远程传输、服务发现和工具 schema。
+- 每个工具独立授权、调用预览、审计与撤销。
+- 不假定 Android 可直接运行任意本地 MCP Server。
+- 多模型服务商、多 Key、路由、故障切换。
+- Token、费用、预算与速率限制统计。
+
+### 7. Git 与 AI 开发工作台
+- GitHub/GitLab/Gitee 用户授权与凭据安全存储。
+- 仓库浏览、搜索、clone、pull、push、commit、branch。
+- 手机端代码编辑、diff、冲突处理、提交历史与回滚。
+- AI 补丁预览、变更影响说明、权限检查。
+- 隔离构建/测试、用户明确批准、快照和回滚。
+- 不允许 AI 静默扩大权限或直接执行未审查任意代码。
+
+### 8. Phone Agent 完整化
+- 单一对话入口解析目标、规划步骤并选择可用动作。
+- 普通低风险动作连续执行，不为每一步弹窗。
+- 用户单次/任务授权、随时停止、授权过期和撤销。
+- 新出现的高风险动作必须重新交还用户确认。
+- 执行前检查目标，执行后检查结果，异常/偏离目标自动暂停。
+- 支持 Android Intent 和公开 API 优先，Accessibility 作为受限补充。
+- 日志、可撤销操作和敏感数据本地保护。
+
+### 9. 后台、语音与产物
+- WorkManager/前台服务按任务类型持久化执行，避免无意义常驻。
+- 通知、任务恢复、失败重试和用户取消。
+- TTS 语音输出、播放控制和语音设置。
+- 作品/产物库、文件导出、版本和分享。
+- 能力目录/社区、安装来源和权限透明。
+
+### 10. 质量、性能与适配
+- 单元测试、网络层测试、数据迁移测试、Compose UI 测试。
+- 性能基线：冷启动、滚动帧率、内存、CPU、网络唤醒和耗电。
+- 大会话列表分页/惰性加载、后台序列化、缓存边界。
+- 手机、平板、折叠屏布局与中英文。
+- 无障碍权限、系统语音识别、厂商后台限制专项验收。
+
+## 产品级交互约束
+
+1. **一个自然语言入口**：专家、团队、Skills、工作流、MCP、项目记忆与 Phone Agent 最终都从统一对话入口调度。
+2. **项目默认隔离**：跨项目调用必须由用户主动允许。
+3. **任务不随窗口切换而停止**：对话 UI 与任务生命周期分离。
+4. **用户自选模型**：不建立 Nestro 托管推理后端或强制账号体系。
+5. **本地优先**：API Key、记忆和文件默认留在设备；向外发送内容前应清楚知道目标服务。
+6. **安全边界**：AI 可以自主规划，但不能自行扩大权限。支付、转账、密码、验证码、敏感数据披露等高风险操作必须用户确认。
+7. **性能约束**：不为未使用的能力启动常驻轮询；网络与文件任务不占主线程；用实测数据验证功耗和流畅度。
+
+## 开发顺序
+
+1. 先完成对话底座：流式输出、取消、错误恢复、消息状态和上下文预算。
+2. 建立 Room 数据层与可靠迁移，再接入项目空间和知识库。
+3. 完成专家团队、Skills 安全导入和工作流引擎。
+4. 建立 MCP 权限层、模型路由和使用统计。
+5. 完成 Git 工作台与 AI 补丁审查/回滚闭环。
+6. 完成 Phone Agent 自然语言规划与可验证执行。
+7. 补齐通知、语音输出、产物库和社区能力。
+8. 自动化测试、性能基准和实体设备验收。
+
+## 验收规则
+
+- 代码合并不等于功能验收。
+- CI 成功只证明云端编译与打包通过。
+- 涉及键盘、麦克风、无障碍、后台任务、通知、耗电和厂商系统限制的功能，必须在实体设备验证。
+- 路线图中的未实现项只有在代码、测试和验收证据齐全后才能移入「已实现」。
