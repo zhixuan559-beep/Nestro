@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.phone.PhoneAgentService
+import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
 import android.net.Uri
@@ -11,7 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -87,6 +91,7 @@ fun NestroApp() {
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
+    val chatListState = rememberLazyListState()
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -133,6 +138,52 @@ fun NestroApp() {
         experts = loadExperts(prefs)
         expertPrompts = loadExpertPrompts(prefs)
         status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else "先连接你自己的模型"
+    }
+
+
+    val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
+        val prompt = rawPrompt.trim()
+        if (prompt.isBlank() || busy) return@send
+        draft = ""
+        val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
+        messages = messages + user
+        conversations = saveConversationMessages(prefs, activeConversationId, messages)
+        if (config.apiKey.isBlank() || config.model.isBlank()) {
+            status = "请先配置模型 API"
+            messages = messages + ChatMessage(
+                UUID.randomUUID().toString(), "assistant",
+                "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
+            )
+            conversations = saveConversationMessages(prefs, activeConversationId, messages)
+        } else {
+            busy = true
+            val requestConversationId = activeConversationId
+            val requestHistory = messages.toList()
+            val requestSystemContext = listOf(
+                "全局记忆（跨会话共享，仅作为用户背景参考）：\\n" + globalMemory,
+                expertPrompts[selectedExpert].orEmpty(),
+                skills[selectedSkill].orEmpty()
+            ).filter { it.isNotBlank() }.joinToString("\\n\\n")
+            scope.launch {
+                val answer = withContext(Dispatchers.IO) {
+                    runCatching { OpenAiClient.complete(config, requestHistory, requestSystemContext) }
+                }
+                val assistantMessage = ChatMessage(
+                    UUID.randomUUID().toString(), "assistant",
+                    answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
+                )
+                val completedHistory = requestHistory + assistantMessage
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
+                if (activeConversationId == requestConversationId) messages = completedHistory
+                status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(messages.size, busy) {
+        val lastIndex = messages.lastIndex + if (busy) 1 else 0
+        if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
     }
 
     MaterialTheme(
@@ -213,7 +264,8 @@ fun NestroApp() {
                                 }
                             } else {
                                 LazyColumn(
-                                    Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+                                    state = chatListState,
+                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(messages, key = { it.id }) { msg ->
@@ -222,7 +274,7 @@ fun NestroApp() {
                                     if (busy) item { Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp)) }
                                 }
                             }
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
                                 Row(
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -231,63 +283,26 @@ fun NestroApp() {
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
-                                OutlinedTextField(
-                                    value = draft, onValueChange = { draft = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    placeholder = { Text("问点什么…", color = Muted) },
-                                    trailingIcon = {
-                                        IconButton(
-                                            enabled = draft.isNotBlank() && !busy,
-                                            onClick = {
-                                                val prompt = draft.trim()
-                                                draft = ""
-                                                val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
-                                                messages = messages + user
-                                                conversations = saveConversationMessages(prefs, activeConversationId, messages)
-                                                if (config.apiKey.isBlank() || config.model.isBlank()) {
-                                                    status = "请先配置模型 API"
-                                                    messages = messages + ChatMessage(
-                                                        UUID.randomUUID().toString(), "assistant",
-                                                        "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
-                                                    )
-                                                    conversations = saveConversationMessages(prefs, activeConversationId, messages)
-                                                } else {
-                                                    busy = true
-                                                    val requestConversationId = activeConversationId
-                                                    val requestHistory = messages.toList()
-                                                    val requestSystemContext = listOf(
-                                                        "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                                                        expertPrompts[selectedExpert].orEmpty(),
-                                                        skills[selectedSkill].orEmpty()
-                                                    ).filter { it.isNotBlank() }.joinToString("\n\n")
-                                                    scope.launch {
-                                                        val answer = withContext(Dispatchers.IO) {
-                                                            runCatching { OpenAiClient.complete(config, requestHistory, requestSystemContext) }
-                                                        }
-                                                        val assistantMessage = ChatMessage(
-                                                            UUID.randomUUID().toString(), "assistant",
-                                                            answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
-                                                        )
-                                                        val completedHistory = requestHistory + assistantMessage
-                                                        conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
-                                                        if (activeConversationId == requestConversationId) {
-                                                            messages = completedHistory
-                                                        }
-                                                        status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
-                                                        busy = false
-                                                    }
-                                                }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    VoiceInputButton(enabled = !busy, onResult = { spoken -> sendPrompt(spoken) })
+                                    OutlinedTextField(
+                                        value = draft, onValueChange = { draft = it },
+                                        modifier = Modifier.weight(1f),
+                                        placeholder = { Text("输入或按住说话…", color = Muted) },
+                                        trailingIcon = {
+                                            IconButton(enabled = draft.isNotBlank() && !busy, onClick = { sendPrompt(draft) }) {
+                                                Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
                                             }
-                                        ) { Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint) }
-                                    },
-                                    shape = RoundedCornerShape(22.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Mint, unfocusedBorderColor = Line,
-                                        focusedTextColor = Ink, unfocusedTextColor = Ink,
-                                        cursorColor = Mint
+                                        },
+                                        shape = RoundedCornerShape(22.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Mint, unfocusedBorderColor = Line,
+                                            focusedTextColor = Ink, unfocusedTextColor = Ink,
+                                            cursorColor = Mint
+                                        )
                                     )
-                                )
-                                Text("对话记录保存在本机；API Key 使用 Android Keystore 加密。", color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                }
+                                Text("语音在本机识别后发送；API Key 与对话记录保存在本机。", color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
                         "models" -> ModelManager(config, onSave = { newConfig ->
