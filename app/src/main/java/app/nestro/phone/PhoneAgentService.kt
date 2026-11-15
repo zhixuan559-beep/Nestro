@@ -58,8 +58,9 @@ class PhoneAgentService : AccessibilityService() {
         require(!isHighRisk(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
-        val node = findVisibleNode(root, normalized) { it.isClickable } ?: return false
-        val success = clickableAncestor(node)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+        val node = findVisibleNode(root, normalized) { true } ?: return false
+        val target = clickableAncestor(node) ?: return false
+        val success = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         consumeSingleGrantIfNeeded()
         audit("CLICK", normalized)
         return success
@@ -72,9 +73,10 @@ class PhoneAgentService : AccessibilityService() {
         require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
-        val node = findVisibleNode(root, target) { it.isEditable && it.isEnabled && !it.isPassword } ?: return false
+        val node = findEditableField(root, target) ?: return false
         val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
-        val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        val performed = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        val success = performed && node.text?.toString() == value
         consumeSingleGrantIfNeeded()
         audit("SET_TEXT", "字段=$target，字符数=" + value.length)
         return success
@@ -135,9 +137,37 @@ class PhoneAgentService : AccessibilityService() {
 
     private fun clickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
-        repeat(8) { if (current == null || current!!.isClickable) return current; current = current!!.parent }
-        return current
+        repeat(8) {
+            val item = current ?: return null
+            if (item.isClickable) return item
+            current = item.parent
+        }
+        return null
     }
+
+    private fun findEditableField(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        if (node.isVisibleToUser && node.isEditable && node.isEnabled && !node.isPassword) {
+            val hint = if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText?.toString().orEmpty() else ""
+            if (hint.equals(label, true) || node.contentDescription?.toString()?.equals(label, true) == true || node.text?.toString()?.equals(label, true) == true) return node
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val direct = findEditableField(child, label)
+            if (direct != null) return direct
+            val childLabel = child.text?.toString()?.trim().orEmpty().equals(label, true) || child.contentDescription?.toString()?.trim().orEmpty().equals(label, true)
+            if (childLabel) {
+                for (j in 0 until child.childCount) {
+                    val field = child.getChild(j) ?: continue
+                    if (field.isVisibleToUser && field.isEditable && field.isEnabled && !field.isPassword) return field
+                }
+            }
+        }
+        return null
+    }
+
+    fun hasActiveWindow(): Boolean = rootInActiveWindow != null
+
+    fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
 
     private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isVisibleToUser && node.isScrollable) return node
