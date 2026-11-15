@@ -55,6 +55,7 @@ private val Mint = androidx.compose.ui.graphics.Color(0xFF34D399)
 private val Ink = androidx.compose.ui.graphics.Color(0xFFE8EAED)
 private val Muted = androidx.compose.ui.graphics.Color(0xFF8A8F98)
 private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
+private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 
 private data class ChatMessage(val id: String, val role: String, val content: String)
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>)
@@ -289,8 +290,18 @@ fun NestroApp() {
                                         modifier = Modifier.weight(1f),
                                         placeholder = { Text("输入或按住说话…", color = Muted) },
                                         trailingIcon = {
-                                            IconButton(enabled = draft.isNotBlank() && !busy, onClick = { sendPrompt(draft) }) {
-                                                Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                            if (busy) {
+                                                IconButton(onClick = {
+                                                    stopRequested = true
+                                                    status = "正在停止…"
+                                                    OpenAiClient.cancel()
+                                                }) {
+                                                    Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
+                                                }
+                                            } else {
+                                                IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
+                                                    Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                                }
                                             }
                                         },
                                         shape = RoundedCornerShape(22.dp),
