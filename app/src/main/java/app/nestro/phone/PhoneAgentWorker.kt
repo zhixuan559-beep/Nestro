@@ -25,7 +25,7 @@ class PhoneAgentWorker(
         }
 
         return try {
-            val result = PhoneAgentExecutor.resume(dao, taskId, afterUserHandoff, allowRetryCurrentAction)
+            val result = PhoneAgentAgent.run(applicationContext, dao, taskId, afterUserHandoff, allowRetryCurrentAction)
             when (result.outcome) {
                 PhoneAgentExecutor.Outcome.COMPLETED,
                 PhoneAgentExecutor.Outcome.WAITING_USER,

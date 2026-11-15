@@ -1621,6 +1621,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
+                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
@@ -1630,12 +1631,12 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             style = MaterialTheme.typography.bodySmall
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (canResume && task.status in setOf(
+                            if ((canResume || canStartAgent) && task.status in setOf(
                                     PhoneAgentTaskStore.STATUS_PLANNED,
                                     PhoneAgentTaskStore.STATUS_PAUSED,
                                     PhoneAgentTaskStore.STATUS_RUNNING,
                                     PhoneAgentTaskStore.STATUS_WAITING_USER
-                                )
+                                ) || canStartAgent
                             ) {
                                 Button(
                                     onClick = {
@@ -1649,7 +1650,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when (task.status) { PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; else -> "继续任务" }) }
+                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
