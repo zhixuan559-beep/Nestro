@@ -169,8 +169,10 @@ fun NestroApp() {
                 val result = runCatching {
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer += chunk
-                        if (activeConversationId == requestConversationId) {
-                            messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer)
+                        withContext(Dispatchers.Main) {
+                            if (activeConversationId == requestConversationId) {
+                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer)
+                            }
                         }
                     }
                 }
