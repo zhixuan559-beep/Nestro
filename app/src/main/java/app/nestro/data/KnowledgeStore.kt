@@ -17,7 +17,7 @@ object KnowledgeStore {
     private const val MAX_TEXT_CHARS = 500_000
     private const val CHUNK_SIZE = 1_000
     private const val CHUNK_OVERLAP = 120
-    private const val MAX_CHUNKS = 500
+    private const val MAX_CHUNKS = 600
 
     suspend fun importText(resolver: ContentResolver, uri: Uri, projectId: String, dao: NestroDao): KnowledgeImportResult =
         withContext(Dispatchers.IO) {
@@ -69,11 +69,25 @@ object KnowledgeStore {
 
     suspend fun retrieve(dao: NestroDao, projectId: String, prompt: String): String =
         withContext(Dispatchers.IO) {
-            val terms = prompt.split(Regex("[\\s，。！？；：、,.!?;:]+"))
-                .map { it.trim().take(36) }.filter { it.length >= 2 }.distinct().take(6)
+            val candidates = linkedSetOf<String>()
+            prompt.split(Regex("[\\s，。！？；：、,.!?;:]+")).forEach { segment ->
+                Regex("[A-Za-z0-9_-]{2,}").findAll(segment).forEach { candidates += it.value.take(32) }
+                val cjk = segment.filter { char ->
+                    val code = char.code
+                    code in 0x3400..0x9FFF || code in 0xF900..0xFAFF
+                }
+                var offset = 0
+                while (offset < cjk.length) {
+                    val end = minOf(offset + 4, cjk.length)
+                    if (end - offset >= 2) candidates += cjk.substring(offset, end)
+                    offset += 3
+                }
+            }
+            val ignored = setOf("帮我", "请帮", "一下", "这个", "那个", "进行", "关于", "如何", "可以", "里面", "内容", "文档")
+            val terms = candidates.filterNot { it in ignored }.take(10)
             if (terms.isEmpty()) return@withContext ""
             val found = linkedMapOf<String, KnowledgeChunkEntity>()
-            terms.forEach { term -> dao.searchKnowledgeChunks(projectId, term, 5).forEach { found[it.id] = it } }
+            terms.forEach { term -> dao.searchKnowledgeChunks(projectId, term.replace("%", "").replace("_", ""), 4).forEach { found[it.id] = it } }
             if (found.isEmpty()) return@withContext ""
             val documents = dao.knowledgeDocuments(projectId).associateBy { it.id }
             val snippets = found.values.take(6).joinToString("\n\n") { chunk ->
@@ -97,6 +111,6 @@ object KnowledgeStore {
             if (end >= text.length) break
             start = maxOf(start + 1, end - CHUNK_OVERLAP)
         }
-        result
+        return result
     }
 }

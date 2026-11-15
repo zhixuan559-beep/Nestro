@@ -14,8 +14,6 @@ import androidx.room.Transaction
 import androidx.room.Dao
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -43,22 +41,6 @@ data class MessageEntity(
     val position: Int,
     val role: String,
     val content: String
-)
-
-@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["contentHash"], unique = true)])
-data class KnowledgeDocumentEntity(
-    @PrimaryKey val id: String, val projectId: String, val name: String,
-    val mimeType: String, val sizeBytes: Long, val importedAt: Long, val contentHash: String
-)
-
-@Entity(
-    tableName = "knowledge_chunks",
-    foreignKeys = [ForeignKey(entity = KnowledgeDocumentEntity::class, parentColumns = ["id"], childColumns = ["documentId"], onDelete = ForeignKey.CASCADE)],
-    indices = [Index(value = ["documentId"]), Index(value = ["projectId"])]
-)
-data class KnowledgeChunkEntity(
-    @PrimaryKey val id: String, val documentId: String, val projectId: String,
-    val position: Int, val content: String
 )
 
 @Entity(tableName = "projects")
@@ -107,51 +89,17 @@ interface NestroDao {
 
     @Query("DELETE FROM projects WHERE id IN (:ids)")
     suspend fun deleteProjects(ids: List<String>)
-
-    @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId ORDER BY importedAt DESC")
-    suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
-
-    @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
-    suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
-
-    @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertKnowledgeChunks(chunks: List<KnowledgeChunkEntity>)
-
-    @Transaction
-    suspend fun insertKnowledgeBundle(document: KnowledgeDocumentEntity, chunks: List<KnowledgeChunkEntity>) {
-        insertKnowledgeDocument(document)
-        insertKnowledgeChunks(chunks)
-    }
-
-    @Query("DELETE FROM knowledge_documents WHERE id = :documentId")
-    suspend fun deleteKnowledgeDocument(documentId: String)
-
-    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND content LIKE '%' || :term || '%' LIMIT :limit")
-    suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class],
-    version = 2,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class],
+    version = 1,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS knowledge_documents (id TEXT NOT NULL, projectId TEXT NOT NULL, name TEXT NOT NULL, mimeType TEXT NOT NULL, sizeBytes INTEGER NOT NULL, importedAt INTEGER NOT NULL, contentHash TEXT NOT NULL, PRIMARY KEY(id))")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_documents_projectId ON knowledge_documents(projectId)")
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_knowledge_documents_contentHash ON knowledge_documents(contentHash)")
-                db.execSQL("CREATE TABLE IF NOT EXISTS knowledge_chunks (id TEXT NOT NULL, documentId TEXT NOT NULL, projectId TEXT NOT NULL, position INTEGER NOT NULL, content TEXT NOT NULL, PRIMARY KEY(id), FOREIGN KEY(documentId) REFERENCES knowledge_documents(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_documentId ON knowledge_chunks(documentId)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
-            }
-        }
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
@@ -160,7 +108,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     context.applicationContext,
                     NestroDatabase::class.java,
                     "nestro_local.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).build().also { instance = it }
             }
     }
 }
