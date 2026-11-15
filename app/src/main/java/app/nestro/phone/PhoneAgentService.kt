@@ -46,25 +46,110 @@ class PhoneAgentService : AccessibilityService() {
         }
     }
 
+    fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
+    fun isTaskStopped(): Boolean = getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean("phone_task_stop_requested", false)
+    fun clearTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().remove("phone_task_stop_requested").apply() }
+    fun requestTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean("phone_task_stop_requested", true).apply(); audit("TASK_STOP", "用户请求停止当前任务") }
+
     fun clickVisibleText(exactText: String): Boolean {
         val normalized = exactText.trim()
         require(normalized.isNotBlank() && normalized.length <= 80) { "目标文本无效" }
         require(!isHighRisk(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
-        val prefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
-        val taskUntil = prefs.getLong("phone_task_grant_until", 0L)
-        val single = prefs.getBoolean("phone_single_grant", false)
-        require(taskUntil > System.currentTimeMillis() || single) { "没有有效的操作授权" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
-        val node = root.findAccessibilityNodeInfosByText(normalized)
-            .firstOrNull { it.isVisibleToUser && it.isClickable }
-            ?: return false
-        val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        if (single && taskUntil <= System.currentTimeMillis()) {
-            prefs.edit().remove("phone_single_grant").apply()
-        }
+        val node = findVisibleNode(root, normalized) { it.isClickable } ?: return false
+        val success = clickableAncestor(node)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+        consumeSingleGrantIfNeeded()
         audit("CLICK", normalized)
         return success
     }
+
+    fun setTextOnVisibleField(label: String, value: String): Boolean {
+        val target = label.trim()
+        require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
+        require(value.length <= 1000) { "输入内容过长" }
+        require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        val root = rootInActiveWindow ?: return false
+        val node = findVisibleNode(root, target) { it.isEditable && it.isEnabled && !it.isPassword } ?: return false
+        val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
+        val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        consumeSingleGrantIfNeeded()
+        audit("SET_TEXT", "字段=$target，字符数=" + value.length)
+        return success
+    }
+
+    fun scroll(direction: String): Boolean {
+        require(direction == "forward" || direction == "backward") { "滚动方向无效" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        val root = rootInActiveWindow ?: return false
+        val node = findScrollableNode(root) ?: return false
+        val action = if (direction == "forward") AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+        val success = node.performAction(action)
+        consumeSingleGrantIfNeeded()
+        audit("SCROLL", direction)
+        return success
+    }
+
+    fun openUrl(rawUrl: String): Boolean {
+        val uri = android.net.Uri.parse(rawUrl.trim())
+        require(uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) { "仅允许打开 HTTP/HTTPS 网页" }
+        require(!uri.host.isNullOrBlank()) { "网址无效" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        consumeSingleGrantIfNeeded()
+        audit("OPEN_URL", uri.host ?: "网页")
+        return true
+    }
+
+    fun launchPackage(packageName: String): Boolean {
+        require(packageName.matches(Regex("[A-Za-z0-9_]+(\\\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        consumeSingleGrantIfNeeded()
+        audit("LAUNCH_APP", packageName)
+        return true
+    }
+
+    fun pressBack(): Boolean {
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        val success = performGlobalAction(GLOBAL_ACTION_BACK)
+        consumeSingleGrantIfNeeded()
+        audit("BACK", "返回")
+        return success
+    }
+
+    fun verifyVisibleText(expected: String): Boolean {
+        val needle = expected.trim()
+        if (needle.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val found = findVisibleNode(root, needle) { true } != null
+        audit("VERIFY", "目标文本=" + needle.take(60) + "，结果=" + found)
+        return found
+    }
+
+    private fun findVisibleNode(root: AccessibilityNodeInfo, text: String, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? =
+        root.findAccessibilityNodeInfosByText(text).firstOrNull { it.isVisibleToUser && predicate(it) && (it.text?.toString()?.trim()?.equals(text, true) == true || it.contentDescription?.toString()?.trim()?.equals(text, true) == true) }
+
+    private fun clickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        repeat(8) { if (current == null || current!!.isClickable) return current; current = current!!.parent }
+        return current
+    }
+
+    private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isVisibleToUser && node.isScrollable) return node
+        for (i in 0 until node.childCount) { val child = node.getChild(i) ?: continue; val found = findScrollableNode(child); if (found != null) return found }
+        return null
+    }
+
+    private fun consumeSingleGrantIfNeeded() {
+        val p = getSharedPreferences("nestro_local", MODE_PRIVATE)
+        if (p.getLong("phone_task_grant_until", 0L) <= System.currentTimeMillis() && p.getBoolean("phone_single_grant", false)) p.edit().remove("phone_single_grant").apply()
+    }
+
+    private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin").any { value.contains(it, true) }
 
     private fun isHighRisk(value: String): Boolean {
         val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "立即购买", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕")
