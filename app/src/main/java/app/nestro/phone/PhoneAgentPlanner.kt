@@ -13,10 +13,10 @@ object PhoneAgentPlanner {
         val normalized = text.lowercase()
         val category = when {
             listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any { normalized.contains(it) } -> Category.SHOPPING
-            listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any(normalized::contains) -> Category.FOOD_ORDER
-            listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any(normalized::contains) -> Category.BOOKING
-            listOf("搜索", "查找", "调查", "对比", "资料", "网页").any(normalized::contains) -> Category.WEB_RESEARCH
-            listOf("填写", "提交表单", "申请", "报名").any(normalized::contains) -> Category.FORM
+            listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any { normalized.contains(it) } -> Category.FOOD_ORDER
+            listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any { normalized.contains(it) } -> Category.BOOKING
+            listOf("搜索", "查找", "调查", "对比", "资料", "网页").any { normalized.contains(it) } -> Category.WEB_RESEARCH
+            listOf("填写", "提交表单", "申请", "报名").any { normalized.contains(it) } -> Category.FORM
             else -> Category.GENERAL
         }
         val steps = when (category) {
@@ -76,7 +76,7 @@ Phone Agent 目标执行约束：
 - 购物/订餐必须尽可能比较多个可用来源的最终到手价、配送费、优惠、时效、库存与商家信息；区分实时核验数据和无法访问的数据，不得编造。
 - 先规划，再逐步执行；每次动作前确认目标页面/控件，动作后检查页面状态。失败、页面偏离或出现登录/验证码/风控时暂停并交还用户。
 - 普通低风险动作可连续执行；支付、转账、密码、验证码、最终下单/预订/提交等高风险或不可逆步骤必须停下，展示完整信息并取得用户明确确认。
-- 不得替用户输入支付密码/验证码，不得绕过平台安全验证，不得声称未核验的操作已完成。
+- 不得替用户输入支付密码/验证码，不得绕过平台安全验证，不得声称未核验的操作已完成。手机号、邮箱、地址、姓名、身份证、银行卡等个人信息默认不自动读取或外发，确需填写时必须先向用户确认具体字段与内容。
 - 任务步骤参考：
 ${steps}
 - 只有获得工具/页面的实际结果后，才能报告该步骤完成。

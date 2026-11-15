@@ -1649,6 +1649,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
+                                    PhoneAgentWorkScheduler.cancel(context, task.id)
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
