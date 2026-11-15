@@ -95,6 +95,7 @@ fun NestroApp() {
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
+    var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
@@ -301,7 +302,12 @@ fun NestroApp() {
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    VoiceInputButton(enabled = !busy, onResult = { spoken -> sendPrompt(spoken) })
+                                    VoiceInputButton(
+                                        enabled = !busy,
+                                        onPartialResult = { spoken -> draft = spoken },
+                                        onResult = { spoken -> draft = ""; sendPrompt(spoken) },
+                                        onStatus = { voiceStatus = it }
+                                    )
                                     OutlinedTextField(
                                         value = draft, onValueChange = { draft = it },
                                         modifier = Modifier.weight(1f),
@@ -329,7 +335,7 @@ fun NestroApp() {
                                         )
                                     )
                                 }
-                                Text("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。", color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
                         "models" -> ModelManager(config, onSave = { newConfig ->
