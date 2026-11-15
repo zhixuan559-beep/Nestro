@@ -58,8 +58,7 @@ private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
 private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 
 private data class ChatMessage(val id: String, val role: String, val content: String)
-private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
-private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long)
+private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>)
 private data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
 
 @Composable
@@ -73,12 +72,6 @@ fun NestroApp() {
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
-    var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
-    var activeProjectId by remember { mutableStateOf("default") }
-    var showProjectDialog by remember { mutableStateOf(false) }
-    var projectDraftName by remember { mutableStateOf("") }
-    var projectDraftInstructions by remember { mutableStateOf("") }
-    var editingProjectId by remember { mutableStateOf("") }
     var activeConversationId by remember { mutableStateOf("") }
     var conversationSearch by remember { mutableStateOf("") }
     var showRenameConversation by remember { mutableStateOf(false) }
@@ -127,8 +120,6 @@ fun NestroApp() {
                 require(raw.length <= 10_000_000) { "备份文件过大" }
                 restoreLocalBackup(prefs, raw)
                 conversations = loadConversations(prefs)
-                projects = loadProjects(prefs)
-                activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
                 globalMemory = prefs.getString("global_memory_v1", "") ?: ""
@@ -144,12 +135,8 @@ fun NestroApp() {
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
         conversations = loadConversations(prefs)
-        projects = loadProjects(prefs)
-        activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
         activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
         messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
-        activeProjectId = conversations.firstOrNull { it.id == activeConversationId }?.projectId ?: activeProjectId
-        prefs.edit().putString("active_project_id", activeProjectId).apply()
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
@@ -178,7 +165,6 @@ fun NestroApp() {
             val requestSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
-                projects.firstOrNull { it.id == activeProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
             scope.launch {
@@ -199,7 +185,7 @@ fun NestroApp() {
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, activeProjectId)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
                     stopRequested -> "已停止生成"
@@ -310,7 +296,6 @@ fun NestroApp() {
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
@@ -408,11 +393,11 @@ fun NestroApp() {
                                 )
                                 Button(onClick = {
                                     val id = UUID.randomUUID().toString()
-                                    val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
+                                    val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList())
                                     conversations = listOf(record) + conversations
                                     activeConversationId = id
                                     messages = emptyList()
-                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).apply()
+                                    prefs.edit().putString("active_conversation_id", id).apply()
                                     saveConversationList(prefs, conversations)
                                     page = "home"
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
@@ -420,16 +405,15 @@ fun NestroApp() {
                                 }
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(conversations.filter { record ->
-                                        record.projectId == activeProjectId && (conversationSearch.isBlank() || record.title.contains(conversationSearch, true) ||
-                                            record.messages.any { it.content.contains(conversationSearch, true) })
+                                        conversationSearch.isBlank() || record.title.contains(conversationSearch, true) ||
+                                            record.messages.any { it.content.contains(conversationSearch, true) }
                                     }, key = { it.id }) { record ->
                                         Surface(color = if (record.id == activeConversationId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f).clickable {
                                                     activeConversationId = record.id
-                                                    activeProjectId = record.projectId
                                                     messages = record.messages
-                                                    prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
+                                                    prefs.edit().putString("active_conversation_id", record.id).apply()
                                                     page = "home"
                                                 }) {
                                                     Text(record.title, color = if (record.id == activeConversationId) Mint else Ink)
@@ -441,19 +425,16 @@ fun NestroApp() {
                                                     showRenameConversation = true
                                                 }) { Text("重命名", color = Mint) }
                                                 TextButton(onClick = {
-                                                    val remaining = conversations.filterNot { it.id == record.id }
-                                                    if (activeConversationId == record.id) {
-                                                        val next = remaining.firstOrNull { it.projectId == record.projectId }
-                                                            ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
-                                                        conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
-                                                        activeConversationId = next.id
-                                                        activeProjectId = record.projectId
-                                                        messages = next.messages
-                                                        prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
-                                                    } else {
-                                                        conversations = remaining
+                                                    if (conversations.size > 1) {
+                                                        conversations = conversations.filterNot { it.id == record.id }
+                                                        if (activeConversationId == record.id) {
+                                                            val next = conversations.first()
+                                                            activeConversationId = next.id
+                                                            messages = next.messages
+                                                            prefs.edit().putString("active_conversation_id", next.id).apply()
+                                                        }
+                                                        saveConversationList(prefs, conversations)
                                                     }
-                                                    saveConversationList(prefs, conversations)
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
@@ -481,66 +462,7 @@ fun NestroApp() {
                                 Text("当前为手动记忆。自动提取、语义检索与逐条记忆管理尚未实现。", color = Muted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
-                        "spaces" -> {
-                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("项目空间", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("每个空间拥有独立会话与项目指令。切换空间不会把其他项目的聊天记录注入当前请求。", color = Muted)
-                                Button(onClick = {
-                                    editingProjectId = ""
-                                    projectDraftName = ""
-                                    projectDraftInstructions = ""
-                                    showProjectDialog = true
-                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
-                                    Text("＋ 创建项目空间")
-                                }
-                                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(projects, key = { it.id }) { project ->
-                                        val count = conversations.count { it.projectId == project.id }
-                                        Surface(color = if (project.id == activeProjectId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Column(Modifier.weight(1f).clickable {
-                                                        activeProjectId = project.id
-                                                        prefs.edit().putString("active_project_id", project.id).apply()
-                                                        val target = conversations.firstOrNull { it.projectId == project.id }
-                                                        if (target == null) {
-                                                            val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
-                                                            conversations = listOf(created) + conversations
-                                                            saveConversationList(prefs, conversations)
-                                                            activeConversationId = created.id
-                                                            messages = emptyList()
-                                                        } else {
-                                                            activeConversationId = target.id
-                                                            messages = target.messages
-                                                        }
-                                                        prefs.edit().putString("active_conversation_id", activeConversationId).apply()
-                                                        page = "home"
-                                                    }) {
-                                                        Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
-                                                        Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                                    }
-                                                    TextButton(onClick = {
-                                                        editingProjectId = project.id
-                                                        projectDraftName = project.name
-                                                        projectDraftInstructions = project.instructions
-                                                        showProjectDialog = true
-                                                    }) { Text("编辑", color = Mint) }
-                                                    if (project.id != "default") {
-                                                        TextButton(onClick = {
-                                                            if (count == 0) {
-                                                                projects = projects.filterNot { it.id == project.id }
-                                                                saveProjects(prefs, projects)
-                                                            } else status = "该空间还有对话，暂时不能删除"
-                                                        }) { Text("删除", color = ColorStop) }
-                                                    }
-                                                }
-                                                Text(project.instructions.ifBlank { "尚未设置项目指令" }.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        "spaces" -> SimplePage("项目空间", "项目空间隔离与独立知识库尚未接入。当前版本不会把普通会话伪装成已隔离空间。")
                         "phone" -> PhoneAgentPage(context)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -575,43 +497,6 @@ fun NestroApp() {
                 }
             }
         }
-    }
-
-    if (showProjectDialog) {
-        AlertDialog(
-            onDismissRequest = { showProjectDialog = false },
-            title = { Text(if (editingProjectId.isBlank()) "创建项目空间" else "编辑项目空间") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(projectDraftName, { projectDraftName = it.take(40) }, singleLine = true, label = { Text("项目名称") })
-                    OutlinedTextField(projectDraftInstructions, { projectDraftInstructions = it.take(4000) }, minLines = 4, label = { Text("项目指令（可选）") })
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val name = projectDraftName.trim()
-                    if (name.isNotBlank()) {
-                        if (editingProjectId.isBlank()) {
-                            val project = ProjectRecord(UUID.randomUUID().toString(), name, projectDraftInstructions.trim(), System.currentTimeMillis())
-                            projects = listOf(project) + projects
-                            activeProjectId = project.id
-                            val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
-                            conversations = listOf(conversation) + conversations
-                            activeConversationId = conversation.id
-                            messages = emptyList()
-                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).apply()
-                            saveConversationList(prefs, conversations)
-                            page = "home"
-                        } else {
-                            projects = projects.map { if (it.id == editingProjectId) it.copy(name = name, instructions = projectDraftInstructions.trim()) else it }
-                        }
-                        saveProjects(prefs, projects)
-                    }
-                    showProjectDialog = false
-                }) { Text("保存", color = Mint) }
-            },
-            dismissButton = { TextButton(onClick = { showProjectDialog = false }) { Text("取消") } }
-        )
     }
 
     if (showRenameConversation) {
@@ -951,7 +836,7 @@ private fun loadConversations(prefs: android.content.SharedPreferences): List<Co
             }
             ConversationRecord(
                 item.getString("id"), item.optString("title", "对话"),
-                item.optLong("updated_at", System.currentTimeMillis()), parsed, item.optString("project_id", "default").ifBlank { "default" }
+                item.optLong("updated_at", System.currentTimeMillis()), parsed
             )
         }
     }.getOrDefault(emptyList())
@@ -976,15 +861,15 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
             messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content))
         }
         array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
-            .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messages))
+            .put("updated_at", conversation.updatedAt).put("messages", messages))
     }
     prefs.edit().putString("conversations_v1", array.toString()).apply()
 }
 
-private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>, projectId: String = "default"): List<ConversationRecord> {
+private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>): List<ConversationRecord> {
     val existing = loadConversations(prefs)
     val record = existing.firstOrNull { it.id == activeId }
-        ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList(), projectId)
+        ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList())
     val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
     val updated = record.copy(title = if (record.title == "新对话" || record.title == "旧对话") firstPrompt else record.title,
         updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500))
@@ -992,43 +877,6 @@ private fun saveConversationMessages(prefs: android.content.SharedPreferences, a
     saveConversationList(prefs, next)
     prefs.edit().putString("active_conversation_id", updated.id).apply()
     return next
-}
-
-
-private fun loadProjects(prefs: android.content.SharedPreferences): List<ProjectRecord> {
-    val parsed = runCatching {
-        val array = JSONArray(prefs.getString("projects", "[]"))
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ProjectRecord(item.getString("id"), item.optString("name", "项目").take(40),
-                item.optString("instructions", "").take(4000), item.optLong("created_at", System.currentTimeMillis()))
-        }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
-    }.getOrDefault(emptyList())
-    val all = if (parsed.any { it.id == "default" }) parsed else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    return all.distinctBy { it.id }.take(100)
-}
-
-private fun parseProjects(array: JSONArray?): List<ProjectRecord> {
-    val parsed = if (array == null) emptyList() else runCatching {
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ProjectRecord(item.getString("id"), item.optString("name", "项目"), item.optString("instructions", ""), item.optLong("created_at", System.currentTimeMillis()))
-        }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
-    }.getOrDefault(emptyList())
-    return (if (parsed.any { it.id == "default" }) parsed else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed).take(100)
-}
-
-private fun projectsToJson(projects: List<ProjectRecord>): String {
-    val array = JSONArray()
-    projects.take(100).forEach { project ->
-        array.put(JSONObject().put("id", project.id).put("name", project.name.take(40))
-            .put("instructions", project.instructions.take(4000)).put("created_at", project.createdAt))
-    }
-    return array.toString()
-}
-
-private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>) {
-    prefs.edit().putString("projects", projectsToJson(projects)).apply()
 }
 
 private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
@@ -1080,8 +928,6 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
-    root.put("projects", projectsToJson(loadProjects(prefs)))
-    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     return root.toString(2)
 }
 
@@ -1144,8 +990,6 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("skills", cleanSkills.toString())
-        .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
-        .putString("active_project_id", root.optString("active_project_id", "default"))
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.optString("base_url")
         val restoredModel = root.optString("model")
