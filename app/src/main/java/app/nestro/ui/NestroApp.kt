@@ -19,6 +19,7 @@ import android.content.Context
 import android.net.Uri
 import android.content.Intent
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.security.keystore.KeyGenParameterSpec
@@ -80,6 +81,33 @@ private data class ModelConfig(val baseUrl: String, val model: String, val apiKe
 fun NestroApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var ttsReady by remember { mutableStateOf(false) }
+    val speechEngine = remember(context) {
+        TextToSpeech(context) { result ->
+            if (result == TextToSpeech.SUCCESS) {
+                ttsReady = true
+            }
+        }
+    }
+    DisposableEffect(speechEngine) {
+        onDispose {
+            speechEngine.stop()
+            speechEngine.shutdown()
+            ttsReady = false
+        }
+    }
+    LaunchedEffect(speechEngine, ttsReady) {
+        if (ttsReady) {
+            speechEngine.language = Locale.SIMPLIFIED_CHINESE
+            speechEngine.setSpeechRate(1.0f)
+        }
+    }
+    val speakMessage: (String) -> Unit = { text ->
+        if (ttsReady && text.isNotBlank()) {
+            speechEngine.speak(text.take(4000), TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+        }
+    }
+    val stopSpeaking: () -> Unit = { speechEngine.stop() }
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
     var databaseReady by remember { mutableStateOf(false) }
@@ -507,7 +535,7 @@ fun NestroApp() {
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(messages, key = { it.id }) { msg ->
-                                        MessageBubble(msg, onRetry = {
+                                        MessageBubble(msg, onSpeak = speakMessage, onStopSpeak = stopSpeaking, onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
                                                 val lastUserIndex = messages.indexOfLast { it.role == "user" }
                                                 if (lastUserIndex >= 0) {
@@ -988,7 +1016,7 @@ private fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onRetry: (() -> Unit)? = null) {
+private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onRetry: (() -> Unit)? = null) {
     val user = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
@@ -998,6 +1026,19 @@ private fun MessageBubble(message: ChatMessage, onRetry: (() -> Unit)? = null) {
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
                 Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!user && message.content.isNotBlank() && onSpeak != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { onSpeak.invoke(message.content) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                        Icon(Icons.Outlined.VolumeUp, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("朗读", color = Mint, style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(onClick = { onStopSpeak?.invoke() }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                        Icon(Icons.Outlined.Stop, contentDescription = null, tint = Muted, modifier = Modifier.size(16.dp))
+                        Text("停止", color = Muted, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
             if (!user && message.content.startsWith("请求失败：") && onRetry != null) {
                 TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
