@@ -78,6 +78,7 @@ fun NestroApp() {
     var memoryDraft by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var stopRequested by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("尚未配置模型") }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
@@ -150,38 +151,49 @@ fun NestroApp() {
         conversations = saveConversationMessages(prefs, activeConversationId, messages)
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
-            messages = messages + ChatMessage(
-                UUID.randomUUID().toString(), "assistant",
-                "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
-            )
+            messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
             conversations = saveConversationMessages(prefs, activeConversationId, messages)
         } else {
             busy = true
+            stopRequested = false
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
+            val assistantId = UUID.randomUUID().toString()
             val requestSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
                 skills[selectedSkill].orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n")
             scope.launch {
-                val answer = withContext(Dispatchers.IO) {
-                    runCatching { OpenAiClient.complete(config, requestHistory, requestSystemContext) }
+                var partialAnswer = ""
+                val result = runCatching {
+                    OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
+                        partialAnswer += chunk
+                        if (activeConversationId == requestConversationId) {
+                            messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer)
+                        }
+                    }
                 }
-                val assistantMessage = ChatMessage(
-                    UUID.randomUUID().toString(), "assistant",
-                    answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
-                )
-                val completedHistory = requestHistory + assistantMessage
+                val finalText = when {
+                    result.isSuccess -> result.getOrThrow()
+                    partialAnswer.isNotBlank() -> partialAnswer
+                    else -> "请求失败：\${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
+                }
+                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
                 conversations = saveConversationMessages(prefs, requestConversationId, completedHistory)
                 if (activeConversationId == requestConversationId) messages = completedHistory
-                status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
+                status = when {
+                    stopRequested -> "已停止生成"
+                    result.isSuccess -> "已连接 · 本地保存"
+                    else -> "连接失败"
+                }
                 busy = false
+                stopRequested = false
             }
         }
     }
 
-    LaunchedEffect(messages.size, busy) {
+        LaunchedEffect(messages.size, busy) {
         val lastIndex = messages.lastIndex + if (busy) 1 else 0
         if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
     }
