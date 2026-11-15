@@ -274,6 +274,65 @@ fun NestroApp() {
         val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         messages = messages + user
         conversations = saveConversationMessages(prefs, activeConversationId, messages)
+        val creationKind = when {
+            isCreationIntent(prompt, "专家") -> "expert"
+            isCreationIntent(prompt, "技能") -> "skill"
+            else -> ""
+        }
+        if (creationKind.isNotBlank() && config.apiKey.isNotBlank() && config.model.isNotBlank()) {
+            busy = true
+            stopRequested = false
+            status = if (creationKind == "expert") "正在设计专家…" else "正在设计技能…"
+            val requestConversationId = activeConversationId
+            val requestProjectId = activeProjectId
+            val requestHistory = messages.toList()
+            val existingNames = if (creationKind == "expert") experts.joinToString("、") else skills.keys.joinToString("、")
+            val generatorPrompt = buildString {
+                append("你是 Nestro 的能力设计器。根据用户需求设计一个可直接使用的")
+                append(if (creationKind == "expert") "AI 专家" else "工作技能")
+                append("。只返回一个 JSON 对象，不要 Markdown 代码围栏或解释。字段必须是 name 和 prompt。name 是简短中文名称，prompt 是完整、具体、可执行的角色指令。不要要求扩大手机权限，不要包含可执行代码，不要虚构外部工具。现有名称：")
+                append(existingNames.ifBlank { "无" })
+                append("。名称必须与现有名称不同。")
+            }
+            scope.launch {
+                val generated = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val raw = OpenAiClient.complete(
+                            config,
+                            listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
+                            generatorPrompt
+                        )
+                        parseGeneratedDefinition(raw)
+                    }
+                }
+                val assistantText = when {
+                    stopRequested -> "能力设计已停止。"
+                    generated.isSuccess -> "草案已生成，已打开预览。你可以修改指令，确认后才会保存。"
+                    else -> "生成失败：${generated.exceptionOrNull()?.message ?: "请检查模型是否支持正常文本回复"}"
+                }
+                val completedHistory = requestHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                if (activeConversationId == requestConversationId) messages = completedHistory
+                if (!stopRequested && generated.isSuccess) {
+                    val definition = generated.getOrThrow()
+                    if (creationKind == "expert") {
+                        expertDraft = definition.first
+                        expertPromptDraft = definition.second
+                        showExpertDialog = true
+                    } else {
+                        skillDraftName = definition.first
+                        skillDraftPrompt = definition.second
+                        showSkillDialog = true
+                    }
+                    status = "草案待你确认"
+                } else {
+                    status = if (stopRequested) "已停止生成" else "能力设计失败"
+                }
+                busy = false
+                stopRequested = false
+            }
+            return@send
+        }
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
@@ -906,6 +965,25 @@ private fun SimplePage(title: String, description: String) {
     }
 }
 
+private fun isCreationIntent(prompt: String, target: String): Boolean {
+    val text = prompt.trim()
+    val hasCreationVerb = listOf("创建", "新建", "设计", "生成", "做一个", "帮我做").any { text.contains(it) }
+    val hasNegation = listOf("不要", "不需要", "取消", "别创建").any { text.contains(it) }
+    return text.contains(target) && hasCreationVerb && !hasNegation
+}
+
+private fun parseGeneratedDefinition(raw: String): Pair<String, String> {
+    val start = raw.indexOf('{')
+    val end = raw.lastIndexOf('}')
+    require(start >= 0 && end > start) { "模型没有返回有效 JSON" }
+    val json = JSONObject(raw.substring(start, end + 1))
+    val name = json.optString("name").trim()
+    val prompt = json.optString("prompt").trim()
+    require(name.isNotBlank() && name.length <= 40) { "能力名称为空或过长" }
+    require(prompt.length in 80..8000) { "能力指令长度不符合要求" }
+    return name to prompt
+}
+
 private fun boundedRequestHistory(history: List<ChatMessage>, maxChars: Int = 48000): List<ChatMessage> {
     var remaining = maxChars
     val selected = ArrayList<ChatMessage>(minOf(history.size, 40))
@@ -933,6 +1011,7 @@ private object OpenAiClient {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
         }
+        activeConnection = connection
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
@@ -955,6 +1034,7 @@ private object OpenAiClient {
             return JSONObject(response).getJSONArray("choices").getJSONObject(0)
                 .getJSONObject("message").getString("content")
         } finally {
+            if (activeConnection === connection) activeConnection = null
             connection.disconnect()
         }
     }
