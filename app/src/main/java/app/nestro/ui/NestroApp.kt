@@ -310,6 +310,7 @@ fun NestroApp() {
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
@@ -440,16 +441,19 @@ fun NestroApp() {
                                                     showRenameConversation = true
                                                 }) { Text("重命名", color = Mint) }
                                                 TextButton(onClick = {
-                                                    if (conversations.size > 1) {
-                                                        conversations = conversations.filterNot { it.id == record.id }
-                                                        if (activeConversationId == record.id) {
-                                                            val next = conversations.first()
-                                                            activeConversationId = next.id
-                                                            messages = next.messages
-                                                            prefs.edit().putString("active_conversation_id", next.id).apply()
-                                                        }
-                                                        saveConversationList(prefs, conversations)
+                                                    val remaining = conversations.filterNot { it.id == record.id }
+                                                    if (activeConversationId == record.id) {
+                                                        val next = remaining.firstOrNull { it.projectId == record.projectId }
+                                                            ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
+                                                        conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
+                                                        activeConversationId = next.id
+                                                        activeProjectId = record.projectId
+                                                        messages = next.messages
+                                                        prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
+                                                    } else {
+                                                        conversations = remaining
                                                     }
+                                                    saveConversationList(prefs, conversations)
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
@@ -1077,6 +1081,7 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("projects", projectsToJson(loadProjects(prefs)))
+    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     return root.toString(2)
 }
 
@@ -1140,6 +1145,7 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("skills", cleanSkills.toString())
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
+        .putString("active_project_id", root.optString("active_project_id", "default"))
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.optString("base_url")
         val restoredModel = root.optString("model")
