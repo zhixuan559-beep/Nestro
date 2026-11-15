@@ -52,6 +52,20 @@ data class KnowledgeDocumentEntity(
 )
 @Entity(tableName = "knowledge_chunks", foreignKeys = [ForeignKey(entity = KnowledgeDocumentEntity::class, parentColumns = ["id"], childColumns = ["documentId"], onDelete = ForeignKey.CASCADE)], indices = [Index(value = ["documentId"]), Index(value = ["projectId"])])
 data class KnowledgeChunkEntity(@PrimaryKey val id: String, val documentId: String, val projectId: String, val position: Int, val content: String)
+@Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
+data class PhoneAgentTaskEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val conversationId: String,
+    val goal: String,
+    val category: String,
+    val status: String,
+    val planJson: String,
+    val currentStep: Int,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
 @Entity(tableName = "projects")
 data class ProjectEntity(
     @PrimaryKey val id: String,
@@ -156,6 +170,21 @@ interface NestroDao {
         term12: String,
         limit: Int = 40
     ): List<ConversationMemoryHit>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putPhoneAgentTask(task: PhoneAgentTaskEntity)
+
+    @Query("SELECT * FROM phone_agent_tasks WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun phoneAgentTasks(projectId: String, limit: Int = 50): List<PhoneAgentTaskEntity>
+
+    @Query("SELECT * FROM phone_agent_tasks WHERE id = :taskId LIMIT 1")
+    suspend fun phoneAgentTask(taskId: String): PhoneAgentTaskEntity?
+
+    @Query("DELETE FROM phone_agent_tasks WHERE id = :taskId")
+    suspend fun deletePhoneAgentTask(taskId: String)
+
+    @Query("UPDATE phone_agent_tasks SET status = :status, currentStep = :currentStep, updatedAt = :updatedAt WHERE id = :taskId")
+    suspend fun updatePhoneAgentTaskProgress(taskId: String, status: String, currentStep: Int, updatedAt: Long)
+
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 
@@ -215,14 +244,22 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class],
-    version = 3,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class],
+    version = 4,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS phone_agent_tasks (id TEXT NOT NULL, projectId TEXT NOT NULL, conversationId TEXT NOT NULL, goal TEXT NOT NULL, category TEXT NOT NULL, status TEXT NOT NULL, planJson TEXT NOT NULL, currentStep INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_phone_agent_tasks_projectId_updatedAt ON phone_agent_tasks(projectId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_phone_agent_tasks_conversationId ON phone_agent_tasks(conversationId)")
+            }
+        }
+
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_conversations_projectId_updatedAt ON conversations(projectId, updatedAt)")
@@ -248,7 +285,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     context.applicationContext,
                     NestroDatabase::class.java,
                     "nestro_local.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }
