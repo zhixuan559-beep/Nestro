@@ -22,16 +22,16 @@ object PhoneAgentExecutor {
     data class ActionResult(val index: Int, val action: String, val success: Boolean, val detail: String)
     data class ExecutionResult(val outcome: Outcome, val completedActions: Int, val results: List<ActionResult>, val handoffReason: String = "")
 
-    suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, markTaskCompleted: Boolean = true, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         require(actions.size in 1..80) { "任务动作数量必须为 1 到 80" }
         PhoneAgentTaskStore.persistActions(dao, taskId, actions)
-        return runFrom(dao, taskId, actions, 0, onProgress)
+        return runFrom(dao, taskId, actions, 0, markTaskCompleted, onProgress)
     }
 
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
     suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
-        if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
+        if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && task.currentStep < runCatching { PhoneAgentTaskStore.decodeActions(task.planJson).size }.getOrDefault(0) && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
         }
@@ -39,10 +39,10 @@ object PhoneAgentExecutor {
             .getOrElse { return ExecutionResult(Outcome.FAILED, 0, emptyList(), it.message ?: "动作计划无法恢复") }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
             actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
-        return runFrom(dao, taskId, actions, start, onProgress)
+        return runFrom(dao, taskId, actions, start, true, onProgress)
     }
 
-    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
+    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val service = PhoneAgentService.activeService ?: return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         if (!service.hasValidGrant()) {
@@ -95,7 +95,11 @@ object PhoneAgentExecutor {
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, index + 1)
         }
-        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_COMPLETED, actions.size)
+        PhoneAgentTaskStore.updateProgress(
+            dao, taskId,
+            if (markTaskCompleted) PhoneAgentTaskStore.STATUS_COMPLETED else PhoneAgentTaskStore.STATUS_RUNNING,
+            actions.size
+        )
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
 }
