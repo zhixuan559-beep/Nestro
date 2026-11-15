@@ -4,6 +4,7 @@ import app.nestro.data.ConversationEntity
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
 import app.nestro.data.NestroDatabase
+import app.nestro.data.KnowledgeStore
 import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentService
@@ -343,15 +344,21 @@ fun NestroApp() {
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
             val assistantId = UUID.randomUUID().toString()
-            val requestSystemContext = listOf(
+            val requestProjectId = activeProjectId
+            val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
-                projects.firstOrNull { it.id == activeProjectId }?.instructions.orEmpty(),
+                projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty()
-            ).filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
+            ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 val partialAnswer = StringBuilder()
                 val result = runCatching {
+                    val knowledgeContext = withContext(Dispatchers.IO) {
+                        KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
+                    }
+                    val requestSystemContext = listOf(baseSystemContext, knowledgeContext)
+                        .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
@@ -404,6 +411,7 @@ fun NestroApp() {
                         DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
                         DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
                         DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
+                        DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
@@ -556,7 +564,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含全部本机对话、全局记忆、专家配置与技能。API Key 不会写入备份。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含本机对话、全局记忆、专家配置与技能。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
@@ -721,6 +729,7 @@ fun NestroApp() {
                             }
                         }
                         "phone" -> PhoneAgentPage(context)
+                        "knowledge" -> KnowledgePage(database, activeProjectId)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)

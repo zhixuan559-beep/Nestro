@@ -5,7 +5,8 @@
 ## 已实现
 
 ### 核心与本地安全
-- [x] Room 数据库存储会话、消息和项目空间。
+- [x] Room 数据库存储会话、消息、项目空间及本地知识库文档/片段。
+- [x] Room 1→2 schema 迁移，为知识库建立独立表和索引。
 - [x] 首次启动从旧版 SharedPreferences/JSON 会话数据迁移。
 - [x] 会话及消息更新使用 Room 事务写入；旧偏好存储保留为备份兼容镜像。
 - [x] Kotlin + Jetpack Compose Android 应用。
@@ -62,8 +63,10 @@
 - Room 数据库 schema 版本升级、迁移测试与异常恢复策略。
 - 数据库 schema 版本升级、可回滚迁移、崩溃恢复与备份一致性测试。
 - 附件管理、文件引用、完整备份校验和设备迁移。
-- PDF、DOCX、XLSX、PPTX、TXT、Markdown、网页等导入与解析。
-- 文档分块、全文索引/向量索引、检索排序、RAG 上下文引用。
+- [x] TXT、Markdown、HTML、CSV、JSON、XML 等文本导入与本地解析（单文件 2 MB）。
+- [ ] PDF、DOCX、XLSX、PPTX 导入与解析。
+- [x] 文档分块、项目内关键词检索与 RAG 上下文来源标注初版。
+- [ ] SQLite FTS/BM25 全文检索、语义向量索引与更可靠的检索排序。
 - 删除文档时同步清理索引和派生缓存。
 
 ### 2. 对话与记忆
