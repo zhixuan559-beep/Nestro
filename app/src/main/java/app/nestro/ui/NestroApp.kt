@@ -6,6 +6,7 @@ import app.nestro.data.ProjectEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.ConversationMemoryStore
+import app.nestro.data.ConversationRecallSource
 import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentService
@@ -101,6 +102,8 @@ fun NestroApp() {
     var busy by remember { mutableStateOf(false) }
     var stopRequested by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("尚未配置模型") }
+    var recallSources by remember { mutableStateOf(emptyList<ConversationRecallSource>()) }
+    var showRecallDialog by remember { mutableStateOf(false) }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
     var skills by remember { mutableStateOf(loadSkills(prefs)) }
@@ -155,6 +158,7 @@ fun NestroApp() {
     }
 
     LaunchedEffect(activeConversationId) {
+        recallSources = emptyList()
         draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
     }
 
@@ -358,6 +362,7 @@ fun NestroApp() {
                 val result = runCatching {
                     val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, prompt)
                     recalledCount = recall.hitCount
+                    if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
                     val requestSystemContext = listOf(baseSystemContext, recall.context, knowledgeContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
@@ -437,6 +442,11 @@ fun NestroApp() {
                             Column {
                                 Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 Text(status, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
+                                    TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
+                                        Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
                             }
                         }
                         IconButton(onClick = { page = "models" }) {
@@ -801,6 +811,36 @@ fun NestroApp() {
                 }) { Text("保存", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showProjectDialog = false }) { Text("取消") } }
+        )
+    }
+
+    if (showRecallDialog) {
+        AlertDialog(
+            onDismissRequest = { showRecallDialog = false },
+            title = { Text("本次回答参考的历史") },
+            text = {
+                Column(Modifier.heightIn(max = 440.dp)) {
+                    recallSources.forEach { source ->
+                        Column(Modifier.fillMaxWidth().clickable {
+                            val target = conversations.firstOrNull { it.id == source.conversationId }
+                            if (target != null) {
+                                activeConversationId = target.id
+                                activeProjectId = target.projectId
+                                messages = target.messages
+                                prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
+                                page = "home"
+                            }
+                            showRecallDialog = false
+                        }.padding(vertical = 9.dp)) {
+                            Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
+                            Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
+                        }
+                        HorizontalDivider(color = Line)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showRecallDialog = false }) { Text("关闭", color = Mint) } }
         )
     }
 
