@@ -1604,7 +1604,11 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                 ) { Text("授予本次任务持续授权（最长 2 小时）") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
-                        onClick = { PhoneAgentService.activeService?.requestTaskStop(); taskMessage = "已请求停止当前任务" },
+                        onClick = {
+                            tasks.firstOrNull { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }?.let { PhoneAgentWorkScheduler.cancel(context, it.id) }
+                            PhoneAgentService.activeService?.requestTaskStop()
+                            taskMessage = "已请求停止当前任务"
+                        },
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
                     TextButton(

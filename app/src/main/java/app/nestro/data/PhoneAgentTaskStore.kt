@@ -91,10 +91,11 @@ object PhoneAgentTaskStore {
                 createdAt = System.currentTimeMillis()
             )
         )
+        dao.trimPhoneAgentTaskLogs(taskId, 100)
     }
 
     suspend fun recentLogs(dao: NestroDao, taskId: String, limit: Int = 30): List<PhoneAgentTaskLogEntity> =
-        dao.phoneAgentTaskLogs(taskId, limit)
+        dao.phoneAgentTaskLogs(taskId, limit).reversed()
 
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
         require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }

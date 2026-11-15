@@ -200,8 +200,11 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPhoneAgentTaskLog(log: PhoneAgentTaskLogEntity)
 
-    @Query("SELECT * FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt ASC LIMIT :limit")
+    @Query("SELECT * FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :limit")
     suspend fun phoneAgentTaskLogs(taskId: String, limit: Int = 100): List<PhoneAgentTaskLogEntity>
+
+    @Query("DELETE FROM phone_agent_task_logs WHERE taskId = :taskId AND id NOT IN (SELECT id FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :keep)")
+    suspend fun trimPhoneAgentTaskLogs(taskId: String, keep: Int = 100)
 
 
 
