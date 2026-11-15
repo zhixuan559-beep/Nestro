@@ -54,6 +54,7 @@ private val Muted = androidx.compose.ui.graphics.Color(0xFF8A8F98)
 private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
 
 private data class ChatMessage(val id: String, val role: String, val content: String)
+private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>)
 private data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
 
 @Composable
@@ -66,6 +67,11 @@ fun NestroApp() {
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
+    var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
+    var activeConversationId by remember { mutableStateOf("") }
+    var conversationSearch by remember { mutableStateOf("") }
+    var globalMemory by remember { mutableStateOf("") }
+    var memoryDraft by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("尚未配置模型") }
@@ -104,7 +110,11 @@ fun NestroApp() {
                     ?: error("无法读取文件")
                 require(raw.length <= 10_000_000) { "备份文件过大" }
                 restoreLocalBackup(prefs, raw)
-                messages = loadMessages(prefs)
+                conversations = loadConversations(prefs)
+                activeConversationId = prefs.getString("active_conversation_id", conversations.firstOrNull()?.id ?: "") ?: ""
+                messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
+                globalMemory = prefs.getString("global_memory_v1", "") ?: ""
+                memoryDraft = globalMemory
                 experts = loadExperts(prefs)
                 expertPrompts = loadExpertPrompts(prefs)
                 skills = loadSkills(prefs)
@@ -115,7 +125,11 @@ fun NestroApp() {
 
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
-        messages = loadMessages(prefs)
+        conversations = loadConversations(prefs)
+        activeConversationId = prefs.getString("active_conversation_id", conversations.firstOrNull()?.id ?: "") ?: ""
+        messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
+        globalMemory = prefs.getString("global_memory_v1", "") ?: ""
+        memoryDraft = globalMemory
         experts = loadExperts(prefs)
         expertPrompts = loadExpertPrompts(prefs)
         status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else "先连接你自己的模型"
@@ -138,6 +152,8 @@ fun NestroApp() {
                         Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(12.dp))
                         DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
+                        DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
+                        DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
@@ -227,25 +243,30 @@ fun NestroApp() {
                                                 draft = ""
                                                 val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
                                                 messages = messages + user
-                                                saveMessages(prefs, messages)
+                                                saveConversationMessages(prefs, activeConversationId, messages)
                                                 if (config.apiKey.isBlank() || config.model.isBlank()) {
                                                     status = "请先配置模型 API"
                                                     messages = messages + ChatMessage(
                                                         UUID.randomUUID().toString(), "assistant",
                                                         "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
                                                     )
-                                                    saveMessages(prefs, messages)
+                                                    saveConversationMessages(prefs, activeConversationId, messages)
                                                 } else {
                                                     busy = true
                                                     scope.launch {
+                                                        val systemContext = listOf(
+                                                            "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
+                                                            expertPrompts[selectedExpert].orEmpty(),
+                                                            skills[selectedSkill].orEmpty()
+                                                        ).filter { it.isNotBlank() }.joinToString("\n\n")
                                                         val answer = withContext(Dispatchers.IO) {
-                                                            runCatching { OpenAiClient.complete(config, messages, listOf(expertPrompts[selectedExpert].orEmpty(), skills[selectedSkill].orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n")) }
+                                                            runCatching { OpenAiClient.complete(config, messages, systemContext) }
                                                         }
                                                         messages = messages + ChatMessage(
                                                             UUID.randomUUID().toString(), "assistant",
                                                             answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
                                                         )
-                                                        saveMessages(prefs, messages)
+                                                        saveConversationMessages(prefs, activeConversationId, messages)
                                                         status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
                                                         busy = false
                                                     }
@@ -312,6 +333,80 @@ fun NestroApp() {
                                         Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nestro 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
+                            }
+                        }
+                        "conversations" -> {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("对话历史", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                OutlinedTextField(
+                                    value = conversationSearch, onValueChange = { conversationSearch = it },
+                                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                                    label = { Text("搜索会话标题与内容") }
+                                )
+                                Button(onClick = {
+                                    val id = UUID.randomUUID().toString()
+                                    val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList())
+                                    conversations = listOf(record) + conversations
+                                    activeConversationId = id
+                                    messages = emptyList()
+                                    prefs.edit().putString("active_conversation_id", id).apply()
+                                    saveConversationList(prefs, conversations)
+                                    page = "home"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
+                                    Text("＋ 新建对话")
+                                }
+                                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(conversations.filter { record ->
+                                        conversationSearch.isBlank() || record.title.contains(conversationSearch, true) ||
+                                            record.messages.any { it.content.contains(conversationSearch, true) }
+                                    }, key = { it.id }) { record ->
+                                        Surface(color = if (record.id == activeConversationId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f).clickable {
+                                                    activeConversationId = record.id
+                                                    messages = record.messages
+                                                    prefs.edit().putString("active_conversation_id", record.id).apply()
+                                                    page = "home"
+                                                }) {
+                                                    Text(record.title, color = if (record.id == activeConversationId) Mint else Ink)
+                                                    Text(record.messages.lastOrNull()?.content?.take(72) ?: "空白对话", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                                TextButton(onClick = {
+                                                    if (conversations.size > 1) {
+                                                        conversations = conversations.filterNot { it.id == record.id }
+                                                        if (activeConversationId == record.id) {
+                                                            val next = conversations.first()
+                                                            activeConversationId = next.id
+                                                            messages = next.messages
+                                                            prefs.edit().putString("active_conversation_id", next.id).apply()
+                                                        }
+                                                        saveConversationList(prefs, conversations)
+                                                    }
+                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "memory" -> {
+                            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("全局记忆", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("这里保存跨会话共享的背景信息。发送消息时会作为系统上下文提供给模型，不会自动上传到 Nestro 服务器。", color = Muted)
+                                OutlinedTextField(
+                                    value = memoryDraft, onValueChange = { memoryDraft = it },
+                                    modifier = Modifier.fillMaxWidth().weight(1f),
+                                    placeholder = { Text("写入希望所有会话都能参考的信息…") },
+                                    minLines = 8
+                                )
+                                Button(onClick = {
+                                    globalMemory = memoryDraft.trim().take(12000)
+                                    prefs.edit().putString("global_memory_v1", globalMemory).apply()
+                                    page = "home"
+                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                    Text("保存全局记忆")
+                                }
+                                Text("当前为手动记忆。自动提取、语义检索与逐条记忆管理尚未实现。", color = Muted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                         "spaces" -> SimplePage("项目空间", "项目空间隔离与独立知识库尚未接入。当前版本不会把普通会话伪装成已隔离空间。")
@@ -570,6 +665,60 @@ private object LocalVault {
             .setRandomizedEncryptionRequired(true).build())
         return generator.generateKey()
     }
+}
+
+private fun loadConversations(prefs: android.content.SharedPreferences): List<ConversationRecord> {
+    val stored = runCatching {
+        val array = JSONArray(prefs.getString("conversations_v1", "[]"))
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            val messagesJson = item.optJSONArray("messages") ?: JSONArray()
+            val parsed = (0 until messagesJson.length()).map { i ->
+                val message = messagesJson.getJSONObject(i)
+                ChatMessage(message.getString("id"), message.getString("role"), message.getString("content"))
+            }
+            ConversationRecord(
+                item.getString("id"), item.optString("title", "对话"),
+                item.optLong("updated_at", System.currentTimeMillis()), parsed
+            )
+        }
+    }.getOrDefault(emptyList())
+    if (stored.isNotEmpty()) return stored
+    val legacy = loadMessages(prefs)
+    val migrated = ConversationRecord(
+        UUID.randomUUID().toString(),
+        legacy.firstOrNull { it.role == "user" }?.content?.take(24)?.ifBlank { "旧对话" } ?: "旧对话",
+        System.currentTimeMillis(), legacy
+    )
+    val result = listOf(migrated)
+    saveConversationList(prefs, result)
+    prefs.edit().putString("active_conversation_id", migrated.id).apply()
+    return result
+}
+
+private fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>) {
+    val array = JSONArray()
+    conversations.take(100).forEach { conversation ->
+        val messages = JSONArray()
+        conversation.messages.takeLast(500).forEach { message ->
+            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content))
+        }
+        array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
+            .put("updated_at", conversation.updatedAt).put("messages", messages))
+    }
+    prefs.edit().putString("conversations_v1", array.toString()).apply()
+}
+
+private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>) {
+    val existing = loadConversations(prefs)
+    val record = existing.firstOrNull { it.id == activeId }
+        ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList())
+    val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
+    val updated = record.copy(title = if (record.title == "新对话" || record.title == "旧对话") firstPrompt else record.title,
+        updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500))
+    val next = listOf(updated) + existing.filterNot { it.id == updated.id }
+    saveConversationList(prefs, next)
+    prefs.edit().putString("active_conversation_id", updated.id).apply()
 }
 
 private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {

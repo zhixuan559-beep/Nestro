@@ -14,8 +14,8 @@ One conversation is the command surface. The orchestrator should infer and coord
 
 ## In progress / incomplete
 - Phone Agent natural-language planner, task orchestration, robust action verification, stop control, exception recovery, sensitive-content redaction and complete risk review.
-- Multi-conversation persistence and cross-session search.
-- Global memory extraction, indexing, editing and deletion.
+- Basic multi-conversation persistence, switching, deletion, title/content search and legacy single-history migration.
+- Manual global memory editor injected into model system context. Automatic extraction, semantic retrieval, per-item editing and deletion remain incomplete.
 - Project spaces and project-level data isolation.
 - Expert lifecycle, expert teams and multi-agent coordination.
 - Skills repository import, provenance, version/dependency checks and sandboxing.
