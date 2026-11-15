@@ -1,6 +1,9 @@
 package app.nestro.ui
 
 import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -30,6 +33,9 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -65,6 +71,37 @@ fun NestroApp() {
     var expertDraft by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
+    var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            backupStatus = runCatching {
+                val json = buildLocalBackup(prefs)
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(json.toByteArray(Charsets.UTF_8))
+                } ?: error("无法创建备份文件")
+                "备份已导出"
+            }.getOrElse { "导出失败：${it.message ?: "未知错误"}" }
+        }
+    }
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            backupStatus = runCatching {
+                val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    ?: error("无法读取文件")
+                require(raw.length <= 10_000_000) { "备份文件过大" }
+                restoreLocalBackup(prefs, raw)
+                messages = loadMessages(prefs)
+                experts = loadExperts(prefs)
+                expertPrompts = loadExpertPrompts(prefs)
+                "恢复完成。模型 Key 未被覆盖，请检查模型管理。"
+            }.getOrElse { "恢复失败：${it.message ?: "文件格式无效"}" }
+        }
+    }
 
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
@@ -95,6 +132,7 @@ fun NestroApp() {
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
                         DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
                         DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
+                        DrawerItem("▤", "数据与设置") { page = "settings"; showDrawer = false }
                         Spacer(Modifier.weight(1f))
                         Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
                     }
@@ -236,8 +274,36 @@ fun NestroApp() {
                                 }
                             }
                         }
-                        "spaces" -> SimplePage("项目空间", "为不同项目隔离资料、专家和会话。空间数据库与文件索引将在下一阶段接入。")
-                        "skills" -> SimplePage("能力中心", "Skill / MCP 导入与权限审查正在开发中。当前版本不会展示无法执行的假按钮。")
+                        "settings" -> {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Text("数据与设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
+                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                        Text("包含最近 200 条对话、专家名称和专家提示词。导出文件可自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Button(onClick = {
+                                            val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+                                            exportBackupLauncher.launch(name)
+                                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                            Text("导出本地备份")
+                                        }
+                                        OutlinedButton(onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
+                                            Text("从备份恢复")
+                                        }
+                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("隐私与安全", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nestro 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                        "spaces" -> SimplePage("项目空间", "项目空间隔离与独立知识库尚未接入。当前版本不会把普通会话伪装成已隔离空间。")
+                        "skills" -> SimplePage("能力中心", "Skill / MCP 的来源校验、权限审查与隔离执行尚未接入。当前版本不执行未经审查的外部技能。")
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
                     }
                 }
@@ -263,7 +329,7 @@ fun NestroApp() {
                         experts = experts + name
                         expertPrompts = expertPrompts + (name to expertPromptDraft.trim())
                         prefs.edit().putString("experts", JSONArray(experts).toString())
-                            .putString("expert_prompts", JSONObject(expertPrompts as Map<*, *>).toString()).apply()
+                            .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
                         selectedExpert = name
                     }
                     expertDraft = ""
@@ -307,6 +373,9 @@ private fun MessageBubble(message: ChatMessage) {
 
 @Composable
 private fun ModelManager(config: ModelConfig, onSave: (ModelConfig) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
+    var testStatus by remember { mutableStateOf("") }
     var endpoint by remember(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var model by remember(config.model) { mutableStateOf(config.model) }
     var key by remember { mutableStateOf(config.apiKey) }
@@ -324,6 +393,28 @@ private fun ModelManager(config: ModelConfig, onSave: (ModelConfig) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
         ) { Text("保存模型配置") }
+        OutlinedButton(
+            onClick = {
+                testing = true
+                testStatus = "正在测试连接…"
+                val candidate = ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), key.trim())
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching { OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "") }
+                    }
+                    testStatus = result.fold({ "连接成功：模型已返回内容。" }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
+                    testing = false
+                }
+            },
+            enabled = !testing && endpoint.startsWith("https://") && model.isNotBlank() && key.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (testing) "测试中…" else "测试连接") }
+        if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(
+            onClick = { onSave(ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), "")) },
+            enabled = config.apiKey.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("清除本机 API Key") }
     }
 }
 
@@ -439,3 +530,52 @@ private fun loadExpertPrompts(prefs: android.content.SharedPreferences): Map<Str
     val json = JSONObject(raw)
     buildMap { val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, json.optString(key)) } }
 }.getOrDefault(emptyMap())
+
+
+private fun expertPromptsToJson(prompts: Map<String, String>): String {
+    val json = JSONObject()
+    prompts.forEach { (name, prompt) -> json.put(name, prompt) }
+    return json.toString()
+}
+
+private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
+    val root = JSONObject()
+    root.put("format", "nestro-local-backup")
+    root.put("version", 1)
+    root.put("created_at", System.currentTimeMillis())
+    root.put("messages", prefs.getString("messages", "[]") ?: "[]")
+    root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
+    root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
+    return root.toString(2)
+}
+
+private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String) {
+    val root = JSONObject(raw)
+    require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
+    require(root.optInt("version") == 1) { "暂不支持此备份版本" }
+    val messages = JSONArray(root.getString("messages"))
+    require(messages.length() <= 200) { "对话记录数量超出限制" }
+    for (i in 0 until messages.length()) {
+        val item = messages.getJSONObject(i)
+        require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
+        require(item.has("content") && item.has("id")) { "消息字段缺失" }
+    }
+    val experts = JSONArray(root.getString("experts"))
+    require(experts.length() <= 100) { "专家数量超出限制" }
+    for (i in 0 until experts.length()) require(experts.getString(i).length <= 80) { "专家名称过长" }
+    val prompts = JSONObject(root.getString("expert_prompts"))
+    require(prompts.length() <= 100) { "专家提示词数量超出限制" }
+    val cleanPrompts = JSONObject()
+    val keys = prompts.keys()
+    while (keys.hasNext()) {
+        val name = keys.next()
+        val prompt = prompts.optString(name)
+        require(prompt.length <= 20000) { "专家提示词过长" }
+        cleanPrompts.put(name, prompt)
+    }
+    prefs.edit()
+        .putString("messages", messages.toString())
+        .putString("experts", experts.toString())
+        .putString("expert_prompts", cleanPrompts.toString())
+        .apply()
+}
