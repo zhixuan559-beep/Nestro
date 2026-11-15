@@ -139,9 +139,15 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKnowledgeChunks(chunks: List<KnowledgeChunkEntity>)
     @Transaction
-    suspend fun insertKnowledgeBundle(document: KnowledgeDocumentEntity, chunks: List<KnowledgeChunkEntity>) {
+    suspend fun insertKnowledgeBundleIfAbsent(
+        document: KnowledgeDocumentEntity,
+        chunks: List<KnowledgeChunkEntity>
+    ): KnowledgeDocumentEntity {
+        val existing = knowledgeDocumentByHash(document.contentHash)
+        if (existing != null) return existing
         insertKnowledgeDocument(document)
         insertKnowledgeChunks(chunks)
+        return document
     }
     @Query("DELETE FROM knowledge_documents WHERE id = :documentId")
     suspend fun deleteKnowledgeDocument(documentId: String)

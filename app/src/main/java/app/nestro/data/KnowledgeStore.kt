@@ -38,8 +38,8 @@ object KnowledgeStore {
   val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.take(180),mime.ifBlank { "text/plain" },bytes.size.toLong(),System.currentTimeMillis(),hash)
   val chunks=split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
-  dao.insertKnowledgeBundle(document,chunks)
-  KnowledgeImportResult(document,false)
+  val saved=dao.insertKnowledgeBundleIfAbsent(document,chunks)
+  KnowledgeImportResult(saved,saved.id!=document.id)
  }
 
  suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String):String=withContext(Dispatchers.IO) {
