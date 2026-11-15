@@ -62,7 +62,7 @@ class PhoneAgentService : AccessibilityService() {
         val target = clickableAncestor(node) ?: return false
         val success = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         consumeSingleGrantIfNeeded()
-        audit("CLICK", normalized)
+        audit("CLICK", redactSensitiveText(normalized))
         return success
     }
 
@@ -70,6 +70,7 @@ class PhoneAgentService : AccessibilityService() {
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
+        require(!isHighRisk(value)) { "输入内容触发高风险规则，必须由用户本人处理" }
         require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
@@ -128,7 +129,7 @@ class PhoneAgentService : AccessibilityService() {
         if (needle.isBlank()) return false
         val root = rootInActiveWindow ?: return false
         val found = findVisibleNode(root, needle) { true } != null
-        audit("VERIFY", "目标文本=" + needle.take(60) + "，结果=" + found)
+        audit("VERIFY", "目标文本=" + redactSensitiveText(needle.take(60)) + "，结果=" + found)
         return found
     }
 
@@ -180,7 +181,7 @@ class PhoneAgentService : AccessibilityService() {
         if (p.getLong("phone_task_grant_until", 0L) <= System.currentTimeMillis() && p.getBoolean("phone_single_grant", false)) p.edit().remove("phone_single_grant").apply()
     }
 
-    private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱", "电子邮件", "收货地址", "详细地址", "联系人", "收货人", "住址", "账号").any { value.contains(it, true) }
+    private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱", "电子邮件", "收货地址", "详细地址", "地址", "联系人", "收货人", "住址", "账号").any { value.contains(it, true) }
 
     private fun redactSensitiveText(value: String): String = value
         .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")

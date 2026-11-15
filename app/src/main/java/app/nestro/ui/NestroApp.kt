@@ -1645,7 +1645,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(if (task.status == PhoneAgentTaskStore.STATUS_WAITING_USER) "我已处理，继续" else "继续任务") }
+                                ) { Text(when (task.status) { PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {

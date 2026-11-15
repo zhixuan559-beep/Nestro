@@ -3,6 +3,7 @@ package app.nestro.phone
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 
 /** Executes typed actions only. Model prose is never interpreted as a click command. */
 object PhoneAgentExecutor {
@@ -28,8 +29,12 @@ object PhoneAgentExecutor {
     }
 
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
-    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
+        if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
+            PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
+            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
+        }
         val actions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }
             .getOrElse { return ExecutionResult(Outcome.FAILED, 0, emptyList(), it.message ?: "动作计划无法恢复") }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
@@ -77,8 +82,10 @@ object PhoneAgentExecutor {
                     is Action.ConfirmSensitive -> false
                 }
             }
+            val failure = attempt.exceptionOrNull()
+            if (failure is CancellationException) throw failure
             val success = attempt.getOrDefault(false)
-            val detail = attempt.exceptionOrNull()?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
+            val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
             val result = ActionResult(index, action.javaClass.simpleName, success, detail)
             results += result
             onProgress(index + 1, result)
