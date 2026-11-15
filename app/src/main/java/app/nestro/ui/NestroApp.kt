@@ -136,6 +136,7 @@ fun NestroApp() {
                     ?: error("无法读取文件")
                 require(raw.length <= 10_000_000) { "备份文件过大" }
                 restoreLocalBackup(prefs, raw)
+                persistedConversationVersions.clear()
                 conversations = loadConversations(prefs)
                 projects = loadProjects(prefs)
                 activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
