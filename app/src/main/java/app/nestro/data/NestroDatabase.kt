@@ -192,6 +192,11 @@ interface NestroDao {
     suspend fun deleteKnowledgeDocument(documentId: String)
     @Query("DELETE FROM knowledge_documents WHERE projectId = :projectId")
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
+    @Transaction
+    suspend fun deleteProjectAndKnowledge(projectId: String) {
+        deleteKnowledgeDocumentsForProject(projectId)
+        deleteProjects(listOf(projectId))
+    }
     @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND content LIKE '%' || :term || '%' LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
 }

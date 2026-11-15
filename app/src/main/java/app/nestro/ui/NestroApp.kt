@@ -191,8 +191,7 @@ fun NestroApp() {
                         val projectIds = legacyProjects.map { it.id }
                         val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
                         if (staleProjectIds.isNotEmpty()) {
-                            staleProjectIds.forEach { dao.deleteKnowledgeDocumentsForProject(it) }
-                            dao.deleteProjects(staleProjectIds)
+                            staleProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
                         }
                     }
                     prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
@@ -264,8 +263,7 @@ fun NestroApp() {
                     val currentProjectIds = projectSnapshot.map { it.id }
                     val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
                     if (removedProjectIds.isNotEmpty()) {
-                        removedProjectIds.forEach { dao.deleteKnowledgeDocumentsForProject(it) }
-                        dao.deleteProjects(removedProjectIds)
+                        removedProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
                     }
                 }
             }
@@ -739,8 +737,7 @@ fun NestroApp() {
                                                             if (count == 0) {
                                                                 scope.launch {
                                                                     runCatching {
-                                                                        database.dao().deleteKnowledgeDocumentsForProject(project.id)
-                                                                        database.dao().deleteProjects(listOf(project.id))
+                                                                        database.dao().deleteProjectAndKnowledge(project.id)
                                                                     }.onSuccess {
                                                                         projects = projects.filterNot { it.id == project.id }
                                                                         saveProjects(prefs, projects)
