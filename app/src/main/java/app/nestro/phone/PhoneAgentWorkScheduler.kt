@@ -13,6 +13,8 @@ object PhoneAgentWorkScheduler {
 
     fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false) {
         require(taskId.isNotBlank())
+        context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit().remove("phone_task_stop_requested").apply()
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
             .setInputData(
                 Data.Builder()

@@ -49,7 +49,6 @@ object PhoneAgentExecutor {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
         }
-        service.clearTaskStop()
         val results = mutableListOf<ActionResult>()
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         for (index in startIndex until actions.size) {

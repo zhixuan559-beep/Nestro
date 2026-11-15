@@ -65,6 +65,7 @@ object PhoneAgentAgent {
             } catch (error: Throwable) {
                 return pause(dao, taskId, error.message ?: "动作规划失败")
             }
+            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
 
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&
