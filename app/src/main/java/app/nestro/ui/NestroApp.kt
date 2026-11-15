@@ -652,6 +652,42 @@ private object OpenAiClient {
 
     fun cancel() { activeConnection?.disconnect() }
 
+    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String): String {
+        val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20000
+            readTimeout = 90000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer " + config.apiKey)
+        }
+        try {
+            val body = JSONObject().apply {
+                put("model", config.model)
+                put("messages", JSONArray().apply {
+                    if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    boundedRequestHistory(history).forEach { msg ->
+                        put(JSONObject().put("role", msg.role).put("content", msg.content))
+                    }
+                })
+                put("stream", false)
+            }
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            if (code !in 200..299) {
+                val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
+                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP " + code)
+            }
+            return JSONObject(response).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
