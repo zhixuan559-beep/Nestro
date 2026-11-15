@@ -636,7 +636,11 @@ private fun SimplePage(title: String, description: String) {
 }
 
 private object OpenAiClient {
-    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String): String {
+    @Volatile private var activeConnection: HttpURLConnection? = null
+
+    fun cancel() { activeConnection?.disconnect() }
+
+    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -644,36 +648,60 @@ private object OpenAiClient {
             readTimeout = 90000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+            setRequestProperty("Authorization", "Bearer " + config.apiKey)
+            setRequestProperty("Accept", "text/event-stream")
         }
+        activeConnection = connection
+        val answer = StringBuilder()
+        val pending = StringBuilder()
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    history.takeLast(40).forEach { msg ->
-                        put(JSONObject().put("role", msg.role).put("content", msg.content))
-                    }
+                    history.takeLast(40).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
                 })
-                put("stream", false)
+                put("stream", true)
             }
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             if (code !in 200..299) {
+                val response = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(detail?.takeIf { !it.isNullOrBlank() } ?: "HTTP $code")
+                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP $code")
             }
-            val root = JSONObject(response)
-            return root.getJSONArray("choices").getJSONObject(0)
-                .getJSONObject("message").getString("content")
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.startsWith("data:")) {
+                        val data = line.substringAfter("data:").trim()
+                        if (data == "[DONE]") break
+                        val delta = runCatching {
+                            JSONObject(data).getJSONArray("choices").getJSONObject(0).optJSONObject("delta")?.optString("content").orEmpty()
+                        }.getOrDefault("")
+                        if (delta.isNotEmpty()) {
+                            answer.append(delta)
+                            pending.append(delta)
+                            if (pending.length >= 24) {
+                                val chunk = pending.toString()
+                                pending.setLength(0)
+                                onChunk(chunk)
+                            }
+                        }
+                    } else if (line.trimStart().startsWith("{")) {
+                        val fallback = runCatching { JSONObject(line).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content") }.getOrNull()
+                        if (!fallback.isNullOrEmpty()) { answer.append(fallback); pending.append(fallback) }
+                    }
+                }
+            }
+            if (pending.isNotEmpty()) onChunk(pending.toString())
+            answer.toString()
         } finally {
+            if (activeConnection === connection) activeConnection = null
             connection.disconnect()
         }
     }
 }
-
 private object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
     fun write(context: Context, config: ModelConfig) {
