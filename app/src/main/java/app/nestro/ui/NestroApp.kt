@@ -190,7 +190,10 @@ fun NestroApp() {
                         dao.putProjects(legacyProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
                         val projectIds = legacyProjects.map { it.id }
                         val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
-                        if (staleProjectIds.isNotEmpty()) dao.deleteProjects(staleProjectIds)
+                        if (staleProjectIds.isNotEmpty()) {
+                            staleProjectIds.forEach { dao.deleteKnowledgeDocumentsForProject(it) }
+                            dao.deleteProjects(staleProjectIds)
+                        }
                     }
                     prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
                     legacyConversations to legacyProjects
@@ -260,7 +263,10 @@ fun NestroApp() {
                     dao.putProjects(projectSnapshot.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
                     val currentProjectIds = projectSnapshot.map { it.id }
                     val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
-                    if (removedProjectIds.isNotEmpty()) dao.deleteProjects(removedProjectIds)
+                    if (removedProjectIds.isNotEmpty()) {
+                        removedProjectIds.forEach { dao.deleteKnowledgeDocumentsForProject(it) }
+                        dao.deleteProjects(removedProjectIds)
+                    }
                 }
             }
             persistedConversationVersions.clear()
@@ -731,8 +737,18 @@ fun NestroApp() {
                                                     if (project.id != "default") {
                                                         TextButton(onClick = {
                                                             if (count == 0) {
-                                                                projects = projects.filterNot { it.id == project.id }
-                                                                saveProjects(prefs, projects)
+                                                                scope.launch {
+                                                                    runCatching {
+                                                                        database.dao().deleteKnowledgeDocumentsForProject(project.id)
+                                                                        database.dao().deleteProjects(listOf(project.id))
+                                                                    }.onSuccess {
+                                                                        projects = projects.filterNot { it.id == project.id }
+                                                                        saveProjects(prefs, projects)
+                                                                        status = "项目空间及其知识库已删除"
+                                                                    }.onFailure {
+                                                                        status = "删除失败，项目空间已保留"
+                                                                    }
+                                                                }
                                                             } else status = "该空间还有对话，暂时不能删除"
                                                         }) { Text("删除", color = ColorStop) }
                                                     }
