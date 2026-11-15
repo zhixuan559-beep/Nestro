@@ -2,6 +2,8 @@ package app.nestro.ui
 
 import android.content.Context
 import android.net.Uri
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.security.keystore.KeyGenParameterSpec
@@ -135,6 +137,7 @@ fun NestroApp() {
                         Spacer(Modifier.height(12.dp))
                         DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
+                        DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
                         DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
                         DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
@@ -310,6 +313,7 @@ fun NestroApp() {
                             }
                         }
                         "spaces" -> SimplePage("项目空间", "项目空间隔离与独立知识库尚未接入。当前版本不会把普通会话伪装成已隔离空间。")
+                        "phone" -> PhoneAgentPage(context)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -690,4 +694,84 @@ private fun skillMapToJson(skills: Map<String, String>): String {
     val json = JSONObject()
     skills.forEach { (name, prompt) -> json.put(name, prompt) }
     return json.toString()
+}
+
+
+@Composable
+private fun PhoneAgentPage(context: Context) {
+    val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var snapshot by remember { mutableStateOf("尚未读取手机界面") }
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ).orEmpty()
+    val serviceEnabled = enabledServices.contains(
+        context.packageName + "/app.nestro.phone.PhoneAgentService",
+        ignoreCase = true
+    )
+    val grantUntil = prefs.getLong("phone_task_grant_until", 0L)
+    val hasTaskGrant = grantUntil > System.currentTimeMillis()
+    val hasSingleGrant = prefs.getBoolean("phone_single_grant", false)
+    Column(
+        Modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall)
+        Text("Phone Agent 通过 Android 无障碍服务读取当前界面，并在授权范围内执行用户指令。服务不会因收到界面事件就自动读取或操作内容。", color = Muted)
+        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (serviceEnabled) "无障碍服务已开启" else "尚未开启无障碍服务", color = if (serviceEnabled) Mint else Ink)
+                Text("需要你在 Android 系统设置中手动开启。Nestro 不能代替你授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                Button(
+                    onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                ) { Text("前往系统无障碍设置") }
+            }
+        }
+        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("本次授权", color = Ink, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        hasTaskGrant -> "本次任务持续授权有效"
+                        hasSingleGrant -> "存在一次性授权"
+                        else -> "当前没有操作授权"
+                    },
+                    color = if (hasTaskGrant || hasSingleGrant) Mint else Muted
+                )
+                OutlinedButton(
+                    onClick = {
+                        prefs.edit().putBoolean("phone_single_grant", true).apply()
+                        refresh++
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("授予单次操作") }
+                OutlinedButton(
+                    onClick = {
+                        prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).apply()
+                        refresh++
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("授予本次任务持续授权（最长 2 小时）") }
+                TextButton(
+                    onClick = {
+                        prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").apply()
+                        refresh++
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) { Text("撤销全部临时授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+            }
+        }
+        OutlinedButton(
+            onClick = {
+                snapshot = PhoneAgentService.activeService?.captureVisibleText()
+                    ?: "无障碍服务尚未连接，请先在系统设置中开启。"
+            },
+            enabled = serviceEnabled,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("读取当前界面（仅本次主动触发）") }
+        Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("安全边界：支付、转账、密码、验证码和敏感信息发送等高风险动作不会由当前执行器自动点击。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
+    }
 }
