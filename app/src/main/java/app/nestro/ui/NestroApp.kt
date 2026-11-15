@@ -10,6 +10,7 @@ import app.nestro.data.ConversationRecallSource
 import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentService
+import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
@@ -372,7 +373,7 @@ fun NestroApp() {
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val requestSystemContext = listOf(baseSystemContext, recall.context, knowledgeContext)
+                    val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer.append(chunk)
