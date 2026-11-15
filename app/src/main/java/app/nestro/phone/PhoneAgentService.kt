@@ -29,7 +29,7 @@ class PhoneAgentService : AccessibilityService() {
         val lines = mutableListOf<String>()
         collect(root, lines, 0)
         val result = lines.take(120).joinToString("\n").ifBlank { "当前页面没有可读取的文本。" }
-        audit("SCREEN_READ", "用户主动读取当前界面")
+        audit("SCREEN_READ", "读取当前可访问界面文本")
         return result
     }
 
