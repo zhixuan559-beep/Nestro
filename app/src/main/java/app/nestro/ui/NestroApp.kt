@@ -1615,7 +1615,11 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
         ) { Text("读取当前界面（仅本次主动触发）") }
         Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
         if (taskMessage.isNotBlank()) Text(taskMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
-        Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { refresh++ }) { Text("刷新", color = Mint) }
+        }
         if (tasks.isEmpty()) {
             Text("当前项目还没有 Phone Agent 任务。", color = Muted, style = MaterialTheme.typography.bodySmall)
         } else {
@@ -1631,12 +1635,12 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             style = MaterialTheme.typography.bodySmall
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if ((canResume || canStartAgent) && task.status in setOf(
+                            if ((canResume && task.status in setOf(
                                     PhoneAgentTaskStore.STATUS_PLANNED,
                                     PhoneAgentTaskStore.STATUS_PAUSED,
                                     PhoneAgentTaskStore.STATUS_RUNNING,
                                     PhoneAgentTaskStore.STATUS_WAITING_USER
-                                ) || canStartAgent
+                                )) || canStartAgent
                             ) {
                                 Button(
                                     onClick = {

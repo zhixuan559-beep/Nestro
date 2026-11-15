@@ -78,7 +78,7 @@ object PhoneAgentActionParser {
     }
 
     private fun isHighRisk(value: String): Boolean =
-        listOf("付款", "支付", "转账", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交")
+        listOf("付款", "支付", "转账", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交", "提交", "下单")
             .any { value.contains(it, true) }
 
     private fun isSensitiveLabel(value: String): Boolean =
