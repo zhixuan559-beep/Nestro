@@ -55,8 +55,8 @@ fun VoiceInputButton(
     var phase by remember { mutableStateOf(VoicePhase.IDLE) }
     var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
 
-    fun releaseEngine(engine: SpeechRecognizer) {
-        runCatching { engine.cancel() }
+    fun releaseEngine(engine: SpeechRecognizer, cancel: Boolean = true) {
+        if (cancel) runCatching { engine.cancel() }
         runCatching { engine.destroy() }
         if (recognizer === engine) recognizer = null
         phase = VoicePhase.IDLE
@@ -91,7 +91,7 @@ fun VoiceInputButton(
                         else -> "语音识别失败（$error）"
                     }
                 )
-                releaseEngine(engine)
+                releaseEngine(engine, cancel = false)
             }
             override fun onResults(results: Bundle?) {
                 val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -102,7 +102,7 @@ fun VoiceInputButton(
                 } else {
                     latestStatus.value("没有识别到语音内容")
                 }
-                releaseEngine(engine)
+                releaseEngine(engine, cancel = false)
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val phrase = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -125,7 +125,7 @@ fun VoiceInputButton(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) startRecognition() else latestStatus.value("需要麦克风权限才能使用语音输入")
+        latestStatus.value(if (granted) "麦克风权限已开启，再按住说话" else "需要麦克风权限才能使用语音输入")
     }
 
     val hasPermission = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
