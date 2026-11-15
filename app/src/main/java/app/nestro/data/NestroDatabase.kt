@@ -90,6 +90,8 @@ interface NestroDao {
         INNER JOIN conversations AS c ON c.id = m.conversationId
         WHERE c.projectId = :projectId
           AND c.id != :currentConversationId
+          AND m.role IN ('user', 'assistant')
+          AND LENGTH(TRIM(m.content)) > 0
           AND LOWER(m.content) LIKE '%' || LOWER(:term) || '%'
         ORDER BY c.updatedAt DESC, m.position DESC
         LIMIT :limit
