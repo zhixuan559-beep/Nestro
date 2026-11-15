@@ -243,14 +243,14 @@ fun NestroApp() {
                                                 draft = ""
                                                 val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
                                                 messages = messages + user
-                                                saveConversationMessages(prefs, activeConversationId, messages)
+                                                conversations = saveConversationMessages(prefs, activeConversationId, messages)
                                                 if (config.apiKey.isBlank() || config.model.isBlank()) {
                                                     status = "请先配置模型 API"
                                                     messages = messages + ChatMessage(
                                                         UUID.randomUUID().toString(), "assistant",
                                                         "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
                                                     )
-                                                    saveConversationMessages(prefs, activeConversationId, messages)
+                                                    conversations = saveConversationMessages(prefs, activeConversationId, messages)
                                                 } else {
                                                     busy = true
                                                     scope.launch {
@@ -266,7 +266,7 @@ fun NestroApp() {
                                                             UUID.randomUUID().toString(), "assistant",
                                                             answer.getOrElse { "请求失败：${it.message ?: "请检查网络、地址和 Key"}" }
                                                         )
-                                                        saveConversationMessages(prefs, activeConversationId, messages)
+                                                        conversations = saveConversationMessages(prefs, activeConversationId, messages)
                                                         status = if (answer.isSuccess) "已连接 · 本地保存" else "连接失败"
                                                         busy = false
                                                     }
@@ -709,7 +709,7 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
     prefs.edit().putString("conversations_v1", array.toString()).apply()
 }
 
-private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>) {
+private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>): List<ConversationRecord> {
     val existing = loadConversations(prefs)
     val record = existing.firstOrNull { it.id == activeId }
         ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList())
@@ -719,6 +719,7 @@ private fun saveConversationMessages(prefs: android.content.SharedPreferences, a
     val next = listOf(updated) + existing.filterNot { it.id == updated.id }
     saveConversationList(prefs, next)
     prefs.edit().putString("active_conversation_id", updated.id).apply()
+    return next
 }
 
 private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
@@ -764,6 +765,9 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
+    root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
+    root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
+    root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
@@ -776,6 +780,23 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
     require(root.optInt("version") == 1) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
+    val conversationsRaw = root.optString("conversations_v1", "[]")
+    val conversations = JSONArray(conversationsRaw)
+    require(conversations.length() <= 100) { "会话数量超出限制" }
+    for (i in 0 until conversations.length()) {
+        val conversation = conversations.getJSONObject(i)
+        require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
+        require(conversation.optString("title").length <= 80) { "会话标题过长" }
+        val items = conversation.optJSONArray("messages") ?: JSONArray()
+        require(items.length() <= 500) { "单个会话消息数量超出限制" }
+        for (j in 0 until items.length()) {
+            val item = items.getJSONObject(j)
+            require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
+            require(item.has("id") && item.has("content")) { "消息字段缺失" }
+        }
+    }
+    val globalMemory = root.optString("global_memory_v1", "")
+    require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
@@ -806,6 +827,9 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
     }
     val editor = prefs.edit()
         .putString("messages", messages.toString())
+        .putString("conversations_v1", conversations.toString())
+        .putString("active_conversation_id", root.optString("active_conversation_id", ""))
+        .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("skills", cleanSkills.toString())
