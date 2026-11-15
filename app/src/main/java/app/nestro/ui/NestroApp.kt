@@ -606,6 +606,8 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("format", "nestro-local-backup")
     root.put("version", 1)
     root.put("created_at", System.currentTimeMillis())
+    root.put("base_url", prefs.getString("base_url", "") ?: "")
+    root.put("model", prefs.getString("model", "") ?: "")
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
@@ -647,12 +649,23 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
         require(prompt.length <= 20000) { "专家提示词过长" }
         cleanPrompts.put(name, prompt)
     }
-    prefs.edit()
+    val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("skills", cleanSkills.toString())
-        .apply()
+    if (root.has("base_url") && root.has("model")) {
+        val restoredBaseUrl = root.optString("base_url")
+        val restoredModel = root.optString("model")
+        require(restoredBaseUrl.length <= 2048 && restoredModel.length <= 200) { "模型配置字段过长" }
+        val previousBaseUrl = prefs.getString("base_url", "") ?: ""
+        val previousModel = prefs.getString("model", "") ?: ""
+        editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
+        if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
+            editor.remove("api_key_enc")
+        }
+    }
+    editor.apply()
 }
 
 
