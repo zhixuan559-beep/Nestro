@@ -7,6 +7,7 @@
 ### 核心与本地安全
 - [x] Room 数据库存储会话、消息、项目空间及本地知识库文档/片段。
 - [x] Room 1→2 schema 迁移，为知识库建立独立表和索引。
+- [x] Room 2→3 schema 迁移，为项目内历史召回增加项目/消息组合索引。
 - [x] 首次启动从旧版 SharedPreferences/JSON 会话数据迁移。
 - [x] 会话及消息更新使用 Room 事务写入；旧偏好存储保留为备份兼容镜像。
 - [x] Kotlin + Jetpack Compose Android 应用。
