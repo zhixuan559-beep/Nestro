@@ -163,22 +163,22 @@ fun NestroApp() {
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 expertPrompts[selectedExpert].orEmpty(),
                 skills[selectedSkill].orEmpty()
-            ).filter { it.isNotBlank() }.joinToString("\n\n")
+            ).filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
             scope.launch {
-                var partialAnswer = ""
+                val partialAnswer = StringBuilder()
                 val result = runCatching {
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
-                        partialAnswer += chunk
+                        partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
-                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer)
+                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString())
                             }
                         }
                     }
                 }
                 val finalText = when {
                     result.isSuccess -> result.getOrThrow()
-                    partialAnswer.isNotBlank() -> partialAnswer
+                    partialAnswer.isNotEmpty() -> partialAnswer.toString()
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
@@ -635,6 +635,18 @@ private fun SimplePage(title: String, description: String) {
     }
 }
 
+private fun boundedRequestHistory(history: List<ChatMessage>, maxChars: Int = 48000): List<ChatMessage> {
+    var remaining = maxChars
+    val selected = ArrayList<ChatMessage>(minOf(history.size, 40))
+    for (message in history.asReversed().take(40)) {
+        if (remaining <= 0) break
+        val content = if (message.content.length > remaining) message.content.takeLast(remaining) else message.content
+        selected += message.copy(content = content)
+        remaining -= content.length
+    }
+    return selected.asReversed()
+}
+
 private object OpenAiClient {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
@@ -659,7 +671,7 @@ private object OpenAiClient {
                 put("model", config.model)
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    history.takeLast(40).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
+                    boundedRequestHistory(history).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
                 })
                 put("stream", true)
             }
