@@ -21,6 +21,23 @@ class WorkflowEngineTest {
         assertEquals(false,restored.steps[0].continueOnError)
     }
 
+    @Test fun runHistoryCodecRoundTripsExecutionRecords() {
+        val record=WorkflowRunRecord(
+            workflowId="workflow-1",
+            workflowName="研究到方案",
+            input="分析一个市场",
+            startedAt=123456L,
+            status="success",
+            output="最终方案",
+            stepRuns=listOf(WorkflowStepRun("step-1","研究","success",2,output="研究结果"))
+        )
+        val restored=WorkflowRunHistoryCodec.decode(WorkflowRunHistoryCodec.encode(listOf(record))).single()
+        assertEquals(record.workflowId,restored.workflowId)
+        assertEquals(record.status,restored.status)
+        assertEquals(2,restored.stepRuns.single().attempts)
+        assertEquals("研究结果",restored.stepRuns.single().output)
+    }
+
     @Test fun runnerPassesPreviousStepOutputIntoNextStep()= runBlocking {
         val workflow=WorkflowDefinition(name="流水线",description="",steps=listOf(
             WorkflowStep(title="分析",instruction="拆解目标"),

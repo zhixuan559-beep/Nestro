@@ -200,6 +200,9 @@ fun NestroApp() {
     var teamImportStatus by remember { mutableStateOf("") }
     var teamExportStatus by remember { mutableStateOf("") }
     var teamExportJson by remember { mutableStateOf("") }
+    var workflowHistory by remember {
+        mutableStateOf(WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]"))
+    }
     var workflows by remember {
         mutableStateOf(
             WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]").ifEmpty {
@@ -285,6 +288,7 @@ fun NestroApp() {
                     skills = loadSkills(prefs)
                     skillMetadata = loadSkillMetadata(prefs)
                     workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
+                    workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
                     automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
@@ -904,6 +908,7 @@ fun NestroApp() {
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
+                                                     val startedAt = System.currentTimeMillis()
                                                      runningWorkflowId = workflow.id
                                                      busy = true
                                                      stopRequested = false
@@ -936,6 +941,21 @@ fun NestroApp() {
                                                              }
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
+                                                         val runRecord = WorkflowRunRecord(
+                                                             workflowId = workflow.id,
+                                                             workflowName = workflow.name,
+                                                             input = input,
+                                                             startedAt = startedAt,
+                                                             status = when {
+                                                                 stopRequested -> "stopped"
+                                                                 result.isSuccess -> "success"
+                                                                 else -> "failed"
+                                                             },
+                                                             output = assistantText.take(20000),
+                                                             stepRuns = result.getOrNull()?.stepRuns.orEmpty()
+                                                         )
+                                                         workflowHistory = (listOf(runRecord) + workflowHistory).take(50)
+                                                         prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
                                                          if (activeConversationId == conversationId) messages = completed
@@ -958,6 +978,22 @@ fun NestroApp() {
                                                      workflows = workflows.filterNot { it.id == workflow.id }
                                                      prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                                                  }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                             }
+                                         }
+                                     }
+                                 }
+                                 if (workflowHistory.isNotEmpty()) {
+                                     Text("最近运行记录", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                     workflowHistory.take(5).forEach { record ->
+                                         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                 Text(record.workflowName, color = Ink)
+                                                 Text(
+                                                     "${when (record.status) { "success" -> "成功"; "stopped" -> "已停止"; else -> "失败" }} · ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(record.startedAt))}",
+                                                     color = Muted,
+                                                     style = MaterialTheme.typography.bodySmall
+                                                 )
+                                                 Text(record.input.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                              }
                                          }
                                      }
@@ -2459,7 +2495,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 4)
+    root.put("version", 5)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -2474,6 +2510,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
+    root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("projects", projectsToJson(loadProjects(prefs)))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val memories = JSONArray()
@@ -2537,7 +2574,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..4) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..5) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -2561,6 +2598,11 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     val restoredWorkflows = WorkflowDefinitionCodec.decode(workflowRaw)
     require(restoredWorkflows.size == workflowArray.length()) { "工作流备份包含无效定义" }
     restoredWorkflows.forEach { WorkflowDefinitionCodec.validate(it) }
+    val workflowHistoryRaw = root.optString("workflow_runs_v1", "[]")
+    val workflowHistoryArray = JSONArray(workflowHistoryRaw)
+    require(workflowHistoryArray.length() <= 50) { "工作流运行记录数量超出限制" }
+    val restoredWorkflowHistory = WorkflowRunHistoryCodec.decode(workflowHistoryRaw)
+    require(restoredWorkflowHistory.size == workflowHistoryArray.length()) { "工作流运行记录包含无效数据" }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
@@ -2710,6 +2752,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("skills", cleanSkills.toString())
         .putString("skill_metadata_v1", cleanSkillMetadata.toString())
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
+        .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
         .putString("active_project_id", root.optString("active_project_id", "default"))
         .putLong("local_snapshot_saved_at", System.currentTimeMillis())

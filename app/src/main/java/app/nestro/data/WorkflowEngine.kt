@@ -41,6 +41,66 @@ data class WorkflowRunResult(
     val stepRuns:List<WorkflowStepRun> = emptyList()
 )
 
+data class WorkflowRunRecord(
+    val id:String=UUID.randomUUID().toString(),
+    val workflowId:String,
+    val workflowName:String,
+    val input:String,
+    val startedAt:Long,
+    val status:String,
+    val output:String,
+    val stepRuns:List<WorkflowStepRun> = emptyList()
+)
+
+object WorkflowRunHistoryCodec {
+    fun encode(records:List<WorkflowRunRecord>):String = JSONArray().apply {
+        records.take(50).forEach { record ->
+            put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
+                .put("workflowName",record.workflowName).put("input",record.input.take(12000))
+                .put("startedAt",record.startedAt).put("status",record.status)
+                .put("output",record.output.take(20000))
+                .put("stepRuns",JSONArray().apply {
+                    record.stepRuns.take(20).forEach { step ->
+                        put(JSONObject().put("stepId",step.stepId).put("title",step.title)
+                            .put("status",step.status).put("attempts",step.attempts)
+                            .put("output",step.output.take(12000)).put("error",step.error.take(2000)))
+                    }
+                })
+        }
+    }.toString()
+
+    fun decode(raw:String):List<WorkflowRunRecord> = runCatching {
+        val array=JSONArray(raw)
+        (0 until array.length()).mapNotNull { index ->
+            val item=array.optJSONObject(index) ?: return@mapNotNull null
+            val name=item.optString("workflowName").take(40)
+            if(name.isBlank()) return@mapNotNull null
+            val steps=item.optJSONArray("stepRuns") ?: JSONArray()
+            val parsed=(0 until steps.length()).mapNotNull { stepIndex ->
+                val step=steps.optJSONObject(stepIndex) ?: return@mapNotNull null
+                WorkflowStepRun(
+                    stepId=step.optString("stepId"),
+                    title=step.optString("title").take(40),
+                    status=step.optString("status"),
+                    attempts=step.optInt("attempts").coerceIn(0,4),
+                    output=step.optString("output").take(12000),
+                    error=step.optString("error").take(2000)
+                )
+            }.take(20)
+            WorkflowRunRecord(
+                id=item.optString("id").ifBlank { UUID.randomUUID().toString() },
+                workflowId=item.optString("workflowId"),
+                workflowName=name,
+                input=item.optString("input").take(12000),
+                startedAt=item.optLong("startedAt"),
+                status=item.optString("status").take(20),
+                output=item.optString("output").take(20000),
+                stepRuns=parsed
+            )
+        }.take(50)
+    }.getOrDefault(emptyList())
+}
+
 object WorkflowDefinitionCodec {
     fun encode(items:List<WorkflowDefinition>):String = JSONArray().apply {
         items.take(100).forEach { workflow ->
