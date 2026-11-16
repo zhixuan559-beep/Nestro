@@ -175,6 +175,7 @@ fun NestroApp() {
     var page by remember { mutableStateOf("home") }
     var pendingCapabilityTaskId by remember { mutableStateOf("") }
     var activeCapabilityTaskId by remember { mutableStateOf("") }
+    var pauseRequestedCapabilityTaskId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
@@ -994,7 +995,7 @@ fun NestroApp() {
                     if (currentTask?.state == CapabilityTaskState.RUNNING) {
                         CapabilityTaskStore.transition(
                             database.dao(), requestCapabilityTaskId,
-                            if (result.isSuccess && !stopRequested) CapabilityTaskState.SUCCEEDED else if (stopRequested) CapabilityTaskState.CANCELLED else CapabilityTaskState.FAILED,
+                            if (result.isSuccess && !stopRequested) CapabilityTaskState.SUCCEEDED else if (pauseRequestedCapabilityTaskId == requestCapabilityTaskId) CapabilityTaskState.PAUSED else if (stopRequested) CapabilityTaskState.CANCELLED else CapabilityTaskState.FAILED,
                             "chat_finished", if (result.isSuccess) "主对话已返回结果" else "主对话执行失败",
                             resultSummary = result.getOrNull()?.take(8000),
                             error = result.exceptionOrNull()?.message?.take(2000) ?: ""
@@ -1023,6 +1024,7 @@ fun NestroApp() {
                 busy = false
                 activeRequestId = ""
                 if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
+                if (pauseRequestedCapabilityTaskId == requestCapabilityTaskId) pauseRequestedCapabilityTaskId = ""
                 val userFacts = (requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt)
                 val extractionInput = UserMemoryStore.prepareExtractionInput(userFacts)
                 if (result.isSuccess && !stopRequested && requestAutomaticMemoryEnabled && requestMemoryAuthorized &&
@@ -2252,7 +2254,10 @@ fun NestroApp() {
                                 }
                             },
                             onPauseTask = { task ->
-                                if (activeCapabilityTaskId == task.id) stopRequested = true
+                                if (activeCapabilityTaskId == task.id) {
+                                    pauseRequestedCapabilityTaskId = task.id
+                                    stopRequested = true
+                                }
                                 scope.launch(Dispatchers.IO) {
                                     CapabilityTaskStore.pause(database.dao(), task.id)
                                 }

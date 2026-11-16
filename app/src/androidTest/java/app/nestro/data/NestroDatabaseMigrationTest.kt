@@ -341,7 +341,7 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionElevenWithoutLosingConversationData() = runBlocking {
+    @Test fun migratesVersionOneDatabaseThroughVersionTwelveWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -364,7 +364,7 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(11, schemaVersion)
+            assertEquals(12, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
@@ -388,6 +388,19 @@ class NestroDatabaseMigrationTest {
                 names
             }
             assertTrue(memoryColumns.contains("shareAcrossProjects"))
+            val taskTableCursor = migrated.openHelper.writableDatabase.query("SELECT name FROM sqlite_master WHERE type='table' AND name='capability_tasks'")
+            assertTrue("统一任务表必须随迁移创建", taskTableCursor.use { it.moveToFirst() })
+            val eventTableCursor = migrated.openHelper.writableDatabase.query("SELECT name FROM sqlite_master WHERE type='table' AND name='capability_task_events'")
+            assertTrue("任务事件表必须随迁移创建", eventTableCursor.use { it.moveToFirst() })
+            val taskIndexCursor = migrated.openHelper.writableDatabase.query("PRAGMA index_list('capability_tasks')")
+            val taskIndexes = taskIndexCursor.use { cursor ->
+                val names = mutableSetOf<String>()
+                val column = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) names += cursor.getString(column)
+                names
+            }
+            assertTrue(taskIndexes.contains("index_capability_tasks_idempotencyKey"))
+
             val dao = migrated.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fts-doc", "default", "FTS", "text/plain", 1, 2, "b".repeat(64)))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("fts-chunk", "fts-doc", "default", 0, "Android offline search index")))
