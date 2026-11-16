@@ -305,6 +305,8 @@ fun NestroApp() {
     var workflowPaused by remember { mutableStateOf(false) }
     var workflowPauseGate by remember { mutableStateOf<CompletableDeferred<Unit>?>(null) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
+    var pendingBackupUri by remember { mutableStateOf<Uri?>(null) }
+    var showBackupRestoreConfirm by remember { mutableStateOf(false) }
     var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
 
@@ -330,55 +332,56 @@ fun NestroApp() {
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            backupStatus = "正在恢复本机数据…"
-            scope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                            ?: error("无法读取文件")
-                        require(raw.length <= 10_000_000) { "备份文件过大" }
-                        restoreLocalBackup(prefs, raw, database)
-                    }
+            pendingBackupUri = uri
+            showBackupRestoreConfirm = true
+        }
+    }
+    val performBackupRestore: (Uri) -> Unit = { uri ->
+        backupStatus = "正在恢复本机数据…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = readBackupText(context, uri)
+                    restoreLocalBackup(prefs, raw, database)
                 }
-                if (result.isSuccess) {
-                    modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-                    activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
-                    modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
-                    modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
-                    val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-                    config = if (restoredActiveProfile != null) {
-                        ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
-                    } else LocalVault.read(context)
-                    persistedConversationVersions.clear()
-                    conversations = loadConversations(prefs)
-                    projects = loadProjects(prefs)
-                    activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
-                    activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
-                    messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
-                    globalMemory = prefs.getString("global_memory_v1", "") ?: ""
-                    memoryDraft = globalMemory
-                    experts = loadExperts(prefs)
-                    expertPrompts = loadExpertPrompts(prefs)
-                    expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
-                    expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
-                    expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
-                    selectedExpert = ExpertCatalogRules.resolveSelection(
-                        prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles
-                    )
-                    prefs.edit().putString("selected_expert", selectedExpert).apply()
-                    expertTeams = loadExpertTeams(prefs)
-                    selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
-                    skills = loadSkills(prefs)
-                    skillMetadata = loadSkillMetadata(prefs)
-                    disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
-                    if(selectedSkill in disabledSkills) selectedSkill = ""
-                    workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
-                    workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
-                    expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-                    automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
-                }
-                backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
             }
+            if (result.isSuccess) {
+                modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
+                activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
+                modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
+                modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
+                val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+                config = if (restoredActiveProfile != null) {
+                    ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
+                } else LocalVault.read(context)
+                persistedConversationVersions.clear()
+                conversations = loadConversations(prefs)
+                projects = loadProjects(prefs)
+                activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
+                activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
+                messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
+                draft = prefs.getString("draft_$activeConversationId", "") ?: ""
+                globalMemory = prefs.getString("global_memory_v1", "") ?: ""
+                memoryDraft = globalMemory
+                experts = loadExperts(prefs)
+                expertPrompts = loadExpertPrompts(prefs)
+                expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
+                expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
+                expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
+                selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
+                prefs.edit().putString("selected_expert", selectedExpert).apply()
+                expertTeams = loadExpertTeams(prefs)
+                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                skills = loadSkills(prefs)
+                skillMetadata = loadSkillMetadata(prefs)
+                disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
+                if (selectedSkill in disabledSkills) selectedSkill = ""
+                workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
+                workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+            }
+            backupStatus = result.fold({ "恢复完成。API Key 未包含在备份中，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
         }
     }
 
@@ -1897,6 +1900,23 @@ fun NestroApp() {
         }
     }
 
+    if (showBackupRestoreConfirm && pendingBackupUri != null) {
+        AlertDialog(
+            onDismissRequest = { showBackupRestoreConfirm = false; pendingBackupUri = null },
+            title = { Text("确认恢复本地备份？") },
+            text = { Text("恢复会覆盖当前设备中的会话、项目、知识库、记忆和配置。API Key 不会从备份导入。建议先导出当前数据，再继续。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingBackupUri
+                    showBackupRestoreConfirm = false
+                    pendingBackupUri = null
+                    if (uri != null) performBackupRestore(uri)
+                }) { Text("覆盖并恢复", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+            },
+            dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false; pendingBackupUri = null }) { Text("取消") } }
+        )
+    }
+
     if (showTeamDialog) {
         AlertDialog(
             onDismissRequest = { showTeamDialog = false },
@@ -3368,6 +3388,23 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
     val json = JSONObject()
     prompts.forEach { (name, prompt) -> json.put(name, prompt) }
     return json.toString()
+}
+
+private fun readBackupText(context: Context, uri: Uri): String {
+    val input = context.contentResolver.openInputStream(uri) ?: error("无法读取文件")
+    val output = java.io.ByteArrayOutputStream()
+    input.use { stream ->
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= 10_000_000) { "备份文件超过 10 MB" }
+            output.write(buffer, 0, count)
+        }
+    }
+    return output.toByteArray().toString(Charsets.UTF_8)
 }
 
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
