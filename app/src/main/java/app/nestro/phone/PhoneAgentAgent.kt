@@ -124,7 +124,8 @@ object PhoneAgentAgent {
                 PhoneAgentTaskStore.STATUS_COMPLETED,
                 PhoneAgentTaskStore.STATUS_CANCELLED,
                 PhoneAgentTaskStore.STATUS_WAITING_USER,
-                PhoneAgentTaskStore.STATUS_FAILED
+                PhoneAgentTaskStore.STATUS_FAILED,
+                PhoneAgentTaskStore.STATUS_INTERRUPTED
             )
         ) {
             // This path is a cooperative pause between actions, not process-death recovery.

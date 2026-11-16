@@ -13,6 +13,8 @@ class PhoneAgentActionParserTest {
         assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, true))
         assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, false))
         assertEquals(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_COMPLETED, true))
+        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_INTERRUPTED, true))
+        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_INTERRUPTED, false))
     }
 
     @Test

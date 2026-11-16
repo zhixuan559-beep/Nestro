@@ -143,7 +143,7 @@ object PhoneAgentTaskStore {
     suspend fun markInterrupted(dao: NestroDao, taskId: String) {
         val task = dao.phoneAgentTask(taskId) ?: return
         val actionCount = runCatching { decodeActions(task.planJson).size }.getOrDefault(0)
-        val ambiguousActionPending = task.status == STATUS_RUNNING && task.currentStep < actionCount
+        val ambiguousActionPending = task.status in setOf(STATUS_RUNNING, STATUS_INTERRUPTED) && task.currentStep < actionCount
         updateProgress(
             dao,
             taskId,
@@ -153,7 +153,7 @@ object PhoneAgentTaskStore {
     }
 
     fun interruptedStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
-        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED)) return currentStatus
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_INTERRUPTED)) return currentStatus
         return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
     }
 
