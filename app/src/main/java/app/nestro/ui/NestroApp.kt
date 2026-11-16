@@ -586,6 +586,14 @@ fun NestroApp() {
     }
 
 
+    val requestModelConfigs = buildList {
+        if (config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
+        modelProfiles.filterNot { it.id == activeModelProfileId }.forEach { profile ->
+            val key = LocalVault.readProfile(context, profile.id)
+            if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
+        }
+    }.distinctBy { "${it.baseUrl}|${it.model}" }
+
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
@@ -617,8 +625,8 @@ fun NestroApp() {
             scope.launch {
                 val generated = withContext(Dispatchers.IO) {
                     runCatching {
-                        val raw = OpenAiClient.complete(
-                            config,
+                        val raw = OpenAiClient.completeWithFallback(
+                            requestModelConfigs,
                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
                             generatorPrompt
                         )
@@ -740,8 +748,8 @@ fun NestroApp() {
                             }
                         ) { member, memberPrompt ->
                             withContext(Dispatchers.IO) {
-                                OpenAiClient.complete(
-                                    config,
+                                OpenAiClient.completeWithFallback(
+                                    requestModelConfigs,
                                     requestHistory,
                                     listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
                                         .joinToString("\n\n").take(18000),
@@ -763,7 +771,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.stream(config, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens) { chunk ->
+                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
@@ -1125,7 +1133,7 @@ fun NestroApp() {
                                                                      WorkflowStepKind.PROMPT -> ""
                                                                  }
                                                                  withContext(Dispatchers.IO) {
-                                                                     OpenAiClient.complete(config, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                     OpenAiClient.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
                                                                          listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
                                                                          temperature = expertOptions?.temperature,
                                                                          maxTokens = expertOptions?.maxTokens)
@@ -2834,6 +2842,53 @@ private object OpenAiClient {
     private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
 
     fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
+
+    fun completeWithFallback(
+        configs: List<ModelConfig>,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        connectTimeoutMillis: Int = 20000,
+        readTimeoutMillis: Int = 90000,
+        temperature: Double? = null,
+        maxTokens: Int? = null
+    ): String {
+        require(configs.isNotEmpty()) { "没有可用的模型配置" }
+        var lastError: Throwable? = null
+        configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
+            try {
+                return complete(candidate, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, temperature, maxTokens)
+            } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                lastError = error
+            }
+        }
+        throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
+    }
+
+    suspend fun streamWithFallback(
+        configs: List<ModelConfig>,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        temperature: Double? = null,
+        maxTokens: Int? = null,
+        onChunk: suspend (String) -> Unit
+    ): String {
+        require(configs.isNotEmpty()) { "没有可用的模型配置" }
+        var lastError: Throwable? = null
+        configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
+            var emitted = false
+            try {
+                return stream(candidate, history, systemPrompt, temperature, maxTokens) { chunk ->
+                    emitted = true
+                    onChunk(chunk)
+                }
+            } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException || emitted) throw error
+                lastError = error
+            }
+        }
+        throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
+    }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
