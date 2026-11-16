@@ -22,6 +22,7 @@ import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
+import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
@@ -1115,7 +1116,7 @@ fun NestroApp() {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Column(Modifier.weight(1f).clickable { selectedExpert = name; page = "home" }) {
                                                 Text("✦  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
-                                                Text(expertPrompts[name]?.take(100) ?: "内置专家配置", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                Text(expertPrompts[name]?.take(100)?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(name).ifBlank { "尚未设置角色指令" }.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                             TextButton(onClick = {
                                                 editingExpertName = name
@@ -1133,11 +1134,13 @@ showExpertDialog = true
                                              TextButton(onClick = {
                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
+                                                     workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
                                                     if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
                                                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                                                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+                                                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
                                                         .putString("selected_team_id", selectedTeamId).apply()
                                                     if (selectedExpert == name) selectedExpert = "通用助手"
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
@@ -2124,7 +2127,7 @@ showExpertDialog = true
             title = { Text(if (editingExpertName.isBlank()) "创建专家" else "编辑专家") },
             text = {
                 Column {
-                    OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it }, label = { Text("专家名称") }, singleLine = true)
+                    OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it; expertDialogError = "" }, label = { Text("专家名称") }, singleLine = true)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = expertPromptDraft, onValueChange = { expertPromptDraft = it }, label = { Text("专家角色与工作要求") }, placeholder = { Text("例如：你是一位严谨的中文文案编辑，先判断目标读者，再给出可直接发布的文案。") }, minLines = 4)
                     if (expertDialogError.isNotBlank()) Text(expertDialogError, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
@@ -2155,9 +2158,9 @@ showExpertDialog = true
                     expertPromptDraft = ""
                     showExpertDialog = false
                     page = "experts"
-                }) { Text("创建", color = Mint) }
+                }) { Text("保存专家", color = Mint) }
             },
-            dismissButton = { TextButton(onClick = { showExpertDialog = false }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { showExpertDialog = false; expertDialogError = "" }) { Text("取消") } }
         )
     }
 }
