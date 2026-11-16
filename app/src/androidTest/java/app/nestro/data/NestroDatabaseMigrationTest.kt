@@ -38,7 +38,9 @@ class NestroDatabaseMigrationTest {
             .build()
         try {
             val rows = migrated.dao().loadConversations()
-            assertEquals(7, migrated.openHelper.writableDatabase.version)
+            val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
+            val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
+            assertEquals(7, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
