@@ -1,5 +1,6 @@
 package app.nestro.ui
 
+import app.nestro.data.CapabilityRegistryStore
 import app.nestro.data.ConversationEntity
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
@@ -213,6 +214,23 @@ fun NestroApp() {
     var reuseLastUserOnSend by remember { mutableStateOf(false) }
     var pendingAssistantRevision by remember { mutableStateOf<ChatMessage?>(null) }
     var status by remember { mutableStateOf("尚未配置模型") }
+
+    LaunchedEffect(page, activeProjectId) {
+        val guardedCapability = when (page) {
+            "models", "experts", "teams", "skills", "workflows", "knowledge", "memory", "phone" -> page
+            else -> null
+        }
+        if (guardedCapability != null &&
+            !CapabilityRegistryStore.isGranted(prefs, activeProjectId, guardedCapability, true)
+        ) {
+            CapabilityRegistryStore.record(
+                prefs, activeProjectId, guardedCapability, guardedCapability,
+                "route_access", "denied"
+            )
+            status = "当前项目未授权访问该能力"
+            page = "home"
+        }
+    }
     var recallSources by remember { mutableStateOf(emptyList<ConversationRecallSource>()) }
     var showRecallDialog by remember { mutableStateOf(false) }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
@@ -2158,6 +2176,7 @@ fun NestroApp() {
                         "capabilities" -> CapabilityCenterPage(
                             prefs = prefs,
                             projectId = activeProjectId,
+                            onDispatchTask = { task -> draft = task; page = "home" },
                             activeModel = config.model,
                             modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
                             expertCount = experts.size,

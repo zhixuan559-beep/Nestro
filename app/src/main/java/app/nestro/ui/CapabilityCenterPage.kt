@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import android.content.SharedPreferences
+import app.nestro.data.CapabilityDescriptor
 import app.nestro.data.CapabilityRegistryStore
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -19,107 +20,127 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private data class CapabilityEntry(
-    val id: String, val title: String, val group: String, val description: String,
-    val status: String, val detail: String, val route: String? = null,
-    val defaultGranted: Boolean = true, val available: Boolean = true
-)
-
 @Composable
 fun CapabilityCenterPage(
-    prefs: SharedPreferences, projectId: String, activeModel: String, modelReady: Boolean,
-    expertCount: Int, teamCount: Int, skillCount: Int, enabledSkillCount: Int,
-    workflowCount: Int, onNavigate: (String) -> Unit
+    prefs: SharedPreferences,
+    projectId: String,
+    onDispatchTask: (String) -> Unit,
+    activeModel: String,
+    modelReady: Boolean,
+    expertCount: Int,
+    teamCount: Int,
+    skillCount: Int,
+    enabledSkillCount: Int,
+    workflowCount: Int,
+    onNavigate: (String) -> Unit
 ) {
-    val mint = Color(0xFF34D399); val ink = Color(0xFFE8EAED); val muted = Color(0xFF8A8F98)
-    val card = Color(0xFF1A1C20); val line = Color(0xFF2A2D33); val warning = Color(0xFFFBBF24)
+    val mint=Color(0xFF34D399); val ink=Color(0xFFE8EAED); val muted=Color(0xFF8A8F98)
+    val card=Color(0xFF1A1C20); val line=Color(0xFF2A2D33); val warning=Color(0xFFFBBF24)
     var query by remember { mutableStateOf("") }; var filter by remember { mutableStateOf("全部") }
-    var refresh by remember { mutableIntStateOf(0) }; var pending by remember { mutableStateOf<CapabilityEntry?>(null) }
-    var showAudit by remember { mutableStateOf(false) }
-    val auditRecords = remember(projectId, refresh, showAudit) { CapabilityRegistryStore.recentAudit(prefs, projectId) }
-    val entries = listOf(
-        CapabilityEntry("models","模型服务","基础能力","管理模型服务商、API 配置、主模型切换与故障切换。",if(modelReady)"已配置" else "未配置",if(modelReady)activeModel else "尚未启用可用模型配置","models"),
-        CapabilityEntry("experts","专家系统","智能协作","管理专家角色、提示词、模板与版本。","已接入","$expertCount 个专家配置","experts"),
-        CapabilityEntry("teams","专家团队","智能协作","组合多个专家并行分析，由主模型汇总结果。","已接入","$teamCount 个团队","teams"),
-        CapabilityEntry("skills","Skills 技能","智能协作","管理可复用技能、权限声明、导入导出与启停。","已接入","$enabledSkillCount / $skillCount 个技能已启用","skills"),
-        CapabilityEntry("workflows","工作流","任务编排","将提示词、专家和技能组合成连续任务步骤。","已接入","$workflowCount 条工作流","workflows"),
-        CapabilityEntry("knowledge","本地知识库","上下文","导入资料、项目隔离检索，并向对话提供可追溯上下文。","已接入","按当前项目独立检索","knowledge"),
-        CapabilityEntry("memory","长期记忆","上下文","管理全局记忆与项目记忆，支持来源追溯和授权共享。","已接入","全局与项目级记忆","memory"),
-        CapabilityEntry("phone","Phone Agent","设备执行","通过 Android 无障碍能力执行受控手机操作，敏感动作交由用户确认。","基础能力","仍受系统权限与应用可访问性限制","phone"),
-        CapabilityEntry("mcp","MCP 工具接入","外部工具","统一接入本地或远程 MCP 服务，并管理逐工具授权、调用预览与审计。","待接入","当前版本尚未提供 MCP 连接器",defaultGranted=false,available=false),
-        CapabilityEntry("github","GitHub 工作台","开发工具","连接代码仓库，浏览文件、审查变更并执行受控开发操作。","待接入","当前版本尚未提供仓库连接器",defaultGranted=false,available=false)
+    var refresh by remember { mutableIntStateOf(0) }; var pending by remember { mutableStateOf<CapabilityDescriptor?>(null) }
+    var taskDraft by remember { mutableStateOf("") }; var showAudit by remember { mutableStateOf(false) }
+
+    val builtIns=listOf(
+        CapabilityDescriptor("models","模型服务","基础能力","管理模型服务商、API 配置、主模型切换与故障切换。",status=if(modelReady)"已配置" else "未配置",detail=if(modelReady)activeModel else "尚未启用可用模型配置",route="models"),
+        CapabilityDescriptor("experts","专家系统","智能协作","管理专家角色、提示词、模板与版本。",detail="$expertCount 个专家配置",route="experts"),
+        CapabilityDescriptor("teams","专家团队","智能协作","组合多个专家并行分析，由主模型汇总结果。",detail="$teamCount 个团队",route="teams"),
+        CapabilityDescriptor("skills","Skills 技能","智能协作","管理可复用技能、权限声明、导入导出与启停。",detail="$enabledSkillCount / $skillCount 个技能已启用",route="skills"),
+        CapabilityDescriptor("workflows","工作流","任务编排","将提示词、专家和技能组合成连续任务步骤。",detail="$workflowCount 条工作流",route="workflows"),
+        CapabilityDescriptor("knowledge","本地知识库","上下文","导入资料、项目隔离检索，并向对话提供可追溯上下文。",detail="按当前项目独立检索",route="knowledge"),
+        CapabilityDescriptor("memory","长期记忆","上下文","管理全局记忆与项目记忆，支持来源追溯和授权共享。",detail="全局与项目级记忆",route="memory"),
+        CapabilityDescriptor("phone","Phone Agent","设备执行","通过 Android 无障碍能力执行受控手机操作，敏感动作交由用户确认。",status="基础能力",detail="仍受系统权限与应用可访问性限制",route="phone"),
+        CapabilityDescriptor("mcp","MCP 工具接入","外部工具","统一接入本地或远程 MCP 服务，并管理逐工具授权、调用预览与审计。",status="待接入",detail="连接器尚未实现",available=false,defaultGranted=false),
+        CapabilityDescriptor("github","GitHub 工作台","开发工具","连接代码仓库，浏览文件、审查变更并执行受控开发操作。",status="待接入",detail="连接器尚未实现",available=false,defaultGranted=false)
     )
-    val grants = entries.associate { it.id to CapabilityRegistryStore.isGranted(prefs,projectId,it.id,it.defaultGranted) }
-    val visible = entries.filter {
-        val q=query.isBlank() || it.title.contains(query,true) || it.description.contains(query,true) || it.group.contains(query,true)
-        val g=grants[it.id]==true
-        q && when(filter) { "已授权"->g; "未授权"->!g; "未接入"->!it.available; else->true }
+    LaunchedEffect(builtIns) { CapabilityRegistryStore.registerAll(prefs,builtIns); refresh++ }
+    val registry=remember(refresh,projectId) { CapabilityRegistryStore.list(prefs) }
+    val grants=registry.associate { it.id to CapabilityRegistryStore.isGranted(prefs,projectId,it.id,it.defaultGranted) }
+    val audit=remember(projectId,refresh,showAudit) { CapabilityRegistryStore.recentAudit(prefs,projectId) }
+    val visible=registry.filter { item ->
+        val matches=query.isBlank() || item.title.contains(query,true) || item.description.contains(query,true) || item.category.contains(query,true)
+        val allowed=grants[item.id]==true
+        matches && when(filter) { "已授权"->allowed; "未授权"->!allowed; "未接入"->!item.available; else->true }
     }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("统一能力中心",color=ink,style=MaterialTheme.typography.headlineSmall)
-        Text("统一发现、授权与进入 Nestro 能力。授权按项目隔离；外部连接器未接入时不会显示为可调用。",color=muted,style=MaterialTheme.typography.bodySmall)
+        Text("统一发现、授权与调度 Nestro 能力。目录支持模块注册；授权按项目隔离，未接入的外部连接器不会显示为可调用。",color=muted,style=MaterialTheme.typography.bodySmall)
         Surface(color=card,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,line),modifier=Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically) { Text("当前项目权限",color=ink,fontWeight=FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Text(projectId,color=muted,style=MaterialTheme.typography.labelSmall) }
+                Row(verticalAlignment=Alignment.CenterVertically) { Text("当前项目能力",color=ink,fontWeight=FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Text(projectId,color=muted,style=MaterialTheme.typography.labelSmall) }
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Metric("已授权",entries.count{it.available&&grants[it.id]==true}.toString(),mint,Modifier.weight(1f))
-                    Metric("未接入",entries.count{!it.available}.toString(),warning,Modifier.weight(1f))
-                    Metric("能力项",entries.size.toString(),ink,Modifier.weight(1f))
+                    Metric("已授权",registry.count{it.available&&grants[it.id]==true}.toString(),mint,Modifier.weight(1f))
+                    Metric("未接入",registry.count{!it.available}.toString(),warning,Modifier.weight(1f))
+                    Metric("注册能力",registry.size.toString(),ink,Modifier.weight(1f))
                 }
-                Text("撤销授权只阻止从本入口进入，不删除数据；设备操作等高风险动作仍由对应模块二次确认。",color=muted,style=MaterialTheme.typography.labelSmall)
             }
         }
-        OutlinedTextField(query,{query=it.take(60)},Modifier.fillMaxWidth(),singleLine=true,label={Text("搜索能力")})
+        OutlinedTextField(query,{query=it.take(60)},Modifier.fillMaxWidth(),singleLine=true,label={Text("搜索能力")},placeholder={Text("例如：模型、MCP、技能")})
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("全部","已授权","未授权","未接入").forEach { FilterChip(filter==it,{filter=it},label={Text(it)}) } }
-        visible.forEach { e ->
-            val granted=grants[e.id]==true
+        visible.forEach { item ->
+            val granted=grants[item.id]==true
             Surface(color=card,shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,line),modifier=Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text(e.title,color=ink,fontWeight=FontWeight.SemiBold); Text(e.group,color=muted,style=MaterialTheme.typography.labelSmall) }
-                        Text(if(!e.available)"未接入" else if(!granted)"未授权" else e.status,color=if(!e.available||!granted)warning else mint,style=MaterialTheme.typography.labelMedium)
+                        Column(Modifier.weight(1f)) { Text(item.title,color=ink,fontWeight=FontWeight.SemiBold); Text(item.category,color=muted,style=MaterialTheme.typography.labelSmall) }
+                        Text(if(!item.available)"未接入" else if(!granted)"未授权" else item.status,color=if(!item.available||!granted)warning else mint,style=MaterialTheme.typography.labelMedium)
                     }
-                    Text(e.description,color=muted,style=MaterialTheme.typography.bodySmall)
+                    Text(item.description,color=muted,style=MaterialTheme.typography.bodySmall)
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        Text(e.detail,color=muted,style=MaterialTheme.typography.labelSmall,modifier=Modifier.weight(1f))
-                        if(e.available) Switch(granted,{checked->
-                            CapabilityRegistryStore.setGranted(prefs,projectId,e.id,checked)
-                            CapabilityRegistryStore.record(prefs,projectId,e.id,e.title,if(checked)"grant" else "revoke",if(checked)"success" else "revoked")
+                        Text(item.detail,color=muted,style=MaterialTheme.typography.labelSmall,modifier=Modifier.weight(1f))
+                        if(item.available) Switch(granted,{checked->
+                            CapabilityRegistryStore.setGranted(prefs,projectId,item.id,checked)
+                            CapabilityRegistryStore.record(prefs,projectId,item.id,item.title,if(checked)"grant" else "revoke",if(checked)"success" else "revoked")
                             refresh++
                         })
                     }
-                    if(e.available) Text(if(granted)"预览并进入 →" else "需先授权",color=if(granted)mint else muted,style=MaterialTheme.typography.labelMedium,
-                        modifier=Modifier.clickable(enabled=granted){ CapabilityRegistryStore.record(prefs,projectId,e.id,e.title,"preview","pending_confirmation");refresh++;pending=e })
-                    else Text("连接器尚未实现，不能授权或调用。",color=warning,style=MaterialTheme.typography.labelSmall)
+                    if(item.available) Text(if(granted)"预览并进入 →" else "需先授权",color=if(granted)mint else muted,style=MaterialTheme.typography.labelMedium,
+                        modifier=Modifier.clickable(enabled=granted){ CapabilityRegistryStore.record(prefs,projectId,item.id,item.title,"preview","pending_confirmation");refresh++;pending=item })
+                    else Text("连接器尚未实现，当前不能授权或调用。",color=warning,style=MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        Surface(color=card,shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,line),modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("统一任务入口",color=ink,fontWeight=FontWeight.SemiBold)
+                Text("把目标交给主对话，由当前模型结合项目上下文处理；此入口不会绕过各模块原有权限或自动执行高风险操作。",color=muted,style=MaterialTheme.typography.bodySmall)
+                OutlinedTextField(taskDraft,{taskDraft=it.take(2000)},Modifier.fillMaxWidth(),minLines=2,label={Text("描述你要完成的任务")})
+                Button(onClick={
+                    val prompt="请从统一能力入口处理以下任务：${taskDraft.trim()}。请先判断当前项目中可用的模型、专家、团队、Skills、工作流、知识库、记忆或 Phone Agent 能力；只使用已授权且实际可用的能力，涉及外部调用、设备操作或不可逆动作时先请求确认。"
+                    CapabilityRegistryStore.record(prefs,projectId,"dispatcher","统一任务入口","dispatch_to_chat","handed_to_main_chat")
+                    onDispatchTask(prompt)
+                },enabled=taskDraft.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("带入主对话") }
+            }
+        }
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            Text("最近授权与访问审计",color=ink,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
+            TextButton(onClick={showAudit=!showAudit;refresh++}) { Text(if(showAudit)"收起" else "查看记录",color=mint) }
+        }
+        if(showAudit) {
+            if(audit.isEmpty()) Text("当前项目暂无记录。",color=muted,style=MaterialTheme.typography.bodySmall)
+            audit.forEach { record ->
+                Column(Modifier.padding(vertical=3.dp)) {
+                    Text("${record.capabilityName} · ${record.action} · ${record.outcome}",color=ink,style=MaterialTheme.typography.bodySmall)
+                    Text(SimpleDateFormat("MM-dd HH:mm:ss",Locale.getDefault()).format(Date(record.createdAt)),color=muted,style=MaterialTheme.typography.labelSmall)
                 }
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Text("最近访问审计",color=ink,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
-            TextButton(onClick={showAudit=!showAudit;refresh++}) { Text(if(showAudit)"收起" else "查看",color=mint) }
+            Text("刷新能力目录",color=muted,style=MaterialTheme.typography.labelSmall,modifier=Modifier.weight(1f))
+            TextButton(onClick={CapabilityRegistryStore.registerAll(prefs,builtIns);refresh++}) { Text("刷新",color=mint) }
         }
-        if(showAudit) {
-            if(auditRecords.isEmpty()) Text("当前项目暂无记录。",color=muted,style=MaterialTheme.typography.bodySmall)
-            auditRecords.forEach { r ->
-                Column(Modifier.padding(vertical=3.dp)) {
-                    Text("${r.capabilityName} · ${r.action} · ${r.outcome}",color=ink,style=MaterialTheme.typography.bodySmall)
-                    Text(SimpleDateFormat("MM-dd HH:mm:ss",Locale.getDefault()).format(Date(r.createdAt)),color=muted,style=MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
-        Text("授权和访问记录保存在本机，按项目隔离；审计不记录 API Key、文件正文或工具参数。",color=muted,style=MaterialTheme.typography.labelSmall)
+        Text("权限与审计保存在本机并按项目隔离；日志不记录 API Key、文件正文或完整任务内容。",color=muted,style=MaterialTheme.typography.labelSmall)
     }
-    pending?.let { e ->
+    pending?.let { item ->
         AlertDialog(onDismissRequest={pending=null},title={Text("进入前确认")},
-            text={Text("即将打开「${e.title}」。本次只打开模块，不会自动执行设备操作、外部调用或高风险动作。")},
+            text={Text("即将打开「${item.title}」。本次仅进入模块，不会自动执行设备操作、外部调用或高风险动作。") },
             confirmButton={TextButton(onClick={
-                CapabilityRegistryStore.record(prefs,projectId,e.id,e.title,"open_module","dispatched")
-                refresh++;pending=null;e.route?.let(onNavigate)
+                CapabilityRegistryStore.record(prefs,projectId,item.id,item.title,"open_module","dispatched")
+                refresh++;pending=null;item.route?.let(onNavigate)
             }){Text("确认进入")}},
             dismissButton={TextButton(onClick={pending=null}){Text("取消")}})
     }
 }
 
 @Composable private fun Metric(label:String,value:String,color:Color,modifier:Modifier=Modifier) {
-    Column(modifier) { Text(value,color=color,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text(label,color=Color(0xFF8A8F98),style=MaterialTheme.typography.labelSmall) }
+    Column(modifier) { Text(value,color=color,style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold); Text(label,color=Color(0xFF8A8F98),style=MaterialTheme.typography.labelSmall) }
 }
