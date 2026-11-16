@@ -329,6 +329,7 @@ fun NestroApp() {
                     modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
                     activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
                     modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
+                    modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
                     val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
                     config = if (restoredActiveProfile != null) {
                         ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
@@ -3284,6 +3285,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
+    root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
@@ -3607,12 +3609,14 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
         val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
         require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
+        val restoredFailoverEnabled = root.optBoolean("model_failover_enabled", false)
         val previousBaseUrl = prefs.getString("base_url", "") ?: ""
         val previousModel = prefs.getString("model", "") ?: ""
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
             .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
+            .putBoolean("model_failover_enabled", restoredFailoverEnabled)
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
