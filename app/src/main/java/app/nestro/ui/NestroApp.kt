@@ -1771,24 +1771,25 @@ fun NestroApp() {
                                                                 scope.launch {
                                                                     runCatching {
                                                                         withContext(Dispatchers.IO) {
-                                                                            val projectConversationIds = conversations.filter { it.projectId == project.id }.map { it.id }.toSet()
+                                                                            val dao = database.dao()
+                                                                            val projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
+                                                                                dao.projectConversationIds(project.id)).toSet()
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
                                                                             check(pendingRequest?.optString("status") != "running" || pendingRequest?.optString("project_id") != project.id) {
                                                                                 "该空间仍有正在执行的请求，请等待请求结束后再删除"
                                                                             }
-                                                                            val dao = database.dao()
                                                                             check(dao.deleteProjectIfEmpty(project.id, activeProjectId)) {
                                                                                 "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
                                                                         }
                                                                     }.onSuccess {
                                                                         val removedPlaceholderIds = conversations.filter {
-                                                                            it.projectId == project.id && it.title == "新对话" && it.messages.isEmpty()
+                                                                            it.id in projectConversationIds && it.title == "新对话" && it.messages.isEmpty()
                                                                         }.map { it.id }.toSet()
+                                                                        projectConversationIds.forEach { id -> prefs.edit().remove("draft_$id").apply() }
                                                                         if (removedPlaceholderIds.isNotEmpty()) {
-                                                                            removedPlaceholderIds.forEach { id -> prefs.edit().remove("draft_$id").apply() }
                                                                             conversations = conversations.filterNot { it.id in removedPlaceholderIds }
                                                                             saveConversationList(prefs, conversations)
                                                                         }

@@ -319,6 +319,9 @@ interface NestroDao {
     """)
     suspend fun projectHasLinkedData(projectId: String): Boolean
 
+    @Query("SELECT id FROM conversations WHERE projectId = :projectId")
+    suspend fun projectConversationIds(projectId: String): List<String>
+
     @Query("SELECT EXISTS(SELECT 1 FROM projects WHERE id = :projectId)")
     suspend fun projectExists(projectId: String): Boolean
 
