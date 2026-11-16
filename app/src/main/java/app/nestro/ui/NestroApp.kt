@@ -1771,9 +1771,16 @@ fun NestroApp() {
                                                                 scope.launch {
                                                                     runCatching {
                                                                         withContext(Dispatchers.IO) {
+                                                                            val projectConversationIds = conversations.filter { it.projectId == project.id }.map { it.id }.toSet()
+                                                                            val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
+                                                                            val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
+                                                                            check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
+                                                                            check(pendingRequest?.optString("status") != "running" || pendingRequest.optString("project_id") != project.id) {
+                                                                                "该空间仍有正在执行的请求，请等待请求结束后再删除"
+                                                                            }
                                                                             val dao = database.dao()
-                                                                            check(dao.deleteProjectIfEmpty(project.id)) {
-                                                                                "该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除"
+                                                                            check(dao.deleteProjectIfEmpty(project.id, activeProjectId)) {
+                                                                                "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
                                                                         }
                                                                     }.onSuccess {

@@ -308,16 +308,28 @@ interface NestroDao {
     suspend fun projectIds(): List<String>
 
     @Query("""
-        SELECT EXISTS(SELECT 1 FROM conversations WHERE projectId = :projectId)
+        SELECT EXISTS(
+            SELECT 1 FROM conversations
+            WHERE projectId = :projectId
+              AND (title != '新对话' OR EXISTS(SELECT 1 FROM messages WHERE messages.conversationId = conversations.id))
+        )
             OR EXISTS(SELECT 1 FROM knowledge_documents WHERE projectId = :projectId)
             OR EXISTS(SELECT 1 FROM phone_agent_tasks WHERE projectId = :projectId)
             OR EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId)
     """)
     suspend fun projectHasLinkedData(projectId: String): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM projects WHERE id = :projectId)")
+    suspend fun projectExists(projectId: String): Boolean
+
+    @Query("DELETE FROM conversations WHERE projectId = :projectId AND title = '新对话' AND NOT EXISTS(SELECT 1 FROM messages WHERE messages.conversationId = conversations.id)")
+    suspend fun deleteEmptyProjectConversations(projectId: String)
+
     @Transaction
-    suspend fun deleteProjectIfEmpty(projectId: String): Boolean {
-        if (projectId == "default" || projectHasLinkedData(projectId)) return false
+    suspend fun deleteProjectIfEmpty(projectId: String, activeProjectId: String): Boolean {
+        if (projectId.isBlank() || projectId == "default" || projectId == activeProjectId) return false
+        if (!projectExists(projectId) || projectHasLinkedData(projectId)) return false
+        deleteEmptyProjectConversations(projectId)
         deleteProjectAndKnowledge(projectId)
         return true
     }
