@@ -477,7 +477,7 @@ abstract class NestroDatabase : RoomDatabase() {
 
     companion object {
         private fun createKnowledgeFts(db: SupportSQLiteDatabase) {
-            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content, tokenize=unicode61)")
+            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content)")
             db.execSQL("INSERT INTO knowledge_chunks_fts(chunkId, projectId, content) SELECT id, projectId, content FROM knowledge_chunks")
             db.execSQL("CREATE TRIGGER IF NOT EXISTS knowledge_chunks_fts_ai AFTER INSERT ON knowledge_chunks BEGIN INSERT INTO knowledge_chunks_fts(chunkId, projectId, content) VALUES (new.id, new.projectId, new.content); END")
             db.execSQL("CREATE TRIGGER IF NOT EXISTS knowledge_chunks_fts_ad AFTER DELETE ON knowledge_chunks BEGIN DELETE FROM knowledge_chunks_fts WHERE chunkId = old.id; END")

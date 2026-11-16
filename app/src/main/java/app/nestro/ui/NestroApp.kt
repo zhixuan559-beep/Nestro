@@ -999,6 +999,7 @@ fun NestroApp() {
                         Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(12.dp))
                         DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
+                        DrawerItem("◇", "统一能力中心") { page = "capabilities"; showDrawer = false }
                         DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
                         DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
                         DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
@@ -1008,7 +1009,7 @@ fun NestroApp() {
                         DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
                         DrawerItem("♧", "专家团队") { page = "teams"; showDrawer = false }
-                        DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
+                        DrawerItem("♧", "本地技能库") { page = "skills"; showDrawer = false }
                         DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
                         DrawerItem("▤", "数据与设置") { page = "settings"; showDrawer = false }
                         Spacer(Modifier.weight(1f))
@@ -2154,6 +2155,16 @@ fun NestroApp() {
                             }
                         }
                         "knowledge" -> KnowledgePage(database, activeProjectId)
+                        "capabilities" -> CapabilityCenterPage(
+                            activeModel = config.model,
+                            modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
+                            expertCount = experts.size,
+                            teamCount = expertTeams.size,
+                            skillCount = skills.size,
+                            enabledSkillCount = skills.keys.count { it !in disabledSkills },
+                            workflowCount = workflows.size,
+                            onNavigate = { target -> page = target }
+                        )
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -3907,7 +3918,9 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
-    root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
+    // Hash the serialized JSON representation so verification sees identical numeric values and escaping.
+    val checksumPayload = JSONObject(root.toString())
+    root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(checksumPayload)))
     val encoded = root.toString(2)
     require(encoded.length <= 10_000_000) { "备份超过 10 MB，请减少历史数据或知识库文档后重试" }
     return encoded

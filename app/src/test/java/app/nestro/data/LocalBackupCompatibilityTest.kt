@@ -53,6 +53,22 @@ class LocalBackupCompatibilityTest {
         org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
     }
 
+    @Test fun checksumRemainsValidAfterPrettyPrintedJsonRoundTrip() {
+        val payload = JSONObject()
+            .put("version", LocalBackupCompatibility.CURRENT_VERSION)
+            .put("created_at", 1_800_000_000_123L)
+            .put("tts_speech_rate", 1.2000000476837158)
+            .put("nested", org.json.JSONArray().put(JSONObject().put("enabled", true).put("count", 3)))
+
+        val serialized = payload.toString(2)
+        val checksumPayload = JSONObject(payload.toString())
+        val backup = JSONObject(serialized).put(
+            "checksum_sha256",
+            LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(checksumPayload))
+        )
+        assertTrue(LocalBackupCompatibility.verifyChecksum(backup))
+    }
+
     @Test fun acceptsLegacyBackupWithoutChecksumOnlyBeforeVersionTen() {
         assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":9}""")))
         assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":10}""")))
