@@ -912,8 +912,8 @@ fun NestroApp() {
                                                          val result = runCatching {
                                                              WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
                                                                  val roleContext = when (step.kind) {
-                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.title].orEmpty()
-                                                                     WorkflowStepKind.SKILL -> skills[step.title].orEmpty()
+                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.targetId.ifBlank { step.title }].orEmpty()
+                                                                     WorkflowStepKind.SKILL -> skills[step.targetId.ifBlank { step.title }].orEmpty()
                                                                      WorkflowStepKind.PROMPT -> ""
                                                                  }
                                                                  withContext(Dispatchers.IO) {
@@ -1734,7 +1734,7 @@ fun NestroApp() {
                         TextButton(
                             onClick = {
                                 workflowDraftSteps = workflowDraftSteps.mapIndexed { index, step ->
-                                    if (index == workflowTargetPickerIndex) step.copy(title = target) else step
+                                    if (index == workflowTargetPickerIndex) step.copy(targetId = target) else step
                                 }
                                 showWorkflowTargetPicker = false
                             },
@@ -1764,6 +1764,11 @@ fun NestroApp() {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("步骤 ${index + 1}", color = Mint, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(enabled = !item.enabled) else item
+                                    }
+                                }) { Text(if (step.enabled) "已启用" else "已停用", color = if (step.enabled) Mint else Muted) }
                                 TextButton(
                                     enabled = index > 0,
                                     onClick = {
@@ -1823,8 +1828,8 @@ fun NestroApp() {
                                 }) {
                                     Text(
                                         when (step.kind) {
-                                            WorkflowStepKind.EXPERT -> "选择专家：${step.title}"
-                                            WorkflowStepKind.SKILL -> "选择技能：${step.title}"
+                                            WorkflowStepKind.EXPERT -> "选择专家：${step.targetId.ifBlank { step.title }}"
+                                            WorkflowStepKind.SKILL -> "选择技能：${step.targetId.ifBlank { step.title }}"
                                             WorkflowStepKind.PROMPT -> ""
                                         },
                                         color = Mint

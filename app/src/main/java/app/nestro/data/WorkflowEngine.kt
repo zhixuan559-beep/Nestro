@@ -10,6 +10,7 @@ data class WorkflowStep(
     val id:String=UUID.randomUUID().toString(),
     val kind:WorkflowStepKind=WorkflowStepKind.PROMPT,
     val title:String,
+    val targetId:String="",
     val instruction:String,
     val enabled:Boolean=true,
     val retries:Int=1,
@@ -46,7 +47,7 @@ object WorkflowDefinitionCodec {
             put(JSONObject().put("id",workflow.id).put("name",workflow.name).put("description",workflow.description)
                 .put("steps",JSONArray().apply { workflow.steps.take(20).forEach { step ->
                     put(JSONObject().put("id",step.id).put("kind",step.kind.name).put("title",step.title)
-                        .put("instruction",step.instruction).put("enabled",step.enabled)
+                        .put("targetId",step.targetId).put("instruction",step.instruction).put("enabled",step.enabled)
                         .put("retries",step.retries).put("timeoutSeconds",step.timeoutSeconds)
                         .put("continueOnError",step.continueOnError))
                 } }))
@@ -68,6 +69,7 @@ object WorkflowDefinitionCodec {
                     id=step.optString("id").ifBlank { UUID.randomUUID().toString() },
                     kind=kind,
                     title=title,
+                    targetId=step.optString("targetId").ifBlank { if(kind==WorkflowStepKind.PROMPT) "" else title },
                     instruction=instruction,
                     enabled=step.optBoolean("enabled",true),
                     retries=step.optInt("retries",1).coerceIn(0,3),

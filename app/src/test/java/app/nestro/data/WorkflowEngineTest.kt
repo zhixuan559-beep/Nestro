@@ -7,7 +7,7 @@ import org.junit.Test
 class WorkflowEngineTest {
     @Test fun codecRoundTripsWorkflowAndEnabledFlags() {
         val workflow=WorkflowDefinition(name="内容生产",description="研究后写作",steps=listOf(
-            WorkflowStep(kind=WorkflowStepKind.EXPERT,title="研究",instruction="收集事实"),
+            WorkflowStep(kind=WorkflowStepKind.EXPERT,title="研究",targetId="研究专家",instruction="收集事实"),
             WorkflowStep(kind=WorkflowStepKind.SKILL,title="写作",instruction="形成文章",enabled=false)
         ))
         val restored=WorkflowDefinitionCodec.decode(WorkflowDefinitionCodec.encode(listOf(workflow))).single()
@@ -15,6 +15,7 @@ class WorkflowEngineTest {
         assertEquals(2,restored.steps.size)
         assertEquals(false,restored.steps[1].enabled)
         assertEquals(WorkflowStepKind.SKILL,restored.steps[1].kind)
+        assertEquals("研究专家",restored.steps[0].targetId)
         assertEquals(1,restored.steps[0].retries)
         assertEquals(120,restored.steps[0].timeoutSeconds)
         assertEquals(false,restored.steps[0].continueOnError)
