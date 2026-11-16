@@ -682,6 +682,7 @@ fun NestroApp() {
                             val attached = ExpertProfileCodec.skillContext(expertProfiles[member], skills, disabledSkills)
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
+                        check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
                         val teamRun = ExpertTeamEngine.run(
                             teamName = selectedTeam.name,
                             teamDescription = selectedTeam.description,
@@ -2018,6 +2019,7 @@ fun NestroApp() {
                 experts = if (bundle.name in experts) experts else experts + bundle.name
                 expertPrompts = expertPrompts + (bundle.name to bundle.prompt)
                 expertProfiles = expertProfiles + (bundle.name to bundle.profile())
+                if (!bundle.enabled && selectedExpert == bundle.name) selectedExpert = "通用助手"
                 prefs.edit().putString("experts", JSONArray(experts).toString())
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
@@ -2319,7 +2321,7 @@ fun NestroApp() {
                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
-                    if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
+                    if (selectedExpert == oldName || selectedExpert == name) selectedExpert = if (profile.enabled) name else "通用助手"
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
