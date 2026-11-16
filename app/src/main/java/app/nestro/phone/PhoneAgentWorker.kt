@@ -22,7 +22,7 @@ class PhoneAgentWorker(
         if (task.status in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) return Result.success()
         val capabilityTask = dao.capabilityTaskByCheckpoint("phone_agent_task_id:$taskId")
         if (PhoneAgentService.activeService == null) {
-            if (capabilityTask?.state == app.nestro.data.CapabilityTaskState.RUNNING) {
+            if (capabilityTask?.state in setOf(app.nestro.data.CapabilityTaskState.RUNNING, app.nestro.data.CapabilityTaskState.QUEUED)) {
                 app.nestro.data.CapabilityTaskStore.transition(dao, capabilityTask.id, app.nestro.data.CapabilityTaskState.WAITING_USER, "phone_agent_waiting_service", "等待开启 Phone Agent 无障碍服务")
             }
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
@@ -32,7 +32,7 @@ class PhoneAgentWorker(
         }
 
         return try {
-            if (capabilityTask?.state == app.nestro.data.CapabilityTaskState.WAITING_USER) {
+            if (capabilityTask?.state in setOf(app.nestro.data.CapabilityTaskState.WAITING_USER, app.nestro.data.CapabilityTaskState.QUEUED)) {
                 app.nestro.data.CapabilityTaskStore.transition(dao, capabilityTask.id, app.nestro.data.CapabilityTaskState.RUNNING, "phone_agent_started", "Phone Agent 已开始执行")
             }
             val result = PhoneAgentAgent.run(applicationContext, dao, taskId, afterUserHandoff, allowRetryCurrentAction)

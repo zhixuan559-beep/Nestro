@@ -2270,8 +2270,16 @@ fun NestroApp() {
                                     pauseRequestedCapabilityTaskId = task.id
                                     stopRequested = true
                                 }
+                                val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch(Dispatchers.IO) {
                                     CapabilityTaskStore.pause(database.dao(), task.id)
+                                    if (linkedPhoneTaskId != null) {
+                                        PhoneAgentWorkScheduler.cancel(context, linkedPhoneTaskId)
+                                        val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
+                                        if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
+                                            PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_PAUSED, child.currentStep)
+                                        }
+                                    }
                                 }
                             },
                             onResumeTask = { task ->
