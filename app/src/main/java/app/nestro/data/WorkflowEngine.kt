@@ -15,7 +15,9 @@ data class WorkflowStep(
     val enabled:Boolean=true,
     val retries:Int=1,
     val timeoutSeconds:Int=120,
-    val continueOnError:Boolean=false
+    val continueOnError:Boolean=false,
+    val skipIfPreviousContains:String="",
+    val repeatCount:Int=1
 )
 
 data class WorkflowDefinition(
@@ -31,7 +33,8 @@ data class WorkflowStepRun(
     val status:String,
     val attempts:Int,
     val output:String="",
-    val error:String=""
+    val error:String="",
+    val iterations:Int=1
 )
 
 data class WorkflowRunResult(
@@ -111,7 +114,9 @@ object WorkflowDefinitionCodec {
                     put(JSONObject().put("id",step.id).put("kind",step.kind.name).put("title",step.title)
                         .put("targetId",step.targetId).put("instruction",step.instruction).put("enabled",step.enabled)
                         .put("retries",step.retries).put("timeoutSeconds",step.timeoutSeconds)
-                        .put("continueOnError",step.continueOnError))
+                        .put("continueOnError",step.continueOnError)
+                        .put("skipIfPreviousContains",step.skipIfPreviousContains)
+                        .put("repeatCount",step.repeatCount))
                 } }))
         }
     }.toString()
@@ -136,7 +141,9 @@ object WorkflowDefinitionCodec {
                     enabled=step.optBoolean("enabled",true),
                     retries=step.optInt("retries",1).coerceIn(0,3),
                     timeoutSeconds=step.optInt("timeoutSeconds",120).coerceIn(15,300),
-                    continueOnError=step.optBoolean("continueOnError",false)
+                    continueOnError=step.optBoolean("continueOnError",false),
+                    skipIfPreviousContains=step.optString("skipIfPreviousContains").take(120),
+                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3)
                 )
             }.take(20)
             val name=item.optString("name").trim()
@@ -154,6 +161,8 @@ object WorkflowDefinitionCodec {
             require(it.instruction.isNotBlank() && it.instruction.length<=4_000) { "步骤指令为空或过长" }
             require(it.retries in 0..3) { "单步重试次数必须在 0 到 3 次之间" }
             require(it.timeoutSeconds in 15..300) { "单步超时必须在 15 到 300 秒之间" }
+            require(it.skipIfPreviousContains.length<=120) { "条件文本不能超过 120 个字符" }
+            require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
             if(it.kind != WorkflowStepKind.PROMPT) {
                 require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
             }
