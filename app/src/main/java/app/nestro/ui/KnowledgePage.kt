@@ -30,6 +30,7 @@ private val KnowledgeMint=androidx.compose.ui.graphics.Color(0xFF34D399)
 @Composable
 fun KnowledgePage(database:NestroDatabase,projectId:String) {
  val context=LocalContext.current; val scope=rememberCoroutineScope()
+ val latestProjectId by rememberUpdatedState(projectId)
  val documents=remember { mutableStateListOf<KnowledgeDocumentEntity>() }
  var status by remember { mutableStateOf("文档保存在本机，并按项目空间隔离。") }
  var loading by remember { mutableStateOf(false) }
@@ -41,14 +42,24 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
   val rows=withContext(Dispatchers.IO) { database.dao().knowledgeDocuments(projectId) }
   documents.clear(); documents.addAll(rows)
  }
- LaunchedEffect(projectId) { runCatching { refresh() }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" } }
+ LaunchedEffect(projectId) {
+  documents.clear()
+  searchResults.clear()
+  searchQuery=""
+  pendingDelete=null
+  status="正在读取当前项目的本地知识库…"
+  runCatching { refresh() }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
+ }
  val launcher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
   if(uri!=null) {
    loading=true; status="正在读取并建立本地索引…"
+   val requestedProjectId=projectId
    scope.launch {
-    val result=runCatching { KnowledgeStore.importText(context.contentResolver,uri,projectId,database.dao()) }
-    result.onSuccess { refresh(); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
-     .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
+    val result=runCatching { KnowledgeStore.importText(context.contentResolver,uri,requestedProjectId,database.dao()) }
+    if(latestProjectId==requestedProjectId) {
+     result.onSuccess { refresh(); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
+      .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
+    }
     loading=false
    }
   }
@@ -71,12 +82,16 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
   Button(
    onClick={
     searching=true
+    val requestedProjectId=projectId
+    val requestedQuery=searchQuery
     scope.launch {
-     val result=runCatching { KnowledgeStore.search(database.dao(),projectId,searchQuery,6) }
-     result.onSuccess {
-      searchResults.clear(); searchResults.addAll(it)
-      status=if(it.isEmpty()) "没有找到匹配片段，可以换一种关键词表达。" else "找到 ${it.size} 个相关片段，下面展示实际命中内容。"
-     }.onFailure { status="检索失败：${it.message ?: "未知错误"}" }
+     val result=runCatching { KnowledgeStore.search(database.dao(),requestedProjectId,requestedQuery,6) }
+     if(latestProjectId==requestedProjectId) {
+      result.onSuccess {
+       searchResults.clear(); searchResults.addAll(it)
+       status=if(it.isEmpty()) "没有找到匹配片段，可以换一种关键词表达。" else "找到 ${it.size} 个相关片段，下面展示实际命中内容。"
+      }.onFailure { status="检索失败：${it.message ?: "未知错误"}" }
+     }
      searching=false
     }
    },
@@ -120,13 +135,16 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    confirmButton={
     TextButton(onClick={
      pendingDelete=null
+     val requestedProjectId=projectId
      scope.launch {
-      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id, projectId) } }
-      result.onSuccess {
-       documents.removeAll { it.id==target.id }
-       searchResults.clear()
-       status="已删除文档及其全部索引片段。"
-      }.onFailure { status="删除失败：${it.message ?: "未知错误"}" }
+      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id, requestedProjectId) } }
+      if(latestProjectId==requestedProjectId) {
+       result.onSuccess {
+        documents.removeAll { it.id==target.id }
+        searchResults.clear()
+        status="已删除文档及其全部索引片段。"
+       }.onFailure { status="删除失败：${it.message ?: "未知错误"}" }
+      }
      }
     }) { Text("删除",color=androidx.compose.ui.graphics.Color(0xFFFF7777)) }
    },
