@@ -1,0 +1,80 @@
+package app.nestro.data
+
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Test
+
+class ExpertTeamEngineTest {
+    private val members=listOf(
+        ExpertTeamMemberTask("研究员","核实事实与证据"),
+        ExpertTeamMemberTask("审校员","检查逻辑与风险"),
+        ExpertTeamMemberTask("策略师","提出执行策略")
+    )
+
+    @Test fun runsMembersConcurrentlyAndReturnsIndividualResults()=runBlocking {
+        val events=mutableListOf<Pair<String,String>>()
+        val result=ExpertTeamEngine.run("分析组","研究、审校、制定策略","分析这个问题",members,
+            onMember={ name,status -> synchronized(events) { events += name to status } }) { member,_ ->
+            delay(30)
+            "${member.name} 的意见"
+        }
+        assertEquals(3,result.successfulMembers)
+        assertEquals(0,result.failedMembers)
+        assertEquals(3,result.members.size)
+        assertTrue(result.toContext().contains("【研究员】"))
+        assertEquals(3,events.count { it.second=="success" })
+    }
+
+    @Test fun isolatesMemberFailureAndKeepsPartialResults()=runBlocking {
+        val result=ExpertTeamEngine.run("分析组","分工明确","分析问题",members,maxRetries=0) { member,_ ->
+            if(member.name=="审校员") error("模拟接口错误")
+            "${member.name}完成"
+        }
+        assertEquals(2,result.successfulMembers)
+        assertEquals(1,result.failedMembers)
+        assertTrue(result.isUsable)
+        assertEquals("failed",result.members.first { it.name=="审校员" }.status)
+    }
+
+    @Test fun retriesFailedMemberWithinBoundedAttempts()=runBlocking {
+        var calls=0
+        val result=ExpertTeamEngine.run("分析组","分工","分析问题",members.take(2),maxRetries=1) { member,_ ->
+            if(member.name=="研究员" && ++calls==1) error("临时失败")
+            "${member.name}完成"
+        }
+        assertEquals(2,result.successfulMembers)
+        assertEquals(2,result.members.first { it.name=="研究员" }.attempts)
+    }
+
+    @Test fun timesOutOnlyTheSlowMember()=runBlocking {
+        val result=ExpertTeamEngine.run("分析组","分工","分析问题",members.take(2),maxRetries=0,timeoutMillis=5000) { member,_ ->
+            if(member.name=="研究员") delay(6000)
+            "${member.name}完成"
+        }
+        assertEquals(1,result.successfulMembers)
+        assertEquals("failed",result.members.first { it.name=="研究员" }.status)
+        assertTrue(result.members.first { it.name=="研究员" }.error.contains("超时"))
+    }
+
+    @Test fun rejectsInvalidTeamSizeAndMissingRoles()=runBlocking {
+        try {
+            ExpertTeamEngine.run("分析组","分工","任务",members.take(1)) { _,_ -> "x" }
+            fail("expected invalid team size")
+        } catch(_:IllegalArgumentException) {}
+        try {
+            ExpertTeamEngine.run("分析组","分工","任务",listOf(members[0],ExpertTeamMemberTask("空角色",""))) { _,_ -> "x" }
+            fail("expected missing role")
+        } catch(_:IllegalArgumentException) {}
+    }
+
+    @Test fun historyCodecRoundTripsAndCapsRecords() {
+        val record=ExpertTeamRunResult("分析组","任务",10,20,listOf(
+            ExpertTeamMemberRun("研究员","success",1,5,"结论"),
+            ExpertTeamMemberRun("审校员","failed",2,10,error="超时")
+        ))
+        val decoded=ExpertTeamRunHistoryCodec.decode(ExpertTeamRunHistoryCodec.encode(listOf(record)))
+        assertEquals(record,decoded.single())
+        assertEquals(30,ExpertTeamRunHistoryCodec.decode(ExpertTeamRunHistoryCodec.encode(List(35){record})).size)
+    }
+}

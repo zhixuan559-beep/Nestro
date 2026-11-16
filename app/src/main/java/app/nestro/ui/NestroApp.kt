@@ -25,6 +25,10 @@ import app.nestro.data.ExpertBundleParser
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
+import app.nestro.data.ExpertTeamEngine
+import app.nestro.data.ExpertTeamMemberTask
+import app.nestro.data.ExpertTeamRunResult
+import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.WorkflowDefinition
 import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
@@ -204,6 +208,11 @@ fun NestroApp() {
     var teamImportStatus by remember { mutableStateOf("") }
     var teamExportStatus by remember { mutableStateOf("") }
     var teamExportJson by remember { mutableStateOf("") }
+    var teamRunStatus by remember { mutableStateOf("") }
+    var expertTeamRunHistory by remember {
+        mutableStateOf(ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]"))
+    }
+    var teamMemberStatuses by remember { mutableStateOf(emptyMap<String,String>()) }
     var workflowHistory by remember {
         mutableStateOf(WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]"))
     }
@@ -295,6 +304,7 @@ fun NestroApp() {
                     skillMetadata = loadSkillMetadata(prefs)
                     workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
                     workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                    expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
                     automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
@@ -632,29 +642,49 @@ fun NestroApp() {
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
                     val teamContext = if (selectedTeam != null) {
-                        val contributions = withContext(Dispatchers.IO) {
-                            coroutineScope {
-                                selectedTeam.members.filter { it in experts }.take(4).map { member ->
-                                    async {
-                                        val rolePrompt = expertPrompts[member].orEmpty()
-                                        runCatching {
-                                            OpenAiClient.complete(
-                                                config,
-                                                requestHistory,
-                                                listOf(
-                                                    requestSystemContext,
-                                                    "你是专家团队成员“" + member + "”。角色要求：" + rolePrompt,
-                                                    "团队任务：" + selectedTeam.description,
-                                                    "请独立分析用户目标，列出关键判断、依据、风险和建议。不要直接代替团队总协调人回答用户；不确定的信息明确标记，不要编造。"
-                                                ).filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
-                                            ).take(2200)
-                                        }.getOrNull()?.let { "【" + member + "】" + System.lineSeparator() + it }
+                        teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
+                        teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
+                        val memberTasks = selectedTeam.members.filter { it in experts }.take(4).map { member ->
+                            ExpertTeamMemberTask(member, expertPrompts[member].orEmpty())
+                        }
+                        val teamRun = ExpertTeamEngine.run(
+                            teamName = selectedTeam.name,
+                            teamDescription = selectedTeam.description,
+                            task = prompt,
+                            members = memberTasks,
+                            maxRetries = 1,
+                            timeoutMillis = 45_000,
+                            maxParallel = 4,
+                            onMember = { member, state ->
+                                withContext(Dispatchers.Main) {
+                                    teamMemberStatuses = teamMemberStatuses + (member to state)
+                                    teamRunStatus = when(state) {
+                                        "running" -> "专家团执行中：$member 正在分析"
+                                        "retrying" -> "专家团执行中：$member 正在重试"
+                                        "success" -> "专家团执行中：$member 已完成"
+                                        "failed" -> "专家团执行中：$member 调用失败"
+                                        else -> teamRunStatus
                                     }
-                                }.awaitAll().filterNotNull()
+                                }
+                            }
+                        ) { member, memberPrompt ->
+                            withContext(Dispatchers.IO) {
+                                OpenAiClient.complete(
+                                    config,
+                                    requestHistory,
+                                    listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
+                                        .joinToString("\n\n").take(18000),
+                                    readTimeoutMillis = 40_000
+                                ).take(2200)
                             }
                         }
-                        if (contributions.isEmpty()) "" else
-                            "专家团队“" + selectedTeam.name + "”的独立意见如下。请由你负责整合、识别分歧并给出统一答复，不要盲目照搬：" + System.lineSeparator() + contributions.joinToString(System.lineSeparator() + System.lineSeparator())
+                        expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
+                        prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
+                        teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"
+                        if (!teamRun.isUsable) {
+                            throw IllegalStateException("专家团所有成员均未能完成分析，请检查模型配置、网络和成员角色指令。")
+                        }
+                        teamRun.toContext(10_000)
                     } else ""
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
@@ -1115,7 +1145,24 @@ fun NestroApp() {
                         "teams" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。", color = Muted)
+                                Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
+                                if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
+                                if (expertTeamRunHistory.isNotEmpty()) {
+                                    val latestTeamRun=expertTeamRunHistory.first()
+                                    Surface(color=Card,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            Text("最近一次协作 · ${latestTeamRun.teamName}",color=Ink,style=MaterialTheme.typography.titleSmall)
+                                            Text("成功 ${latestTeamRun.successfulMembers} / ${latestTeamRun.members.size} · 失败 ${latestTeamRun.failedMembers}",color=Muted,style=MaterialTheme.typography.bodySmall)
+                                            latestTeamRun.members.forEach { run ->
+                                                Text(
+                                                    "${if(run.status=="success") "✓" else "!"} ${run.name} · ${run.attempts} 次尝试 · ${run.elapsedMillis/1000}s${if(run.error.isNotBlank()) " · "+run.error else ""}",
+                                                    color=if(run.status=="success") Mint else ColorStop,
+                                                    style=MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入团队") }
                                 }
@@ -1762,11 +1809,14 @@ fun NestroApp() {
                     if (member.name !in experts) experts = experts + member.name
                     expertPrompts = expertPrompts + (member.name to member.prompt)
                 }
-                val team = ExpertTeam(UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
+                val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
+                val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
                 expertTeams = expertTeams.filterNot { it.name == bundle.name } + team
+                if(selectedTeamId==previousTeam?.id) selectedTeamId=team.id
                 prefs.edit().putString("experts", JSONArray(experts).toString())
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
-                    .putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
+                    .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+                    .putString("selected_team_id",selectedTeamId).apply()
                 teamImportStatus = "已导入团队：${bundle.name}"
                 pendingTeamBundle = null
             }) { Text("导入团队", color = Mint) } },
@@ -2257,12 +2307,12 @@ private object OpenAiClient {
 
     fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
 
-    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String): String {
+    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, readTimeoutMillis:Int=90000): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20000
-            readTimeout = 90000
+            readTimeout = readTimeoutMillis.coerceIn(5000,120000)
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
@@ -2559,7 +2609,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 5)
+    root.put("version", 6)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -2575,6 +2625,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+    root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
     root.put("projects", projectsToJson(loadProjects(prefs)))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val memories = JSONArray()
@@ -2638,7 +2689,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..5) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..6) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -2667,6 +2718,12 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(workflowHistoryArray.length() <= 50) { "工作流运行记录数量超出限制" }
     val restoredWorkflowHistory = WorkflowRunHistoryCodec.decode(workflowHistoryRaw)
     require(restoredWorkflowHistory.size == workflowHistoryArray.length()) { "工作流运行记录包含无效数据" }
+    val teamHistoryRaw = root.optString("expert_team_runs_v1", "[]")
+    require(teamHistoryRaw.length<=500_000) { "专家团队运行记录过大" }
+    val teamHistoryArray = JSONArray(teamHistoryRaw)
+    require(teamHistoryArray.length()<=30) { "专家团队运行记录数量超出限制" }
+    val restoredTeamHistory = ExpertTeamRunHistoryCodec.decode(teamHistoryRaw)
+    require(restoredTeamHistory.size==teamHistoryArray.length()) { "专家团队运行记录包含无效数据" }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
@@ -2817,6 +2874,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("skill_metadata_v1", cleanSkillMetadata.toString())
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
+        .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
         .putString("active_project_id", root.optString("active_project_id", "default"))
         .putLong("local_snapshot_saved_at", System.currentTimeMillis())
