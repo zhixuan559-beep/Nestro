@@ -677,7 +677,8 @@ fun NestroApp() {
                                     requestHistory,
                                     listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
                                         .joinToString("\n\n").take(18000),
-                                    readTimeoutMillis = 40_000
+                                    connectTimeoutMillis = 15_000,
+                                    readTimeoutMillis = 25_000
                                 ).take(2200)
                             }
                         }
@@ -2311,11 +2312,11 @@ private object OpenAiClient {
 
     fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
 
-    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, readTimeoutMillis:Int=90000): String {
+    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 20000
+            connectTimeout = connectTimeoutMillis.coerceIn(5000,60000)
             readTimeout = readTimeoutMillis.coerceIn(5000,120000)
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
