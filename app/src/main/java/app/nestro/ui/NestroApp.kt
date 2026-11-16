@@ -1122,6 +1122,49 @@ fun NestroApp() {
         }
     }
 
+    if (showTeamDialog) {
+        AlertDialog(
+            onDismissRequest = { showTeamDialog = false },
+            title = { Text(if (editingTeamId.isBlank()) "创建专家团队" else "编辑专家团队") },
+            text = {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(teamDraftName, { teamDraftName = it }, label = { Text("团队名称") }, singleLine = true)
+                    OutlinedTextField(teamDraftDescription, { teamDraftDescription = it }, label = { Text("团队分工") }, minLines = 2)
+                    Text("选择成员，至少 2 位", color = Ink, style = MaterialTheme.typography.labelLarge)
+                    experts.forEach { expert ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = expert in teamDraftMembers, onCheckedChange = { checked ->
+                                teamDraftMembers = if (checked) teamDraftMembers + expert else teamDraftMembers - expert
+                            })
+                            Text(expert, color = Ink)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = teamDraftName.trim()
+                    if (name.isNotBlank() && teamDraftMembers.size >= 2 &&
+                        expertTeams.none { it.name == name && it.id != editingTeamId }
+                    ) {
+                        val team = ExpertTeam(
+                            id = editingTeamId.ifBlank { UUID.randomUUID().toString() },
+                            name = name,
+                            description = teamDraftDescription.trim().take(300),
+                            members = teamDraftMembers.filter { it in experts }.take(4)
+                        )
+                        if (team.members.size >= 2) {
+                            expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
+                            prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
+                        }
+                        showTeamDialog = false
+                    }
+                }) { Text("保存团队", color = Mint) }
+            },
+            dismissButton = { TextButton(onClick = { showTeamDialog = false }) { Text("取消") } }
+        )
+    }
+
     if (showEditMessageDialog) {
         AlertDialog(
             onDismissRequest = { showEditMessageDialog = false },
