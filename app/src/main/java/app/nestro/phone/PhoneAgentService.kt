@@ -218,9 +218,9 @@ class PhoneAgentService : AccessibilityService() {
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
 
     private fun isHighRisk(value: String): Boolean {
-        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "立即购买", "预约", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "永久删除", "开通会员", "订阅", "续费")
+        val terms = listOf("支付", "付款", "转账", "提现", "充值", "退款", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "抢购", "预约", "预订", "预定", "订位", "订座", "订票", "订房", "抢票", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "清除数据", "永久删除", "恢复出厂设置", "重置", "卸载", "安装", "导出", "上传", "绑定", "解绑", "签约", "开通会员", "订阅", "续费")
         return terms.any { value.contains(it, ignoreCase = true) } ||
-            Regex("""\b(?:pay|payment|transfer|buy|purchase|place order|checkout|book|reserve|confirm|submit|send|post|publish|share|call|dial|login|log in|logout|log out|sign in|sign out|register|authorize|grant|allow|agree|accept|delete|remove|clear|subscribe|unsubscribe|renew|cancel|wipe|reset|factory reset|delete account|remove account)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
+            Regex("""\b(?:pay|payment|transfer|withdraw|refund|top up|buy|purchase|place order|checkout|book|reserve|confirm|submit|send|post|publish|share|call|dial|login|log in|logout|log out|sign in|sign out|sign up|register|authorize|grant|allow|agree|accept|delete|remove|clear|subscribe|unsubscribe|renew|cancel|wipe|reset|factory reset|uninstall|install|export|upload|link|unlink|disable|deactivate|delete account|remove account)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
     }
 
     private fun audit(action: String, detail: String) {

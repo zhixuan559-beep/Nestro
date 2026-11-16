@@ -39,6 +39,12 @@ class PhoneAgentPlannerTest {
     }
 
     @Test
+    fun commonAppNamesAreRecognizedAsPhoneTasks() {
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("打开支付宝").category)
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我启动淘宝").category)
+    }
+
+    @Test
     fun genericPhoneActionsCreateDeviceTasks() {
         assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我打开微信").category)
         assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我打开计算器").category)

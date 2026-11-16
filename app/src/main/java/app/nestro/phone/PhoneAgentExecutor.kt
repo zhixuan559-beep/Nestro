@@ -124,8 +124,15 @@ object PhoneAgentExecutor {
                 return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "用户已取消任务")
             }
             if (service.isTaskStopped(taskId)) {
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index + 1)
-                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "用户已请求停止；已完成的动作不会重复执行")
+                val stopStatus = PhoneAgentTaskStore.stopStatusAfterAction(success)
+                val stopStep = PhoneAgentTaskStore.stopStepAfterAction(index, success)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, stopStatus, stopStep)
+                val stopMessage = if (success) {
+                    "用户已请求停止；已完成的动作不会重复执行"
+                } else {
+                    "用户已请求停止；当前动作结果未能确认，请核对页面后再继续"
+                }
+                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, stopMessage)
             }
             if (!success) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)

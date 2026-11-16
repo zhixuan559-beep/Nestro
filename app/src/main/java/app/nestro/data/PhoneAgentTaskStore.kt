@@ -197,6 +197,12 @@ object PhoneAgentTaskStore {
         }
     }
 
+    fun stopStatusAfterAction(actionSucceeded: Boolean): String =
+        if (actionSucceeded) STATUS_PAUSED else STATUS_INTERRUPTED
+
+    fun stopStepAfterAction(currentStep: Int, actionSucceeded: Boolean): Int =
+        if (actionSucceeded) currentStep + 1 else currentStep
+
     fun userPauseStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
         if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_WAITING_USER)) {
             return currentStatus
