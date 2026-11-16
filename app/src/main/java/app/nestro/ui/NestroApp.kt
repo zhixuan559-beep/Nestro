@@ -210,6 +210,8 @@ fun NestroApp() {
                     experts = loadExperts(prefs)
                     expertPrompts = loadExpertPrompts(prefs)
                     skills = loadSkills(prefs)
+                    skillMetadata = loadSkillMetadata(prefs)
+                    automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
             }
