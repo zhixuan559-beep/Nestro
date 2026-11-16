@@ -77,6 +77,18 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun modelEvidenceAndHandoffTextRedactAddressAndIdentityFields() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":true,"completionEvidence":"收货地址：成都市锦江区某某路88号","summary":"已核对收货地址：成都市锦江区某某路88号","actions":[{"type":"confirm_sensitive","description":"请本人确认地址：成都市锦江区某某路88号"}]}"""
+        )
+        assertTrue(!plan.completionEvidence.contains("某某路88号"))
+        assertTrue(!plan.summary.contains("某某路88号"))
+        val handoff = plan.actions.single() as PhoneAgentExecutor.Action.ConfirmSensitive
+        assertTrue(!handoff.description.contains("某某路88号"))
+        assertTrue(plan.completionEvidence.contains("[地址已隐藏]"))
+    }
+
+    @Test
     fun onlyHttpAndHttpsUrlsAreAccepted() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"open_url","url":"https://example.com/search"}]}"""
