@@ -1800,11 +1800,11 @@ fun NestroApp() {
 
     if (showSkillDialog) {
         AlertDialog(
-            onDismissRequest = { showSkillDialog = false },
+            onDismissRequest = { showSkillDialog = false; editingSkillName=""; skillDialogError="" },
             title = { Text(if(editingSkillName.isBlank()) "创建本地技能" else "编辑本地技能") },
             text = {
                 Column {
-                    OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it }, label = { Text("技能名称") }, singleLine = true)
+                    OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it.take(40) }, label = { Text("技能名称") }, singleLine = true, enabled = editingSkillName !in DEFAULT_SKILLS.keys)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it.take(8000) }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
                     if(skillDialogError.isNotBlank()) Text(skillDialogError,color=androidx.compose.ui.graphics.Color(0xFFF87171),style=MaterialTheme.typography.bodySmall)
