@@ -118,7 +118,7 @@ private val Muted = androidx.compose.ui.graphics.Color(0xFF8A8F98)
 private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
 private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 
-private data class ChatMessage(val id: String, val role: String, val content: String)
+private data class ChatMessage(val id: String, val role: String, val content: String, val versions: List<String> = emptyList(), val activeVersion: Int = 0)
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long)
 private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
@@ -193,6 +193,8 @@ fun NestroApp() {
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var stopRequested by remember { mutableStateOf(false) }
+    var reuseLastUserOnSend by remember { mutableStateOf(false) }
+    var pendingAssistantRevision by remember { mutableStateOf<ChatMessage?>(null) }
     var status by remember { mutableStateOf("尚未配置模型") }
     var recallSources by remember { mutableStateOf(emptyList<ConversationRecallSource>()) }
     var showRecallDialog by remember { mutableStateOf(false) }
@@ -501,7 +503,7 @@ fun NestroApp() {
                             dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
                             dao.clearMessages(record.id)
                             val rows = record.messages.mapIndexed { index, message ->
-                                MessageEntity(message.id, record.id, index, message.role, message.content)
+                                MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
                             }
                             if (rows.isNotEmpty()) dao.putMessages(rows)
                         }
@@ -520,7 +522,7 @@ fun NestroApp() {
                         ConversationRecord(
                             entity.id, entity.title, entity.updatedAt,
                             row.messages.sortedBy { it.position }.map { message ->
-                                ChatMessage(message.id, message.role, message.content)
+                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
                             },
                             entity.projectId
                         )
@@ -573,7 +575,7 @@ fun NestroApp() {
                         dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
                         dao.clearMessages(record.id)
                         val rows = record.messages.mapIndexed { index, message ->
-                            MessageEntity(message.id, record.id, index, message.role, message.content)
+                            MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
                         }
                         if (rows.isNotEmpty()) dao.putMessages(rows)
                     }
@@ -623,8 +625,9 @@ fun NestroApp() {
         if (prompt.isBlank() || busy) return@send
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
-        val user = ChatMessage(UUID.randomUUID().toString(), "user", prompt)
-        messages = messages + user
+        val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
+        reuseLastUserOnSend = false
+        if (messages.lastOrNull()?.id != user.id) messages = messages + user
         conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
         val creationKind = when {
             isCreationIntent(prompt, "专家") -> "expert"
@@ -697,7 +700,9 @@ fun NestroApp() {
             teamMemberStatuses = emptyMap()
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
-            val assistantId = UUID.randomUUID().toString()
+            val previousAssistant = pendingAssistantRevision
+            pendingAssistantRevision = null
+            val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             val requestProjectId = activeProjectId
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
@@ -801,7 +806,7 @@ fun NestroApp() {
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
-                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString())
+                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString(), previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
                             }
                         }
                     }
@@ -812,7 +817,8 @@ fun NestroApp() {
                     stopRequested -> "已停止生成。"
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
-                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
+                val priorVersions = previousAssistant?.let { (it.versions + it.content).filter(String::isNotBlank).distinct().takeLast(20) }.orEmpty()
+                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, priorVersions, priorVersions.size)
                 conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
@@ -953,11 +959,22 @@ fun NestroApp() {
                         val userIndex = if (targetIndex >= 0) messages.subList(0, targetIndex + 1).indexOfLast { it.role == "user" } else -1
                         if (targetIndex >= 0 && userIndex >= 0) {
                             val retryPrompt = messages[userIndex].content
-                            messages = messages.take(userIndex)
+                            pendingAssistantRevision = msg
+                            reuseLastUserOnSend = true
+                            messages = messages.take(userIndex + 1)
                             conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
                             sendPrompt(retryPrompt)
                         }
                     }) else null,
+                    onVersionChange = { version ->
+                        val index = messages.indexOfFirst { it.id == msg.id }
+                        if (index >= 0) {
+                            val allVersions = (msg.versions + msg.content).distinct()
+                            val chosen = version.coerceIn(0, allVersions.lastIndex)
+                            messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions.filterIndexed { i, _ -> i != chosen }, activeVersion = chosen) }
+                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                        }
+                    },
                     onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
                                                 val lastUserIndex = messages.indexOfLast { it.role == "user" }
@@ -2604,7 +2621,7 @@ private fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null) {
+private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null) {
     val user = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
@@ -2640,6 +2657,14 @@ private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = n
                     Icon(Icons.Outlined.Edit, contentDescription = null, tint = Muted, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("编辑", color = Muted, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            if (!user && message.versions.isNotEmpty() && onVersionChange != null) {
+                val versionCount = message.versions.size + 1
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(enabled = message.activeVersion > 0, onClick = { onVersionChange(message.activeVersion - 1) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("‹", color = Mint) }
+                    Text("版本 ${message.activeVersion + 1}/$versionCount", color = Muted, style = MaterialTheme.typography.labelSmall)
+                    TextButton(enabled = message.activeVersion < versionCount - 1, onClick = { onVersionChange(message.activeVersion + 1) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("›", color = Mint) }
                 }
             }
             if (!user && onRegenerate != null) {
@@ -3147,7 +3172,7 @@ private fun loadConversations(prefs: android.content.SharedPreferences): List<Co
             val messagesJson = item.optJSONArray("messages") ?: JSONArray()
             val parsed = (0 until messagesJson.length()).map { i ->
                 val message = messagesJson.getJSONObject(i)
-                ChatMessage(message.getString("id"), message.getString("role"), message.getString("content"))
+                ChatMessage(message.getString("id"), message.getString("role"), message.getString("content"), jsonStringList(message.optJSONArray("versions")), message.optInt("active_version", 0))
             }
             ConversationRecord(
                 item.getString("id"), item.optString("title", "对话"),
@@ -3173,7 +3198,8 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
     conversations.take(100).forEach { conversation ->
         val messages = JSONArray()
         conversation.messages.takeLast(500).forEach { message ->
-            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content))
+            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
+                .put("versions", JSONArray(message.versions.take(20))).put("active_version", message.activeVersion.coerceAtLeast(0)))
         }
         array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
             .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messages))
@@ -3235,18 +3261,20 @@ private fun saveProjects(prefs: android.content.SharedPreferences, projects: Lis
     editor.apply()
 }
 
+private fun jsonStringList(array: JSONArray?): List<String> = array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
+
 private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
     val array = JSONArray(prefs.getString("messages", "[]"))
     (0 until array.length()).map { i ->
         val item = array.getJSONObject(i)
-        ChatMessage(item.getString("id"), item.getString("role"), item.getString("content"))
+        ChatMessage(item.getString("id"), item.getString("role"), item.getString("content"), jsonStringList(item.optJSONArray("versions")), item.optInt("active_version", 0))
     }
 }.getOrDefault(emptyList())
 
 private fun saveMessages(prefs: android.content.SharedPreferences, messages: List<ChatMessage>) {
     val array = JSONArray()
     messages.takeLast(200).forEach { msg ->
-        array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content))
+        array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content).put("versions", JSONArray(msg.versions.take(20))).put("active_version", msg.activeVersion.coerceAtLeast(0)))
     }
     prefs.edit().putString("messages", array.toString()).apply()
 }

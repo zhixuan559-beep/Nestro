@@ -42,7 +42,9 @@ data class MessageEntity(
     val conversationId: String,
     val position: Int,
     val role: String,
-    val content: String
+    val content: String,
+    val versionsJson: String = "[]",
+    val activeVersion: Int = 0
 )
 
 @Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["contentHash"], unique = true)])
@@ -333,13 +335,20 @@ interface NestroDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN versionsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE messages ADD COLUMN activeVersion INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS user_memories (id TEXT NOT NULL, projectId TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, fingerprint TEXT NOT NULL, sourceConversationId TEXT NOT NULL, sourceMessageId TEXT NOT NULL, confidence REAL NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
@@ -390,7 +399,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     context.applicationContext,
                     NestroDatabase::class.java,
                     "nestro_local.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { instance = it }
             }
     }
 }
