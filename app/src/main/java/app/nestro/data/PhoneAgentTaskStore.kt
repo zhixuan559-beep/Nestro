@@ -100,6 +100,7 @@ object PhoneAgentTaskStore {
     suspend fun appendClarification(dao: NestroDao, taskId: String, clarification: String) {
         val clean = clarification.trim().take(500)
         require(clean.length >= 2) { "补充内容太短" }
+        require(!containsSensitiveClarification(clean)) { "请勿在这里填写地址、电话、验证码或其他敏感信息，请在目标应用中自行处理。" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val updatedGoal = (task.goal + System.lineSeparator() + "用户补充说明：" + clean).take(2000)
         require(updatedGoal.length > task.goal.length) { "补充内容无效" }
@@ -119,6 +120,12 @@ object PhoneAgentTaskStore {
 
     suspend fun resumeCandidates(dao: NestroDao, projectId: String): List<PhoneAgentTaskEntity> =
         dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED) }
+
+    private fun containsSensitiveClarification(value: String): Boolean =
+        Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\\\.[A-Z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
+            Regex("(?<!\\\\d)1[3-9]\\\\d{9}(?!\\\\d)").containsMatchIn(value) ||
+            Regex("(?<!\\\\d)\\\\d{6,19}(?!\\\\d)").containsMatchIn(value) ||
+            listOf("地址", "住址", "电话", "手机号", "验证码", "密码", "银行卡", "身份证").any { value.contains(it, true) }
 
     private fun encodePlan(plan: PhoneAgentPlanner.Plan): String {
         val steps = JSONArray()
