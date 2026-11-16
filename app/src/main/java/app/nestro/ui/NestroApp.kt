@@ -14,6 +14,8 @@ import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.PhoneAgentTaskEntity
+import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.UserMemoryStore
 import app.nestro.data.MemoryCandidate
 import app.nestro.data.SkillBundle
@@ -2051,6 +2053,57 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
             updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
         )
     }
+    val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
+    require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
+    val validTaskStatuses = setOf(
+        PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING,
+        PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED,
+        PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
+        PhoneAgentTaskStore.STATUS_CANCELLED
+    )
+    val validTaskCategories = PhoneAgentPlanner.Category.values().map { it.name }.toSet()
+    val restoredTasks = (0 until taskRows.length()).map { index ->
+        val item = taskRows.getJSONObject(index)
+        val id = item.optString("id")
+        val projectId = item.optString("projectId")
+        val goal = item.optString("goal")
+        val category = item.optString("category")
+        val status = item.optString("status")
+        val planJson = item.optString("planJson", "[]")
+        val currentStep = item.optInt("currentStep", 0)
+        require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
+        require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
+        require(planJson.length <= 120000 && currentStep in 0..100) { "Phone Agent 任务计划无效" }
+        PhoneAgentTaskEntity(
+            id = id,
+            projectId = projectId,
+            conversationId = item.optString("conversationId").take(120),
+            goal = goal,
+            category = category,
+            status = if (status == PhoneAgentTaskStore.STATUS_RUNNING) PhoneAgentTaskStore.STATUS_PAUSED else status,
+            planJson = planJson,
+            currentStep = currentStep,
+            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+        )
+    }
+    val restoredTaskIds = restoredTasks.map { it.id }.toSet()
+    val taskLogRows = root.optJSONArray("phone_agent_task_logs") ?: JSONArray()
+    require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
+    val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
+        val item = taskLogRows.getJSONObject(index)
+        val taskId = item.optString("taskId")
+        require(taskId in restoredTaskIds) { "任务审计记录缺少所属任务" }
+        PhoneAgentTaskLogEntity(
+            id = item.getString("id"),
+            taskId = taskId,
+            actionIndex = item.optInt("actionIndex", 0).coerceIn(0, 100),
+            action = item.optString("action").take(60),
+            success = item.optBoolean("success", false),
+            detail = item.optString("detail").take(240),
+            createdAt = item.optLong("createdAt", System.currentTimeMillis())
+        )
+    }
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
@@ -2139,6 +2192,11 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
             dao.deleteUserMemoriesForProject(projectId)
         }
         restoredMemories.forEach { dao.putUserMemory(it) }
+        (dao.projectIds() + restoredTasks.map { it.projectId }).distinct().forEach { projectId ->
+            dao.deletePhoneAgentTasksForProject(projectId)
+        }
+        restoredTasks.forEach { dao.putPhoneAgentTask(it) }
+        restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
     }
     editor.apply()
 }
