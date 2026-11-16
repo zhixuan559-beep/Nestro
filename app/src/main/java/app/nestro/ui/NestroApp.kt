@@ -486,7 +486,31 @@ fun NestroApp() {
                     val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, prompt).context
                     val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
-                    OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
+                    val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
+                    val teamContext = if (selectedTeam != null) {
+                        val contributions = withContext(Dispatchers.IO) {
+                            selectedTeam.members.filter { it in experts }.take(4).mapNotNull { member ->
+                                val rolePrompt = expertPrompts[member].orEmpty()
+                                runCatching {
+                                    OpenAiClient.complete(
+                                        config,
+                                        requestHistory,
+                                        listOf(
+                                            requestSystemContext,
+                                            "你是专家团队成员“" + member + "”。角色要求：" + rolePrompt,
+                                            "团队任务：" + selectedTeam.description,
+                                            "请独立分析用户目标，列出关键判断、依据、风险和建议。不要直接代替团队总协调人回答用户；不确定的信息明确标记，不要编造。"
+                                        ).filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
+                                    ).take(2200)
+                                }.getOrNull()?.let { "【" + member + "】\\n" + it }
+                            }
+                        }
+                        if (contributions.isEmpty()) "" else
+                            "专家团队“" + selectedTeam.name + "”的独立意见如下。请由你负责整合、识别分歧并给出统一答复，不要盲目照搬：\\n" + contributions.joinToString("\n\n")
+                    } else ""
+                    val finalSystemContext = listOf(requestSystemContext, teamContext)
+                        .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
+                    OpenAiClient.stream(config, requestHistory, finalSystemContext) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
