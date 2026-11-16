@@ -526,14 +526,20 @@ fun NestroApp() {
                     }
                     val projectExists = dao.projectExists(pendingProjectDeleteId)
                     val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-                    val canRecover = pendingProjectDeleteId != "default" && !hasRunningRequest &&
-                        !hasDraft && !hasLocalConversationData
+                    val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
+                        projectId = pendingProjectDeleteId,
+                        activeProjectId = activeId,
+                        hasRunningRequest = hasRunningRequest,
+                        hasDraft = hasDraft,
+                        hasLocalConversationData = hasLocalConversationData,
+                        hasLinkedData = hasLinkedData
+                    )
                     val deleted = canRecover && if (projectExists) {
                         dao.deleteProjectIfEmpty(pendingProjectDeleteId, activeId)
-                    } else if (!projectExists && !hasLinkedData) {
+                    } else {
                         dao.deleteEmptyProjectConversations(pendingProjectDeleteId)
                         true
-                    } else false
+                    }
                     if (deleted) {
                         saveConversationList(
                             prefs,

@@ -25,4 +25,15 @@ object ProjectSpaceRules {
 
     fun canDelete(projectId: String, activeProjectId: String, linkedProjectIds: Set<String>): Boolean =
         projectId.isNotBlank() && projectId != "default" && projectId != activeProjectId && projectId !in linkedProjectIds
+
+    fun canRecoverPendingDeletion(
+        projectId: String,
+        activeProjectId: String,
+        hasRunningRequest: Boolean,
+        hasDraft: Boolean,
+        hasLocalConversationData: Boolean,
+        hasLinkedData: Boolean
+    ): Boolean =
+        canDelete(projectId, activeProjectId, if (hasLinkedData) setOf(projectId) else emptySet()) &&
+            !hasRunningRequest && !hasDraft && !hasLocalConversationData
 }

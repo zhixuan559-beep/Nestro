@@ -51,4 +51,26 @@ class ProjectSpaceRulesTest {
         assertTrue(ProjectSpaceRules.canDelete("work", "default", emptySet()))
         assertFalse(ProjectSpaceRules.canDelete("", "default", emptySet()))
     }
+
+    @Test fun onlyRecoversInterruptedDeletionWhenProjectIsStillSafeToDelete() {
+        fun canRecover(
+            projectId: String = "work",
+            activeProjectId: String = "default",
+            hasRunningRequest: Boolean = false,
+            hasDraft: Boolean = false,
+            hasLocalConversationData: Boolean = false,
+            hasLinkedData: Boolean = false
+        ) = ProjectSpaceRules.canRecoverPendingDeletion(
+            projectId, activeProjectId, hasRunningRequest, hasDraft,
+            hasLocalConversationData, hasLinkedData
+        )
+
+        assertTrue(canRecover())
+        assertFalse(canRecover(projectId = "default"))
+        assertFalse(canRecover(activeProjectId = "work"))
+        assertFalse(canRecover(hasRunningRequest = true))
+        assertFalse(canRecover(hasDraft = true))
+        assertFalse(canRecover(hasLocalConversationData = true))
+        assertFalse(canRecover(hasLinkedData = true))
+    }
 }
