@@ -3689,6 +3689,10 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         listOf(ConversationEntity("legacy-restored", "恢复的旧对话", System.currentTimeMillis(), "default") to legacyMessages)
     } else emptyList()
     require(completeRestoredConversations.map { it.first.id }.distinct().size == completeRestoredConversations.size) { "备份中存在重复会话 ID" }
+    val conversationProjectById = completeRestoredConversations.associate { it.first.id to it.first.projectId }
+    val messageProjectById = completeRestoredConversations.flatMap { (conversation, rows) ->
+        rows.map { it.id to conversation.projectId }
+    }.toMap()
     val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
     require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
     val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
@@ -3723,7 +3727,11 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val category = item.optString("category")
         val content = item.optString("content")
         val projectId = item.optString("projectId")
+        val sourceConversationId = item.optString("sourceConversationId")
+        val sourceMessageId = item.optString("sourceMessageId")
         require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
+        require(sourceConversationId.isBlank() || conversationProjectById[sourceConversationId] == projectId) { "记忆引用了其他项目空间的会话" }
+        require(sourceMessageId.isBlank() || messageProjectById[sourceMessageId] == projectId) { "记忆引用了其他项目空间的消息" }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
         require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
         val confidence = item.optDouble("confidence", 0.0)
@@ -3734,8 +3742,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             category = category,
             content = content,
             fingerprint = item.getString("fingerprint"),
-            sourceConversationId = item.optString("sourceConversationId"),
-            sourceMessageId = item.optString("sourceMessageId"),
+            sourceConversationId = sourceConversationId,
+            sourceMessageId = sourceMessageId,
             confidence = confidence,
             createdAt = item.optLong("createdAt", System.currentTimeMillis()),
             updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
@@ -3754,19 +3762,21 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val item = taskRows.getJSONObject(index)
         val id = item.optString("id")
         val projectId = item.optString("projectId")
+        val conversationId = item.optString("conversationId").take(120)
         val goal = item.optString("goal")
         val category = item.optString("category")
         val status = item.optString("status")
         val planJson = item.optString("planJson", "[]")
         val currentStep = item.optInt("currentStep", 0)
         require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
+        require(conversationId.isBlank() || conversationProjectById[conversationId] == projectId) { "Phone Agent 任务引用了其他项目空间的会话" }
         require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
         val planCount = PhoneAgentTaskStore.validatePlanJson(planJson)
         require(currentStep in 0..planCount) { "Phone Agent 任务步骤位置无效" }
         PhoneAgentTaskEntity(
             id = id,
             projectId = projectId,
-            conversationId = item.optString("conversationId").take(120),
+            conversationId = conversationId,
             goal = goal,
             category = category,
             status = status,
