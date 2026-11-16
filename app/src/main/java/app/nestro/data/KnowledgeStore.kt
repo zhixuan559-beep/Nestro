@@ -55,7 +55,8 @@ object KnowledgeStore {
   val hash=MessageDigest.getInstance("SHA-256").digest((projectId+"\u0000"+normalized).toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
   val existing=dao.knowledgeDocumentByHash(hash)
   if(existing!=null) return@withContext KnowledgeImportResult(existing,true)
-  val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.take(180),mime.ifBlank { "text/plain" },bytes.size.toLong(),System.currentTimeMillis(),hash)
+  val resolvedMime=mime.ifBlank { if(ext=="pdf") "application/pdf" else "text/plain" }
+  val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.take(180),resolvedMime,bytes.size.toLong(),System.currentTimeMillis(),hash)
   val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
   val saved=dao.insertKnowledgeBundleIfAbsent(document,chunks)
