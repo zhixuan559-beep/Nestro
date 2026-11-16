@@ -256,6 +256,9 @@ interface NestroDao {
     @Query("UPDATE phone_agent_tasks SET planJson = :planJson, status = 'planned', currentStep = 0, updatedAt = :updatedAt WHERE id = :taskId")
     suspend fun updatePhoneAgentTaskPlan(taskId: String, planJson: String, updatedAt: Long)
 
+    @Query("UPDATE phone_agent_tasks SET goal = :goal, updatedAt = :updatedAt WHERE id = :taskId")
+    suspend fun updatePhoneAgentTaskGoal(taskId: String, goal: String, updatedAt: Long)
+
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 

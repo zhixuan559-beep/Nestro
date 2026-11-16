@@ -97,6 +97,17 @@ object PhoneAgentTaskStore {
     suspend fun recentLogs(dao: NestroDao, taskId: String, limit: Int = 30): List<PhoneAgentTaskLogEntity> =
         dao.phoneAgentTaskLogs(taskId, limit).reversed()
 
+    suspend fun appendClarification(dao: NestroDao, taskId: String, clarification: String) {
+        val clean = clarification.trim().take(500)
+        require(clean.length >= 2) { "补充内容太短" }
+        val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
+        val updatedGoal = (task.goal + "\\n用户补充说明：" + clean).take(2000)
+        require(updatedGoal.length > task.goal.length) { "补充内容无效" }
+        val now = System.currentTimeMillis()
+        dao.updatePhoneAgentTaskGoal(taskId, updatedGoal, now)
+        dao.updatePhoneAgentTaskPlan(taskId, "[]", now)
+    }
+
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
         require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")

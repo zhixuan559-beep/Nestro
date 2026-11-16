@@ -1874,6 +1874,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
     var tasks by remember { mutableStateOf(emptyList<app.nestro.data.PhoneAgentTaskEntity>()) }
     var taskLogs by remember { mutableStateOf(emptyMap<String, List<app.nestro.data.PhoneAgentTaskLogEntity>>()) }
+    var taskClarifications by remember { mutableStateOf(emptyMap<String, String>()) }
     var taskMessage by remember { mutableStateOf("") }
     val enabledServices = Settings.Secure.getString(
         context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -1975,6 +1976,29 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             color = Muted,
                             style = MaterialTheme.typography.bodySmall
                         )
+                        if (task.status in setOf(PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED)) {
+                            OutlinedTextField(
+                                value = taskClarifications[task.id] ?: "",
+                                onValueChange = { taskClarifications = taskClarifications + (task.id to it) },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("补充预算、规格或其他非敏感要求…") },
+                                minLines = 2
+                            )
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val clarification = taskClarifications[task.id].orEmpty()
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching { PhoneAgentTaskStore.appendClarification(database.dao(), task.id, clarification) }
+                                    }
+                                    taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
+                                    if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
+                                        PhoneAgentWorkScheduler.enqueue(context, task.id)
+                                    }
+                                    if (result.isSuccess) taskClarifications = taskClarifications - task.id
+                                    refresh++
+                                }
+                            }) { Text("补充信息并重新规划", color = Mint) }
+                        }
                         taskLogs[task.id].orEmpty().takeLast(3).forEach { log ->
                             Text(
                                 "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
