@@ -3594,7 +3594,11 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
     }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
-    val restoredProjects = parseProjects(root.optJSONArray("projects"))
+    val restoredProjects = when (val projectsValue = root.opt("projects")) {
+        is JSONArray -> parseProjects(projectsValue)
+        is String -> parseProjects(JSONArray(projectsValue))
+        else -> parseProjects(null)
+    }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
     val conversationRows = root.optJSONArray("conversations_v1") ?: JSONArray()
