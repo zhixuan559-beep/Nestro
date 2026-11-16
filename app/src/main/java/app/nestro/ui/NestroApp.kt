@@ -458,7 +458,7 @@ fun NestroApp() {
             val requestProjectId = activeProjectId
             val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                expertPrompts[selectedExpert].orEmpty(),
+                if (selectedTeamId.isBlank()) expertPrompts[selectedExpert].orEmpty() else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
@@ -502,7 +502,7 @@ fun NestroApp() {
                                             "请独立分析用户目标，列出关键判断、依据、风险和建议。不要直接代替团队总协调人回答用户；不确定的信息明确标记，不要编造。"
                                         ).filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
                                     ).take(2200)
-                                }.getOrNull()?.let { "【" + member + "】\\n" + it }
+                                }.getOrNull()?.let { "【" + member + "】" + System.lineSeparator() + it }
                             }
                         }
                         if (contributions.isEmpty()) "" else
