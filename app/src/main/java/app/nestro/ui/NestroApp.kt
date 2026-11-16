@@ -22,6 +22,9 @@ import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
+import app.nestro.data.ExpertTeamBundle
+import app.nestro.data.ExpertTeamMemberBundle
+import app.nestro.data.ExpertTeamBundleParser
 import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
@@ -239,6 +242,26 @@ fun NestroApp() {
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
             }
+        }
+    }
+
+    val importTeamLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result=withContext(Dispatchers.IO) { runCatching {
+                val raw=context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: error("无法读取团队文件")
+                ExpertTeamBundleParser.parse(raw)
+            } }
+            result.fold({ pendingTeamBundle=it; teamImportStatus="" },{ teamImportStatus="导入失败：${it.message ?: "文件格式无效"}" })
+        }
+    }
+    val exportTeamLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri==null) teamExportStatus="已取消团队导出。"
+        else scope.launch {
+            val content=teamExportJson
+            val result=withContext(Dispatchers.IO) { runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) } ?: error("无法创建团队文件")
+            } }
+            teamExportStatus=result.fold({ "专家团队及成员角色已导出。" },{ "导出失败：${it.message ?: "未知错误"}" })
         }
     }
 
@@ -872,7 +895,13 @@ fun NestroApp() {
                         "teams" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。", color = Muted)
+                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。"
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入团队") }
+                                }
+                                if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("PLACEHOLDER", color = Muted)
                                 expertTeams.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1065,7 +1094,17 @@ fun NestroApp() {
                                                     },
                                                     enabled = conversations.any { it.id == memory.sourceConversationId }
                                                 ) { Text("打开来源会话", color = Mint) }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                TextButton(onClick = {
+                                                 val memberBundles = team.members.mapNotNull { member ->
+                                                     expertPrompts[member]?.takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
+                                                 }
+                                                 if (memberBundles.size >= 2) {
+                                                     teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)
+                                                     val safeName = team.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "team" }
+                                                     exportTeamLauncher.launch("$safeName.nestro-team.json")
+                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
+                                             }) { Text("导出团队", color = Mint) }
+                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
                                                         scope.launch {
                                                             val result = withContext(Dispatchers.IO) {
@@ -1485,6 +1524,34 @@ fun NestroApp() {
                 }) { Text("保存", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showSkillDialog = false }) { Text("取消") } }
+        )
+    }
+
+    if (pendingTeamBundle != null) {
+        val bundle = pendingTeamBundle!!
+        AlertDialog(
+            onDismissRequest = { pendingTeamBundle = null },
+            title = { Text("导入团队预览") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
+                Text(bundle.description, color = Muted)
+                Text("成员：${bundle.members.joinToString("、") { it.name }}", color = Mint)
+                Text("导入后会一并安装成员专家配置；同名专家的角色指令将被更新。", color = Muted)
+            } },
+            confirmButton = { TextButton(onClick = {
+                bundle.members.forEach { member ->
+                    if (member.name !in experts) experts = experts + member.name
+                    expertPrompts = expertPrompts + (member.name to member.prompt)
+                }
+                val team = ExpertTeam(UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
+                expertTeams = expertTeams.filterNot { it.name == bundle.name } + team
+                prefs.edit().putString("experts", JSONArray(experts).toString())
+                    .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                    .putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
+                teamImportStatus = "已导入团队：${bundle.name}"
+                pendingTeamBundle = null
+            }) { Text("导入团队", color = Mint) } },
+            dismissButton = { TextButton(onClick = { pendingTeamBundle = null }) { Text("取消") } }
         )
     }
 
