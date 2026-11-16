@@ -327,7 +327,7 @@ interface NestroDao {
         deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }
-    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND content LIKE '%' || :term || '%' LIMIT :limit")
+        @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY position ASC LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
 }
 
