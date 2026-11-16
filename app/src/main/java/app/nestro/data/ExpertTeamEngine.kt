@@ -135,7 +135,7 @@ object ExpertTeamRunHistoryCodec {
                                 .put("output",member.output.take(2200))
                                 .put("error",member.error.take(500)))
                         }
-                    })
+                    }))
             }
         }.toString()
 
