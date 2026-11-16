@@ -534,12 +534,8 @@ fun NestroApp() {
                         hasLocalConversationData = hasLocalConversationData,
                         hasLinkedData = hasLinkedData
                     )
-                    val deleted = canRecover && if (projectExists) {
-                        dao.deleteProjectIfEmpty(pendingProjectDeleteId, activeId)
-                    } else {
-                        dao.deleteEmptyProjectConversations(pendingProjectDeleteId)
-                        true
-                    }
+                    val deleted = canRecover &&
+                        dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
                     if (deleted) {
                         saveConversationList(
                             prefs,

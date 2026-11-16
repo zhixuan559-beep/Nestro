@@ -337,6 +337,19 @@ interface NestroDao {
         return true
     }
 
+    @Transaction
+    suspend fun recoverPendingProjectDeletionIfEmpty(projectId: String, activeProjectId: String): Boolean {
+        if (projectId.isBlank() || projectId == "default" || projectId == activeProjectId) return false
+        if (projectHasLinkedData(projectId)) return false
+        if (projectExists(projectId)) {
+            deleteEmptyProjectConversations(projectId)
+            deleteProjectAndKnowledge(projectId)
+        } else {
+            deleteEmptyProjectConversations(projectId)
+        }
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 

@@ -110,6 +110,27 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
+    @Test fun pendingDeletionRecoveryRechecksDatabaseAndCleansOnlyEmptyOrphanPlaceholders() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            dao.putConversation(ConversationEntity("orphan-placeholder", "新对话", 1L, "deleted-project"))
+            assertTrue(dao.recoverPendingProjectDeletionIfEmpty("deleted-project", "default"))
+            assertTrue(dao.loadConversations().isEmpty())
+
+            dao.putConversation(ConversationEntity("orphan-chat", "有效会话", 2L, "deleted-project"))
+            dao.putMessages(listOf(MessageEntity("orphan-message", "orphan-chat", 0, "user", "不得清理")))
+            assertFalse(dao.recoverPendingProjectDeletionIfEmpty("deleted-project", "default"))
+            assertEquals("不得清理", dao.loadConversations().single().messages.single().content)
+
+            assertFalse(dao.recoverPendingProjectDeletionIfEmpty("default", "other"))
+            assertFalse(dao.recoverPendingProjectDeletionIfEmpty("other", "other"))
+        } finally {
+            database.close()
+        }
+    }
+
     @Test fun projectAndConversationDataSurviveDatabaseReopen() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "nestro_project_space_lifecycle.db"
