@@ -1775,7 +1775,7 @@ fun NestroApp() {
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
-                                                                            check(pendingRequest?.optString("status") != "running" || pendingRequest.optString("project_id") != project.id) {
+                                                                            check(pendingRequest?.optString("status") != "running" || pendingRequest?.optString("project_id") != project.id) {
                                                                                 "该空间仍有正在执行的请求，请等待请求结束后再删除"
                                                                             }
                                                                             val dao = database.dao()

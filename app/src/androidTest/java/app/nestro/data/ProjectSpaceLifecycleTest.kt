@@ -29,7 +29,7 @@ class ProjectSpaceLifecycleTest {
             assertFalse(dao.deleteProjectIfEmpty("active", "active"))
             assertFalse(dao.deleteProjectIfEmpty("missing", "active"))
             assertTrue(dao.deleteProjectIfEmpty("empty", "active"))
-            assertEquals(listOf("default", "active"), dao.loadProjects().map { it.id }.sorted())
+            assertEquals(listOf("active", "default"), dao.loadProjects().map { it.id }.sorted())
             assertTrue(dao.loadConversations().isEmpty())
         } finally {
             database.close()
