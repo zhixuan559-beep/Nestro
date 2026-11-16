@@ -863,6 +863,8 @@ fun NestroApp() {
                                                      val projectId = activeProjectId
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
                                                      runningWorkflowId = workflow.id
+                                                     busy = true
+                                                     stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
                                                          val result = runCatching {
@@ -877,6 +879,7 @@ fun NestroApp() {
                                                                          listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000))
                                                                  }
                                                              }, onStep = { index, step ->
+                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
                                                                  workflowRunStatus = "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
                                                          }
@@ -887,8 +890,10 @@ fun NestroApp() {
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
                                                          if (activeConversationId == conversationId) messages = completed
-                                                         workflowRunStatus = if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
+                                                         workflowRunStatus = if (stopRequested) "工作流已停止。" else if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
                                                          runningWorkflowId = ""
+                                                         busy = false
+                                                         stopRequested = false
                                                          workflowInputDraft = ""
                                                          page = "home"
                                                      }
@@ -898,8 +903,10 @@ fun NestroApp() {
                                                      workflowDraftName = workflow.name
                                                      workflowDraftDescription = workflow.description
                                                      workflowStepOneTitle = workflow.steps.getOrNull(0)?.title ?: "分析需求"
+                                                     workflowStepOneKind = workflow.steps.getOrNull(0)?.kind ?: WorkflowStepKind.PROMPT
                                                      workflowStepOnePrompt = workflow.steps.getOrNull(0)?.instruction.orEmpty()
                                                      workflowStepTwoTitle = workflow.steps.getOrNull(1)?.title ?: "形成结果"
+                                                     workflowStepTwoKind = workflow.steps.getOrNull(1)?.kind ?: WorkflowStepKind.PROMPT
                                                      workflowStepTwoPrompt = workflow.steps.getOrNull(1)?.instruction.orEmpty()
                                                      showWorkflowDialog = true
                                                  }) { Text("编辑", color = Mint) }
@@ -916,8 +923,10 @@ fun NestroApp() {
                                      workflowDraftName = ""
                                      workflowDraftDescription = ""
                                      workflowStepOneTitle = "分析需求"
+                                     workflowStepOneKind = WorkflowStepKind.PROMPT
                                      workflowStepOnePrompt = "拆解用户目标，列出关键事实、约束和待解决问题。"
                                      workflowStepTwoTitle = "形成结果"
+                                     workflowStepTwoKind = WorkflowStepKind.PROMPT
                                      workflowStepTwoPrompt = "根据上一步分析，形成可直接交付的结果，并检查完整性。"
                                      showWorkflowDialog = true
                                  }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 新建工作流") }
@@ -1674,9 +1683,11 @@ fun NestroApp() {
                     OutlinedTextField(workflowDraftDescription, { workflowDraftDescription = it.take(300) }, label = { Text("用途说明") }, minLines = 2)
                     Text("步骤 1", color = Mint)
                     OutlinedTextField(workflowStepOneTitle, { workflowStepOneTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
+                    TextButton(onClick = { workflowStepOneKind = WorkflowStepKind.values()[(workflowStepOneKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${workflowStepOneKind.name}（点击切换）", color = Mint) }
                     OutlinedTextField(workflowStepOnePrompt, { workflowStepOnePrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
                     Text("步骤 2", color = Mint)
                     OutlinedTextField(workflowStepTwoTitle, { workflowStepTwoTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
+                    TextButton(onClick = { workflowStepTwoKind = WorkflowStepKind.values()[(workflowStepTwoKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${workflowStepTwoKind.name}（点击切换）", color = Mint) }
                     OutlinedTextField(workflowStepTwoPrompt, { workflowStepTwoPrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
                 }
             },
@@ -1687,8 +1698,8 @@ fun NestroApp() {
                         name = workflowDraftName.trim(),
                         description = workflowDraftDescription.trim(),
                         steps = listOf(
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = workflowStepOneTitle.trim(), instruction = workflowStepOnePrompt.trim()),
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = workflowStepTwoTitle.trim(), instruction = workflowStepTwoPrompt.trim())
+                            WorkflowStep(kind = workflowStepOneKind, title = workflowStepOneTitle.trim(), instruction = workflowStepOnePrompt.trim()),
+                            WorkflowStep(kind = workflowStepTwoKind, title = workflowStepTwoTitle.trim(), instruction = workflowStepTwoPrompt.trim())
                         )
                     )
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
