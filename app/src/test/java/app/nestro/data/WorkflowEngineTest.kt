@@ -2,7 +2,6 @@ package app.nestro.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class WorkflowEngineTest {
@@ -33,12 +32,13 @@ class WorkflowEngineTest {
         assertEquals(true,prompts[1].contains("分析结果"))
     }
 
-    @Test fun runnerRejectsWorkflowWithoutEnabledSteps()=runBlocking {
+    @Test fun runnerRejectsWorkflowWithoutEnabledSteps() {
         val workflow=WorkflowDefinition(name="空工作流",description="",steps=listOf(
             WorkflowStep(title="跳过",instruction="不执行",enabled=false)
         ))
-        assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { WorkflowEngine.run(workflow,"输入",{ _, _ -> "结果" }) }
+        val failure=runBlocking {
+            runCatching { WorkflowEngine.run(workflow,"输入",{ _, _ -> "结果" }) }.exceptionOrNull()
         }
+        assertEquals(true, failure is IllegalArgumentException)
     }
 }
