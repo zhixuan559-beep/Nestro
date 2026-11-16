@@ -65,7 +65,7 @@ object WorkflowRunHistoryCodec {
                             .put("status",step.status).put("attempts",step.attempts)
                             .put("output",step.output.take(12000)).put("error",step.error.take(2000)))
                     }
-                })
+                }))
         }
     }.toString()
 
