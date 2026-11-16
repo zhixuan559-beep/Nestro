@@ -346,6 +346,8 @@ fun NestroApp() {
                 }
             }
             if (result.isSuccess) {
+                automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
+                speechRate = prefsRate(context)
                 modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
                 activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
                 modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
