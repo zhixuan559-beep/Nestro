@@ -70,7 +70,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
   Text("当前空间：$projectId。资料只存入本机 Room 数据库，回答时检索当前项目的相关片段。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/pdf","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
   Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。单文件上限 2 MB，Office 文件解压后上限 8 MB；PDF 最多 300 页，扫描件暂不支持 OCR。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
-  Text("检索使用本地 SQLite FTS4/BM25，中文采用 n-gram/子串召回；当前不含语义向量检索，不会向远程 embedding 服务上传文档。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
+  Text("检索使用本地 SQLite FTS4/BM25，中文采用 n-gram/子串召回；当前不含语义向量检索，也不调用远程 embedding。发起对话时，命中片段会随问题发送到你配置的模型服务。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Text(status,color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   OutlinedTextField(
    value=searchQuery,

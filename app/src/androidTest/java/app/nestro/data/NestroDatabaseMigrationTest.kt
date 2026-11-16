@@ -23,7 +23,9 @@ class NestroDatabaseMigrationTest {
 
 
     @Test fun freshDatabaseKeepsFtsIndexSynchronizedWithKnowledgeChunks() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
+            .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fresh-doc", "p1", "Fresh", "text/plain", 1, 1, "c".repeat(64)))
@@ -37,7 +39,9 @@ class NestroDatabaseMigrationTest {
     }
 
     @Test fun knowledgeSearchIsolatedByProjectForFtsAndChineseFallback() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
+            .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("p1-doc", "p1", "项目一资料", "text/plain", 1, 1, "1".repeat(64)))
@@ -60,7 +64,9 @@ class NestroDatabaseMigrationTest {
     }
 
     @Test fun projectDeletionGuardChecksEveryProjectOwnedDataFamily() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
+            .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
             dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1)))

@@ -434,6 +434,12 @@ abstract class NestroDatabase : RoomDatabase() {
             db.execSQL("CREATE TRIGGER IF NOT EXISTS knowledge_chunks_fts_au AFTER UPDATE OF projectId, content ON knowledge_chunks BEGIN DELETE FROM knowledge_chunks_fts WHERE chunkId = old.id; INSERT INTO knowledge_chunks_fts(chunkId, projectId, content) VALUES (new.id, new.projectId, new.content); END")
         }
 
+        internal val KNOWLEDGE_FTS_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                createKnowledgeFts(db)
+            }
+        }
+
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 createKnowledgeFts(db)
@@ -505,12 +511,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     NestroDatabase::class.java,
                     "nestro_local.db"
                 ).addMigrations(*ALL_MIGRATIONS)
-                    .addCallback(object : RoomDatabase.Callback() {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            super.onCreate(db)
-                            createKnowledgeFts(db)
-                        }
-                    }).build().also { instance = it }
+                    .addCallback(KNOWLEDGE_FTS_CALLBACK).build().also { instance = it }
             }
     }
 }

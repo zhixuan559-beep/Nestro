@@ -30,6 +30,7 @@ class LocalBackupRoundTripTest {
         context.deleteDatabase(databaseName)
         val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
             .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
             .build()
         val prefs = context.getSharedPreferences("nestro_backup_round_trip", Context.MODE_PRIVATE)
         try {

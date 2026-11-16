@@ -22,7 +22,7 @@ object KnowledgeSearchEngine {
         "我们", "你们", "他们", "一个", "没有", "不是", "需要"
     )
 
-    fun extractTerms(prompt: String, limit: Int = 64): List<String> {
+    fun extractTerms(prompt: String, limit: Int = 32): List<String> {
         if (limit <= 0) return emptyList()
         val latinTerms = linkedSetOf<String>()
         val normalized = prompt.lowercase()
