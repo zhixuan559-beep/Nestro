@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -58,6 +59,42 @@ class NestroDatabaseMigrationTest {
 
             val p1Chinese = KnowledgeStore.search(dao, "p1", "私有知识库定位", 6)
             assertEquals(listOf("项目一资料"), p1Chinese.map { it.documentName })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun candidateWindowSamplesLaterChunksInsteadOfOnlyEarlyPositions() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("sample-doc", "p1", "长文档", "text/plain", 1, 1, "d".repeat(64)))
+            dao.insertKnowledgeChunks((0..250).map { position ->
+                KnowledgeChunkEntity("sample-$position", "sample-doc", "p1", position, "共同关键词 命中位置 $position")
+            })
+            val candidates = dao.searchKnowledgeChunks("p1", "共同关键词", 200)
+            assertEquals(200, candidates.size)
+            assertTrue("候选窗口应覆盖文档后部片段", candidates.any { it.position >= 230 })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun duplicateDocumentHashIsIgnoredWithoutReplacingItsChunks() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            val original = KnowledgeDocumentEntity("original-doc", "p1", "原文", "text/plain", 1, 1, "e".repeat(64))
+            val duplicate = KnowledgeDocumentEntity("duplicate-doc", "p1", "重复文档", "text/plain", 1, 2, "e".repeat(64))
+            val saved = dao.insertKnowledgeBundleIfAbsent(original, listOf(KnowledgeChunkEntity("original-chunk", "original-doc", "p1", 0, "原始内容")))
+            val ignored = dao.insertKnowledgeBundleIfAbsent(duplicate, listOf(KnowledgeChunkEntity("duplicate-chunk", "duplicate-doc", "p1", 0, "错误覆盖")))
+            assertEquals("original-doc", saved.id)
+            assertEquals("original-doc", ignored.id)
+            assertEquals(listOf("原始内容"), dao.allKnowledgeChunks().map { it.content })
         } finally {
             db.close()
         }

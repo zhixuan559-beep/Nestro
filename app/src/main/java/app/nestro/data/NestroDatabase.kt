@@ -370,6 +370,11 @@ interface NestroDao {
     suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
     @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
     suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
+
+    @Query("SELECT * FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId ORDER BY position ASC")
+    suspend fun knowledgeChunksForDocument(documentId: String, projectId: String): List<KnowledgeChunkEntity>
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertKnowledgeDocumentIfAbsent(document: KnowledgeDocumentEntity): Long
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -379,9 +384,11 @@ interface NestroDao {
         document: KnowledgeDocumentEntity,
         chunks: List<KnowledgeChunkEntity>
     ): KnowledgeDocumentEntity {
-        val existing = knowledgeDocumentByHash(document.contentHash)
-        if (existing != null) return existing
-        insertKnowledgeDocument(document)
+        val insertedId = insertKnowledgeDocumentIfAbsent(document)
+        if (insertedId == -1L) {
+            return knowledgeDocumentByHash(document.contentHash)
+                ?: error("文档去重索引冲突，请重试导入。")
+        }
         insertKnowledgeChunks(chunks)
         return document
     }
@@ -398,10 +405,10 @@ interface NestroDao {
         deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }
-        @Query("SELECT kc.* FROM knowledge_chunks_fts JOIN knowledge_chunks AS kc ON kc.id = knowledge_chunks_fts.chunkId WHERE knowledge_chunks_fts MATCH :matchQuery AND kc.projectId = :projectId ORDER BY kc.position ASC LIMIT :limit")
+        @Query("SELECT kc.* FROM knowledge_chunks_fts JOIN knowledge_chunks AS kc ON kc.id = knowledge_chunks_fts.chunkId WHERE knowledge_chunks_fts MATCH :matchQuery AND kc.projectId = :projectId ORDER BY (kc.position % 17) ASC, kc.position DESC, kc.documentId ASC LIMIT :limit")
     suspend fun searchKnowledgeChunksFts(projectId: String, matchQuery: String, limit: Int = 12): List<KnowledgeChunkEntity>
 
-    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY position ASC LIMIT :limit")
+    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY (position % 17) ASC, position DESC, documentId ASC LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
 
     @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId")
