@@ -728,6 +728,7 @@ fun NestroApp() {
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
                     status = "已停止生成"
                     busy = false
+                    activeRequestId = ""
                     stopRequested = false
                     return@launch
                 }
@@ -823,6 +824,7 @@ fun NestroApp() {
                     result.isSuccess -> result.getOrThrow()
                     partialAnswer.isNotEmpty() -> partialAnswer.toString()
                     stopRequested -> "已停止生成。"
+                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
                     result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
@@ -2963,7 +2965,8 @@ private object OpenAiClient {
     ): String {
         require(configs.isNotEmpty()) { "没有可用的模型配置" }
         var lastError: Throwable? = null
-        return withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
+        return try {
+            withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
             configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
                 var attempt = 0
                 while (attempt < 2) {
@@ -2988,6 +2991,9 @@ private object OpenAiClient {
                 }
             }
             throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
+            }
+        } finally {
+            cancel(requestId)
         }
     }
 
@@ -3009,7 +3015,7 @@ private object OpenAiClient {
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history).forEach { msg ->
+                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg ->
                         put(JSONObject().put("role", msg.role).put("content", msg.content))
                     }
                 })
@@ -3062,7 +3068,7 @@ private object OpenAiClient {
             if (code !in 200..299) {
                 val response = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP $code")
+                throw IllegalStateException("HTTP $code: " + (detail?.takeIf { it.isNotBlank() } ?: response.take(300)))
             }
             val decoder = app.nestro.data.OpenAiSseDecoder()
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
