@@ -508,7 +508,7 @@ fun NestroApp() {
                             }
                         }
                         if (contributions.isEmpty()) "" else
-                            "专家团队“" + selectedTeam.name + "”的独立意见如下。请由你负责整合、识别分歧并给出统一答复，不要盲目照搬：\\n" + contributions.joinToString("\n\n")
+                            "专家团队“" + selectedTeam.name + "”的独立意见如下。请由你负责整合、识别分歧并给出统一答复，不要盲目照搬：" + System.lineSeparator() + contributions.joinToString(System.lineSeparator() + System.lineSeparator())
                     } else ""
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
