@@ -385,6 +385,9 @@ interface NestroDao {
     @Query("SELECT * FROM capability_tasks WHERE id = :taskId LIMIT 1")
     suspend fun capabilityTask(taskId: String): CapabilityTaskEntity?
 
+    @Query("SELECT * FROM capability_tasks WHERE checkpoint = :checkpoint LIMIT 1")
+    suspend fun capabilityTaskByCheckpoint(checkpoint: String): CapabilityTaskEntity?
+
     @Query("SELECT * FROM capability_tasks WHERE idempotencyKey = :key LIMIT 1")
     suspend fun capabilityTaskByIdempotencyKey(key: String): CapabilityTaskEntity?
 

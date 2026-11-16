@@ -32,6 +32,7 @@ fun CapabilityCenterPage(
     onPauseTask: (CapabilityTaskEntity) -> Unit,
     onResumeTask: (CapabilityTaskEntity) -> Unit,
     onCancelTask: (CapabilityTaskEntity) -> Unit,
+    onOpenPhoneTask: () -> Unit,
     activeModel: String,
     modelReady: Boolean,
     expertCount: Int,
@@ -154,6 +155,9 @@ fun CapabilityCenterPage(
                             }
                             if(task.state==CapabilityTaskState.PAUSED || task.state==CapabilityTaskState.WAITING_USER) {
                                 TextButton(onClick={ onResumeTask(task); refresh++ }) { Text("继续") }
+                            }
+                            if(task.checkpoint.startsWith("phone_agent_task_id:")) {
+                                TextButton(onClick=onOpenPhoneTask) { Text("查看设备任务") }
                             }
                             if(!CapabilityTaskState.isTerminal(task.state)) {
                                 TextButton(onClick={ onCancelTask(task); refresh++ }) { Text("取消",color=warning) }

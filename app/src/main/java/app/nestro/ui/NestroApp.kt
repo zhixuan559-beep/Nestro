@@ -902,6 +902,14 @@ fun NestroApp() {
                     runCatching {
                         withContext(Dispatchers.IO) {
                             val task = PhoneAgentTaskStore.create(database.dao(), requestProjectId, requestConversationId, phonePlan)
+                            if (requestCapabilityTaskId.isNotBlank()) {
+                                CapabilityTaskStore.transition(
+                                    database.dao(), requestCapabilityTaskId, CapabilityTaskState.WAITING_USER,
+                                    "phone_agent_delegated", "已转交 Phone Agent 执行；最终状态由设备任务回写",
+                                    checkpoint = "phone_agent_task_id:${task.id}",
+                                    resultSummary = "Phone Agent 子任务已创建"
+                                )
+                            }
                             if (PhoneAgentService.activeService?.hasValidGrant() == true) {
                                 PhoneAgentWorkScheduler.enqueue(context, task.id)
                             }
@@ -2267,17 +2275,41 @@ fun NestroApp() {
                                 }
                             },
                             onResumeTask = { task ->
+                                val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch {
-                                    withContext(Dispatchers.IO) { CapabilityTaskStore.resume(database.dao(), task.id) }
-                                    pendingCapabilityTaskId = task.id
-                                    draft = task.input
-                                    page = "home"
+                                    withContext(Dispatchers.IO) {
+                                        CapabilityTaskStore.resume(database.dao(), task.id)
+                                        if (linkedPhoneTaskId != null) {
+                                            val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
+                                            if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
+                                                PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_PLANNED, child.currentStep)
+                                            }
+                                        }
+                                    }
+                                    if (linkedPhoneTaskId != null) {
+                                        PhoneAgentWorkScheduler.enqueue(context, linkedPhoneTaskId, afterUserHandoff = true, allowRetryCurrentAction = true)
+                                    } else {
+                                        pendingCapabilityTaskId = task.id
+                                        draft = task.input
+                                        page = "home"
+                                    }
                                 }
                             },
                             onCancelTask = { task ->
                                 if (activeCapabilityTaskId == task.id) stopRequested = true
-                                scope.launch(Dispatchers.IO) { CapabilityTaskStore.cancel(database.dao(), task.id) }
+                                val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
+                                scope.launch(Dispatchers.IO) {
+                                    CapabilityTaskStore.cancel(database.dao(), task.id)
+                                    if (linkedPhoneTaskId != null) {
+                                        PhoneAgentWorkScheduler.cancel(context, linkedPhoneTaskId)
+                                        val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
+                                        if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
+                                            PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_CANCELLED, child.currentStep)
+                                        }
+                                    }
+                                }
                             },
+                            onOpenPhoneTask = { page = "phone" },
                             activeModel = config.model,
                             modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
                             expertCount = experts.size,

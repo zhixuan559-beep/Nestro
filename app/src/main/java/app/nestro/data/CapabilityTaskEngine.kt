@@ -20,7 +20,7 @@ object CapabilityTaskState {
         QUEUED -> to in setOf(RUNNING, PAUSED, CANCELLED, WAITING_USER)
         RUNNING -> to in setOf(PAUSED, WAITING_USER, RETRY_WAIT, SUCCEEDED, FAILED, CANCELLED)
         PAUSED -> to in setOf(QUEUED, CANCELLED)
-        WAITING_USER -> to in setOf(QUEUED, CANCELLED)
+        WAITING_USER -> to in setOf(QUEUED, RUNNING, PAUSED, SUCCEEDED, FAILED, CANCELLED)
         RETRY_WAIT -> to in setOf(RUNNING, PAUSED, CANCELLED, FAILED)
         else -> false
     }
