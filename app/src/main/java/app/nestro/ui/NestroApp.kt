@@ -2385,7 +2385,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                             context,
                                             task.id,
                                             afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                            allowRetryCurrentAction = task.status == PhoneAgentTaskStore.STATUS_RUNNING
+                                            allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
                                         )
                                         taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
                                     },
