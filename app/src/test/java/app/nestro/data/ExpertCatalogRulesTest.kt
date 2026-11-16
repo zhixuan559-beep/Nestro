@@ -18,7 +18,7 @@ class ExpertCatalogRulesTest {
     }
 
     @Test fun renamingExpertUpdatesWorkflowReferences() {
-        val workflow = WorkflowDefinition(name = "写作流程", steps = listOf(WorkflowStep(kind = WorkflowStepKind.EXPERT, title = "写作", targetId = "旧专家")))
+        val workflow = WorkflowDefinition(name = "写作流程", description = "测试专家重命名", steps = listOf(WorkflowStep(kind = WorkflowStepKind.EXPERT, title = "写作", targetId = "旧专家", instruction = "按专家角色执行")))
         val renamed = ExpertCatalogRules.renameWorkflowReferences(listOf(workflow), "旧专家", "新专家")
         assertEquals("新专家", renamed.single().steps.single().targetId)
     }
