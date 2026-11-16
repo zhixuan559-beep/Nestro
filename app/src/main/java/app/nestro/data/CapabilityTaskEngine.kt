@@ -129,6 +129,16 @@ object CapabilityTaskStore {
     suspend fun retry(dao: NestroDao, taskId: String, delayMillis: Long = 0L): Boolean =
         transition(dao, taskId, CapabilityTaskState.RETRY_WAIT, "retry_scheduled", "任务已安排重试", retryDelayMillis = delayMillis)
 
+
+    suspend fun recoverInterrupted(dao: NestroDao) {
+        dao.allCapabilityTasks().filter {
+            it.state == CapabilityTaskState.RUNNING && !it.checkpoint.startsWith("phone_agent_task_id:")
+        }.forEach { task ->
+            transition(dao, task.id, CapabilityTaskState.WAITING_USER, "process_recovery",
+                "应用进程中断，任务已保留并等待用户恢复", error = "上次执行因应用进程中断而停止")
+        }
+    }
+
     private suspend fun appendEvent(dao: NestroDao, taskId: String, from: String, to: String, event: String, detail: String) {
         dao.insertCapabilityTaskEvent(
             CapabilityTaskEventEntity(UUID.randomUUID().toString(), taskId, from, to, event.take(40), detail.take(240), System.currentTimeMillis())

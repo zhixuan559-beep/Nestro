@@ -173,6 +173,9 @@ fun NestroApp() {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
     var databaseReady by remember { mutableStateOf(false) }
+    LaunchedEffect(databaseReady) {
+        if (databaseReady) withContext(Dispatchers.IO) { CapabilityTaskStore.recoverInterrupted(database.dao()) }
+    }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
     var pendingCapabilityTaskId by remember { mutableStateOf("") }

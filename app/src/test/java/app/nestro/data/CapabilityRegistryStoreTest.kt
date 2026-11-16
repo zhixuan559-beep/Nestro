@@ -34,4 +34,16 @@ class CapabilityRegistryStoreTest {
         assertEquals(80, decoded.source.length)
         assertFalse(decoded.defaultGranted)
     }
+    @Test fun toolGrantKeysAreScopedByServiceAndTool() {
+        assertEquals("server.one::search", CapabilityToolPolicy.grantKey("server.one", "search"))
+        assertFalse(CapabilityToolPolicy.grantKey("server.one", "search") == CapabilityToolPolicy.grantKey("server.two", "search"))
+    }
+
+    @Test fun toolPolicyRejectsUnsafeIdentifiersAndFiltersParameterNames() {
+        assertTrue(runCatching { CapabilityToolPolicy.grantKey("../server", "search") }.isFailure)
+        assertTrue(runCatching { CapabilityToolPolicy.grantKey("server", "bad tool") }.isFailure)
+        assertEquals(listOf("query", "limit"), CapabilityToolPolicy.safeParameterNames(listOf("query", "query", "limit", "secret value", "token")))
+    }
+
+
 }

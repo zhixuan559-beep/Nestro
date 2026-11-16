@@ -21,6 +21,24 @@ data class CapabilityDescriptor(
     val defaultGranted: Boolean = true
 )
 
+
+data class CapabilityToolAuditRecord(
+    val serviceId: String, val toolName: String, val projectId: String,
+    val action: String, val outcome: String, val parameterNames: List<String>, val createdAt: Long
+)
+
+object CapabilityToolPolicy {
+    fun grantKey(serviceId: String, toolName: String): String {
+        require(serviceId.matches(Regex("[a-zA-Z0-9_.-]{1,80}"))) { "MCP 服务标识无效" }
+        require(toolName.matches(Regex("[a-zA-Z0-9_.-]{1,100}"))) { "MCP 工具标识无效" }
+        return "$serviceId::$toolName"
+    }
+
+    fun safeParameterNames(names: List<String>): List<String> = names.asSequence()
+        .filter { it.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) }
+        .distinct().take(20).toList()
+}
+
 data class CapabilityAuditRecord(
     val capabilityId: String, val capabilityName: String, val projectId: String,
     val action: String, val outcome: String, val createdAt: Long
@@ -30,6 +48,8 @@ object CapabilityRegistryStore {
     private const val REGISTRY_KEY = "capability_registry_v1"
     private const val GRANTS_KEY = "capability_grants_v1"
     private const val AUDIT_KEY = "capability_audit_v1"
+    private const val TOOL_GRANTS_KEY = "capability_tool_grants_v1"
+    private const val TOOL_AUDIT_KEY = "capability_tool_audit_v1"
     private const val MAX_RECORDS = 200
     private const val MAX_CAPABILITIES = 100
 
@@ -119,4 +139,53 @@ object CapabilityRegistryStore {
                 o.optString("action"),o.optString("outcome"),o.optLong("created_at"))
         }.take(limit)
     }
+    fun isToolGranted(prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String): Boolean {
+        val key = CapabilityToolPolicy.grantKey(serviceId, toolName)
+        val root = runCatching { JSONObject(prefs.getString(TOOL_GRANTS_KEY, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        return root.optJSONObject(projectId)?.optBoolean(key, false) ?: false
+    }
+
+    @Synchronized fun setToolGranted(prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String, granted: Boolean) {
+        require(projectId.isNotBlank() && projectId.length <= 120)
+        val key = CapabilityToolPolicy.grantKey(serviceId, toolName)
+        val root = runCatching { JSONObject(prefs.getString(TOOL_GRANTS_KEY, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val project = root.optJSONObject(projectId) ?: JSONObject()
+        project.put(key, granted)
+        root.put(projectId, project)
+        prefs.edit().putString(TOOL_GRANTS_KEY, root.toString()).apply()
+    }
+
+    @Synchronized fun recordToolAudit(
+        prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
+        action: String, outcome: String, parameterNames: List<String> = emptyList()
+    ) {
+        CapabilityToolPolicy.grantKey(serviceId, toolName)
+        require(projectId.isNotBlank() && projectId.length <= 120)
+        val old = runCatching { JSONArray(prefs.getString(TOOL_AUDIT_KEY, "[]") ?: "[]") }.getOrDefault(JSONArray())
+        val safeNames = CapabilityToolPolicy.safeParameterNames(parameterNames)
+        val next = JSONArray().put(JSONObject()
+            .put("service_id", serviceId).put("tool_name", toolName).put("project_id", projectId)
+            .put("action", action.take(40)).put("outcome", outcome.take(40))
+            .put("parameter_names", JSONArray(safeNames)).put("created_at", System.currentTimeMillis()))
+        for (i in 0 until minOf(old.length(), MAX_RECORDS - 1)) old.optJSONObject(i)?.let(next::put)
+        prefs.edit().putString(TOOL_AUDIT_KEY, next.toString()).apply()
+    }
+
+    fun recentToolAudit(prefs: SharedPreferences, projectId: String, limit: Int = 30): List<CapabilityToolAuditRecord> {
+        val data = runCatching { JSONArray(prefs.getString(TOOL_AUDIT_KEY, "[]") ?: "[]") }.getOrDefault(JSONArray())
+        return (0 until data.length()).mapNotNull { index ->
+            val item = data.optJSONObject(index) ?: return@mapNotNull null
+            if (item.optString("project_id") != projectId) return@mapNotNull null
+            val names = item.optJSONArray("parameter_names") ?: JSONArray()
+            CapabilityToolAuditRecord(
+                item.optString("service_id"), item.optString("tool_name"), projectId,
+                item.optString("action"), item.optString("outcome"),
+                (0 until names.length()).map { names.optString(it) }
+                    .filter { it.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) }.take(20),
+                item.optLong("created_at")
+            )
+        }.take(limit.coerceIn(0, MAX_RECORDS))
+    }
+
+
 }
