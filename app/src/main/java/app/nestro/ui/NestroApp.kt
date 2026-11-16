@@ -32,6 +32,8 @@ import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.CapabilityTaskStore
+import app.nestro.data.CapabilityTaskState
 import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
@@ -171,6 +173,7 @@ fun NestroApp() {
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
+    var pendingCapabilityTaskId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
@@ -741,6 +744,8 @@ fun NestroApp() {
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
+        val requestCapabilityTaskId = pendingCapabilityTaskId
+        pendingCapabilityTaskId = ""
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
         val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
@@ -808,6 +813,9 @@ fun NestroApp() {
             return@send
         }
         if (config.apiKey.isBlank() || config.model.isBlank()) {
+            if (requestCapabilityTaskId.isNotBlank()) scope.launch(Dispatchers.IO) {
+                CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.WAITING_USER, "chat_waiting_model", "等待配置可用模型", error = "尚未配置模型 API")
+            }
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
             conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
@@ -823,6 +831,11 @@ fun NestroApp() {
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
             val requestProjectId = activeProjectId
+            if (requestCapabilityTaskId.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.RUNNING, "chat_started", "主对话已开始处理统一能力任务")
+                }
+            }
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
             val requestMemoryMutationVersion = UserMemoryStore.mutationVersion(requestProjectId)
             val requestExpertsAuthorized = CapabilityRegistryStore.isGranted(prefs, requestProjectId, "experts", true)
@@ -857,6 +870,9 @@ fun NestroApp() {
                     if (activeConversationId == requestConversationId) messages = deniedHistory
                     prefs.edit().remove("chat_request_state_v1").apply()
                     status = "Phone Agent 未获授权"
+                    if (requestCapabilityTaskId.isNotBlank()) withContext(Dispatchers.IO) {
+                        CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.WAITING_USER, "chat_waiting_permission", "Phone Agent 权限未授权，等待用户处理", error = "Phone Agent 未获授权")
+                    }
                     busy = false
                     activeRequestId = ""
                     stopRequested = false
@@ -867,6 +883,9 @@ fun NestroApp() {
                     conversations = saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId)
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
                     status = "已停止生成"
+                    if (requestCapabilityTaskId.isNotBlank()) withContext(Dispatchers.IO) {
+                        CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.CANCELLED, "chat_cancelled", "用户停止了统一能力任务")
+                    }
                     busy = false
                     activeRequestId = ""
                     stopRequested = false
@@ -966,6 +985,18 @@ fun NestroApp() {
                                 messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString(), previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
                             }
                         }
+                    }
+                }
+                if (requestCapabilityTaskId.isNotBlank()) withContext(Dispatchers.IO) {
+                    val currentTask = database.dao().capabilityTask(requestCapabilityTaskId)
+                    if (currentTask?.state == CapabilityTaskState.RUNNING) {
+                        CapabilityTaskStore.transition(
+                            database.dao(), requestCapabilityTaskId,
+                            if (result.isSuccess && !stopRequested) CapabilityTaskState.SUCCEEDED else if (stopRequested) CapabilityTaskState.CANCELLED else CapabilityTaskState.FAILED,
+                            "chat_finished", if (result.isSuccess) "主对话已返回结果" else "主对话执行失败",
+                            resultSummary = result.getOrNull()?.take(8000),
+                            error = result.exceptionOrNull()?.message?.take(2000) ?: ""
+                        )
                     }
                 }
                 val finalText = when {
@@ -2198,7 +2229,24 @@ fun NestroApp() {
                         "capabilities" -> CapabilityCenterPage(
                             prefs = prefs,
                             projectId = activeProjectId,
-                            onDispatchTask = { task -> draft = task; page = "home" },
+                            onDispatchTask = { task ->
+                                val taskProjectId = activeProjectId
+                                val taskConversationId = activeConversationId
+                                scope.launch {
+                                    val queued = withContext(Dispatchers.IO) {
+                                        CapabilityTaskStore.enqueue(
+                                            database.dao(), taskProjectId, taskConversationId,
+                                            kind = "chat_dispatch", capabilityId = "dispatcher",
+                                            title = "统一能力任务", input = task,
+                                            callerKey = UUID.randomUUID().toString(),
+                                            requiresConfirmation = false
+                                        )
+                                    }
+                                    pendingCapabilityTaskId = queued.id
+                                    draft = task
+                                    page = "home"
+                                }
+                            },
                             activeModel = config.model,
                             modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
                             expertCount = experts.size,
