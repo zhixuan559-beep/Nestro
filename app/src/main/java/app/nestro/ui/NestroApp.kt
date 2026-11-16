@@ -160,6 +160,7 @@ fun NestroApp() {
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
     var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
     var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
+    var modelFailoverEnabled by remember { mutableStateOf(prefs.getBoolean("model_failover_enabled", false)) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
@@ -588,7 +589,7 @@ fun NestroApp() {
 
     val requestModelConfigs = buildList {
         if (config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
-        modelProfiles.filterNot { it.id == activeModelProfileId }.forEach { profile ->
+        if (modelFailoverEnabled) modelProfiles.filterNot { it.id == activeModelProfileId }.forEach { profile ->
             val key = LocalVault.readProfile(context, profile.id)
             if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
         }
@@ -1007,6 +1008,11 @@ fun NestroApp() {
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
                             activeConfig = config,
+                            failoverEnabled = modelFailoverEnabled,
+                            onFailoverChange = { enabled ->
+                                modelFailoverEnabled = enabled
+                                prefs.edit().putBoolean("model_failover_enabled", enabled).apply()
+                            },
                             loadKey = { id -> LocalVault.readProfile(context, id) },
                             onActivate = { id ->
                                 val metadata = modelProfiles.firstOrNull { it.id == id }
@@ -2625,6 +2631,8 @@ private fun ModelManager(
     profiles: List<ModelProfileMetadata>,
     activeProfileId: String,
     activeConfig: ModelConfig,
+    failoverEnabled: Boolean,
+    onFailoverChange: (Boolean) -> Unit,
     loadKey: (String) -> String,
     onActivate: (String) -> Unit,
     onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
@@ -2664,6 +2672,15 @@ private fun ModelManager(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
+        Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("自动故障切换", color = Ink)
+                    Text("主模型连接失败时，按配置列表顺序尝试其他已保存 Key。开启后可能产生备用服务商费用。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = failoverEnabled, onCheckedChange = onFailoverChange)
+            }
+        }
         if (profiles.isEmpty()) {
             Text("还没有模型配置。先添加一组 API 地址、模型名称和 Key。", color = Muted)
         } else {
