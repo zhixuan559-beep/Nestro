@@ -118,6 +118,7 @@ fun CapabilityCenterPage(
                     val prompt="请从统一能力入口处理以下任务：${taskDraft.trim()}。当前已选择的专家、团队和技能会按项目授权策略生效，知识库与记忆只在获准时检索；如任务需要尚未接入的外部连接器或其他模块操作，请明确说明，不得假称已执行。涉及设备操作或不可逆动作时先请求确认。"
                     CapabilityRegistryStore.record(prefs,projectId,"dispatcher","统一任务入口","dispatch_to_chat","handed_to_main_chat")
                     onDispatchTask(prompt)
+                    taskDraft = ""
                 },enabled=taskDraft.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("带入主对话") }
             }
         }

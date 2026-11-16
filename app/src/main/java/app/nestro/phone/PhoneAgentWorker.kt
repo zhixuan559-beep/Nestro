@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import app.nestro.data.NestroDatabase
+import CapabilityTaskState
+import CapabilityTaskStore
 import app.nestro.data.PhoneAgentTaskStore
 import kotlinx.coroutines.CancellationException
 

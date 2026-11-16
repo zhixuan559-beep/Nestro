@@ -894,11 +894,12 @@ fun NestroApp() {
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
                     status = "已停止生成"
                     if (requestCapabilityTaskId.isNotBlank()) withContext(Dispatchers.IO) {
-                        CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.CANCELLED, "chat_cancelled", "用户停止了统一能力任务")
+                        CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, if (pauseRequestedCapabilityTaskId == requestCapabilityTaskId) CapabilityTaskState.PAUSED else CapabilityTaskState.CANCELLED, "chat_cancelled", if (pauseRequestedCapabilityTaskId == requestCapabilityTaskId) "用户暂停了统一能力任务" else "用户停止了统一能力任务")
                     }
                     busy = false
                     activeRequestId = ""
                     if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
+                    if (pauseRequestedCapabilityTaskId == requestCapabilityTaskId) pauseRequestedCapabilityTaskId = ""
                     stopRequested = false
                     return@launch
                 }
