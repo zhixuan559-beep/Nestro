@@ -14,6 +14,9 @@ import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.UserMemoryStore
+import app.nestro.data.MemoryCandidate
+import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
@@ -132,6 +135,9 @@ fun NestroApp() {
     var renameConversationDraft by remember { mutableStateOf("") }
     var globalMemory by remember { mutableStateOf("") }
     var memoryDraft by remember { mutableStateOf("") }
+    var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
+    var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
+    var memoryStatus by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var stopRequested by remember { mutableStateOf(false) }
@@ -188,6 +194,15 @@ fun NestroApp() {
                 skills = loadSkills(prefs)
                 "恢复完成。模型 Key 未被覆盖，请检查模型管理。"
             }.getOrElse { "恢复失败：${it.message ?: "文件格式无效"}" }
+        }
+    }
+
+    LaunchedEffect(page, activeProjectId) {
+        if (page == "memory") {
+            automaticMemories = withContext(Dispatchers.IO) {
+                runCatching { UserMemoryStore.list(database.dao(), activeProjectId) }.getOrDefault(emptyList())
+            }
+            memoryEdits = emptyMap()
         }
     }
 
@@ -415,7 +430,8 @@ fun NestroApp() {
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext)
+                    val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, prompt).context
+                    val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     OpenAiClient.stream(config, requestHistory, requestSystemContext) { chunk ->
                         partialAnswer.append(chunk)
@@ -440,6 +456,19 @@ fun NestroApp() {
                     else -> "连接失败"
                 }
                 busy = false
+                if (result.isSuccess && !stopRequested && shouldExtractAutomaticMemory(prompt)) {
+                    val userFacts = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt
+                    scope.launch(Dispatchers.IO) {
+                        val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
+                        if (candidates.isNotEmpty()) {
+                            runCatching {
+                                UserMemoryStore.saveCandidates(
+                                    database.dao(), requestProjectId, requestConversationId, user.id, candidates
+                                )
+                            }
+                        }
+                    }
+                }
                 stopRequested = false
             }
         }
@@ -724,23 +753,70 @@ fun NestroApp() {
                             }
                         }
                         "memory" -> {
-                            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("全局记忆", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("这里保存跨会话共享的背景信息。发送消息时会作为系统上下文提供给模型，不会自动上传到 Nestro 服务器。", color = Muted)
+                                Text("手动全局记忆会跨项目共享；自动记忆按项目隔离，只提取明确表达的稳定偏好、工作方式和项目约束。敏感信息不会自动保存。", color = Muted)
                                 OutlinedTextField(
                                     value = memoryDraft, onValueChange = { memoryDraft = it },
-                                    modifier = Modifier.fillMaxWidth().weight(1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                     placeholder = { Text("写入希望所有会话都能参考的信息…") },
-                                    minLines = 8
+                                    minLines = 5
                                 )
                                 Button(onClick = {
                                     globalMemory = memoryDraft.trim().take(12000)
                                     prefs.edit().putString("global_memory_v1", globalMemory).apply()
-                                    page = "home"
+                                    memoryStatus = "全局记忆已保存"
                                 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("保存全局记忆")
                                 }
-                                Text("当前为手动记忆。自动提取、语义检索与逐条记忆管理尚未实现。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                Text("来源仅限用户明确说过的内容，可逐条修改或删除。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (automaticMemories.isEmpty()) {
+                                    Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    automaticMemories.forEach { memory ->
+                                        Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Text("${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                OutlinedTextField(
+                                                    value = memoryEdits[memory.id] ?: memory.content,
+                                                    onValueChange = { memoryEdits = memoryEdits + (memory.id to it) },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    minLines = 2
+                                                )
+                                                Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Button(onClick = {
+                                                        scope.launch {
+                                                            val result = withContext(Dispatchers.IO) {
+                                                                runCatching {
+                                                                    UserMemoryStore.edit(
+                                                                        database.dao(), memory.id, activeProjectId,
+                                                                        memoryEdits[memory.id] ?: memory.content, memory.category
+                                                                    )
+                                                                }
+                                                            }
+                                                            memoryStatus = result.fold({ "记忆已更新" }, { "更新失败：${it.message ?: "内容无效"}" })
+                                                            if (result.isSuccess) {
+                                                                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                                                                memoryEdits = memoryEdits - memory.id
+                                                            }
+                                                        }
+                                                    }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存修改") }
+                                                    TextButton(onClick = {
+                                                        scope.launch {
+                                                            withContext(Dispatchers.IO) { UserMemoryStore.delete(database.dao(), memory.id, activeProjectId) }
+                                                            automaticMemories = automaticMemories.filterNot { it.id == memory.id }
+                                                            memoryEdits = memoryEdits - memory.id
+                                                            memoryStatus = "记忆已删除"
+                                                        }
+                                                    }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (memoryStatus.isNotBlank()) Text(memoryStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                         "spaces" -> {
@@ -1108,6 +1184,41 @@ private fun SimplePage(title: String, description: String) {
         Text(title, color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text(description, color = Muted, style = MaterialTheme.typography.bodyLarge)
     }
+}
+
+private fun shouldExtractAutomaticMemory(prompt: String): Boolean {
+    val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
+    return prompt.length in 8..4000 && signals.any { prompt.contains(it) }
+}
+
+private fun extractMemoryCandidates(config: ModelConfig, userMessages: List<String>): List<MemoryCandidate> {
+    val system = """
+你是本地记忆候选提取器。只返回 JSON 对象：{"memories":[{"category":"preference","content":"...","confidence":0.9}]}。
+只从用户消息中提取明确陈述、可长期复用的偏好、工作方式、项目事实或约束。
+category 只能是 preference、workflow、project、constraint。
+禁止推断；禁止提取助手说过但用户未确认的内容；不要把提问、一次性任务、假设当作长期事实。
+绝不提取或复述健康、医疗、财务/债务、政治、宗教、种族、性取向、身份凭据、精确住址、电话号码、邮箱、证件或银行卡等敏感信息。
+置信度低于 0.8 的内容不要返回。最多 5 条，每条 8 到 180 个字符。
+没有合格内容时返回 {"memories":[]}。
+""".trimIndent()
+    val user = userMessages.takeLast(6).joinToString("\n").take(6000)
+    val raw = OpenAiClient.complete(
+        config,
+        listOf(ChatMessage(UUID.randomUUID().toString(), "user", user)),
+        system
+    )
+    val start = raw.indexOf('{')
+    val end = raw.lastIndexOf('}')
+    if (start < 0 || end <= start) return emptyList()
+    val rows = JSONObject(raw.substring(start, end + 1)).optJSONArray("memories") ?: return emptyList()
+    return (0 until rows.length()).mapNotNull { index ->
+        val item = rows.optJSONObject(index) ?: return@mapNotNull null
+        MemoryCandidate(
+            category = item.optString("category"),
+            content = item.optString("content"),
+            confidence = item.optDouble("confidence", 0.0)
+        )
+    }.take(5)
 }
 
 private fun isCreationIntent(prompt: String, target: String): Boolean {
