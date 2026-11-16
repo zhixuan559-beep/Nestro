@@ -1650,9 +1650,9 @@ private fun boundedRequestHistory(history: List<ChatMessage>, maxChars: Int = 48
 }
 
 private object OpenAiClient {
-    @Volatile private var activeConnection: HttpURLConnection? = null
+    private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
 
-    fun cancel() { activeConnection?.disconnect() }
+    fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
@@ -1664,7 +1664,7 @@ private object OpenAiClient {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
         }
-        activeConnection = connection
+        activeConnections.add(connection)
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
@@ -1687,7 +1687,7 @@ private object OpenAiClient {
             return JSONObject(response).getJSONArray("choices").getJSONObject(0)
                 .getJSONObject("message").getString("content")
         } finally {
-            if (activeConnection === connection) activeConnection = null
+            activeConnections.remove(connection)
             connection.disconnect()
         }
     }
@@ -1703,7 +1703,7 @@ private object OpenAiClient {
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
             setRequestProperty("Accept", "text/event-stream")
         }
-        activeConnection = connection
+        activeConnections.add(connection)
         val answer = StringBuilder()
         val pending = StringBuilder()
         try {
@@ -1757,7 +1757,7 @@ private object OpenAiClient {
             if (pending.isNotEmpty()) onChunk(pending.toString())
             answer.toString()
         } finally {
-            if (activeConnection === connection) activeConnection = null
+            activeConnections.remove(connection)
             connection.disconnect()
         }
     }
