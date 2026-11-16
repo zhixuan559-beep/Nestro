@@ -469,6 +469,15 @@ fun NestroApp() {
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 val phonePlan = PhoneAgentPlanner.plan(prompt)
+                if (stopRequested) {
+                    val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
+                    conversations = saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId)
+                    if (activeConversationId == requestConversationId) messages = stoppedHistory
+                    status = "已停止生成"
+                    busy = false
+                    stopRequested = false
+                    return@launch
+                }
                 if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
                     runCatching {
                         withContext(Dispatchers.IO) {
@@ -515,6 +524,7 @@ fun NestroApp() {
                     } else ""
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
+                    if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
                     OpenAiClient.stream(config, requestHistory, finalSystemContext) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
