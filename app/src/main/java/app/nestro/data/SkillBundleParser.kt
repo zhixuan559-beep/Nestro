@@ -26,7 +26,7 @@ object SkillBundleParser {
         if (!raw.trimStart().startsWith("{")) {
             val name = safeSource.substringBeforeLast('.').replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().take(40)
             require(name.isNotBlank()) { "无法从文件名生成技能名称" }
-            require(raw.trim().length in 80..8000) { "Markdown 技能内容必须为 80 到 8000 个字符" }
+            require(raw.trim().length in 1..8000) { "Markdown 技能内容必须为 1 到 8000 个字符" }
             return SkillBundle(name, "1.0.0", "从本地文本文件导入", raw.trim(), safeSource, emptyList(), emptyList())
         }
 
@@ -39,7 +39,7 @@ object SkillBundleParser {
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
         require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本必须使用语义版本格式" }
         require(description.length <= 300) { "技能描述过长" }
-        require(prompt.length in 80..8000) { "技能指令长度必须为 80 到 8000 个字符" }
+        require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
         val permissionArray = json.optJSONArray("permissions") ?: JSONArray()
         require(permissionArray.length() <= 10) { "技能权限数量超出限制" }

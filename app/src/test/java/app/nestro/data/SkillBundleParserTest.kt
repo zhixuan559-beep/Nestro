@@ -77,4 +77,12 @@ class SkillBundleParserTest {
         assertTrue(exported.getJSONArray("permissions").length() == 0)
         assertTrue(exported.getJSONArray("dependencies").length() == 0)
     }
+
+    @Test
+    fun shortLocalSkillCanRoundTripThroughExportAndImport() {
+        val exported = SkillBundleParser.exportJson("短技能", "只输出摘要。", null)
+        val imported = SkillBundleParser.parse(exported, "short.nestro-skill.json")
+        assertEquals("短技能", imported.name)
+        assertEquals("只输出摘要。", imported.prompt)
+    }
 }
