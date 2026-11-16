@@ -342,7 +342,7 @@ fun NestroApp() {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val raw = readBackupText(context, uri)
-                    restoreLocalBackup(prefs, raw, database)
+                    restoreLocalBackup(context, prefs, raw, database)
                 }
             }
             if (result.isSuccess) {
@@ -381,7 +381,7 @@ fun NestroApp() {
                 expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
                 automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
             }
-            backupStatus = result.fold({ "恢复完成。API Key 未包含在备份中，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
+            backupStatus = result.fold({ "恢复完成。备份不含 API Key；仅保留本机地址与型号匹配的密钥。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
         }
     }
 
@@ -3530,7 +3530,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     return encoded
 }
 
-private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
+private suspend fun restoreLocalBackup(context: Context, prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     require(raw.length <= 10_000_000) { "备份文件过大" }
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
@@ -3819,6 +3819,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
             .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messageArray))
     }
     val restoreSyncTimestamp = System.currentTimeMillis()
+    val previousProfileMetadata = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
+    var profileKeysToClear = emptyList<String>()
     val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("conversations_v1", normalizedConversationBackup.toString())
@@ -3849,6 +3851,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         val restoredProfilesRaw = root.optString("model_profiles_v1", "[]")
         val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
         require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
+        profileKeysToClear = previousProfileMetadata.filter { old -> restoredProfiles.none { it.id == old.id && it.baseUrl == old.baseUrl && it.model == old.model } }.map { it.id }
         val restoredActiveProfileId = root.optString("active_model_profile_id", "")
             .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
         val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
@@ -3883,6 +3886,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         restoredMemories.forEach { dao.putUserMemory(it) }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
+        profileKeysToClear.forEach { LocalVault.deleteProfile(context, it) }
         prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
