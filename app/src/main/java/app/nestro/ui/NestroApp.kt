@@ -1865,7 +1865,12 @@ fun NestroApp() {
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
                                                                         status = if (markerCleared) "空项目空间已删除" else "项目已删除，启动时会自动清理残留标记"
                                                                     }.onFailure {
-                                                                        status = it.message ?: "删除失败，项目空间已保留；下次启动会自动核对删除状态"
+                                                                        if (it is java.util.concurrent.CancellationException) {
+                                                                            status = "删除操作中断，下次启动会自动核对删除状态"
+                                                                        } else {
+                                                                            prefs.edit().remove("pending_project_delete_id").commit()
+                                                                            status = it.message ?: "删除失败，项目空间已保留"
+                                                                        }
                                                                     }.also {
                                                                         deletingProjectId = ""
                                                                     }
