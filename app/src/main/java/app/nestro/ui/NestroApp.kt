@@ -855,6 +855,7 @@ fun NestroApp() {
                     val deniedHistory = requestHistory + ChatMessage(assistantId, "assistant", "当前项目尚未授权 Phone Agent。请先在统一能力中心开启权限，再重新提交该任务。")
                     conversations = saveConversationMessages(prefs, requestConversationId, deniedHistory, requestProjectId)
                     if (activeConversationId == requestConversationId) messages = deniedHistory
+                    prefs.edit().remove("chat_request_state_v1").apply()
                     status = "Phone Agent 未获授权"
                     busy = false
                     activeRequestId = ""

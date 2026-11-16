@@ -2,7 +2,6 @@ package app.nestro.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -16,7 +15,7 @@ class CapabilityRegistryStoreTest {
             requiresConfirmation = true, defaultGranted = false
         )
         val decoded = CapabilityRegistryStore.decodeDescriptor(CapabilityRegistryStore.encodeDescriptor(source))
-        assertNotNull(decoded)
+            ?: throw AssertionError("Descriptor should decode")
         assertEquals(source, decoded)
     }
 
@@ -29,9 +28,8 @@ class CapabilityRegistryStoreTest {
         val decoded = CapabilityRegistryStore.decodeDescriptor(
             org.json.JSONObject().put("id", "safe").put("title", "T".repeat(200))
                 .put("description", "D".repeat(800)).put("source", "S".repeat(120))
-        )
-        assertNotNull(decoded)
-        assertEquals(80, decoded!!.title.length)
+        ) ?: throw AssertionError("Descriptor should decode")
+        assertEquals(80, decoded.title.length)
         assertEquals(500, decoded.description.length)
         assertEquals(80, decoded.source.length)
         assertFalse(decoded.defaultGranted)
