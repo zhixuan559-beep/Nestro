@@ -26,6 +26,17 @@ class UserMemoryStoreTest {
         assertTrue(MemoryRecallRanker.rank("完全无关的火星探测", listOf(memory("m1", "我偏好简洁直接的表达"))).isEmpty())
     }
 
+    @Test fun recallRejectsSingleCommonNgramMatchesForLongQueries() {
+        val candidate = memory("m1", "项目采用本地优先的存储方式")
+        assertTrue(MemoryRecallRanker.rank("项目使用远程服务器处理完全不同的业务流程", listOf(candidate)).isEmpty())
+    }
+
+    @Test fun fingerprintIsStableAndCategorySensitive() {
+        val first = UserMemoryStore.fingerprintFor("preference|我偏好简洁表达")
+        assertEquals(first, UserMemoryStore.fingerprintFor("preference|我偏好简洁表达"))
+        assertFalse(first == UserMemoryStore.fingerprintFor("workflow|我偏好简洁表达"))
+    }
+
     @Test fun recallQueryAlwaysPreservesCurrentPromptWhenHistoryIsLarge() {
         val query = UserMemoryStore.buildRecallQuery(
             listOf("旧历史内容".repeat(500), "中间历史".repeat(500)),
@@ -57,6 +68,9 @@ class UserMemoryStoreTest {
         assertFalse(context.contains("\\n"))
         assertTrue(context.contains("回答时先给结论"))
         assertTrue(context.contains("偏好本地优先"))
+        assertFalse(context.contains("memoryId="))
+        assertFalse(context.contains("sourceConversationId="))
+        assertFalse(context.contains("sourceMessageId="))
     }
 
     @Test fun deduplicatesIdenticalMemoryContentAfterRanking() {

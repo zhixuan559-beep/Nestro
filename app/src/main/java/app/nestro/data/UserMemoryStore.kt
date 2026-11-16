@@ -20,6 +20,7 @@ internal object MemoryRecallRanker {
         val frequencies = terms.associateWith { term -> documents.count { it.contains(term) } }
         val averageLength = documents.map { tokenizeLength(it) }.average().coerceAtLeast(1.0)
         val phrase = normalize(query)
+        val minimumMatches = if (terms.size >= 4) 2 else 1
         val scored = memories.mapIndexed { index, memory ->
             val content = documents[index]
             val length = tokenizeLength(content).toDouble().coerceAtLeast(1.0)
@@ -41,7 +42,7 @@ internal object MemoryRecallRanker {
             val ageDays = (now - memory.updatedAt).coerceAtLeast(0L) / 86_400_000.0
             score += 0.35 / (1.0 + ageDays / 120.0)
             memory to score
-        }.filter { it.second > 0.0 }
+        }.filter { (memory, score) -> score > 0.0 && terms.count { memory.content.lowercase().contains(it) } >= minimumMatches }
             .sortedWith(compareByDescending<Pair<UserMemoryEntity, Double>> { it.second }.thenByDescending { it.first.updatedAt })
         val selected = mutableListOf<UserMemoryEntity>()
         val seen = mutableSetOf<String>()
@@ -106,7 +107,7 @@ object UserMemoryStore {
             val content = candidate.content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
             if (category !in allowedCategories || content.length !in 8..180) return@forEach
             if (candidate.confidence !in 0.8..1.0 || containsSensitiveData(content)) return@forEach
-            val fingerprint = fingerprint(category + "|" + content.lowercase())
+            val fingerprint = fingerprintFor(category + "|" + content.lowercase())
             val old = dao.userMemoryByFingerprint(projectId, fingerprint)
             val now = System.currentTimeMillis()
             dao.putUserMemory(UserMemoryEntity(
@@ -167,7 +168,7 @@ object UserMemoryStore {
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(normalizedCategory in allowedCategories) { "记忆分类无效" }
         require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
-        val fingerprint = fingerprint(normalizedCategory + "|" + normalized.lowercase())
+        val fingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
         if (dao.userMemoryByFingerprint(projectId, fingerprint) != null) return false
         val now = System.currentTimeMillis()
         dao.putUserMemory(UserMemoryEntity(
@@ -190,8 +191,8 @@ object UserMemoryStore {
         if (memories.isEmpty()) return ""
         val context = StringBuilder()
         for (memory in memories) {
-            val origin = if (memory.projectId == projectId) "当前项目" else "用户授权共享项目 ${memory.projectId}"
-            val label = "[$origin · ${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}% · 更新于 ${memory.updatedAt} · memoryId=${memory.id} · sourceConversationId=${memory.sourceConversationId} · sourceMessageId=${memory.sourceMessageId}]\n"
+            val origin = if (memory.projectId == projectId) "当前项目" else "用户授权共享项目"
+            val label = "[$origin · ${memory.category} · 置信度 ${"%.0f".format(memory.confidence.coerceIn(0.0, 1.0) * 100)}%]\n"
             if (context.length + label.length >= 3000) break
             context.append(label)
             val remaining = 3000 - context.length
@@ -232,9 +233,9 @@ object UserMemoryStore {
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
             Regex("""(?i)\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b""").containsMatchIn(value) ||
             Regex("""(?i)\b(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|password|passcode|secret)\b""").containsMatchIn(value) ||
-            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "地址", "住址", "出生", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
+            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "住址", "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
-    private fun fingerprint(value: String): String =
+    internal fun fingerprintFor(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 }

@@ -804,7 +804,9 @@ fun NestroApp() {
                 .put("started_at", System.currentTimeMillis()).toString()).apply()
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
-                "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
+                if (globalMemory.isNotBlank() && UserMemoryStore.isSafeContent(globalMemory)) {
+                    "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory
+                } else "",
                 if (selectedTeamId.isBlank() && expertProfiles[selectedExpert]?.enabled != false) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 if (selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(expertProfiles[selectedExpert], skills, disabledSkills) else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
@@ -1700,9 +1702,14 @@ fun NestroApp() {
                                     minLines = 5
                                 )
                                 Button(onClick = {
-                                    globalMemory = memoryDraft.trim().take(12000)
-                                    prefs.edit().putString("global_memory_v1", globalMemory).apply()
-                                    memoryStatus = "全局记忆已保存"
+                                    val candidate = memoryDraft.trim().take(12000)
+                                    if (candidate.isNotBlank() && !UserMemoryStore.isSafeContent(candidate)) {
+                                        memoryStatus = "全局记忆包含受保护的敏感信息，未保存"
+                                    } else {
+                                        globalMemory = candidate
+                                        prefs.edit().putString("global_memory_v1", globalMemory).apply()
+                                        memoryStatus = "全局记忆已保存"
+                                    }
                                 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("保存全局记忆")
                                 }
@@ -3894,6 +3901,9 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
     val messageProjectById = completeRestoredConversations.flatMap { (conversation, rows) ->
         rows.map { it.id to conversation.projectId }
     }.toMap()
+    val messageConversationById = completeRestoredConversations.flatMap { (conversation, rows) ->
+        rows.map { it.id to conversation.id }
+    }.toMap()
     val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
     require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
     val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
@@ -3940,29 +3950,45 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val projectId = item.optString("projectId")
         val sourceConversationId = item.optString("sourceConversationId")
         val sourceMessageId = item.optString("sourceMessageId")
-        require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
-        require(conversationProjectById[sourceConversationId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的会话" }
-        require(messageProjectById[sourceMessageId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的消息" }
+        val memoryId = item.optString("id")
+        val fingerprint = item.optString("fingerprint")
+        require(memoryId.isNotBlank() && memoryId.length <= 120 && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
+        if (sourceConversationId.isBlank()) {
+            require(sourceMessageId.isBlank()) { "手动记忆不能引用来源消息" }
+        } else {
+            require(conversationProjectById[sourceConversationId]?.let { it != projectId } != true) { "记忆引用了其他项目空间的会话" }
+            require(messageProjectById[sourceMessageId]?.let { it != projectId } != true) { "记忆引用了其他项目空间的消息" }
+            require(messageConversationById[sourceMessageId]?.let { it != sourceConversationId } != true) {
+                "记忆来源消息与来源会话不匹配"
+            }
+        }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
-        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
+        require(content.length in 8..180 && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
+        require(fingerprint == UserMemoryStore.fingerprintFor(category + "|" + content.trim().lowercase())) { "记忆指纹与内容不匹配" }
         val confidence = item.optDouble("confidence", 0.0)
-        require(confidence in 0.8..1.0) { "记忆置信度无效" }
+        require(confidence.isFinite() && confidence in 0.8..1.0) { "记忆置信度无效" }
+        val createdAt = item.optLong("createdAt", -1L)
+        val updatedAt = item.optLong("updatedAt", -1L)
+        require(createdAt >= 0L && updatedAt >= createdAt) { "记忆时间戳无效" }
         UserMemoryEntity(
             id = item.getString("id"),
             projectId = projectId,
             category = category,
             content = content,
-            fingerprint = item.getString("fingerprint"),
+            fingerprint = fingerprint,
             sourceConversationId = sourceConversationId,
             sourceMessageId = sourceMessageId,
             confidence = confidence,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
+            createdAt = createdAt,
+            updatedAt = updatedAt,
             shareAcrossProjects = item.optBoolean("shareAcrossProjects", false)
         )
     }
     require(restoredMemories.map { it.id }.distinct().size == restoredMemories.size) { "备份中存在重复记忆 ID" }
     require(restoredMemories.map { it.projectId to it.fingerprint }.distinct().size == restoredMemories.size) { "备份中存在重复记忆指纹" }
+    require(restoredMemories.groupingBy { it.projectId }.eachCount().values.all { it <= 200 }) {
+        "单个项目空间的记忆数量超过 200 条上限"
+    }
     val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
     require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
     val validTaskStatuses = setOf(

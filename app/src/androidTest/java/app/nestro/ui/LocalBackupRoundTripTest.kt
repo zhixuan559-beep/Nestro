@@ -54,12 +54,16 @@ class LocalBackupRoundTripTest {
                 ProjectEntity("p2", "隔离测试项目", "", 3L)
             ))
             dao.putConversation(ConversationEntity("c1", "备份测试会话", 3L, "p1"))
-            dao.putMessages(listOf(MessageEntity("m1", "c1", 0, "user", "保留这条消息", "[]", 0)))
+            dao.putConversation(ConversationEntity("c2", "另一条会话", 4L, "p1"))
+            dao.putMessages(listOf(
+                MessageEntity("m1", "c1", 0, "user", "保留这条消息", "[]", 0),
+                MessageEntity("m2", "c2", 0, "user", "另一条会话的消息", "[]", 0)
+            ))
             val hash = LocalBackupCompatibility.sha256("doc")
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "资料.txt", "text/plain", 3L, 4L, hash))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容")))
-            dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
-            dao.putUserMemory(UserMemoryEntity("mem2", "p1", "preference", "授权共享的偏好记忆用于其他项目检索", "fp2", "c1", "m1", 0.95, 5L, 7L, true))
+            dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", UserMemoryStore.fingerprintFor("preference|偏好使用简洁中文表达"), "c1", "m1", 0.9, 5L, 6L))
+            dao.putUserMemory(UserMemoryEntity("mem2", "p1", "preference", "授权共享的偏好记忆用于其他项目检索", UserMemoryStore.fingerprintFor("preference|授权共享的偏好记忆用于其他项目检索"), "c1", "m1", 0.95, 5L, 7L, true))
             assertTrue("备份前应能创建无来源会话的手动记忆", UserMemoryStore.saveManual(dao, "p2", "这个项目默认采用本地优先的记忆检索策略", "constraint"))
 
             val backup = buildLocalBackup(prefs, database)
@@ -103,6 +107,15 @@ class LocalBackupRoundTripTest {
             val checksumMissingBackup = JSONObject(backup).apply { remove("checksum_sha256") }.toString()
             assertTrue("当前版本缺少校验和的备份必须被拒绝", runCatching {
                 restoreLocalBackup(context, prefs, checksumMissingBackup, database)
+            }.isFailure)
+            val invalidMemorySourceBackup = JSONObject(backup).apply {
+                val rows = getJSONArray("user_memories")
+                rows.getJSONObject(0).put("sourceMessageId", "m2")
+                remove("checksum_sha256")
+                put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(this)))
+            }.toString()
+            assertTrue("来源消息与来源会话不匹配的记忆必须被拒绝", runCatching {
+                restoreLocalBackup(context, prefs, invalidMemorySourceBackup, database)
             }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
