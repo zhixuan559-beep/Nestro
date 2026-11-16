@@ -2091,9 +2091,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         val currentStep = item.optInt("currentStep", 0)
         require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
         require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
-        val planCount = runCatching { JSONObject(planJson).getJSONArray("actions").length() }
-            .getOrElse { runCatching { JSONArray(planJson).length() }.getOrDefault(0) }
-        require(planJson.length <= 120000 && currentStep in 0..planCount) { "Phone Agent 任务计划无效" }
+        val planCount = PhoneAgentTaskStore.validatePlanJson(planJson)
+        require(currentStep in 0..planCount) { "Phone Agent 任务步骤位置无效" }
         PhoneAgentTaskEntity(
             id = id,
             projectId = projectId,
