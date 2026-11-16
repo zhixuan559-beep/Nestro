@@ -7,6 +7,7 @@ object PhoneAgentActionParser {
     data class ParsedPlan(
         val done: Boolean,
         val completionEvidence: String,
+        val summary: String,
         val actions: List<PhoneAgentExecutor.Action>
     )
 
@@ -73,6 +74,7 @@ object PhoneAgentActionParser {
         return ParsedPlan(
             done = root.optBoolean("done", false),
             completionEvidence = root.optString("completionEvidence").take(120),
+            summary = sanitizeMessage(root.optString("summary").take(600)),
             actions = actions
         )
     }

@@ -75,10 +75,15 @@ object PhoneAgentAgent {
                     val count = runCatching {
                         PhoneAgentTaskStore.decodeActions(current.planJson).size
                     }.getOrDefault(current.currentStep)
+                    PhoneAgentTaskStore.recordActionResult(
+                        dao, taskId, count, "任务完成",
+                        true,
+                        plan.summary.ifBlank { "任务已根据页面证据核验完成" }
+                    )
                     PhoneAgentTaskStore.updateProgress(
                         dao, taskId, PhoneAgentTaskStore.STATUS_COMPLETED, count
                     )
-                    return Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已根据页面证据核验完成")
+                    return Result(PhoneAgentExecutor.Outcome.COMPLETED, plan.summary.ifBlank { "任务已根据页面证据核验完成" })
                 }
                 return pause(dao, taskId, "当前页面没有足够证据证明目标已完成。")
             }

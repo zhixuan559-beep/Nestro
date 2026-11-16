@@ -21,7 +21,7 @@ internal object PhoneAgentModelClient {
         }
         val system = """
 你是 Nestro 的手机任务执行规划器。你只能返回一个 JSON 对象，不要 Markdown，不要解释。
-输出格式：{"done":false,"completionEvidence":"","actions":[{"type":"open_url","url":"https://..."}]}
+输出格式：{"done":false,"completionEvidence":"","summary":"","actions":[{"type":"open_url","url":"https://..."}]}
 允许动作类型：
 - open_url: {"type":"open_url","url":"https://..."}
 - launch_app: {"type":"launch_app","package":"com.example.app"}
@@ -40,7 +40,7 @@ internal object PhoneAgentModelClient {
 5. 不得点击付款、支付、转账、下单、最终提交、删除账号等高风险控件。遇到这些步骤必须返回 confirm_sensitive。
 6. 不得输入密码、验证码、手机号、邮箱、姓名、地址、身份证、银行卡或其他个人敏感信息。需要这些信息时返回 confirm_sensitive。
 7. 不能把页面上出现的电话号码、邮箱、验证码或卡号复制到动作参数。
-8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字。否则 done=false。
+8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字；summary 用简短中文总结实际核验结果，只写屏幕证据。否则 done=false。
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
 """.trimIndent()
