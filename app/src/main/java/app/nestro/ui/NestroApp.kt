@@ -1402,21 +1402,32 @@ fun NestroApp() {
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
-                                                         val workflowTask = withContext(Dispatchers.IO) {
-                                                             if (pendingWorkflowTaskId.isNotBlank()) {
-                                                                 val existing = database.dao().capabilityTask(pendingWorkflowTaskId) ?: error("工作流任务记录不存在")
-                                                                 if (existing.state == CapabilityTaskState.PAUSED || existing.state == CapabilityTaskState.WAITING_USER) {
-                                                                     CapabilityTaskStore.resume(database.dao(), existing.id)
+                                                         val workflowTaskResult = runCatching {
+                                                             withContext(Dispatchers.IO) {
+                                                                 if (pendingWorkflowTaskId.isNotBlank()) {
+                                                                     val existing = database.dao().capabilityTask(pendingWorkflowTaskId) ?: error("工作流任务记录不存在")
+                                                                     require(existing.capabilityId == workflow.id) { "请选择原任务对应的工作流后再恢复" }
+                                                                     require(existing.projectId == projectId && existing.conversationId == conversationId) { "工作流任务所属项目或会话已变化" }
+                                                                     require(!CapabilityTaskState.isTerminal(existing.state)) { "该工作流任务已结束，不能恢复" }
+                                                                     if (existing.state == CapabilityTaskState.PAUSED || existing.state == CapabilityTaskState.WAITING_USER) {
+                                                                         CapabilityTaskStore.resume(database.dao(), existing.id)
+                                                                     }
+                                                                     existing
+                                                                 } else {
+                                                                     CapabilityTaskStore.enqueue(
+                                                                         database.dao(), projectId, conversationId,
+                                                                         kind = "workflow", capabilityId = workflow.id,
+                                                                         title = workflow.name, input = input,
+                                                                         callerKey = UUID.randomUUID().toString()
+                                                                     )
                                                                  }
-                                                                 existing
-                                                             } else {
-                                                                 CapabilityTaskStore.enqueue(
-                                                                     database.dao(), projectId, conversationId,
-                                                                     kind = "workflow", capabilityId = workflow.id,
-                                                                     title = workflow.name, input = input,
-                                                                     callerKey = UUID.randomUUID().toString()
-                                                                 )
                                                              }
+                                                         }
+                                                         val workflowTask = workflowTaskResult.getOrElse {
+                                                             workflowRunStatus = "工作流任务保存/恢复失败：${it.message ?: "未知错误"}"
+                                                             runningWorkflowId = ""
+                                                             busy = false
+                                                             return@launch
                                                          }
                                                          pendingWorkflowTaskId = ""
                                                          runningWorkflowTaskId = workflowTask.id
