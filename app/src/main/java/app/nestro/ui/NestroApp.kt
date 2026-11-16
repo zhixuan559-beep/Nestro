@@ -192,6 +192,28 @@ fun NestroApp() {
     var teamDraftName by remember { mutableStateOf("") }
     var teamDraftDescription by remember { mutableStateOf("") }
     var teamDraftMembers by remember { mutableStateOf(emptySet<String>()) }
+    var pendingExpertBundle by remember { mutableStateOf<ExpertBundle?>(null) }
+    var expertImportStatus by remember { mutableStateOf("") }
+    var expertExportStatus by remember { mutableStateOf("") }
+    var expertExportJson by remember { mutableStateOf("") }
+    var pendingTeamBundle by remember { mutableStateOf<ExpertTeamBundle?>(null) }
+    var teamImportStatus by remember { mutableStateOf("") }
+    var teamExportStatus by remember { mutableStateOf("") }
+    var teamExportJson by remember { mutableStateOf("") }
+    var workflows by remember { mutableStateOf(WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")) }
+    var showWorkflowDialog by remember { mutableStateOf(false) }
+    var editingWorkflowId by remember { mutableStateOf("") }
+    var workflowDraftName by remember { mutableStateOf("") }
+    var workflowDraftDescription by remember { mutableStateOf("") }
+    var workflowStepOneTitle by remember { mutableStateOf("分析需求") }
+    var workflowStepOneKind by remember { mutableStateOf(WorkflowStepKind.PROMPT) }
+    var workflowStepOnePrompt by remember { mutableStateOf("拆解用户目标，列出关键事实、约束和待解决问题。") }
+    var workflowStepTwoTitle by remember { mutableStateOf("形成结果") }
+    var workflowStepTwoKind by remember { mutableStateOf(WorkflowStepKind.PROMPT) }
+    var workflowStepTwoPrompt by remember { mutableStateOf("根据上一步分析，形成可直接交付的结果，并检查完整性。") }
+    var workflowInputDraft by remember { mutableStateOf("") }
+    var workflowRunStatus by remember { mutableStateOf("") }
+    var runningWorkflowId by remember { mutableStateOf("") }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
     var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
