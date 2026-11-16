@@ -242,6 +242,8 @@ class NestroDatabaseMigrationTest {
         legacy.execSQL("CREATE INDEX index_messages_conversationId ON messages(conversationId)")
         legacy.execSQL("CREATE INDEX index_messages_conversationId_position ON messages(conversationId, position)")
         legacy.execSQL("CREATE TABLE projects (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, createdAt INTEGER NOT NULL)")
+        legacy.execSQL("CREATE TABLE user_memories (id TEXT NOT NULL, projectId TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, fingerprint TEXT NOT NULL, sourceConversationId TEXT NOT NULL, sourceMessageId TEXT NOT NULL, confidence REAL NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+        legacy.execSQL("INSERT INTO user_memories VALUES ('legacy-memory', 'default', 'preference', '旧版长期偏好记忆', 'legacy-fingerprint', '', '', 0.9, 50, 60)")
         legacy.execSQL("INSERT INTO projects VALUES ('default', '默认空间', '', 1)")
         legacy.execSQL("INSERT INTO conversations VALUES ('c1', '旧会话', 100, 'default')")
         legacy.execSQL("INSERT INTO messages VALUES ('m1', 'c1', 0, 'user', '迁移前内容')")
@@ -286,8 +288,11 @@ class NestroDatabaseMigrationTest {
             dao.deleteKnowledgeDocument("fts-doc", "default")
             assertEquals(emptyList<KnowledgeChunkEntity>(), dao.searchKnowledgeChunksFts("default", "\"android\"", 10))
             assertEquals(0L, migrated.dao().loadProjects().single { it.id == "default" }.archivedAt)
+            val migratedLegacyMemory = migrated.dao().userMemories("default").single()
+            assertEquals("旧版长期偏好记忆", migratedLegacyMemory.content)
+            assertFalse("旧版本记忆迁移后默认不得跨项目共享", migratedLegacyMemory.shareAcrossProjects)
             migrated.dao().putUserMemory(UserMemoryEntity("mem1", "default", "fact", "保留的记忆", "fp1", "c1", "m1", 0.9, 1, 1))
-            assertEquals(1, migrated.dao().allUserMemories().size)
+            assertEquals(2, migrated.dao().allUserMemories().size)
         } finally {
             migrated.close()
         }

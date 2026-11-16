@@ -1791,7 +1791,7 @@ fun NestroApp() {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.weight(1f)) {
                                         Text("允许自动提取记忆", color = Ink)
-                                        Text("关闭时不会额外发送记忆提取请求；开启后，符合条件的消息及当前项目已有记忆摘要会发送给你配置的模型，用于提取和识别明确修正；候选结果经过本地过滤后保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("关闭时不会额外发送记忆提取请求；开启后，符合条件的消息及当前项目部分已有记忆内容会发送给你配置的模型，用于提取和识别明确修正；候选结果经过本地过滤后保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                     Switch(
                                         checked = automaticMemoryEnabled,
