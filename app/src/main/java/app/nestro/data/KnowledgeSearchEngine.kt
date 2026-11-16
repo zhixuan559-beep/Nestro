@@ -12,7 +12,7 @@ object KnowledgeSearchEngine {
     )
 
     private val ignoredTerms = setOf(
-        "帮我", "请帮", "一下", "这个", "那个", "进行", "关于", "如何",
+        "请帮我", "帮我", "请帮", "一下", "这个", "那个", "进行", "关于", "如何",
         "可以", "里面", "内容", "文档", "怎么", "什么", "然后", "现在", "之前",
         "我们", "你们", "他们", "一个", "没有", "不是", "需要"
     )
@@ -26,8 +26,11 @@ object KnowledgeSearchEngine {
             if (term !in ignoredTerms) terms += term
         }
 
+        val cjkSearchText = ignoredTerms
+            .sortedByDescending { it.length }
+            .fold(normalized) { text, ignored -> text.replace(ignored, " ") }
         val cjkRuns = Regex("[\\u3400-\\u9FFF\\uF900-\\uFAFF]+")
-            .findAll(normalized)
+            .findAll(cjkSearchText)
             .map { it.value }
         cjkRuns.forEach { run ->
             // Longer n-grams are inserted first, then overlapping bigrams preserve recall.
