@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -20,7 +21,7 @@ class NestroDatabaseMigrationTest {
         context.deleteDatabase(databaseName)
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionSevenWithoutLosingConversationData() {
+    @Test fun migratesVersionOneDatabaseThroughVersionSevenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
