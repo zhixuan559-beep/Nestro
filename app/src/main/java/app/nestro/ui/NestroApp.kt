@@ -168,7 +168,7 @@ fun NestroApp() {
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
     var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
-    var selectedTeamId by remember { mutableStateOf(prefs.getString("selected_team_id", "") ?: "") }
+    var selectedTeamId by remember { mutableStateOf((prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: "") }
     var showTeamDialog by remember { mutableStateOf(false) }
     var editingTeamId by remember { mutableStateOf("") }
     var teamDraftName by remember { mutableStateOf("") }
