@@ -369,6 +369,19 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCapabilityTask(task: CapabilityTaskEntity): Long
 
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCapabilityTasks(tasks: List<CapabilityTaskEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCapabilityTaskEvents(events: List<CapabilityTaskEventEntity>)
+
+    @Query("SELECT * FROM capability_tasks ORDER BY createdAt ASC")
+    suspend fun allCapabilityTasks(): List<CapabilityTaskEntity>
+
+    @Query("DELETE FROM capability_tasks")
+    suspend fun deleteAllCapabilityTasks()
+
     @Query("SELECT * FROM capability_tasks WHERE id = :taskId LIMIT 1")
     suspend fun capabilityTask(taskId: String): CapabilityTaskEntity?
 

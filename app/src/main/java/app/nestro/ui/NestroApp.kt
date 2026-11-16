@@ -33,6 +33,8 @@ import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
 import app.nestro.data.CapabilityTaskStore
+import app.nestro.data.CapabilityTaskEntity
+import app.nestro.data.CapabilityTaskEventEntity
 import app.nestro.data.CapabilityTaskState
 import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
@@ -3914,18 +3916,23 @@ private data class LocalBackupDatabaseSnapshot(
     val chunks: List<KnowledgeChunkEntity>,
     val memories: List<UserMemoryEntity>,
     val tasks: List<PhoneAgentTaskEntity>,
-    val taskLogs: List<PhoneAgentTaskLogEntity>
+    val taskLogs: List<PhoneAgentTaskLogEntity>,
+    val capabilityTasks: List<CapabilityTaskEntity>,
+    val capabilityTaskEvents: List<CapabilityTaskEventEntity>
 )
 
 internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val dao = database.dao()
     val snapshot = database.withTransaction {
         val tasks = dao.allPhoneAgentTasks()
+        val capabilityTasks = dao.allCapabilityTasks()
         LocalBackupDatabaseSnapshot(
             projects = dao.loadProjects(), conversations = dao.loadConversations(),
             documents = dao.allKnowledgeDocuments(), chunks = dao.allKnowledgeChunks(),
             memories = dao.allUserMemories(), tasks = tasks,
-            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) }
+            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) },
+            capabilityTasks = capabilityTasks,
+            capabilityTaskEvents = capabilityTasks.flatMap { dao.capabilityTaskEvents(it.id, 200) }
         )
     }
     val root = JSONObject()
@@ -4034,8 +4041,29 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
         taskLogArray.put(JSONObject().put("id", log.id).put("taskId", log.taskId).put("actionIndex", log.actionIndex)
             .put("action", log.action).put("success", log.success).put("detail", log.detail).put("createdAt", log.createdAt))
     }
+
+    val capabilityTaskArray = JSONArray()
+    snapshot.capabilityTasks.forEach { task ->
+        capabilityTaskArray.put(JSONObject()
+            .put("id", task.id).put("projectId", task.projectId).put("conversationId", task.conversationId)
+            .put("kind", task.kind).put("capabilityId", task.capabilityId).put("title", task.title)
+            .put("input", task.input).put("state", task.state).put("idempotencyKey", task.idempotencyKey)
+            .put("checkpoint", task.checkpoint).put("resultSummary", task.resultSummary).put("error", task.error)
+            .put("attempts", task.attempts).put("maxRetries", task.maxRetries)
+            .put("requiresConfirmation", task.requiresConfirmation).put("availableAt", task.availableAt)
+            .put("createdAt", task.createdAt).put("updatedAt", task.updatedAt)
+            .put("startedAt", task.startedAt).put("finishedAt", task.finishedAt))
+    }
+    val capabilityEventArray = JSONArray()
+    snapshot.capabilityTaskEvents.forEach { event ->
+        capabilityEventArray.put(JSONObject().put("id", event.id).put("taskId", event.taskId)
+            .put("fromState", event.fromState).put("toState", event.toState).put("event", event.event)
+            .put("detail", event.detail).put("createdAt", event.createdAt))
+    }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
+    root.put("capability_tasks_v1", capabilityTaskArray)
+    root.put("capability_task_events_v1", capabilityEventArray)
     // Hash the serialized JSON representation so verification sees identical numeric values and escaping.
     val checksumPayload = JSONObject(root.toString())
     root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(checksumPayload)))
@@ -4284,6 +4312,69 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             createdAt = item.optLong("createdAt", System.currentTimeMillis())
         )
     }
+
+    val capabilityTaskRows = root.optJSONArray("capability_tasks_v1") ?: JSONArray()
+    require(capabilityTaskRows.length() <= 1000) { "统一任务数量超出限制" }
+    val validCapabilityStates = setOf(
+        CapabilityTaskState.QUEUED, CapabilityTaskState.RUNNING, CapabilityTaskState.PAUSED,
+        CapabilityTaskState.WAITING_USER, CapabilityTaskState.RETRY_WAIT, CapabilityTaskState.SUCCEEDED,
+        CapabilityTaskState.FAILED, CapabilityTaskState.CANCELLED
+    )
+    val restoredCapabilityTasks = (0 until capabilityTaskRows.length()).map { index ->
+        val item = capabilityTaskRows.getJSONObject(index)
+        val id = item.optString("id")
+        val projectId = item.optString("projectId")
+        val conversationId = item.optString("conversationId")
+        val kind = item.optString("kind")
+        val capabilityId = item.optString("capabilityId")
+        val title = item.optString("title")
+        val input = item.optString("input")
+        val state = item.optString("state")
+        val key = item.optString("idempotencyKey")
+        val attempts = item.optInt("attempts", 0)
+        val maxRetries = item.optInt("maxRetries", 2)
+        require(id.isNotBlank() && projectId in restoredProjectIds && conversationId.isNotBlank()) { "统一任务关联字段无效" }
+        require(conversationProjectById[conversationId]?.let { it == projectId } != false) { "统一任务引用了其他项目空间的会话" }
+        require(kind.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) && capabilityId.matches(Regex("[a-zA-Z0-9_.-]{1,80}"))) { "统一任务类型无效" }
+        require(title.isNotBlank() && title.length <= 120 && input.isNotBlank() && input.length <= 12000) { "统一任务内容无效" }
+        require(state in validCapabilityStates && key.matches(Regex("[a-f0-9]{64}"))) { "统一任务状态或幂等键无效" }
+        require(attempts in 0..20 && maxRetries in 0..5 && attempts <= maxRetries + 1) { "统一任务重试次数无效" }
+        val checkpoint = item.optString("checkpoint")
+        val resultSummary = item.optString("resultSummary")
+        val error = item.optString("error")
+        require(checkpoint.length <= 24000 && resultSummary.length <= 8000 && error.length <= 2000) { "统一任务状态数据过长" }
+        CapabilityTaskEntity(
+            id=id, projectId=projectId, conversationId=conversationId, kind=kind, capabilityId=capabilityId,
+            title=title, input=input, state=state, idempotencyKey=key, checkpoint=checkpoint,
+            resultSummary=resultSummary, error=error, attempts=attempts, maxRetries=maxRetries,
+            requiresConfirmation=item.optBoolean("requiresConfirmation", false),
+            availableAt=item.optLong("availableAt", System.currentTimeMillis()),
+            createdAt=item.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt=item.optLong("updatedAt", System.currentTimeMillis()),
+            startedAt=item.optLong("startedAt", 0L), finishedAt=item.optLong("finishedAt", 0L)
+        )
+    }
+    require(restoredCapabilityTasks.map { it.id }.distinct().size == restoredCapabilityTasks.size) { "统一任务 ID 重复" }
+    require(restoredCapabilityTasks.map { it.idempotencyKey }.distinct().size == restoredCapabilityTasks.size) { "统一任务幂等键重复" }
+    val capabilityTaskIds = restoredCapabilityTasks.map { it.id }.toSet()
+    val capabilityEventRows = root.optJSONArray("capability_task_events_v1") ?: JSONArray()
+    require(capabilityEventRows.length() <= 20_000) { "统一任务事件数量超出限制" }
+    val restoredCapabilityEvents = (0 until capabilityEventRows.length()).map { index ->
+        val item = capabilityEventRows.getJSONObject(index)
+        val taskId = item.optString("taskId")
+        val fromState = item.optString("fromState")
+        val toState = item.optString("toState")
+        val event = item.optString("event")
+        val detail = item.optString("detail")
+        require(taskId in capabilityTaskIds && (fromState.isEmpty() || fromState in validCapabilityStates) && toState in validCapabilityStates) { "统一任务事件引用无效" }
+        require(event.length in 1..40 && detail.length <= 240) { "统一任务事件内容无效" }
+        CapabilityTaskEventEntity(
+            id=item.optString("id").ifBlank { UUID.randomUUID().toString() }, taskId=taskId,
+            fromState=fromState, toState=toState, event=event, detail=detail,
+            createdAt=item.optLong("createdAt", System.currentTimeMillis())
+        )
+    }
+    require(restoredCapabilityEvents.map { it.id }.distinct().size == restoredCapabilityEvents.size) { "统一任务事件 ID 重复" }
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
@@ -4448,6 +4539,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         dao.deleteAllKnowledgeDocuments()
         dao.deleteAllUserMemories()
         dao.deleteAllPhoneAgentTasks()
+        dao.deleteAllCapabilityTasks()
         dao.deleteAllProjects()
         if (restoredProjects.isNotEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
         completeRestoredConversations.forEach { (conversation, rows) ->
@@ -4459,6 +4551,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         restoredMemories.forEach { dao.putUserMemory(it) }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
+        if (restoredCapabilityTasks.isNotEmpty()) dao.insertCapabilityTasks(restoredCapabilityTasks)
+        if (restoredCapabilityEvents.isNotEmpty()) dao.insertCapabilityTaskEvents(restoredCapabilityEvents)
         prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
