@@ -1459,13 +1459,6 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
     }
     val editor = prefs.edit().putString("conversations_v1", array.toString())
     if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
-    val dao = database.dao()
-    database.withTransaction {
-        (dao.projectIds() + restoredMemories.map { it.projectId }).distinct().forEach { projectId ->
-            dao.deleteUserMemoriesForProject(projectId)
-        }
-        restoredMemories.forEach { dao.putUserMemory(it) }
-    }
     editor.apply()
 }
 
@@ -1692,6 +1685,13 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
+    }
+    val dao = database.dao()
+    database.withTransaction {
+        (dao.projectIds() + restoredMemories.map { it.projectId }).distinct().forEach { projectId ->
+            dao.deleteUserMemoriesForProject(projectId)
+        }
+        restoredMemories.forEach { dao.putUserMemory(it) }
     }
     editor.apply()
 }
