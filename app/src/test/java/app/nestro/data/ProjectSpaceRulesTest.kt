@@ -34,7 +34,7 @@ class ProjectSpaceRulesTest {
         )))
         assertEquals("项目空间名称重复", ProjectSpaceRules.validateCollection(listOf(
             ProjectSpaceRules.Entry("default", "默认空间"),
-            ProjectSpaceRules.Entry("work", " 工作 ")
+            ProjectSpaceRules.Entry("work", " 默认空间 ")
         )))
         assertEquals("默认项目空间缺失", ProjectSpaceRules.validateCollection(listOf(
             ProjectSpaceRules.Entry("work", "工作")
