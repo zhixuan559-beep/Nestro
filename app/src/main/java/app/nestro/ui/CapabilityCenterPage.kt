@@ -5,7 +5,6 @@ import app.nestro.data.CapabilityDescriptor
 import app.nestro.data.CapabilityRegistryStore
 import app.nestro.data.NestroDao
 import app.nestro.data.CapabilityTaskEntity
-import app.nestro.data.CapabilityTaskStore
 import app.nestro.data.CapabilityTaskState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -23,9 +22,6 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun CapabilityCenterPage(
@@ -33,6 +29,9 @@ fun CapabilityCenterPage(
     dao: NestroDao,
     projectId: String,
     onDispatchTask: (String) -> Unit,
+    onPauseTask: (CapabilityTaskEntity) -> Unit,
+    onResumeTask: (CapabilityTaskEntity) -> Unit,
+    onCancelTask: (CapabilityTaskEntity) -> Unit,
     activeModel: String,
     modelReady: Boolean,
     expertCount: Int,
@@ -48,8 +47,7 @@ fun CapabilityCenterPage(
     var refresh by remember { mutableIntStateOf(0) }; var pending by remember { mutableStateOf<CapabilityDescriptor?>(null) }
     var taskDraft by remember { mutableStateOf("") }; var showAudit by remember { mutableStateOf(false) }
     var taskRows by remember { mutableStateOf(emptyList<CapabilityTaskEntity>()) }
-    val taskScope = rememberCoroutineScope()
-    LaunchedEffect(projectId, refresh) { taskRows = withContext(Dispatchers.IO) { dao.capabilityTasks(projectId, 50) } }
+    LaunchedEffect(projectId, refresh) { taskRows = dao.capabilityTasks(projectId, 50) }
 
     val builtIns=listOf(
         CapabilityDescriptor("models","模型服务","基础能力","管理模型服务商、API 配置、主模型切换与故障切换。",status=if(modelReady)"已配置" else "未配置",detail=if(modelReady)activeModel else "尚未启用可用模型配置",route="models"),
@@ -152,13 +150,13 @@ fun CapabilityCenterPage(
                         if(task.error.isNotBlank()) Text(task.error,color=warning,style=MaterialTheme.typography.labelSmall,maxLines=2)
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             if(task.state==CapabilityTaskState.QUEUED || task.state==CapabilityTaskState.RUNNING) {
-                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.pause(dao,task.id) }; refresh++ } }) { Text("暂停") }
+                                TextButton(onClick={ onPauseTask(task); refresh++ }) { Text("暂停") }
                             }
                             if(task.state==CapabilityTaskState.PAUSED || task.state==CapabilityTaskState.WAITING_USER) {
-                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.resume(dao,task.id) }; refresh++ } }) { Text("继续") }
+                                TextButton(onClick={ onResumeTask(task); refresh++ }) { Text("继续") }
                             }
                             if(!CapabilityTaskState.isTerminal(task.state)) {
-                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.cancel(dao,task.id) }; refresh++ } }) { Text("取消",color=warning) }
+                                TextButton(onClick={ onCancelTask(task); refresh++ }) { Text("取消",color=warning) }
                             }
                         }
                     }

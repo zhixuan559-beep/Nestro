@@ -174,6 +174,7 @@ fun NestroApp() {
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
     var pendingCapabilityTaskId by remember { mutableStateOf("") }
+    var activeCapabilityTaskId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
@@ -746,6 +747,7 @@ fun NestroApp() {
         if (prompt.isBlank() || busy) return@send
         val requestCapabilityTaskId = pendingCapabilityTaskId
         pendingCapabilityTaskId = ""
+        activeCapabilityTaskId = requestCapabilityTaskId
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
         val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
@@ -1020,6 +1022,7 @@ fun NestroApp() {
                 }
                 busy = false
                 activeRequestId = ""
+                if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
                 val userFacts = (requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt)
                 val extractionInput = UserMemoryStore.prepareExtractionInput(userFacts)
                 if (result.isSuccess && !stopRequested && requestAutomaticMemoryEnabled && requestMemoryAuthorized &&
@@ -2247,6 +2250,24 @@ fun NestroApp() {
                                     draft = task
                                     page = "home"
                                 }
+                            },
+                            onPauseTask = { task ->
+                                if (activeCapabilityTaskId == task.id) stopRequested = true
+                                scope.launch(Dispatchers.IO) {
+                                    CapabilityTaskStore.pause(database.dao(), task.id)
+                                }
+                            },
+                            onResumeTask = { task ->
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { CapabilityTaskStore.resume(database.dao(), task.id) }
+                                    pendingCapabilityTaskId = task.id
+                                    draft = task.input
+                                    page = "home"
+                                }
+                            },
+                            onCancelTask = { task ->
+                                if (activeCapabilityTaskId == task.id) stopRequested = true
+                                scope.launch(Dispatchers.IO) { CapabilityTaskStore.cancel(database.dao(), task.id) }
                             },
                             activeModel = config.model,
                             modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
