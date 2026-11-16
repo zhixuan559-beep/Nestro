@@ -527,6 +527,7 @@ fun NestroApp() {
                 val finalText = when {
                     result.isSuccess -> result.getOrThrow()
                     partialAnswer.isNotEmpty() -> partialAnswer.toString()
+                    stopRequested -> "已停止生成。"
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText)
