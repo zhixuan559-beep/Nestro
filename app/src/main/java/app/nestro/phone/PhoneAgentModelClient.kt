@@ -58,7 +58,7 @@ internal object PhoneAgentModelClient {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + config.apiKey)
         }
-        try {
+        return try {
             val body = JSONObject().apply {
                 put("model", config.model)
                 put("stream", false)

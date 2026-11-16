@@ -18,8 +18,8 @@ class OpenAiSseDecoderTest {
     @Test
     fun joinsMultipleDataLinesBeforeParsingJson() {
         val decoder = OpenAiSseDecoder()
-        decoder.acceptLine("""data: {"choices":[{"delta":""")
-        decoder.acceptLine("""data: {"content":"分片"}}]}""")
+        decoder.acceptLine("""data: {"choices":[""")
+        decoder.acceptLine("""data: {"delta":{"content":"分片"}}]}""")
         assertEquals("分片", decoder.acceptLine(""))
     }
 
