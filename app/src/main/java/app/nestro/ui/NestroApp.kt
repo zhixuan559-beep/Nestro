@@ -200,6 +200,8 @@ fun NestroApp() {
     var automaticMemoryEnabled by remember { mutableStateOf(prefs.getBoolean("automatic_memory_enabled", false)) }
     var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
     var manualMemoryDraft by remember { mutableStateOf("") }
+    var manualMemoryCategory by remember { mutableStateOf("preference") }
+    var manualMemoryCategoryExpanded by remember { mutableStateOf(false) }
     var memoryStatus by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -1711,13 +1713,42 @@ fun NestroApp() {
                                     modifier = Modifier.fillMaxWidth(),
                                     placeholder = { Text("例如：这个项目默认使用 Kotlin + Jetpack Compose…") },
                                     minLines = 2,
-                                    supportingText = { Text("按长期偏好保存到当前项目；8–180 字，不接受敏感信息。") }
+                                    supportingText = { Text("8–180 字，不接受敏感信息。") }
                                 )
+                                Box {
+                                    OutlinedButton(onClick = { manualMemoryCategoryExpanded = true }) {
+                                        Text("记忆分类：" + when (manualMemoryCategory) {
+                                            "workflow" -> "工作方式"
+                                            "project" -> "项目信息"
+                                            "constraint" -> "执行约束"
+                                            else -> "长期偏好"
+                                        })
+                                    }
+                                    DropdownMenu(
+                                        expanded = manualMemoryCategoryExpanded,
+                                        onDismissRequest = { manualMemoryCategoryExpanded = false }
+                                    ) {
+                                        listOf(
+                                            "preference" to "长期偏好",
+                                            "workflow" to "工作方式",
+                                            "project" to "项目信息",
+                                            "constraint" to "执行约束"
+                                        ).forEach { (value, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                onClick = {
+                                                    manualMemoryCategory = value
+                                                    manualMemoryCategoryExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                                 Button(
                                     onClick = {
                                         scope.launch {
                                             val result = withContext(Dispatchers.IO) {
-                                                runCatching { UserMemoryStore.saveManual(database.dao(), activeProjectId, manualMemoryDraft) }
+                                                runCatching { UserMemoryStore.saveManual(database.dao(), activeProjectId, manualMemoryDraft, manualMemoryCategory) }
                                             }
                                             memoryStatus = result.fold(
                                                 { saved -> if (saved) "项目记忆已添加" else "这条记忆已存在，无需重复添加" },

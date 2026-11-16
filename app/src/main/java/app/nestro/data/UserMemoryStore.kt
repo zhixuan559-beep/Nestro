@@ -158,16 +158,18 @@ object UserMemoryStore {
         return messages.any { message -> message.length in 8..4000 && signals.any { signal -> message.contains(signal) } }
     }
 
-    suspend fun saveManual(dao: NestroDao, projectId: String, content: String): Boolean {
+    suspend fun saveManual(dao: NestroDao, projectId: String, content: String, category: String = "preference"): Boolean {
         val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+        val normalizedCategory = category.trim().lowercase()
         require(projectId.isNotBlank()) { "项目空间无效" }
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
+        require(normalizedCategory in allowedCategories) { "记忆分类无效" }
         require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
-        val fingerprint = fingerprint("preference|" + normalized.lowercase())
+        val fingerprint = fingerprint(normalizedCategory + "|" + normalized.lowercase())
         if (dao.userMemoryByFingerprint(projectId, fingerprint) != null) return false
         val now = System.currentTimeMillis()
         dao.putUserMemory(UserMemoryEntity(
-            id = UUID.randomUUID().toString(), projectId = projectId, category = "preference",
+            id = UUID.randomUUID().toString(), projectId = projectId, category = normalizedCategory,
             content = normalized, fingerprint = fingerprint, sourceConversationId = "",
             sourceMessageId = "", confidence = 1.0, createdAt = now, updatedAt = now
         ))
