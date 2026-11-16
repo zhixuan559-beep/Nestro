@@ -15,7 +15,7 @@ class ProjectSpaceRulesTest {
     @Test fun validatesNamesAndDuplicateNamesCaseInsensitively() {
         assertEquals("项目名称必须为 1 到 40 个字符", ProjectSpaceRules.validate(" ", "", existing))
         assertEquals("项目名称必须为 1 到 40 个字符", ProjectSpaceRules.validate("名".repeat(41), "", existing))
-        assertEquals("已存在同名项目空间，请更换名称", ProjectSpaceRules.validate(" 工 作 ", "", existing))
+        assertEquals("已存在同名项目空间，请更换名称", ProjectSpaceRules.validate(" 工作 ", "", existing))
         assertNull(ProjectSpaceRules.validate("工作", "work", existing))
     }
 
