@@ -22,6 +22,20 @@ class NestroDatabaseMigrationTest {
     }
 
 
+    @Test fun freshDatabaseKeepsFtsIndexSynchronizedWithKnowledgeChunks() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fresh-doc", "p1", "Fresh", "text/plain", 1, 1, "c".repeat(64)))
+            dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("fresh-chunk", "fresh-doc", "p1", 0, "SQLite offline retrieval")))
+            assertEquals("fresh-chunk", dao.searchKnowledgeChunksFts("p1", "\"sqlite\"", 10).single().id)
+            dao.deleteKnowledgeDocument("fresh-doc", "p1")
+            assertEquals(emptyList<KnowledgeChunkEntity>(), dao.searchKnowledgeChunksFts("p1", "\"sqlite\"", 10))
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun projectDeletionGuardChecksEveryProjectOwnedDataFamily() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {
@@ -55,7 +69,7 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionEightWithoutLosingConversationData() = runBlocking {
+    @Test fun migratesVersionOneDatabaseThroughVersionNineWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")

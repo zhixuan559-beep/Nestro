@@ -60,7 +60,6 @@ data class KnowledgeChunkEntity(@PrimaryKey val id: String, val documentId: Stri
 @Fts4
 @Entity(tableName = "knowledge_chunks_fts")
 data class KnowledgeChunkFtsEntity(
-    @PrimaryKey @ColumnInfo(name = "rowid") val rowId: Int,
     val chunkId: String,
     val projectId: String,
     val content: String
