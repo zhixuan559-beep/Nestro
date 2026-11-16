@@ -2156,6 +2156,8 @@ fun NestroApp() {
                         }
                         "knowledge" -> KnowledgePage(database, activeProjectId)
                         "capabilities" -> CapabilityCenterPage(
+                            prefs = prefs,
+                            projectId = activeProjectId,
                             activeModel = config.model,
                             modelReady = config.apiKey.isNotBlank() && config.model.isNotBlank(),
                             expertCount = experts.size,
