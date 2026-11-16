@@ -228,6 +228,8 @@ fun NestroApp() {
             )
         )
     }
+    var workflowTargetPickerIndex by remember { mutableIntStateOf(-1) }
+    var showWorkflowTargetPicker by remember { mutableStateOf(false) }
     var workflowInputDraft by remember { mutableStateOf("") }
     var workflowRunStatus by remember { mutableStateOf("") }
     var runningWorkflowId by remember { mutableStateOf("") }
@@ -1710,6 +1712,40 @@ fun NestroApp() {
         )
     }
 
+    if (showWorkflowTargetPicker && workflowTargetPickerIndex in workflowDraftSteps.indices) {
+        val targetStep = workflowDraftSteps[workflowTargetPickerIndex]
+        val targets = when (targetStep.kind) {
+            WorkflowStepKind.EXPERT -> experts
+            WorkflowStepKind.SKILL -> skills.keys.toList()
+            WorkflowStepKind.PROMPT -> emptyList()
+        }
+        AlertDialog(
+            onDismissRequest = { showWorkflowTargetPicker = false },
+            title = { Text(if (targetStep.kind == WorkflowStepKind.EXPERT) "选择专家" else "选择技能") },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    if (targets.isEmpty()) {
+                        Text(if (targetStep.kind == WorkflowStepKind.EXPERT) "专家列表为空，请先创建专家。" else "技能库为空，请先创建或导入技能。", color = Muted)
+                    }
+                    targets.forEach { target ->
+                        TextButton(
+                            onClick = {
+                                workflowDraftSteps = workflowDraftSteps.mapIndexed { index, step ->
+                                    if (index == workflowTargetPickerIndex) step.copy(title = target) else step
+                                }
+                                showWorkflowTargetPicker = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(target, color = Ink) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWorkflowTargetPicker = false }) { Text("关闭") }
+            }
+        )
+    }
+
     if (showWorkflowDialog) {
         AlertDialog(
             onDismissRequest = { showWorkflowDialog = false },
@@ -1776,6 +1812,21 @@ fun NestroApp() {
                                     "节点类型：${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）",
                                     color = Mint
                                 )
+                            }
+                            if (step.kind != WorkflowStepKind.PROMPT) {
+                                TextButton(onClick = {
+                                    workflowTargetPickerIndex = index
+                                    showWorkflowTargetPicker = true
+                                }) {
+                                    Text(
+                                        when (step.kind) {
+                                            WorkflowStepKind.EXPERT -> "选择专家：${step.title}"
+                                            WorkflowStepKind.SKILL -> "选择技能：${step.title}"
+                                            WorkflowStepKind.PROMPT -> ""
+                                        },
+                                        color = Mint
+                                    )
+                                }
                             }
                             OutlinedTextField(
                                 value = step.instruction,
