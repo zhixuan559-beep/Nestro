@@ -514,11 +514,23 @@ fun NestroApp() {
                         JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}")
                     }.getOrNull()
                     val hasRunningRequest = pendingRequest?.optString("status") == "running" &&
-                        pendingRequest.optString("project_id") == pendingProjectDeleteId
+                        pendingRequest?.optString("project_id") == pendingProjectDeleteId
+                    val pendingConversationIds = (
+                        roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id }
+                    ).toSet()
+                    val hasDraft = pendingConversationIds.any { id ->
+                        (prefs.getString("draft_$id", "") ?: "").isNotBlank()
+                    }
+                    val hasLocalConversationData = localRecords.any {
+                        it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
+                    }
                     val projectExists = dao.projectExists(pendingProjectDeleteId)
-                    val deleted = pendingProjectDeleteId != "default" && !hasRunningRequest && if (projectExists) {
+                    val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
+                    val canRecover = pendingProjectDeleteId != "default" && !hasRunningRequest &&
+                        !hasDraft && !hasLocalConversationData
+                    val deleted = canRecover && if (projectExists) {
                         dao.deleteProjectIfEmpty(pendingProjectDeleteId, activeId)
-                    } else if (!projectExists && !dao.projectHasLinkedData(pendingProjectDeleteId)) {
+                    } else if (!projectExists && !hasLinkedData) {
                         dao.deleteEmptyProjectConversations(pendingProjectDeleteId)
                         true
                     } else false
@@ -1853,8 +1865,7 @@ fun NestroApp() {
                                                                         check(markerCleared) { "项目已从数据库删除，待本机同步完成后会自动清理残留记录" }
                                                                         status = "空项目空间已删除"
                                                                     }.onFailure {
-                                                                        prefs.edit().remove("pending_project_delete_id").commit()
-                                                                        status = it.message ?: "删除失败，项目空间已保留"
+                                                                        status = it.message ?: "删除失败，项目空间已保留；下次启动会自动核对删除状态"
                                                                     }.also {
                                                                         deletingProjectId = ""
                                                                     }
