@@ -322,6 +322,12 @@ fun NestroApp() {
                     }
                 }
                 if (result.isSuccess) {
+                    modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
+                    activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
+                    val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+                    config = if (restoredActiveProfile != null) {
+                        ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
+                    } else LocalVault.read(context)
                     persistedConversationVersions.clear()
                     conversations = loadConversations(prefs)
                     projects = loadProjects(prefs)
