@@ -82,11 +82,6 @@ object KnowledgeStore {
   "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
  }
  private fun extractOfficeText(ext:String,bytes:ByteArray):String {
-  val wanted=when(ext) {
-   "docx" -> setOf("word/document.xml")
-   "xlsx" -> setOf("xl/sharedStrings.xml")
-   else -> emptySet()
-  }
   val entries=linkedMapOf<String,ByteArray>()
   var expanded=0
   ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
@@ -101,20 +96,16 @@ object KnowledgeStore {
      "xlsx" -> name=="xl/sharedStrings.xml" || Regex("xl/worksheets/sheet[0-9]+\\.xml").matches(name)
      else -> Regex("ppt/slides/slide[0-9]+\\.xml").matches(name)
     }
-    if(shouldRead && !entry.isDirectory) {
-     val out=ByteArrayOutputStream()
-     val buffer=ByteArray(8192)
-     while(true) {
-      val n=zip.read(buffer)
-      if(n<0) break
-      expanded+=n
-      require(expanded<=8*1024*1024) { "Office 文件解压后超过 8 MB。" }
-      out.write(buffer,0,n)
-     }
-     entries[name]=out.toByteArray()
-    } else {
-     zip.closeEntry()
+    val out=if(shouldRead && !entry.isDirectory) ByteArrayOutputStream() else null
+    val buffer=ByteArray(8192)
+    while(true) {
+     val n=zip.read(buffer)
+     if(n<0) break
+     expanded+=n
+     require(expanded<=8*1024*1024) { "Office 文件解压后超过 8 MB。" }
+     out?.write(buffer,0,n)
     }
+    if(out!=null) entries[name]=out.toByteArray()
     entry=zip.nextEntry
    }
   }
