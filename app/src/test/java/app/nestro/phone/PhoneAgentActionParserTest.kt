@@ -18,6 +18,15 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun userPausePreservesAmbiguousActionsAndUserHandoffs() {
+        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_RUNNING, true))
+        assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_RUNNING, false))
+        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_INTERRUPTED, true))
+        assertEquals(PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_WAITING_USER, false))
+        assertEquals(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_FAILED, true))
+    }
+
+    @Test
     fun paymentButtonBecomesUserHandoff() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"click","text":"确认支付"}]}"""

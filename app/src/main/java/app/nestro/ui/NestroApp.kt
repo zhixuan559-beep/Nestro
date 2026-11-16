@@ -2361,8 +2361,8 @@ fun NestroApp() {
                                     if (linkedPhoneTaskId != null) {
                                         PhoneAgentWorkScheduler.cancel(context, linkedPhoneTaskId)
                                         val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
-                                        if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
-                                            PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_PAUSED, child.currentStep)
+                                        if (child != null) {
+                                            PhoneAgentTaskStore.pauseForUser(database.dao(), linkedPhoneTaskId)
                                         }
                                     }
                                 }
