@@ -895,6 +895,7 @@ fun NestroApp() {
                     }
                     busy = false
                     activeRequestId = ""
+                    if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
                     stopRequested = false
                     return@launch
                 }

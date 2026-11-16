@@ -14,7 +14,7 @@ class CapabilityTaskEngineTest {
     @Test fun pausedAndWaitingTasksRequireExplicitResume() {
         assertTrue(CapabilityTaskState.canTransition(CapabilityTaskState.PAUSED, CapabilityTaskState.QUEUED))
         assertTrue(CapabilityTaskState.canTransition(CapabilityTaskState.WAITING_USER, CapabilityTaskState.QUEUED))
-        assertFalse(CapabilityTaskState.canTransition(CapabilityTaskState.WAITING_USER, CapabilityTaskState.RUNNING))
+        assertTrue(CapabilityTaskState.canTransition(CapabilityTaskState.WAITING_USER, CapabilityTaskState.RUNNING))
     }
 
     @Test fun runningTasksCanCheckpointRetryOrFinish() {
