@@ -952,7 +952,9 @@ fun NestroApp() {
                                                                  else -> "failed"
                                                              },
                                                              output = assistantText.take(20000),
-                                                             stepRuns = result.getOrNull()?.stepRuns.orEmpty()
+                                                             stepRuns = result.getOrNull()?.stepRuns
+                                                                 ?: (result.exceptionOrNull() as? WorkflowExecutionException)?.stepRuns
+                                                                 ?: emptyList()
                                                          )
                                                          workflowHistory = (listOf(runRecord) + workflowHistory).take(50)
                                                          prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()

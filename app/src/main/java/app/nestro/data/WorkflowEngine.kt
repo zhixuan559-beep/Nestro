@@ -159,6 +159,12 @@ object WorkflowDefinitionCodec {
     }
 }
 
+class WorkflowExecutionException(
+    message:String,
+    val stepRuns:List<WorkflowStepRun>,
+    cause:Throwable?=null
+):IllegalStateException(message,cause)
+
 object WorkflowEngine {
     suspend fun run(
         workflow:WorkflowDefinition,
@@ -207,7 +213,11 @@ object WorkflowEngine {
             if(result.isBlank()) {
                 val message=failure?.message ?: "未知错误"
                 runs += WorkflowStepRun(step.id,step.title,"failed",attempts,error=message)
-                if(!step.continueOnError) throw IllegalStateException("步骤“${step.title}”失败：$message",failure)
+                if(!step.continueOnError) throw WorkflowExecutionException(
+                    "步骤“${step.title}”失败：$message",
+                    runs.toList(),
+                    failure
+                )
                 result="步骤失败，已按设置继续。错误：$message"
             } else {
                 runs += WorkflowStepRun(step.id,step.title,"success",attempts,output=result)

@@ -67,6 +67,22 @@ class WorkflowEngineTest {
         assertEquals("success",result.stepRuns.single().status)
     }
 
+    @Test fun failedExecutionRetainsCompletedAndFailedStepLogs() = runBlocking {
+        val workflow=WorkflowDefinition(name="失败记录",description="",steps=listOf(
+            WorkflowStep(title="成功步骤",instruction="执行",retries=0),
+            WorkflowStep(title="失败步骤",instruction="执行",retries=0)
+        ))
+        val failure=runCatching {
+            WorkflowEngine.run(workflow,"输入",{ step, _ ->
+                if(step.title=="失败步骤") error("模型故障")
+                "已完成"
+            })
+        }.exceptionOrNull() as WorkflowExecutionException
+        assertEquals(2,failure.stepRuns.size)
+        assertEquals("success",failure.stepRuns[0].status)
+        assertEquals("failed",failure.stepRuns[1].status)
+    }
+
     @Test fun runnerCanContinueAfterConfiguredStepFailure() = runBlocking {
         val workflow=WorkflowDefinition(name="容错",description="",steps=listOf(
             WorkflowStep(title="可跳过步骤",instruction="执行",retries=0,continueOnError=true),
