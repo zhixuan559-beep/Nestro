@@ -221,6 +221,8 @@ fun NestroApp() {
                     memoryDraft = globalMemory
                     experts = loadExperts(prefs)
                     expertPrompts = loadExpertPrompts(prefs)
+                    expertTeams = loadExpertTeams(prefs)
+                    selectedTeamId = prefs.getString("selected_team_id", "") ?: ""
                     skills = loadSkills(prefs)
                     skillMetadata = loadSkillMetadata(prefs)
                     automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
@@ -764,8 +766,12 @@ fun NestroApp() {
                                                 TextButton(onClick = {
                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
+                                                    expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
+                                                    if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
-                                                        .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
+                                                        .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                                                        .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+                                                        .putString("selected_team_id", selectedTeamId).apply()
                                                     if (selectedExpert == name) selectedExpert = "通用助手"
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
@@ -1930,6 +1936,8 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
+    root.put("expert_teams_v1", prefs.getString("expert_teams_v1", "[]") ?: "[]")
+    root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
     root.put("projects", projectsToJson(loadProjects(prefs)))
@@ -2015,6 +2023,24 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(experts.length() <= 100) { "专家数量超出限制" }
     for (i in 0 until experts.length()) require(experts.getString(i).length <= 80) { "专家名称过长" }
     val prompts = JSONObject(root.getString("expert_prompts"))
+    val teamArray = JSONArray(root.optString("expert_teams_v1", "[]"))
+    require(teamArray.length() <= 50) { "专家团队数量超出限制" }
+    val expertNames = (0 until experts.length()).map { experts.getString(it) }.toSet()
+    val cleanTeams = JSONArray()
+    for (i in 0 until teamArray.length()) {
+        val item = teamArray.getJSONObject(i)
+        val members = item.optJSONArray("members") ?: JSONArray()
+        val validMembers = (0 until members.length()).map { members.getString(it) }.filter { it in expertNames }.distinct().take(4)
+        require(item.optString("id").isNotBlank() && item.optString("name").isNotBlank() && validMembers.size >= 2) { "专家团队配置无效" }
+        cleanTeams.put(
+            JSONObject().put("id", item.getString("id")).put("name", item.getString("name").take(40))
+                .put("description", item.optString("description").take(300)).put("members", JSONArray(validMembers))
+        )
+    }
+    val selectedTeam = root.optString("selected_team_id", "")
+    val validSelectedTeam = selectedTeam.takeIf { id ->
+        (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).optString("id") == id }
+    } ?: ""
     val skills = JSONObject(root.optString("skills", "{}"))
     require(skills.length() <= 100) { "技能数量超出限制" }
     val skillMetadata = JSONObject(root.optString("skill_metadata_v1", "{}"))
@@ -2052,6 +2078,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
+        .putString("expert_teams_v1", cleanTeams.toString())
+        .putString("selected_team_id", validSelectedTeam)
         .putString("skills", cleanSkills.toString())
         .putString("skill_metadata_v1", cleanSkillMetadata.toString())
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
