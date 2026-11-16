@@ -145,6 +145,7 @@ fun NestroApp() {
     var globalMemory by remember { mutableStateOf("") }
     var memoryDraft by remember { mutableStateOf("") }
     var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
+    var automaticMemoryEnabled by remember { mutableStateOf(prefs.getBoolean("automatic_memory_enabled", false)) }
     var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
     var memoryStatus by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
@@ -537,7 +538,9 @@ fun NestroApp() {
                     else -> "连接失败"
                 }
                 busy = false
-                if (result.isSuccess && !stopRequested && shouldExtractAutomaticMemory(prompt)) {
+                if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
+                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(prompt)
+                ) {
                     val userFacts = listOf(prompt)
                     scope.launch(Dispatchers.IO) {
                         val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
@@ -947,7 +950,20 @@ fun NestroApp() {
                                     Text("保存全局记忆")
                                 }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                Text("使用你配置的模型从用户明确表达中提取候选记忆，保存在本机；可逐条修改或删除。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("允许自动提取记忆", color = Ink)
+                                        Text("关闭时不会额外发送记忆提取请求；开启后，符合条件的消息会再次发送给你配置的模型，候选结果经过本地过滤后保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Switch(
+                                        checked = automaticMemoryEnabled,
+                                        onCheckedChange = { enabled ->
+                                            automaticMemoryEnabled = enabled
+                                            prefs.edit().putBoolean("automatic_memory_enabled", enabled).apply()
+                                        }
+                                    )
+                                }
+                                Text("自动记忆仅保存在本机。敏感内容会在本地进行基础规则预检，但规则无法保证识别所有敏感信息。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (automaticMemories.isEmpty()) {
                                     Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 } else {
