@@ -110,7 +110,7 @@ object UserMemoryStore {
             val fingerprint = fingerprintFor(category + "|" + content.lowercase())
             val old = dao.userMemoryByFingerprint(projectId, fingerprint)
             val now = System.currentTimeMillis()
-            dao.putUserMemory(UserMemoryEntity(
+            dao.upsertUserMemoryByFingerprint(UserMemoryEntity(
                 id = old?.id ?: UUID.randomUUID().toString(), projectId = projectId, category = category,
                 content = content, fingerprint = fingerprint, sourceConversationId = conversationId,
                 sourceMessageId = messageId, confidence = candidate.confidence,
@@ -156,8 +156,13 @@ object UserMemoryStore {
     }
 
     fun shouldExtractFrom(messages: List<String>): Boolean {
-        val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
-        return messages.any { message -> message.length in 8..4000 && signals.any { signal -> message.contains(signal) } }
+        val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认", "i prefer", "i like", "i always", "i never", "remember that", "from now on", "my workflow", "this project uses")
+        return messages.any { message ->
+            message.length in 8..4000 && signals.any { signal ->
+                if (signal.firstOrNull()?.isAsciiLetter() == true) message.contains(signal, ignoreCase = true)
+                else message.contains(signal)
+            }
+        }
     }
 
     suspend fun saveManual(dao: NestroDao, projectId: String, content: String, category: String = "preference"): Boolean {
@@ -169,13 +174,13 @@ object UserMemoryStore {
         require(normalizedCategory in allowedCategories) { "记忆分类无效" }
         require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
         val fingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
-        if (dao.userMemoryByFingerprint(projectId, fingerprint) != null) return false
         val now = System.currentTimeMillis()
-        dao.putUserMemory(UserMemoryEntity(
+        val inserted = dao.insertUserMemoryIfAbsent(UserMemoryEntity(
             id = UUID.randomUUID().toString(), projectId = projectId, category = normalizedCategory,
             content = normalized, fingerprint = fingerprint, sourceConversationId = "",
             sourceMessageId = "", confidence = 1.0, createdAt = now, updatedAt = now
         ))
+        if (inserted == -1L) return false
         dao.trimUserMemories(projectId, 200)
         return true
     }
@@ -205,7 +210,7 @@ object UserMemoryStore {
     }
 
     suspend fun list(dao: NestroDao, projectId: String): List<UserMemoryEntity> =
-        dao.userMemoriesVisible(projectId, 200)
+        dao.userMemoriesVisible(projectId, 400)
 
     suspend fun setShareAcrossProjects(dao: NestroDao, id: String, ownerProjectId: String, enabled: Boolean): Boolean =
         dao.setUserMemorySharing(id, ownerProjectId, enabled, System.currentTimeMillis()) > 0
@@ -216,7 +221,7 @@ object UserMemoryStore {
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(normalizedCategory in allowedCategories) { "记忆分类无效" }
         require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
-        val nextFingerprint = fingerprint(normalizedCategory + "|" + normalized.lowercase())
+        val nextFingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
         require(!dao.userMemoryFingerprintExists(projectId, nextFingerprint, id)) { "已有相同内容的记忆，请先检查重复项" }
         check(dao.updateUserMemory(id, projectId, normalized, normalizedCategory, nextFingerprint, System.currentTimeMillis()) > 0) {
             "记忆不存在或已被删除"

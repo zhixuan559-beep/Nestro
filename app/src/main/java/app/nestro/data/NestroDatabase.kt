@@ -239,6 +239,21 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertUserMemoryIfAbsent(memory: UserMemoryEntity): Long
+
+    @Transaction
+    suspend fun upsertUserMemoryByFingerprint(memory: UserMemoryEntity): UserMemoryEntity {
+        val existing = userMemoryByFingerprint(memory.projectId, memory.fingerprint)
+        val updated = memory.copy(
+            id = existing?.id ?: memory.id,
+            createdAt = existing?.createdAt ?: memory.createdAt,
+            shareAcrossProjects = existing?.shareAcrossProjects ?: memory.shareAcrossProjects
+        )
+        putUserMemory(updated)
+        return updated
+    }
+
     @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
     suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
 

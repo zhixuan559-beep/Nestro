@@ -139,6 +139,7 @@ class NestroDatabaseMigrationTest {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {
             val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L), ProjectEntity("p2", "项目二", "", 2L)))
             dao.putUserMemory(UserMemoryEntity("private", "p1", "preference", "项目一私有记忆", "fp-private", "c1", "m1", 0.9, 1, 1))
             dao.putUserMemory(UserMemoryEntity("shared", "p1", "constraint", "项目一授权共享记忆", "fp-shared", "c1", "m2", 0.9, 2, 2, true))
             assertEquals(listOf("shared"), dao.userMemoriesVisible("p2").map { it.id })
@@ -149,8 +150,26 @@ class NestroDatabaseMigrationTest {
             repeat(200) { index ->
                 dao.putUserMemory(UserMemoryEntity("local-$index", "p2", "preference", "项目二私有记忆内容 $index", "fp-local-$index", "c2", "m2", 0.9, index.toLong(), index.toLong()))
             }
+            val visibleInManager = UserMemoryStore.list(dao, "p2").map { it.id }
+            assertTrue("本项目已有 200 条记忆时，管理页仍须显示授权共享记忆", "shared" in visibleInManager)
             val recalledShared = UserMemoryStore.recall(dao, "p2", "授权共享记忆").memories.map { it.id }
             assertTrue("本项目记忆达到上限时仍应召回明确授权的共享记忆", "shared" in recalledShared)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun memoryUpsertKeepsIdentityAndSharingWhileUpdatingContent() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putUserMemory(UserMemoryEntity("stable-id", "p1", "preference", "旧的偏好内容需要更新", "fp-old", "", "", 0.9, 10, 10, true))
+            val updated = dao.upsertUserMemoryByFingerprint(UserMemoryEntity("new-id", "p1", "preference", "新的偏好内容需要更新", "fp-new", "c1", "m1", 0.95, 20, 20, false))
+            assertEquals("stable-id", updated.id)
+            assertEquals(10L, updated.createdAt)
+            assertTrue(updated.shareAcrossProjects)
+            assertEquals("新的偏好内容需要更新", dao.userMemories("p1").single().content)
+            assertEquals("fp-new", dao.userMemories("p1").single().fingerprint)
         } finally {
             db.close()
         }
