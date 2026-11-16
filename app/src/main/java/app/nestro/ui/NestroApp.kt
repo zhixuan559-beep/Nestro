@@ -69,6 +69,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -239,6 +240,8 @@ fun NestroApp() {
     var workflowInputDraft by remember { mutableStateOf("") }
     var workflowRunStatus by remember { mutableStateOf("") }
     var runningWorkflowId by remember { mutableStateOf("") }
+    var workflowPaused by remember { mutableStateOf(false) }
+    var workflowPauseGate by remember { mutableStateOf<CompletableDeferred<Unit>?>(null) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
     var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
@@ -899,6 +902,32 @@ fun NestroApp() {
                                  Text("把复杂任务拆成连续步骤。每一步接收上一步结果，支持提示词、专家角色和技能指令。", color = Muted)
                                  OutlinedTextField(value = workflowInputDraft, onValueChange = { workflowInputDraft = it.take(12000) }, label = { Text("本次运行目标") }, placeholder = { Text("例如：研究一个市场，最后形成可执行分析。") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                                  if (workflowRunStatus.isNotBlank()) Text(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                 if (runningWorkflowId.isNotBlank()) {
+                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                         OutlinedButton(
+                                             onClick = {
+                                                 if (workflowPaused) {
+                                                     workflowPauseGate?.complete(Unit)
+                                                     workflowPauseGate = null
+                                                     workflowPaused = false
+                                                     workflowRunStatus = "正在继续工作流…"
+                                                 } else {
+                                                     workflowPauseGate = CompletableDeferred()
+                                                     workflowPaused = true
+                                                     workflowRunStatus = "已请求暂停，将在当前步骤结束后暂停。"
+                                                 }
+                                             },
+                                             modifier = Modifier.weight(1f)
+                                         ) { Text(if (workflowPaused) "继续执行" else "暂停") }
+                                         TextButton(onClick = {
+                                             stopRequested = true
+                                             workflowPauseGate?.complete(Unit)
+                                             workflowPauseGate = null
+                                             OpenAiClient.cancel()
+                                             workflowRunStatus = "正在停止工作流…"
+                                         }) { Text("停止", color = ColorStop) }
+                                     }
+                                 }
                                  workflows.forEach { workflow ->
                                      Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -913,6 +942,8 @@ fun NestroApp() {
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
                                                      val startedAt = System.currentTimeMillis()
                                                      runningWorkflowId = workflow.id
+                                                     workflowPaused = false
+                                                     workflowPauseGate = null
                                                      busy = true
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
@@ -930,7 +961,9 @@ fun NestroApp() {
                                                                  }
                                                              }, onStep = { index, step ->
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
-                                                                 workflowRunStatus = "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
+                                                                 workflowPauseGate?.await()
+                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
+                                                                 workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
                                                          }
                                                          val assistantText = when {
@@ -965,6 +998,9 @@ fun NestroApp() {
                                                          conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
                                                          if (activeConversationId == conversationId) messages = completed
                                                          workflowRunStatus = if (stopRequested) "工作流已停止。" else if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
+                                                         workflowPauseGate?.complete(Unit)
+                                                         workflowPauseGate = null
+                                                         workflowPaused = false
                                                          runningWorkflowId = ""
                                                          busy = false
                                                          stopRequested = false
@@ -999,6 +1035,13 @@ fun NestroApp() {
                                                      style = MaterialTheme.typography.bodySmall
                                                  )
                                                  Text(record.input.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                 record.stepRuns.take(5).forEach { stepRun ->
+                                                     Text(
+                                                         "${when (stepRun.status) { "success" -> "✓"; "skipped" -> "↷"; else -> "!" }} ${stepRun.title} · ${stepRun.attempts} 次尝试 · ${stepRun.iterations} 轮",
+                                                         color = Muted,
+                                                         style = MaterialTheme.typography.bodySmall
+                                                     )
+                                                 }
                                              }
                                          }
                                      }
