@@ -27,6 +27,8 @@ import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
+import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
 import app.nestro.data.ExpertProfileCodec
@@ -92,6 +94,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -793,7 +797,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage) { chunk ->
+                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
@@ -1004,7 +1008,7 @@ fun NestroApp() {
                                                 IconButton(onClick = {
                                                     stopRequested = true
                                                     status = "正在停止…"
-                                                    OpenAiClient.cancel()
+                                                    OpenAiClient.cancel(activeRequestId)
                                                 }) {
                                                     Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
                                                 }
@@ -2870,22 +2874,20 @@ private fun parseGeneratedDefinition(raw: String): Pair<String, String> {
     return name to prompt
 }
 
-private fun boundedRequestHistory(history: List<ChatMessage>, maxChars: Int = 48000): List<ChatMessage> {
-    var remaining = maxChars
-    val selected = ArrayList<ChatMessage>(minOf(history.size, 40))
-    for (message in history.asReversed().take(40)) {
-        if (remaining <= 0) break
-        val content = if (message.content.length > remaining) message.content.takeLast(remaining) else message.content
-        selected += message.copy(content = content)
-        remaining -= content.length
-    }
-    return selected.asReversed()
+private fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: String = "", maxTokens: Int = 2048): List<ChatMessage> {
+    val source = history.takeLast(40)
+    val bounded = ChatRequestPolicy.boundedHistory(source.map { ChatHistoryItem(it.role, it.content) }, systemPrompt, outputReserveTokens = maxTokens)
+    return bounded.mapIndexed { index, item -> source[source.size - bounded.size + index].copy(content = item.content) }
 }
 
 private object OpenAiClient {
     private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    private val requestConnections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
 
-    fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
+    fun cancel(requestId: String? = null) {
+        val targets = if (requestId.isNullOrBlank()) activeConnections.toList() else listOfNotNull(requestConnections[requestId])
+        targets.forEach { connection -> runCatching { connection.disconnect() } }
+    }
 
     fun completeWithFallback(
         configs: List<ModelConfig>,
@@ -2919,25 +2921,38 @@ private object OpenAiClient {
         temperature: Double? = null,
         maxTokens: Int? = null,
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+        requestId: String = UUID.randomUUID().toString(),
+        timeoutMillis: Long = 180_000,
         onChunk: suspend (String) -> Unit
     ): String {
         require(configs.isNotEmpty()) { "没有可用的模型配置" }
         var lastError: Throwable? = null
-        configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
-            var emitted = false
-            try {
-                val response = stream(candidate, history, systemPrompt, temperature, maxTokens) { chunk ->
-                    emitted = true
-                    onChunk(chunk)
+        return withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
+            configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
+                var attempt = 0
+                while (attempt < 2) {
+                    var emitted = false
+                    try {
+                        val response = stream(candidate, history, systemPrompt, temperature, maxTokens, requestId) { chunk ->
+                            emitted = true
+                            onChunk(chunk)
+                        }
+                        onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
+                        return@withTimeout response
+                    } catch (error: Throwable) {
+                        if (error is kotlinx.coroutines.CancellationException || emitted) throw error
+                        lastError = error
+                        if (attempt == 0 && ChatRequestPolicy.shouldRetry(error)) {
+                            attempt++
+                            delay(600)
+                            continue
+                        }
+                        break
+                    }
                 }
-                onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
-                return response
-            } catch (error: Throwable) {
-                if (error is kotlinx.coroutines.CancellationException || emitted) throw error
-                lastError = error
             }
+            throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
         }
-        throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
     }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
@@ -2980,7 +2995,7 @@ private object OpenAiClient {
         }
     }
 
-    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
+    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -2992,6 +3007,7 @@ private object OpenAiClient {
             setRequestProperty("Accept", "text/event-stream")
         }
         activeConnections.add(connection)
+        requestConnections[requestId] = connection
         val answer = StringBuilder()
         val pending = StringBuilder()
         try {
@@ -3001,7 +3017,7 @@ private object OpenAiClient {
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
+                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
                 })
                 put("stream", true)
             }
@@ -3048,6 +3064,7 @@ private object OpenAiClient {
             answer.toString()
         } finally {
             activeConnections.remove(connection)
+            requestConnections.remove(requestId, connection)
             connection.disconnect()
         }
     }
