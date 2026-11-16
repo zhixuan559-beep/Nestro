@@ -1784,6 +1784,14 @@ fun NestroApp() {
                                                                             }
                                                                         }
                                                                     }.onSuccess {
+                                                                        val removedPlaceholderIds = conversations.filter {
+                                                                            it.projectId == project.id && it.title == "新对话" && it.messages.isEmpty()
+                                                                        }.map { it.id }.toSet()
+                                                                        if (removedPlaceholderIds.isNotEmpty()) {
+                                                                            removedPlaceholderIds.forEach { id -> prefs.edit().remove("draft_$id").apply() }
+                                                                            conversations = conversations.filterNot { it.id in removedPlaceholderIds }
+                                                                            saveConversationList(prefs, conversations)
+                                                                        }
                                                                         projects = projects.filterNot { it.id == project.id }
                                                                         saveProjects(prefs, projects)
                                                                         status = "空项目空间已删除"
