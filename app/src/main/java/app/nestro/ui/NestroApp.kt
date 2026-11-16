@@ -838,7 +838,9 @@ fun NestroApp() {
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, prompt).context
+                    val memoryQuery = (requestHistory.filter { it.role == "user" }.takeLast(7).map { it.content } + prompt)
+                        .distinct().joinToString("\n").take(2400)
+                    val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, memoryQuery).context
                     val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
@@ -933,10 +935,11 @@ fun NestroApp() {
                 }
                 busy = false
                 activeRequestId = ""
+                val userFacts = (requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt)
+                    .distinct().takeLast(6)
                 if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
-                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(prompt)
+                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(userFacts.joinToString("\n"))
                 ) {
-                    val userFacts = listOf(prompt)
                     scope.launch(Dispatchers.IO) {
                         val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
