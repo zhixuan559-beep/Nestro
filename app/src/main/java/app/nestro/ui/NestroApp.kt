@@ -3449,7 +3449,7 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
         auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", item.optString("action").take(60)).put("detail", item.optString("detail").take(180)))
     }
     root.put("phone_audit_v1", auditSnapshot)
-    root.put("messages", prefs.getString("messages", "[]") ?: "[]")
+    root.put("messages", if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]")
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
     root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
@@ -3473,6 +3473,12 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val roomConversationRows = snapshot.conversations
     require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
+    val conversationPayloadChars = roomConversationRows.sumOf { row ->
+        row.conversation.title.length.toLong() + row.messages.sumOf { message ->
+            message.content.length.toLong() + message.versionsJson.length.toLong()
+        }
+    }
+    require(conversationPayloadChars <= 3_500_000L) { "会话历史内容超过备份安全容量，请先清理旧会话" }
     roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
     val conversationArray = JSONArray()
     roomConversationRows.forEach { row ->
@@ -3494,6 +3500,8 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
     val roomKnowledgeDocuments = snapshot.documents
     val roomKnowledgeChunks = snapshot.chunks
     require(roomKnowledgeDocuments.size <= 500 && roomKnowledgeChunks.size <= 50_000) { "知识库数据超过备份上限，请先清理文档" }
+    val knowledgePayloadChars = roomKnowledgeChunks.sumOf { it.content.length.toLong() } + roomKnowledgeDocuments.sumOf { it.name.length.toLong() }
+    require(knowledgePayloadChars <= 3_000_000L) { "知识库文本超过备份安全容量，请减少文档后重试" }
     val docs = JSONArray()
     roomKnowledgeDocuments.forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
     val chunks = JSONArray()
@@ -3511,6 +3519,8 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
     val taskArray = JSONArray()
     val taskLogArray = JSONArray()
     require(snapshot.tasks.size <= 500 && snapshot.taskLogs.size <= 5000) { "Phone Agent 任务或日志数量超过备份上限，未导出任何不完整备份" }
+    val taskPayloadChars = snapshot.tasks.sumOf { it.goal.length.toLong() + it.planJson.length.toLong() } + snapshot.taskLogs.sumOf { it.action.length.toLong() + it.detail.length.toLong() }
+    require(taskPayloadChars <= 500_000L) { "Phone Agent 任务与日志内容超过备份安全容量" }
     snapshot.tasks.forEach { task ->
         taskArray.put(JSONObject().put("id", task.id).put("projectId", task.projectId).put("conversationId", task.conversationId)
             .put("goal", task.goal).put("category", task.category).put("status", task.status).put("planJson", task.planJson)
@@ -3895,11 +3905,11 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         restoredMemories.forEach { dao.putUserMemory(it) }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
-        profileKeysToClear.forEach { LocalVault.deleteProfile(context, it) }
         prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
+    profileKeysToClear.forEach { key -> runCatching { LocalVault.deleteProfile(context, key) } }
 }
 
 
