@@ -1775,7 +1775,7 @@ fun NestroApp() {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("项目空间", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("每个空间拥有独立会话与项目指令。切换空间不会把其他项目的聊天记录注入当前请求。", color = Muted)
-                                Button(onClick = {
+                                Button(enabled = deletingProjectId.isBlank(), onClick = {
                                     editingProjectId = ""
                                     projectDraftName = ""
                                     projectDraftInstructions = ""
@@ -1789,7 +1789,7 @@ fun NestroApp() {
                                         Surface(color = if (project.id == activeProjectId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Column(Modifier.weight(1f).clickable(enabled = deletingProjectId != project.id) {
+                                                    Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
                                                         activeProjectId = project.id
                                                         prefs.edit().putString("active_project_id", project.id).apply()
                                                         val target = conversations.firstOrNull { it.projectId == project.id }
@@ -1809,7 +1809,7 @@ fun NestroApp() {
                                                         Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                         Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
-                                                    TextButton(enabled = deletingProjectId != project.id, onClick = {
+                                                    TextButton(enabled = deletingProjectId.isBlank(), onClick = {
                                                         editingProjectId = project.id
                                                         projectDraftName = project.name
                                                         projectDraftInstructions = project.instructions

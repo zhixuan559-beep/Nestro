@@ -24,13 +24,14 @@ class ProjectSpaceLifecycleTest {
                 ProjectEntity("empty", "空空间", "", 3L)
             ))
             dao.putConversation(ConversationEntity("placeholder", "新对话", 4L, "empty"))
+            dao.putConversation(ConversationEntity("other-placeholder", "新对话", 5L, "active"))
 
             assertFalse(dao.deleteProjectIfEmpty("default", "active"))
             assertFalse(dao.deleteProjectIfEmpty("active", "active"))
             assertFalse(dao.deleteProjectIfEmpty("missing", "active"))
             assertTrue(dao.deleteProjectIfEmpty("empty", "active"))
             assertEquals(listOf("active", "default"), dao.loadProjects().map { it.id }.sorted())
-            assertTrue(dao.loadConversations().isEmpty())
+            assertEquals(listOf("other-placeholder"), dao.loadConversations().map { it.conversation.id })
         } finally {
             database.close()
         }
@@ -46,6 +47,7 @@ class ProjectSpaceLifecycleTest {
             dao.putConversation(ConversationEntity("chat-conversation", "聊天", 1L, "chat"))
             dao.putMessages(listOf(MessageEntity("message", "chat-conversation", 0, "user", "不可丢失", "[]", 0)))
             dao.putConversation(ConversationEntity("named-conversation", "我命名的空会话", 2L, "named"))
+            dao.putConversation(ConversationEntity("empty-but-named", "项目备忘", 2L, "named"))
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity(
                 "document", "knowledge", "资料.txt", "text/plain", 4L, 3L, "hash-knowledge"
             ))
