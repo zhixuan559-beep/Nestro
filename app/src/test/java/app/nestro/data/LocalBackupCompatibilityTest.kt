@@ -53,7 +53,9 @@ class LocalBackupCompatibilityTest {
         org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
     }
 
-    @Test fun acceptsLegacyBackupWithoutChecksum() {
-        org.junit.Assert.assertTrue(LocalBackupCompatibility.verifyChecksum(org.json.JSONObject("""{"version":9}""")))
+    @Test fun acceptsLegacyBackupWithoutChecksumOnlyBeforeVersionTen() {
+        assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":9}""")))
+        assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":10}""")))
+        assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":11}""")))
     }
 }

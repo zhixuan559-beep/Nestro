@@ -83,6 +83,10 @@ class LocalBackupRoundTripTest {
             assertTrue("篡改后的备份必须被拒绝", runCatching {
                 restoreLocalBackup(context, prefs, tamperedBackup, database)
             }.isFailure)
+            val checksumMissingBackup = JSONObject(backup).apply { remove("checksum_sha256") }.toString()
+            assertTrue("当前版本缺少校验和的备份必须被拒绝", runCatching {
+                restoreLocalBackup(context, prefs, checksumMissingBackup, database)
+            }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
             database.close()

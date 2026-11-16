@@ -16,7 +16,9 @@ object LocalBackupCompatibility {
 
     fun verifyChecksum(root: JSONObject): Boolean {
         val checksum = root.optString("checksum_sha256")
-        if (checksum.isBlank()) return true
+        // Checksums were introduced in backup format v10. Only older formats
+        // may omit one; current-format backups must never bypass integrity checks.
+        if (checksum.isBlank()) return root.optInt("version", 0) in 1..9
         val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }
         return checksum.equals(sha256(canonicalJson(payload)), ignoreCase = true)
     }
