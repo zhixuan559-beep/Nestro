@@ -3365,12 +3365,10 @@ private fun parseProjects(array: JSONArray?): List<ProjectRecord> {
     }
     val withDefault = if (parsed.any { it.id == "default" }) parsed
         else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    require(withDefault.size <= 100) { "项目空间数量超出 100 个上限" }
-    require(withDefault.all { it.id.isNotBlank() && it.id.length <= 120 && it.name.trim().length in 1..40 && it.instructions.length <= 4000 }) {
-        "项目空间字段无效"
+    require(withDefault.all { it.instructions.length <= 4000 }) { "项目空间指令过长" }
+    require(ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) == null) {
+        ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) ?: "项目空间数据无效"
     }
-    require(withDefault.map { it.id }.distinct().size == withDefault.size) { "项目空间 ID 重复" }
-    require(withDefault.map { it.name.trim().lowercase() }.distinct().size == withDefault.size) { "项目空间名称重复" }
     return withDefault
 }
 

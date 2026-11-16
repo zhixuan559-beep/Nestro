@@ -25,6 +25,25 @@ class ProjectSpaceRulesTest {
         assertNull(ProjectSpaceRules.validate("重命名", "p1", full))
     }
 
+    @Test fun validatesImportedProjectCollectionsWithoutSilentTruncation() {
+        assertNull(ProjectSpaceRules.validateCollection(existing))
+        assertEquals("项目空间 ID 重复", ProjectSpaceRules.validateCollection(listOf(
+            ProjectSpaceRules.Entry("default", "默认空间"),
+            ProjectSpaceRules.Entry("work", "工作"),
+            ProjectSpaceRules.Entry("work", "另一个")
+        )))
+        assertEquals("项目空间名称重复", ProjectSpaceRules.validateCollection(listOf(
+            ProjectSpaceRules.Entry("default", "默认空间"),
+            ProjectSpaceRules.Entry("work", " 工作 ")
+        )))
+        assertEquals("默认项目空间缺失", ProjectSpaceRules.validateCollection(listOf(
+            ProjectSpaceRules.Entry("work", "工作")
+        )))
+        val overLimit = (1..100).map { ProjectSpaceRules.Entry("p$it", "项目$it") } +
+            ProjectSpaceRules.Entry("default", "默认空间")
+        assertEquals("项目空间数量无效，最多保留 100 个", ProjectSpaceRules.validateCollection(overLimit))
+    }
+
     @Test fun protectsDefaultAndProjectsWithLinkedDataFromDeletion() {
         assertFalse(ProjectSpaceRules.canDelete("default", "work", emptySet()))
         assertFalse(ProjectSpaceRules.canDelete("work", "default", setOf("work")))

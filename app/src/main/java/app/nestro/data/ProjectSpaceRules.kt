@@ -13,6 +13,16 @@ object ProjectSpaceRules {
         return null
     }
 
+    fun validateCollection(entries: List<Entry>): String? {
+        if (entries.isEmpty() || entries.size > 100) return "项目空间数量无效，最多保留 100 个"
+        if (entries.any { it.id.isBlank() || it.id.length > 120 }) return "项目空间 ID 无效"
+        if (entries.map { it.id }.distinct().size != entries.size) return "项目空间 ID 重复"
+        if (entries.any { it.name.trim().length !in 1..40 }) return "项目空间名称必须为 1 到 40 个字符"
+        if (entries.map { it.name.trim().lowercase() }.distinct().size != entries.size) return "项目空间名称重复"
+        if (entries.none { it.id == "default" }) return "默认项目空间缺失"
+        return null
+    }
+
     fun canDelete(projectId: String, activeProjectId: String, linkedProjectIds: Set<String>): Boolean =
         projectId.isNotBlank() && projectId != "default" && projectId != activeProjectId && projectId !in linkedProjectIds
 }
