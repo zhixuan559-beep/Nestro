@@ -181,6 +181,7 @@ fun NestroApp() {
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
     var activeProjectId by remember { mutableStateOf("default") }
+    var deletingProjectId by remember { mutableStateOf("") }
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectDraftName by remember { mutableStateOf("") }
     var projectDraftInstructions by remember { mutableStateOf("") }
@@ -1812,10 +1813,14 @@ fun NestroApp() {
                                                                         status = "空项目空间已删除"
                                                                     }.onFailure {
                                                                         status = it.message ?: "删除失败，项目空间已保留"
+                                                                    }.also {
+                                                                        deletingProjectId = ""
                                                                     }
                                                                 }
                                                             }
-                                                        }) { Text("删除", color = ColorStop) }
+                                                        }, enabled = deletingProjectId.isBlank()) {
+                                                            Text(if (deletingProjectId == project.id) "删除中…" else "删除", color = ColorStop)
+                                                        }
                                                     }
                                                 }
                                                 Text(project.instructions.ifBlank { "尚未设置项目指令" }.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
