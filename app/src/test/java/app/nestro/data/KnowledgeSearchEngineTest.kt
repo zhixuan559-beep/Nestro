@@ -56,4 +56,20 @@ class KnowledgeSearchEngineTest {
         )
         assertEquals(listOf("earlier", "later"), ranked.map { it.chunk.id })
     }
+
+    @Test
+    fun rewardsRareQueryTermsOverRepeatedCommonTerms() {
+        val focused = chunk("focused", 0, "Android GPS 定位导航")
+        val noisy = chunk("noisy", 1, "Android Android Android Android Android")
+        val ranked = KnowledgeSearchEngine.rank("Android GPS", listOf(noisy, focused))
+        assertEquals("focused", ranked.first().chunk.id)
+    }
+
+    @Test
+    fun normalizesForChunkLength() {
+        val concise = chunk("concise", 0, "Android GPS")
+        val verbose = chunk("verbose", 1, "Android GPS " + "irrelevant ".repeat(300))
+        val ranked = KnowledgeSearchEngine.rank("Android GPS", listOf(verbose, concise))
+        assertEquals("concise", ranked.first().chunk.id)
+    }
 }
