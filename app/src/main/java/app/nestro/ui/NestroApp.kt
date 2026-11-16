@@ -1764,19 +1764,23 @@ fun NestroApp() {
                                                     }) { Text("编辑", color = Mint) }
                                                     if (project.id != "default") {
                                                         TextButton(onClick = {
-                                                            if (count == 0) {
-                                                                scope.launch {
-                                                                    runCatching {
-                                                                        database.dao().deleteProjectAndKnowledge(project.id)
-                                                                    }.onSuccess {
-                                                                        projects = projects.filterNot { it.id == project.id }
-                                                                        saveProjects(prefs, projects)
-                                                                        status = "项目空间及其知识库已删除"
-                                                                    }.onFailure {
-                                                                        status = "删除失败，项目空间已保留"
+                                                            scope.launch {
+                                                                runCatching {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        val dao = database.dao()
+                                                                        if (dao.projectHasLinkedData(project.id)) {
+                                                                            error("该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除")
+                                                                        }
+                                                                        dao.deleteProjectAndKnowledge(project.id)
                                                                     }
+                                                                }.onSuccess {
+                                                                    projects = projects.filterNot { it.id == project.id }
+                                                                    saveProjects(prefs, projects)
+                                                                    status = "空项目空间已删除"
+                                                                }.onFailure {
+                                                                    status = it.message ?: "删除失败，项目空间已保留"
                                                                 }
-                                                            } else status = "该空间还有对话，暂时不能删除"
+                                                            }
                                                         }) { Text("删除", color = ColorStop) }
                                                     }
                                                 }
@@ -2043,7 +2047,14 @@ fun NestroApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val name = projectDraftName.trim()
-                    if (name.isNotBlank()) {
+                    val validation = ProjectSpaceRules.validate(
+                        name = name,
+                        currentId = editingProjectId,
+                        existing = projects.map { ProjectSpaceRules.Entry(it.id, it.name) }
+                    )
+                    if (validation != null) {
+                        status = validation
+                    } else {
                         if (editingProjectId.isBlank()) {
                             val project = ProjectRecord(UUID.randomUUID().toString(), name, projectDraftInstructions.trim(), System.currentTimeMillis())
                             projects = listOf(project) + projects
@@ -2059,8 +2070,8 @@ fun NestroApp() {
                             projects = projects.map { if (it.id == editingProjectId) it.copy(name = name, instructions = projectDraftInstructions.trim()) else it }
                         }
                         saveProjects(prefs, projects)
+                        showProjectDialog = false
                     }
-                    showProjectDialog = false
                 }) { Text("保存", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showProjectDialog = false }) { Text("取消") } }

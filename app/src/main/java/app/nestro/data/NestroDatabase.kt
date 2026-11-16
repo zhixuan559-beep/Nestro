@@ -307,6 +307,14 @@ interface NestroDao {
     @Query("SELECT id FROM projects")
     suspend fun projectIds(): List<String>
 
+    @Query("""
+        SELECT EXISTS(SELECT 1 FROM conversations WHERE projectId = :projectId)
+            OR EXISTS(SELECT 1 FROM knowledge_documents WHERE projectId = :projectId)
+            OR EXISTS(SELECT 1 FROM phone_agent_tasks WHERE projectId = :projectId)
+            OR EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId)
+    """)
+    suspend fun projectHasLinkedData(projectId: String): Boolean
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 

@@ -1,0 +1,34 @@
+package app.nestro.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ProjectSpaceRulesTest {
+    private val existing = listOf(
+        ProjectSpaceRules.Entry("default", "默认空间"),
+        ProjectSpaceRules.Entry("work", "工作")
+    )
+
+    @Test fun validatesNamesAndDuplicateNamesCaseInsensitively() {
+        assertEquals("项目名称必须为 1 到 40 个字符", ProjectSpaceRules.validate(" ", "", existing))
+        assertEquals("项目名称必须为 1 到 40 个字符", ProjectSpaceRules.validate("名".repeat(41), "", existing))
+        assertEquals("已存在同名项目空间，请更换名称", ProjectSpaceRules.validate(" 工 作 ", "", existing))
+        assertNull(ProjectSpaceRules.validate("工作", "work", existing))
+    }
+
+    @Test fun enforcesProjectLimitOnlyForCreation() {
+        val full = (1..100).map { ProjectSpaceRules.Entry("p$it", "项目$it") }
+        assertEquals("项目空间数量已达到 100 个上限", ProjectSpaceRules.validate("新项目", "", full))
+        assertNull(ProjectSpaceRules.validate("重命名", "p1", full))
+    }
+
+    @Test fun protectsDefaultAndProjectsWithLinkedDataFromDeletion() {
+        assertFalse(ProjectSpaceRules.canDelete("default", emptySet()))
+        assertFalse(ProjectSpaceRules.canDelete("work", setOf("work")))
+        assertTrue(ProjectSpaceRules.canDelete("work", emptySet()))
+        assertFalse(ProjectSpaceRules.canDelete("", emptySet()))
+    }
+}
