@@ -163,6 +163,7 @@ fun NestroApp() {
     var showSkillDialog by remember { mutableStateOf(false) }
     var selectedExpert by remember { mutableStateOf("通用助手") }
     var expertDraft by remember { mutableStateOf("") }
+    var editingExpertName by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
@@ -709,18 +710,40 @@ fun NestroApp() {
                             page = "home"
                         })
                         "experts" -> {
-                            Column(Modifier.weight(1f).padding(18.dp)) {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("我的专家", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("专家配置保存在本机。选择专家后可用于组织会话。", color = Muted)
-                                Spacer(Modifier.height(14.dp))
+                                Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
                                 experts.forEach { name ->
-                                    Surface(
-                                        color = if (selectedExpert == name) Card2 else Card,
-                                        shape = RoundedCornerShape(14.dp),
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selectedExpert = name; page = "home" }
-                                    ) { Text("✦  $name", color = if (selectedExpert == name) Mint else Ink, modifier = Modifier.padding(16.dp)) }
+                                    Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f).clickable { selectedExpert = name; page = "home" }) {
+                                                Text("✦  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                                Text(expertPrompts[name]?.take(100) ?: "内置专家配置", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            TextButton(onClick = {
+                                                editingExpertName = name
+                                                expertDraft = name
+                                                expertPromptDraft = expertPrompts[name].orEmpty()
+                                                showExpertDialog = true
+                                            }) { Text("编辑", color = Mint) }
+                                            if (name !in setOf("文案官", "选题狐", "代码佬")) {
+                                                TextButton(onClick = {
+                                                    experts = experts - name
+                                                    expertPrompts = expertPrompts - name
+                                                    prefs.edit().putString("experts", JSONArray(experts).toString())
+                                                        .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
+                                                    if (selectedExpert == name) selectedExpert = "通用助手"
+                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                            }
+                                        }
+                                    }
                                 }
-                                Button(onClick = { showExpertDialog = true }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                Button(onClick = {
+                                    editingExpertName = ""
+                                    expertDraft = ""
+                                    expertPromptDraft = ""
+                                    showExpertDialog = true
+                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
                                 }
                             }
@@ -1237,7 +1260,7 @@ fun NestroApp() {
     if (showExpertDialog) {
         AlertDialog(
             onDismissRequest = { showExpertDialog = false },
-            title = { Text("创建专家") },
+            title = { Text(if (editingExpertName.isBlank()) "创建专家" else "编辑专家") },
             text = {
                 Column {
                     OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it }, label = { Text("专家名称") }, singleLine = true)
@@ -1248,13 +1271,15 @@ fun NestroApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val name = expertDraft.trim()
-                    if (name.isNotEmpty() && name !in experts) {
-                        experts = experts + name
-                        expertPrompts = expertPrompts + (name to expertPromptDraft.trim())
+                    val oldName = editingExpertName
+                    if (name.isNotEmpty() && (name == oldName || name !in experts)) {
+                        experts = if (oldName.isBlank()) experts + name else experts.map { if (it == oldName) name else it }
+                        expertPrompts = (expertPrompts - oldName) + (name to expertPromptDraft.trim())
                         prefs.edit().putString("experts", JSONArray(experts).toString())
                             .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
-                        selectedExpert = name
+                        if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
                     }
+                    editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
                     showExpertDialog = false
