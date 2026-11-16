@@ -17,6 +17,8 @@ data class MemoryRecall(
 object UserMemoryStore {
     private val allowedCategories = setOf("preference", "workflow", "project", "constraint")
 
+    fun isSafeContent(value: String): Boolean = !containsSensitiveData(value)
+
     suspend fun saveCandidates(
         dao: NestroDao,
         projectId: String,

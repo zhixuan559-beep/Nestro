@@ -102,8 +102,8 @@ object PhoneAgentTaskStore {
         require(clean.length >= 2) { "补充内容太短" }
         require(!containsSensitiveClarification(clean)) { "请勿在这里填写地址、电话、验证码或其他敏感信息，请在目标应用中自行处理。" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
-        val updatedGoal = (task.goal + System.lineSeparator() + "用户补充说明：" + clean).take(2000)
-        require(updatedGoal.length > task.goal.length) { "补充内容无效" }
+        val updatedGoal = task.goal + System.lineSeparator() + "用户补充说明：" + clean
+        require(updatedGoal.length <= 2000) { "任务说明已达到长度上限" }
         val now = System.currentTimeMillis()
         dao.updatePhoneAgentTaskGoal(taskId, updatedGoal, now)
         dao.updatePhoneAgentTaskPlan(taskId, "[]", now)

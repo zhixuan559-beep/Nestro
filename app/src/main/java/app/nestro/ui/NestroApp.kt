@@ -1753,7 +1753,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         val projectId = item.optString("projectId")
         require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
-        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank()) { "记忆内容无效" }
+        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
         val confidence = item.optDouble("confidence", 0.0)
         require(confidence in 0.8..1.0) { "记忆置信度无效" }
         UserMemoryEntity(
