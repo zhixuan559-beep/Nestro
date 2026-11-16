@@ -51,6 +51,20 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun englishHighRiskButtonsAndSensitiveFieldsRequireUserHandoff() {
+        listOf("Pay now", "Send", "Submit", "Delete account", "Sign in", "Allow", "Publish", "Place order").forEach { label ->
+            val plan = PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"click","text":"$label"}]}"""
+            )
+            assertTrue("$label must require user handoff", plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        }
+        val field = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"Verification code","value":"123456"}]}"""
+        )
+        assertTrue(field.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun sendingMessageButtonBecomesUserHandoff() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"click","text":"发送"}]}"""

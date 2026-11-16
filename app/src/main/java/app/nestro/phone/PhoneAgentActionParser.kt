@@ -86,12 +86,14 @@ object PhoneAgentActionParser {
         PhoneAgentTaskStore.redactSensitiveText(value)
 
     private fun isHighRisk(value: String): Boolean =
-        listOf("付款", "支付", "转账", "购买", "预约", "确认", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交", "提交", "下单", "购买", "预约", "确认", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "永久删除", "开通会员", "订阅", "续费")
-            .any { value.contains(it, true) }
+        listOf("付款", "支付", "转账", "购买", "预约", "确认", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交", "提交", "下单", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "永久删除", "开通会员", "订阅", "续费")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:pay|payment|transfer|buy|purchase|place order|checkout|book|reserve|confirm|submit|send|post|publish|share|call|dial|login|log in|logout|log out|sign in|sign out|register|authorize|grant|allow|agree|accept|delete|remove|clear|subscribe|unsubscribe|renew|cancel|wipe|reset|factory reset|delete account|remove account)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun isSensitiveLabel(value: String): Boolean =
-        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "地址", "联系人", "收货人", "姓名", "账号")
-            .any { value.contains(it, true) }
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "电子邮件", "地址", "联系人", "收货人", "姓名", "账号")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:password|passcode|otp|verification code|security code|cvv|pin|card number|phone number|email|address|full name|recipient|username|account number)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun isSensitiveValue(value: String): Boolean =
         PhoneAgentTaskStore.containsSensitiveText(value)

@@ -93,7 +93,6 @@ class PhoneAgentService : AccessibilityService() {
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
-        require(!isHighRisk(value)) { "输入内容触发高风险规则，必须由用户本人处理" }
         require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(!PhoneAgentTaskStore.containsSensitiveText(value)) { "输入内容包含个人敏感信息，必须由用户本人填写" }
         require(hasValidGrant(projectId)) { "设备授权已失效，或当前项目已撤销 Phone Agent 权限" }
@@ -204,7 +203,10 @@ class PhoneAgentService : AccessibilityService() {
             .apply()
     }
 
-    private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱", "电子邮件", "收货地址", "详细地址", "地址", "联系人", "收货人", "住址", "账号").any { value.contains(it, true) }
+    private fun isSensitiveLabel(value: String): Boolean =
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱", "电子邮件", "收货地址", "详细地址", "地址", "联系人", "收货人", "住址", "账号")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:password|passcode|otp|verification code|security code|cvv|pin|card number|phone number|email|address|full name|recipient|username|account number)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun redactSensitiveText(value: String): String = value
         .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
@@ -217,7 +219,8 @@ class PhoneAgentService : AccessibilityService() {
 
     private fun isHighRisk(value: String): Boolean {
         val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "立即购买", "预约", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "永久删除", "开通会员", "订阅", "续费")
-        return terms.any { value.contains(it, ignoreCase = true) }
+        return terms.any { value.contains(it, ignoreCase = true) } ||
+            Regex("""\b(?:pay|payment|transfer|buy|purchase|place order|checkout|book|reserve|confirm|submit|send|post|publish|share|call|dial|login|log in|logout|log out|sign in|sign out|register|authorize|grant|allow|agree|accept|delete|remove|clear|subscribe|unsubscribe|renew|cancel|wipe|reset|factory reset|delete account|remove account)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
     }
 
     private fun audit(action: String, detail: String) {

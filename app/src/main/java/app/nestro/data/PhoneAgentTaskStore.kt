@@ -238,8 +238,9 @@ object PhoneAgentTaskStore {
     fun containsSensitiveText(value: String): Boolean = redactSensitiveText(value) != value
 
     private fun containsSensitiveLabel(value: String): Boolean =
-        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "地址", "联系人", "收货人", "姓名", "账号")
-            .any { value.contains(it, true) }
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "电子邮件", "地址", "联系人", "收货人", "姓名", "账号")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:password|passcode|otp|verification code|security code|cvv|pin|card number|phone number|email|address|full name|recipient|username|account number)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun containsSensitiveClarification(value: String): Boolean =
         Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
