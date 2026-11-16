@@ -315,6 +315,13 @@ interface NestroDao {
     """)
     suspend fun projectHasLinkedData(projectId: String): Boolean
 
+    @Transaction
+    suspend fun deleteProjectIfEmpty(projectId: String): Boolean {
+        if (projectId == "default" || projectHasLinkedData(projectId)) return false
+        deleteProjectAndKnowledge(projectId)
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 

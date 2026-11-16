@@ -21,6 +21,40 @@ class NestroDatabaseMigrationTest {
         context.deleteDatabase(databaseName)
     }
 
+
+    @Test fun projectDeletionGuardChecksEveryProjectOwnedDataFamily() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1)))
+            assertEquals(false, dao.projectHasLinkedData("p1"))
+
+            dao.putConversation(ConversationEntity("c1", "项目会话", 1, "p1"))
+            assertEquals(true, dao.projectHasLinkedData("p1"))
+            dao.deleteAllConversations()
+
+            val hash = "a".repeat(64)
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("doc1", "p1", "知识", "text/plain", 1, 1, hash))
+            assertEquals(true, dao.projectHasLinkedData("p1"))
+            dao.deleteAllKnowledgeDocuments()
+
+            dao.putUserMemory(UserMemoryEntity("mem1", "p1", "fact", "记忆", "fp1", "c-missing", "m1", 0.9, 1, 1))
+            assertEquals(true, dao.projectHasLinkedData("p1"))
+            dao.deleteAllUserMemories()
+
+            dao.putPhoneAgentTask(PhoneAgentTaskEntity("task1", "p1", "c-missing", "目标", "general", "queued", "[]", 0, 1, 1))
+            assertEquals(true, dao.projectHasLinkedData("p1"))
+            assertEquals(false, dao.deleteProjectIfEmpty("p1"))
+            dao.deleteAllPhoneAgentTasks()
+
+            assertEquals(true, dao.deleteProjectIfEmpty("p1"))
+            assertEquals(emptyList<String>(), dao.projectIds())
+            assertEquals(false, dao.deleteProjectIfEmpty("default"))
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun migratesVersionOneDatabaseThroughVersionSevenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)

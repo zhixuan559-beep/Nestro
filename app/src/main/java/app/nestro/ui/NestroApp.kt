@@ -1768,10 +1768,9 @@ fun NestroApp() {
                                                                 runCatching {
                                                                     withContext(Dispatchers.IO) {
                                                                         val dao = database.dao()
-                                                                        if (dao.projectHasLinkedData(project.id)) {
-                                                                            error("该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除")
+                                                                        check(dao.deleteProjectIfEmpty(project.id)) {
+                                                                            "该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除"
                                                                         }
-                                                                        dao.deleteProjectAndKnowledge(project.id)
                                                                     }
                                                                 }.onSuccess {
                                                                     projects = projects.filterNot { it.id == project.id }
