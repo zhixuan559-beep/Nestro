@@ -657,6 +657,7 @@ fun NestroApp() {
                             maxRetries = 1,
                             timeoutMillis = 45_000,
                             maxParallel = 4,
+                            shouldStop = { stopRequested },
                             onMember = { member, state ->
                                 withContext(Dispatchers.Main) {
                                     teamMemberStatuses = teamMemberStatuses + (member to state)

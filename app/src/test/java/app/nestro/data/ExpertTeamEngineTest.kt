@@ -68,6 +68,18 @@ class ExpertTeamEngineTest {
         } catch(_:IllegalArgumentException) {}
     }
 
+    @Test fun stopSignalPreventsRetryAndCancelsRemainingTeamWork() = runBlocking {
+        var calls=0
+        try {
+            ExpertTeamEngine.run("分析组","分工","分析问题",members.take(2),maxRetries=1,shouldStop={true}) { _,_ ->
+                calls++
+                "不应执行"
+            }
+            fail("expected cancellation")
+        } catch(_: kotlinx.coroutines.CancellationException) {}
+        assertEquals(0,calls)
+    }
+
     @Test fun historyCodecRoundTripsAndCapsRecords() {
         val record=ExpertTeamRunResult("分析组","任务",10,20,listOf(
             ExpertTeamMemberRun("研究员","success",1,5,"结论"),

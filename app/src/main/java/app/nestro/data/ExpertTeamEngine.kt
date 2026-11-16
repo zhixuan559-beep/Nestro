@@ -57,6 +57,7 @@ object ExpertTeamEngine {
         maxRetries:Int=1,
         timeoutMillis:Long=45_000,
         maxParallel:Int=4,
+        shouldStop:()->Boolean={false},
         onMember:(suspend (String,String)->Unit)?=null,
         invoke:suspend (ExpertTeamMemberTask,String)->String
     ):ExpertTeamRunResult {
@@ -78,6 +79,7 @@ object ExpertTeamEngine {
                         var output=""
                         var errorText=""
                         while(attempts<=maxRetries && output.isBlank()) {
+                            if(shouldStop()) throw CancellationException("用户停止专家团")
                             attempts++
                             onMember?.invoke(member.name,if(attempts==1) "running" else "retrying")
                             val memberPrompt=buildString {
@@ -91,6 +93,7 @@ object ExpertTeamEngine {
                             }
                             try {
                                 output=withTimeout(timeoutMillis) { invoke(member,memberPrompt).trim().take(2200) }
+                                if(shouldStop()) throw CancellationException("用户停止专家团")
                                 require(output.isNotBlank()) { "模型返回空结果" }
                             } catch(timeout: kotlinx.coroutines.TimeoutCancellationException) {
                                 errorText="成员执行超时（${timeoutMillis/1000} 秒）"
