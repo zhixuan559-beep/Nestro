@@ -457,7 +457,7 @@ fun NestroApp() {
                 }
                 busy = false
                 if (result.isSuccess && !stopRequested && shouldExtractAutomaticMemory(prompt)) {
-                    val userFacts = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content }
+                    val userFacts = listOf(prompt)
                     scope.launch(Dispatchers.IO) {
                         val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {

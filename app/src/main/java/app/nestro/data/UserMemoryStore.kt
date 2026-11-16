@@ -105,7 +105,7 @@ object UserMemoryStore {
         Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
             Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
-            listOf("密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
+            listOf("密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "地址", "住址", "出生", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
     private fun fingerprint(value: String): String =
         MessageDigest.getInstance("SHA-256")
