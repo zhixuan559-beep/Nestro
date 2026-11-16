@@ -1722,29 +1722,37 @@ private object OpenAiClient {
                 val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
                 throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP $code")
             }
+            val decoder = app.nestro.data.OpenAiSseDecoder()
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 while (true) {
                     val line = reader.readLine() ?: break
-                    if (line.startsWith("data:")) {
-                        val data = line.substringAfter("data:").trim()
-                        if (data == "[DONE]") break
-                        val delta = runCatching {
-                            JSONObject(data).getJSONArray("choices").getJSONObject(0).optJSONObject("delta")?.optString("content").orEmpty()
-                        }.getOrDefault("")
-                        if (delta.isNotEmpty()) {
-                            answer.append(delta)
-                            pending.append(delta)
-                            if (pending.length >= 24) {
-                                val chunk = pending.toString()
-                                pending.setLength(0)
-                                onChunk(chunk)
-                            }
+                    val delta = decoder.acceptLine(line)
+                    if (!delta.isNullOrEmpty()) {
+                        answer.append(delta)
+                        pending.append(delta)
+                        if (pending.length >= 24) {
+                            val chunk = pending.toString()
+                            pending.setLength(0)
+                            onChunk(chunk)
                         }
-                    } else if (line.trimStart().startsWith("{")) {
-                        val fallback = runCatching { JSONObject(line).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content") }.getOrNull()
-                        if (!fallback.isNullOrEmpty()) { answer.append(fallback); pending.append(fallback) }
+                    }
+                    if (decoder.isDone) break
+                    // Compatibility with providers that return a single JSON object instead of SSE.
+                    if (line.trimStart().startsWith("{")) {
+                        val fallback = runCatching {
+                            JSONObject(line).getJSONArray("choices").getJSONObject(0)
+                                .getJSONObject("message").getString("content")
+                        }.getOrNull()
+                        if (!fallback.isNullOrEmpty()) {
+                            answer.append(fallback)
+                            pending.append(fallback)
+                        }
                     }
                 }
+            }
+            decoder.finish()?.let { delta ->
+                answer.append(delta)
+                pending.append(delta)
             }
             if (pending.isNotEmpty()) onChunk(pending.toString())
             answer.toString()
