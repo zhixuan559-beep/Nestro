@@ -3,6 +3,8 @@ package app.nestro.ui
 import app.nestro.data.ConversationEntity
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
+import app.nestro.data.KnowledgeDocumentEntity
+import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.ConversationMemoryStore
@@ -1536,7 +1538,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含本机对话、全局记忆、项目级自动记忆、专家配置、技能提示词与导入元数据。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
@@ -3397,10 +3399,35 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-    root.put("projects", projectsToJson(loadProjects(prefs)))
-    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
-    val memories = JSONArray()
     val dao = database.dao()
+    val roomProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt) }
+    val backupProjects = if (roomProjects.isEmpty()) loadProjects(prefs) else roomProjects
+    root.put("projects", projectsToJson(backupProjects))
+    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
+    val conversationArray = JSONArray()
+    dao.loadConversations().forEach { row ->
+        val messages = JSONArray()
+        row.messages.sortedBy { it.position }.forEach { message ->
+            val versions = runCatching { JSONArray(message.versionsJson) }.getOrDefault(JSONArray())
+            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
+                .put("versions", versions).put("active_version", message.activeVersion.coerceAtLeast(0)))
+        }
+        conversationArray.put(JSONObject().put("id", row.conversation.id).put("title", row.conversation.title.take(80))
+            .put("updated_at", row.conversation.updatedAt).put("project_id", row.conversation.projectId).put("messages", messages))
+    }
+    root.put("conversations_v1", conversationArray)
+    val activeId = prefs.getString("active_conversation_id", "") ?: ""
+    root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).optString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
+    val drafts = JSONObject()
+    prefs.all.forEach { (key, value) -> if (key.startsWith("draft_") && value is String && value.isNotBlank()) drafts.put(key.removePrefix("draft_"), value.take(100_000)) }
+    root.put("conversation_drafts_v1", drafts)
+    val docs = JSONArray()
+    dao.allKnowledgeDocuments().forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
+    val chunks = JSONArray()
+    dao.allKnowledgeChunks().forEach { chunk -> chunks.put(JSONObject().put("id", chunk.id).put("documentId", chunk.documentId).put("projectId", chunk.projectId).put("position", chunk.position).put("content", chunk.content)) }
+    root.put("knowledge_documents_v1", docs)
+    root.put("knowledge_chunks_v1", chunks)
+    val memories = JSONArray()
     dao.projectIds().forEach { projectId ->
         dao.userMemories(projectId, 200).forEach { memory ->
             memories.put(
@@ -3454,13 +3481,21 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
+    val payload = root.toString()
+    root.put("checksum_sha256", LocalBackupCompatibility.sha256(payload))
     return root.toString(2)
 }
 
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
+    require(raw.length <= 10_000_000) { "备份文件过大" }
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
     require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
+    val checksum = root.optString("checksum_sha256")
+    if (checksum.isNotBlank()) {
+        val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }.toString()
+        require(checksum.equals(LocalBackupCompatibility.sha256(payload), ignoreCase = true)) { "备份完整性校验失败，文件可能已损坏或被修改" }
+    }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -3499,7 +3534,58 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
-    val restoredProjectIds = (parseProjects(root.optJSONArray("projects")).map { it.id } + "default").toSet()
+    val restoredProjects = parseProjects(root.optJSONArray("projects"))
+    require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
+    val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
+    val conversationRows = root.optJSONArray("conversations_v1") ?: JSONArray()
+    require(conversationRows.length() <= 200) { "会话数量超出限制" }
+    val restoredConversations = (0 until conversationRows.length()).map { index ->
+        val item = conversationRows.getJSONObject(index)
+        val id = item.optString("id"); val projectId = item.optString("project_id", "default"); val title = item.optString("title", "新对话")
+        require(id.isNotBlank() && id.length <= 120 && projectId in restoredProjectIds && title.length <= 80) { "会话标识或项目归属无效" }
+        val rows = item.optJSONArray("messages") ?: JSONArray()
+        require(rows.length() <= 500) { "单个会话消息数量超出限制" }
+        val restoredMessages = (0 until rows.length()).map { messageIndex ->
+            val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
+            val versions = message.optJSONArray("versions") ?: JSONArray()
+            require(messageId.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000 && versions.length() <= 20) { "会话消息字段无效" }
+            val versionList = (0 until versions.length()).map { versions.getString(it) }
+            require(versionList.all { it.length <= 200_000 }) { "回答版本内容过长" }
+            val activeVersion = message.optInt("active_version", 0)
+            require(activeVersion >= 0 && (versionList.isEmpty() || activeVersion < versionList.size)) { "回答版本索引无效" }
+            MessageEntity(messageId, id, messageIndex, role, content, JSONArray(versionList).toString(), activeVersion)
+        }
+        ConversationEntity(id, title, item.optLong("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
+    }
+    val messageIds = restoredConversations.flatMap { it.second.map { row -> row.id } }
+    require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
+    val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
+    require(draftObject.length() <= 200) { "草稿数量超出限制" }
+    val restoredDrafts = linkedMapOf<String, String>()
+    val draftKeys = draftObject.keys()
+    while (draftKeys.hasNext()) {
+        val id = draftKeys.next(); val value = draftObject.optString(id)
+        require(restoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
+        restoredDrafts[id] = value
+    }
+    val documentRows = root.optJSONArray("knowledge_documents_v1") ?: JSONArray()
+    val chunkRows = root.optJSONArray("knowledge_chunks_v1") ?: JSONArray()
+    require(documentRows.length() <= 500 && chunkRows.length() <= 50_000) { "知识库备份数量超出限制" }
+    val restoredKnowledgeDocuments = (0 until documentRows.length()).map { index ->
+        val item = documentRows.getJSONObject(index); val id = item.optString("id"); val projectId = item.optString("projectId")
+        val name = item.optString("name"); val hash = item.optString("contentHash"); val size = item.optLong("sizeBytes", 0L)
+        require(id.isNotBlank() && projectId in restoredProjectIds && name.isNotBlank() && name.length <= 180 && hash.matches(Regex("[a-fA-F0-9]{64}")) && size in 0..2_097_152) { "知识库文档元数据无效" }
+        KnowledgeDocumentEntity(id, projectId, name, item.optString("mimeType", "text/plain").take(120), size, item.optLong("importedAt", System.currentTimeMillis()), hash.lowercase())
+    }
+    require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
+    val docsById = restoredKnowledgeDocuments.associateBy { it.id }
+    val restoredKnowledgeChunks = (0 until chunkRows.length()).map { index ->
+        val item = chunkRows.getJSONObject(index); val id = item.optString("id"); val documentId = item.optString("documentId")
+        val projectId = item.optString("projectId"); val position = item.optInt("position", -1); val content = item.optString("content")
+        require(id.isNotBlank() && docsById[documentId]?.projectId == projectId && position >= 0 && content.isNotBlank() && content.length <= 6000) { "知识库文本片段无效或缺少所属文档" }
+        KnowledgeChunkEntity(id, documentId, projectId, position, content)
+    }
+    require(restoredKnowledgeChunks.map { it.id }.distinct().size == restoredKnowledgeChunks.size) { "知识库片段 ID 重复" }
     val restoredMemories = (0 until memoryRows.length()).map { index ->
         val item = memoryRows.getJSONObject(index)
         val category = item.optString("category")
@@ -3687,8 +3773,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
-        .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
-        .putString("active_project_id", root.optString("active_project_id", "default"))
+        .putString("projects", projectsToJson(restoredProjects))
+        .putString("active_project_id", root.optString("active_project_id", "default").takeIf { it in restoredProjectIds } ?: "default")
         .putLong("local_snapshot_saved_at", System.currentTimeMillis())
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.optString("base_url")
@@ -3716,17 +3802,25 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     }
     val dao = database.dao()
     database.withTransaction {
-        (dao.projectIds() + restoredMemories.map { it.projectId }).distinct().forEach { projectId ->
-            dao.deleteUserMemoriesForProject(projectId)
+        dao.deleteAllConversations()
+        dao.deleteAllKnowledgeDocuments()
+        dao.deleteAllUserMemories()
+        dao.deleteAllPhoneAgentTasks()
+        dao.deleteAllProjects()
+        if (restoredProjects.isNotEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
+        restoredConversations.forEach { (conversation, rows) ->
+            dao.putConversation(conversation)
+            if (rows.isNotEmpty()) dao.putMessages(rows)
         }
+        if (restoredKnowledgeDocuments.isNotEmpty()) dao.insertKnowledgeDocuments(restoredKnowledgeDocuments)
+        if (restoredKnowledgeChunks.isNotEmpty()) dao.insertKnowledgeChunks(restoredKnowledgeChunks)
         restoredMemories.forEach { dao.putUserMemory(it) }
-        (dao.projectIds() + restoredTasks.map { it.projectId }).distinct().forEach { projectId ->
-            dao.deletePhoneAgentTasksForProject(projectId)
-        }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
+        prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
+        restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
+        check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
-    editor.apply()
 }
 
 

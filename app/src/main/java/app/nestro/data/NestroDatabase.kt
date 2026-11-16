@@ -264,6 +264,15 @@ interface NestroDao {
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 
+    @Query("DELETE FROM conversations") suspend fun deleteAllConversations()
+    @Query("DELETE FROM projects") suspend fun deleteAllProjects()
+    @Query("DELETE FROM user_memories") suspend fun deleteAllUserMemories()
+    @Query("DELETE FROM phone_agent_tasks") suspend fun deleteAllPhoneAgentTasks()
+    @Query("DELETE FROM knowledge_documents") suspend fun deleteAllKnowledgeDocuments()
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertKnowledgeDocuments(documents: List<KnowledgeDocumentEntity>)
+    @Query("SELECT * FROM knowledge_documents ORDER BY projectId, importedAt DESC") suspend fun allKnowledgeDocuments(): List<KnowledgeDocumentEntity>
+    @Query("SELECT * FROM knowledge_chunks ORDER BY projectId, documentId, position") suspend fun allKnowledgeChunks(): List<KnowledgeChunkEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putConversation(conversation: ConversationEntity)
 
