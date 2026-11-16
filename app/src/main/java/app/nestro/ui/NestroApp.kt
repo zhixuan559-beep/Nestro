@@ -20,6 +20,8 @@ import app.nestro.data.UserMemoryStore
 import app.nestro.data.MemoryCandidate
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
+import app.nestro.data.ExpertBundle
+import app.nestro.data.ExpertBundleParser
 import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
@@ -234,6 +236,26 @@ fun NestroApp() {
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
             }
+        }
+    }
+
+    val importExpertLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result=withContext(Dispatchers.IO) { runCatching {
+                val raw=context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: error("无法读取专家文件")
+                ExpertBundleParser.parse(raw,uri.lastPathSegment ?: "本地专家")
+            } }
+            result.fold({ pendingExpertBundle=it; expertImportStatus="" },{ expertImportStatus="导入失败：${it.message ?: "文件格式无效"}" })
+        }
+    }
+    val exportExpertLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri==null) expertExportStatus="已取消专家导出。"
+        else scope.launch {
+            val content=expertExportJson
+            val result=withContext(Dispatchers.IO) { runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) } ?: error("无法创建专家文件")
+            } }
+            expertExportStatus=result.fold({ "专家配置已导出。" },{ "导出失败：${it.message ?: "未知错误"}" })
         }
     }
 
@@ -790,6 +812,12 @@ fun NestroApp() {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("我的专家", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
+                                }
+                                if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("PLACEHOLDER", color = Muted)
                                 experts.forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -805,6 +833,11 @@ fun NestroApp() {
                                             }) { Text("编辑", color = Mint) }
                                             if (name !in setOf("文案官", "选题狐", "代码佬")) {
                                                 TextButton(onClick = {
+                                                 expertExportJson = ExpertBundleParser.exportJson(name, expertPrompts[name].orEmpty())
+                                                 val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "expert" }
+                                                 exportExpertLauncher.launch("$safeName.nestro-expert.json")
+                                             }) { Text("导出", color = Mint) }
+                                             TextButton(onClick = {
                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
@@ -1445,6 +1478,31 @@ fun NestroApp() {
                 }) { Text("保存", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showSkillDialog = false }) { Text("取消") } }
+        )
+    }
+
+    if (pendingExpertBundle != null) {
+        val bundle = pendingExpertBundle!!
+        AlertDialog(
+            onDismissRequest = { pendingExpertBundle = null },
+            title = { Text("导入专家预览") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
+                Text("版本：${bundle.version}", color = Muted)
+                Text(bundle.description.ifBlank { "无描述" }, color = Muted)
+                Text("角色指令", color = Mint)
+                Text(bundle.prompt, color = Ink)
+                if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
+            } },
+            confirmButton = { TextButton(onClick = {
+                experts = if (bundle.name in experts) experts else experts + bundle.name
+                expertPrompts = expertPrompts + (bundle.name to bundle.prompt)
+                prefs.edit().putString("experts", JSONArray(experts).toString())
+                    .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
+                expertImportStatus = "已导入专家：${bundle.name}"
+                pendingExpertBundle = null
+            }) { Text("导入", color = Mint) } },
+            dismissButton = { TextButton(onClick = { pendingExpertBundle = null }) { Text("取消") } }
         )
     }
 
