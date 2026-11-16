@@ -65,6 +65,49 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
+    @Test fun conversationsKnowledgeMemoriesAndAgentQueriesStayInsideTheirProject() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("p1", "项目一", "只属于一", 1L),
+                ProjectEntity("p2", "项目二", "只属于二", 2L)
+            ))
+            dao.putConversation(ConversationEntity("c1", "一的会话", 1L, "p1"))
+            dao.putConversation(ConversationEntity("c2", "二的会话", 2L, "p2"))
+            dao.putMessages(listOf(
+                MessageEntity("m1", "c1", 0, "user", "项目一机密词"),
+                MessageEntity("m2", "c2", 0, "user", "项目二机密词")
+            ))
+            assertEquals(listOf("m1"), dao.searchConversationMessages("p1", "", "机密词").map { it.messageId })
+            assertEquals(listOf("m2"), dao.searchConversationMessages("p2", "", "机密词").map { it.messageId })
+
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "一号资料", "text/plain", 1L, 1L, "hash-p1"))
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d2", "p2", "二号资料", "text/plain", 1L, 2L, "hash-p2"))
+            dao.insertKnowledgeChunks(listOf(
+                KnowledgeChunkEntity("k1", "d1", "p1", 0, "项目一专属知识"),
+                KnowledgeChunkEntity("k2", "d2", "p2", 0, "项目二专属知识")
+            ))
+            assertEquals(listOf("d1"), dao.knowledgeDocuments("p1").map { it.id })
+            assertEquals(listOf("k1"), dao.searchKnowledgeChunks("p1", "专属", 8).map { it.id })
+            assertEquals(listOf("d2"), dao.knowledgeDocuments("p2").map { it.id })
+            assertEquals(listOf("k2"), dao.searchKnowledgeChunks("p2", "专属", 8).map { it.id })
+
+            dao.putUserMemory(UserMemoryEntity("u1", "p1", "fact", "一的记忆", "fp1", "c1", "m1", 0.9, 1L, 1L))
+            dao.putUserMemory(UserMemoryEntity("u2", "p2", "fact", "二的记忆", "fp2", "c2", "m2", 0.9, 2L, 2L))
+            assertEquals(listOf("u1"), dao.userMemories("p1").map { it.id })
+            assertEquals(listOf("u2"), dao.userMemories("p2").map { it.id })
+
+            dao.putPhoneAgentTask(PhoneAgentTaskEntity("a1", "p1", "c1", "一的任务", "general", "planned", "[]", 0, 1L, 1L))
+            dao.putPhoneAgentTask(PhoneAgentTaskEntity("a2", "p2", "c2", "二的任务", "general", "planned", "[]", 0, 2L, 2L))
+            assertEquals(listOf("a1"), dao.phoneAgentTasks("p1").map { it.id })
+            assertEquals(listOf("a2"), dao.phoneAgentTasks("p2").map { it.id })
+        } finally {
+            database.close()
+        }
+    }
+
     @Test fun projectAndConversationDataSurviveDatabaseReopen() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "nestro_project_space_lifecycle.db"
