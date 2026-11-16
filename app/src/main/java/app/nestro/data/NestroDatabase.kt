@@ -269,7 +269,17 @@ interface NestroDao {
     suspend fun clearMessages(conversationId: String)
 
     @Query("DELETE FROM conversations WHERE id IN (:ids)")
-    suspend fun deleteConversations(ids: List<String>)
+    suspend fun deleteConversationRows(ids: List<String>)
+
+    @Query("DELETE FROM user_memories WHERE sourceConversationId IN (:ids)")
+    suspend fun deleteUserMemoriesForConversations(ids: List<String>)
+
+    @Transaction
+    suspend fun deleteConversations(ids: List<String>) {
+        if (ids.isEmpty()) return
+        deleteUserMemoriesForConversations(ids)
+        deleteConversationRows(ids)
+    }
 
     @Query("SELECT * FROM projects ORDER BY createdAt DESC")
     suspend fun loadProjects(): List<ProjectEntity>
