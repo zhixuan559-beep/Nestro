@@ -215,8 +215,8 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
-    @Query("UPDATE user_memories SET content = :content, category = :category, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
-    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, updatedAt: Long)
+    @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
+    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long)
 
     @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
     suspend fun deleteUserMemory(id: String, projectId: String)

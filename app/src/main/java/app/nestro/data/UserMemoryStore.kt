@@ -65,11 +65,11 @@ object UserMemoryStore {
             .sortedWith(compareByDescending<Pair<UserMemoryEntity, Int>> { it.second }.thenByDescending { it.first.updatedAt })
             .take(limit)
             .map { it.first }
-        val context = ranked.joinToString("\\n") {
+        val context = ranked.joinToString("\n") {
             "- [${it.category}] ${it.content} (memoryId=${it.id}, sourceConversationId=${it.sourceConversationId}, sourceMessageId=${it.sourceMessageId})"
         }.take(2600)
         return MemoryRecall(
-            if (context.isBlank()) "" else "当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\\n" + context,
+            if (context.isBlank()) "" else "当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\n" + context,
             ranked
         )
     }
@@ -82,7 +82,7 @@ object UserMemoryStore {
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(category in allowedCategories) { "记忆分类无效" }
         require(!containsSensitiveData(normalized)) { "记忆包含敏感信息，请勿自动保存" }
-        dao.updateUserMemory(id, projectId, normalized, category, System.currentTimeMillis())
+        dao.updateUserMemory(id, projectId, normalized, category, fingerprint(category + "|" + normalized.lowercase()), System.currentTimeMillis())
     }
 
     suspend fun delete(dao: NestroDao, id: String, projectId: String) {
@@ -92,8 +92,10 @@ object UserMemoryStore {
     private fun extractTerms(query: String): List<String> {
         val terms = linkedSetOf<String>()
         Regex("[a-z0-9_]{2,}", RegexOption.IGNORE_CASE).findAll(query).forEach { terms += it.value.lowercase() }
-        val cjk = Regex("[\\u4e00-\\u9fff]+").findAll(query).joinToString("") { it.value }
-        for (i in 0 until (cjk.length - 1).coerceAtLeast(0)) terms += cjk.substring(i, i + 2)
+        Regex("[\\u4e00-\\u9fff]{2,}").findAll(query).forEach { match ->
+            val word = match.value
+            for (i in 0 until (word.length - 1)) terms += word.substring(i, i + 2)
+        }
         if (query.trim().length in 2..12) terms += query.trim().lowercase()
         return terms.toList()
     }
@@ -102,7 +104,7 @@ object UserMemoryStore {
         Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
             Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
-            listOf("密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向").any { value.contains(it, true) }
+            listOf("密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
     private fun fingerprint(value: String): String =
         MessageDigest.getInstance("SHA-256")
