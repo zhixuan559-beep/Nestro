@@ -105,7 +105,7 @@ fun CapabilityCenterPage(
                 Text("把目标交给主对话，由当前模型结合项目上下文处理；此入口不会绕过各模块原有权限或自动执行高风险操作。",color=muted,style=MaterialTheme.typography.bodySmall)
                 OutlinedTextField(taskDraft,{taskDraft=it.take(2000)},Modifier.fillMaxWidth(),minLines=2,label={Text("描述你要完成的任务")})
                 Button(onClick={
-                    val prompt="请从统一能力入口处理以下任务：${taskDraft.trim()}。请先判断当前项目中可用的模型、专家、团队、Skills、工作流、知识库、记忆或 Phone Agent 能力；只使用已授权且实际可用的能力，涉及外部调用、设备操作或不可逆动作时先请求确认。"
+                    val prompt="请从统一能力入口处理以下任务：${taskDraft.trim()}。当前已选择的专家、团队和技能会按项目授权策略生效，知识库与记忆只在获准时检索；如任务需要尚未接入的外部连接器或其他模块操作，请明确说明，不得假称已执行。涉及设备操作或不可逆动作时先请求确认。"
                     CapabilityRegistryStore.record(prefs,projectId,"dispatcher","统一任务入口","dispatch_to_chat","handed_to_main_chat")
                     onDispatchTask(prompt)
                 },enabled=taskDraft.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("带入主对话") }

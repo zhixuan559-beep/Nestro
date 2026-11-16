@@ -55,16 +55,17 @@ object CapabilityRegistryStore {
     }
 
     @Synchronized fun register(prefs: SharedPreferences, descriptor: CapabilityDescriptor) {
+        val normalized = decodeDescriptor(encodeDescriptor(descriptor)) ?: return
         val existing = runCatching { JSONArray(prefs.getString(REGISTRY_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
         val next = JSONArray()
         var replaced = false
         for (i in 0 until existing.length()) {
             val raw = existing.optJSONObject(i) ?: continue
-            if (raw.optString("id") == descriptor.id) {
-                if (!replaced) { next.put(encodeDescriptor(descriptor)); replaced = true }
+            if (raw.optString("id") == normalized.id) {
+                if (!replaced) { next.put(encodeDescriptor(normalized)); replaced = true }
             } else next.put(raw)
         }
-        if (!replaced && next.length() < MAX_CAPABILITIES) next.put(encodeDescriptor(descriptor))
+        if (!replaced && next.length() < MAX_CAPABILITIES) next.put(encodeDescriptor(normalized))
         prefs.edit().putString(REGISTRY_KEY,next.toString()).apply()
     }
 
