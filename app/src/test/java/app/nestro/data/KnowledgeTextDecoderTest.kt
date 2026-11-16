@@ -2,6 +2,7 @@ package app.nestro.data
 
 import java.nio.charset.Charset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KnowledgeTextDecoderTest {
@@ -31,6 +32,14 @@ class KnowledgeTextDecoderTest {
         val source = "骑手片区风险预警"
         val bytes = source.toByteArray(Charset.forName("GB18030"))
         assertEquals(source, KnowledgeTextDecoder.decode(bytes))
+    }
+
+    @Test
+    fun rejectsMalformedUtfBomInsteadOfSilentlyFallingBack() {
+        val malformed = byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0x41.toByte())
+        val failure = runCatching { KnowledgeTextDecoder.decode(malformed) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals("文件的 UTF 编码标记与实际内容不匹配，无法安全导入。", failure?.message)
     }
 
     @Test

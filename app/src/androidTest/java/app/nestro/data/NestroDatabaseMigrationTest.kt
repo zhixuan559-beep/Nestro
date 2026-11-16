@@ -135,7 +135,7 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionNineWithoutLosingConversationData() = runBlocking {
+    @Test fun migratesVersionOneDatabaseThroughVersionTenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -156,13 +156,22 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(9, schemaVersion)
+            assertEquals(10, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
             assertEquals("[]", rows.single().messages.single().versionsJson)
             assertEquals(0, rows.single().messages.single().activeVersion)
             assertNotNull(migrated.dao().allKnowledgeDocuments())
+            val indexCursor = migrated.openHelper.writableDatabase.query("PRAGMA index_list('knowledge_chunks')")
+            val indexNames = indexCursor.use { cursor ->
+                val names = mutableSetOf<String>()
+                val nameColumn = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) names += cursor.getString(nameColumn)
+                names
+            }
+            assertTrue(indexNames.contains("index_knowledge_chunks_documentId_position"))
+            assertTrue(indexNames.contains("index_knowledge_chunks_projectId_position"))
             val dao = migrated.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fts-doc", "default", "FTS", "text/plain", 1, 2, "b".repeat(64)))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("fts-chunk", "fts-doc", "default", 0, "Android offline search index")))

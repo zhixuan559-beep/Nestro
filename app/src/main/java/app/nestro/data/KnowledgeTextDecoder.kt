@@ -28,7 +28,13 @@ internal object KnowledgeTextDecoder {
             else -> null to 0
         }
 
-        if (charset != null) return decodeStrict(bytes, offset, charset)
+        if (charset != null) {
+            return try {
+                decodeStrict(bytes, offset, charset)
+            } catch (_: CharacterCodingException) {
+                throw IllegalArgumentException("文件的 UTF 编码标记与实际内容不匹配，无法安全导入。")
+            }
+        }
 
         return try {
             decodeStrict(bytes, 0, Charsets.UTF_8)

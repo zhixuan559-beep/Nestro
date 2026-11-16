@@ -1,5 +1,6 @@
 package app.nestro.ui
 import app.nestro.data.KnowledgeDocumentEntity
+import app.nestro.data.KnowledgeChunker
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.KnowledgeSearchResult
 import app.nestro.data.NestroDatabase
@@ -138,7 +139,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
         scope.launch {
          val result=runCatching { withContext(Dispatchers.IO) { database.dao().knowledgeChunksForDocument(doc.id,requestedProjectId) } }
          if(latestProjectId==requestedProjectId && previewDocument?.id==doc.id) {
-          previewContent=result.fold({ rows -> rows.joinToString("\n\n") { it.content } },{ "读取文档失败：${it.message ?: "未知错误"}" })
+          previewContent=result.fold({ rows -> KnowledgeChunker.reassemble(rows.map { it.content }) },{ "读取文档失败：${it.message ?: "未知错误"}" })
           previewLoading=false
          }
         }
