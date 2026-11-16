@@ -40,6 +40,13 @@ jobs:
       - name: Run unit tests
         run: gradle --no-daemon testDebugUnitTest
 
+      - name: Verify Room migrations on Android emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          script: gradle --no-daemon connectedDebugAndroidTest
+
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 

@@ -406,6 +406,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
@@ -414,7 +415,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     context.applicationContext,
                     NestroDatabase::class.java,
                     "nestro_local.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { instance = it }
+                ).addMigrations(*ALL_MIGRATIONS).build().also { instance = it }
             }
     }
 }
