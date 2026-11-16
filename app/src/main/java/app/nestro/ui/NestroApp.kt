@@ -915,7 +915,7 @@ fun NestroApp() {
                                     resultSummary = "Phone Agent 子任务已创建"
                                 )
                             }
-                            if (PhoneAgentService.activeService?.hasValidGrant() == true) {
+                            if (PhoneAgentService.activeService?.hasValidGrant(requestProjectId) == true) {
                                 PhoneAgentWorkScheduler.enqueue(context, task.id)
                             }
                         }
@@ -4799,9 +4799,13 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = {
-                            tasks.firstOrNull { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }?.let { PhoneAgentWorkScheduler.cancel(context, it.id) }
-                            PhoneAgentService.activeService?.requestTaskStop()
-                            taskMessage = "已请求停止当前任务"
+                            val activeTask = tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }
+                                ?: tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_PLANNED }
+                            if (activeTask != null) {
+                                PhoneAgentWorkScheduler.requestStop(context, activeTask.id)
+                                PhoneAgentService.activeService?.requestTaskStop(activeTask.id)
+                                taskMessage = "已请求停止任务：${activeTask.goal.take(32)}"
+                            } else taskMessage = "当前没有正在执行的任务"
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
@@ -4853,8 +4857,11 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                         runCatching { PhoneAgentTaskStore.appendClarification(database.dao(), task.id, clarification) }
                                     }
                                     taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
-                                    if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
-                                        PhoneAgentWorkScheduler.enqueue(context, task.id)
+                                    if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant(projectId) == true) {
+                                        val queued = runCatching { PhoneAgentWorkScheduler.enqueue(context, task.id) }.getOrDefault(false)
+                                        if (!queued) taskMessage = "补充信息已保存；任务已在队列中或等待重新授权。"
+                                    } else if (result.isSuccess) {
+                                        taskMessage = "补充信息已保存；请先开启无障碍服务并授予当前项目权限。"
                                     }
                                     if (result.isSuccess) taskClarifications = taskClarifications - task.id
                                     refresh++
@@ -4879,13 +4886,21 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             ) {
                                 Button(
                                     onClick = {
-                                        PhoneAgentWorkScheduler.enqueue(
-                                            context,
-                                            task.id,
-                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                            allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
-                                        )
-                                        taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
+                                        scope.launch {
+                                            val enqueueResult = runCatching {
+                                                PhoneAgentWorkScheduler.enqueue(
+                                                    context,
+                                                    task.id,
+                                                    afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
+                                                    allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                                                )
+                                            }
+                                            taskMessage = enqueueResult.fold(
+                                                { queued -> if (queued) "任务已进入设备执行队列。" else "该任务已在队列中，无需重复提交。" },
+                                                { "任务入队失败：${it.message ?: "WorkManager 不可用"}" }
+                                            )
+                                            refresh++
+                                        }
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
@@ -4896,7 +4911,12 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     PhoneAgentWorkScheduler.cancel(context, task.id)
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
-                                            PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
+                                            val dao = database.dao()
+                                            PhoneAgentTaskStore.updateProgress(dao, task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
+                                            val parentTask = dao.capabilityTaskByCheckpoint("phone_agent_task_id:${task.id}")
+                                            if (parentTask != null && !CapabilityTaskState.isTerminal(parentTask.state) && CapabilityTaskState.canTransition(parentTask.state, CapabilityTaskState.CANCELLED)) {
+                                                CapabilityTaskStore.transition(dao, parentTask.id, CapabilityTaskState.CANCELLED, "phone_agent_cancelled", "用户取消 Phone Agent 任务")
+                                            }
                                         }
                                         refresh++
                                     }

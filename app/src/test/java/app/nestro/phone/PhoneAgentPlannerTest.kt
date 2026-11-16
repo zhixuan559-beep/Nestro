@@ -26,6 +26,19 @@ class PhoneAgentPlannerTest {
     }
 
     @Test
+    fun restaurantReservationIsNotMisclassifiedAsFoodDelivery() {
+        assertEquals(PhoneAgentPlanner.Category.BOOKING, PhoneAgentPlanner.plan("帮我订一家明晚的餐厅").category)
+        assertEquals(PhoneAgentPlanner.Category.BOOKING, PhoneAgentPlanner.plan("帮我订两张电影票").category)
+        assertEquals(PhoneAgentPlanner.Category.BOOKING, PhoneAgentPlanner.plan("帮我买一张火车票").category)
+    }
+
+    @Test
+    fun genericPhoneActionsCreateDeviceTasks() {
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我打开微信").category)
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我给朋友发消息").category)
+    }
+
+    @Test
     fun foodDeliveryGoalRemainsFoodOrder() {
         val plan = PhoneAgentPlanner.plan("帮我点一份外卖")
         assertEquals(PhoneAgentPlanner.Category.FOOD_ORDER, plan.category)

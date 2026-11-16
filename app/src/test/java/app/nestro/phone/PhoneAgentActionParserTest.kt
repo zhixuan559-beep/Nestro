@@ -17,6 +17,14 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun sendingMessageButtonBecomesUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"发送"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun personalInformationFieldBecomesUserHandoffWithoutPersistingValue() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"enter_text","label":"收货地址","value":"成都市某某街道 123 号"}]}"""

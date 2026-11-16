@@ -45,20 +45,20 @@ object PhoneAgentExecutor {
     private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val service = PhoneAgentService.activeService ?: return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
-        if (!service.hasValidGrant()) {
+        if (!service.hasValidGrant(task.projectId)) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
-            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
+            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
         }
         val results = mutableListOf<ActionResult>()
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         for (index in startIndex until actions.size) {
-            if (service.isTaskStopped()) {
+            if (service.isTaskStopped(taskId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
             }
-            if (!service.hasValidGrant()) {
+            if (!service.hasValidGrant(task.projectId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
+                return ExecutionResult(Outcome.PAUSED, results.size, results, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
             }
             val action = actions[index]
             if (action is Action.ConfirmSensitive) {

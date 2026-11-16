@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
+import app.nestro.data.CapabilityRegistryStore
 
 class PhoneAgentService : AccessibilityService() {
     override fun onServiceConnected() {
@@ -48,9 +49,21 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
-    fun isTaskStopped(): Boolean = getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean("phone_task_stop_requested", false)
-    fun clearTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().remove("phone_task_stop_requested").apply() }
-    fun requestTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean("phone_task_stop_requested", true).apply(); audit("TASK_STOP", "用户请求停止当前任务") }
+
+    /** Device authorization and the current project capability grant are both required. */
+    fun hasValidGrant(projectId: String): Boolean {
+        if (projectId.isBlank()) return false
+        val prefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
+        return CapabilityRegistryStore.isGranted(prefs, projectId, "phone", true) && hasValidGrant()
+    }
+    fun isTaskStopped(taskId: String): Boolean = taskId.isNotBlank() &&
+        getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean(TASK_STOP_PREFIX + taskId, false)
+
+    fun requestTaskStop(taskId: String) {
+        if (taskId.isBlank()) return
+        getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean(TASK_STOP_PREFIX + taskId, true).apply()
+        audit("TASK_STOP", "用户请求停止任务 " + taskId.take(8))
+    }
 
     fun clickVisibleText(exactText: String): Boolean {
         val normalized = exactText.trim()
@@ -194,7 +207,7 @@ class PhoneAgentService : AccessibilityService() {
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
 
     private fun isHighRisk(value: String): Boolean {
-        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "立即购买", "预约", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款")
+        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "立即购买", "预约", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫")
         return terms.any { value.contains(it, ignoreCase = true) }
     }
 
@@ -208,6 +221,7 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     companion object {
+        const val TASK_STOP_PREFIX = "phone_task_stop_requested:"
         @Volatile var activeService: PhoneAgentService? = null
             private set
     }

@@ -4,7 +4,9 @@ import android.content.Context
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 object PhoneAgentAgent {
     data class Result(val outcome: PhoneAgentExecutor.Outcome, val message: String)
@@ -16,12 +18,13 @@ object PhoneAgentAgent {
         afterUserHandoff: Boolean = false,
         allowRetryCurrentAction: Boolean = false
     ): Result {
-        val service = PhoneAgentService.activeService
-            ?: return pause(dao, taskId, "无障碍服务尚未连接")
-        if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
-
         var task = dao.phoneAgentTask(taskId)
             ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+        val service = PhoneAgentService.activeService
+            ?: return pause(dao, taskId, "无障碍服务尚未连接")
+        if (!service.hasValidGrant(task.projectId)) {
+            return pause(dao, taskId, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
+        }
         val existingActions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.getOrNull()
         if (existingActions != null) {
             val resumed = PhoneAgentExecutor.resume(
@@ -46,26 +49,30 @@ object PhoneAgentAgent {
         }
         var loop = 0
         while (loop < 8) {
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
-            if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
             task = dao.phoneAgentTask(taskId)
                 ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+            if (!service.hasValidGrant(task.projectId)) {
+                return pause(dao, taskId, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
+            }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
             val plan = try {
-                PhoneAgentModelClient.planNext(
-                    context = context,
-                    goal = task.goal,
-                    category = task.category,
-                    visibleScreen = screen,
-                    recentActions = actionHistory.toString()
-                )
+                withContext(Dispatchers.IO) {
+                    PhoneAgentModelClient.planNext(
+                        context = context,
+                        goal = task.goal,
+                        category = task.category,
+                        visibleScreen = screen,
+                        recentActions = actionHistory.toString()
+                    )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 return pause(dao, taskId, error.message ?: "动作规划失败")
             }
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
 
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&

@@ -21,8 +21,14 @@ class PhoneAgentWorker(
         val dao = NestroDatabase.get(applicationContext).dao()
         val task = dao.phoneAgentTask(taskId) ?: return Result.failure()
 
-        if (task.status in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) return Result.success()
         val capabilityTask = dao.capabilityTaskByCheckpoint("phone_agent_task_id:$taskId")
+        if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+            if (capabilityTask != null && !CapabilityTaskState.isTerminal(capabilityTask.state) && CapabilityTaskState.canTransition(capabilityTask.state, CapabilityTaskState.CANCELLED)) {
+                CapabilityTaskStore.transition(dao, capabilityTask.id, CapabilityTaskState.CANCELLED, "phone_agent_cancelled", "用户取消 Phone Agent 任务")
+            }
+            return Result.success()
+        }
+        if (task.status == PhoneAgentTaskStore.STATUS_COMPLETED) return Result.success()
         if (PhoneAgentService.activeService == null) {
             if (capabilityTask != null && capabilityTask.state in setOf(app.nestro.data.CapabilityTaskState.RUNNING, app.nestro.data.CapabilityTaskState.QUEUED)) {
                 app.nestro.data.CapabilityTaskStore.transition(dao, capabilityTask.id, app.nestro.data.CapabilityTaskState.WAITING_USER, "phone_agent_waiting_service", "等待开启 Phone Agent 无障碍服务")
@@ -40,7 +46,8 @@ class PhoneAgentWorker(
             val result = PhoneAgentAgent.run(applicationContext, dao, taskId, afterUserHandoff, allowRetryCurrentAction)
             val latestCapabilityTask = dao.capabilityTaskByCheckpoint("phone_agent_task_id:$taskId")
             if (latestCapabilityTask?.state == app.nestro.data.CapabilityTaskState.RUNNING) {
-                val nextState = when (result.outcome) {
+                val cancelledByUser = dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED
+                val nextState = if (cancelledByUser) CapabilityTaskState.CANCELLED else when (result.outcome) {
                     PhoneAgentExecutor.Outcome.COMPLETED -> app.nestro.data.CapabilityTaskState.SUCCEEDED
                     PhoneAgentExecutor.Outcome.WAITING_USER -> app.nestro.data.CapabilityTaskState.WAITING_USER
                     PhoneAgentExecutor.Outcome.PAUSED -> app.nestro.data.CapabilityTaskState.PAUSED
