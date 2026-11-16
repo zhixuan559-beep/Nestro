@@ -92,6 +92,9 @@ object WorkflowDefinitionCodec {
             require(it.instruction.isNotBlank() && it.instruction.length<=4_000) { "步骤指令为空或过长" }
             require(it.retries in 0..3) { "单步重试次数必须在 0 到 3 次之间" }
             require(it.timeoutSeconds in 15..300) { "单步超时必须在 15 到 300 秒之间" }
+            if(it.kind != WorkflowStepKind.PROMPT) {
+                require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
+            }
         }
     }
 }
