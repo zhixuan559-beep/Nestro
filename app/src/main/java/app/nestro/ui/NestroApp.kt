@@ -25,6 +25,8 @@ import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelUsageStats
+import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
 import app.nestro.data.ExpertProfileCodec
@@ -161,6 +163,7 @@ fun NestroApp() {
     var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
     var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
     var modelFailoverEnabled by remember { mutableStateOf(prefs.getBoolean("model_failover_enabled", false)) }
+    var modelUsage by remember { mutableStateOf(ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
@@ -595,6 +598,17 @@ fun NestroApp() {
         }
     }.distinctBy { "${it.baseUrl}|${it.model}" }
 
+    val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputChars, outputChars ->
+        scope.launch {
+            val profileId = modelProfiles.firstOrNull { it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model }?.id
+                ?: activeModelProfileId.takeIf { it.isNotBlank() }
+            if (profileId != null) {
+                modelUsage = ModelUsageStatsCodec.record(modelUsage, profileId, inputChars, outputChars)
+                prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
+            }
+        }
+    }
+
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
@@ -629,7 +643,8 @@ fun NestroApp() {
                         val raw = OpenAiClient.completeWithFallback(
                             requestModelConfigs,
                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
-                            generatorPrompt
+                            generatorPrompt,
+                            onUsage = recordModelUsage
                         )
                         parseGeneratedDefinition(raw)
                     }
@@ -757,7 +772,8 @@ fun NestroApp() {
                                     connectTimeoutMillis = 15_000,
                                     readTimeoutMillis = 25_000,
                                     temperature = expertProfiles[member.name]?.temperature,
-                                    maxTokens = expertProfiles[member.name]?.maxTokens
+                                    maxTokens = expertProfiles[member.name]?.maxTokens,
+                                    onUsage = recordModelUsage
                                 ).take(2200)
                             }
                         }
@@ -772,7 +788,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens) { chunk ->
+                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
@@ -1008,6 +1024,7 @@ fun NestroApp() {
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
                             activeConfig = config,
+                            usage = modelUsage,
                             failoverEnabled = modelFailoverEnabled,
                             onFailoverChange = { enabled ->
                                 modelFailoverEnabled = enabled
@@ -1142,7 +1159,8 @@ fun NestroApp() {
                                                                      OpenAiClient.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
                                                                          listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
                                                                          temperature = expertOptions?.temperature,
-                                                                         maxTokens = expertOptions?.maxTokens)
+                                                                         maxTokens = expertOptions?.maxTokens,
+                                                                         onUsage = recordModelUsage)
                                                                  }
                                                              }, onStep = { index, step ->
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
@@ -2631,6 +2649,7 @@ private fun ModelManager(
     profiles: List<ModelProfileMetadata>,
     activeProfileId: String,
     activeConfig: ModelConfig,
+    usage: Map<String, ModelUsageStats>,
     failoverEnabled: Boolean,
     onFailoverChange: (Boolean) -> Unit,
     loadKey: (String) -> String,
@@ -2693,6 +2712,9 @@ private fun ModelManager(
                                 Text(profile.name + if (active) " · 当前使用" else "", color = if (active) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                 Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存" else "缺少 API Key", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                                usage[profile.id]?.let { stats ->
+                                    Text("成功请求 ${stats.requests} 次 · 估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2867,13 +2889,16 @@ private object OpenAiClient {
         connectTimeoutMillis: Int = 20000,
         readTimeoutMillis: Int = 90000,
         temperature: Double? = null,
-        maxTokens: Int? = null
+        maxTokens: Int? = null,
+        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> }
     ): String {
         require(configs.isNotEmpty()) { "没有可用的模型配置" }
         var lastError: Throwable? = null
         configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
             try {
-                return complete(candidate, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, temperature, maxTokens)
+                val response = complete(candidate, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, temperature, maxTokens)
+                onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
+                return response
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 lastError = error
@@ -2888,6 +2913,7 @@ private object OpenAiClient {
         systemPrompt: String,
         temperature: Double? = null,
         maxTokens: Int? = null,
+        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         onChunk: suspend (String) -> Unit
     ): String {
         require(configs.isNotEmpty()) { "没有可用的模型配置" }
@@ -2895,10 +2921,12 @@ private object OpenAiClient {
         configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
             var emitted = false
             try {
-                return stream(candidate, history, systemPrompt, temperature, maxTokens) { chunk ->
+                val response = stream(candidate, history, systemPrompt, temperature, maxTokens) { chunk ->
                     emitted = true
                     onChunk(chunk)
                 }
+                onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
+                return response
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException || emitted) throw error
                 lastError = error

@@ -31,4 +31,15 @@ class ModelProfileCatalogTest {
         assertTrue(ModelProfileCatalogCodec.decode("not-json").isEmpty())
         assertTrue(ModelProfileCatalogCodec.decode("[]").isEmpty())
     }
+    
+    @Test fun recordsApproximateUsagePerProfile() {
+        val first = ModelUsageStatsCodec.record(emptyMap(), "a", 5, 9, 100L)
+        val second = ModelUsageStatsCodec.record(first, "a", 4, 4, 200L)
+        val stats = second.getValue("a")
+        assertEquals(2L, stats.requests)
+        assertEquals(3L, stats.estimatedInputTokens)
+        assertEquals(4L, stats.estimatedOutputTokens)
+        assertEquals(200L, stats.lastUsedAt)
+        assertEquals(second, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(second)))
+    }
 }
