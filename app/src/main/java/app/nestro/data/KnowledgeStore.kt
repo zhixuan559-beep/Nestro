@@ -42,12 +42,12 @@ object KnowledgeStore {
    while(true) { val n=input.read(buffer); if(n<0) break; total+=n; require(total<=MAX_FILE_BYTES) { "文件超过 2 MB，请先拆分或压缩。" }; out.write(buffer,0,n) }
    out.toByteArray()
   } ?: error("无法读取所选文件")
-  val raw=bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
+  require(projectId.isNotBlank()) { "请先选择有效的项目空间。" }
   val parsed=when {
    ext=="pdf" || mime=="application/pdf" -> extractPdfText(context,bytes)
    ext in setOf("docx","xlsx","pptx") -> extractOfficeText(ext, bytes)
-   ext in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(raw,Html.FROM_HTML_MODE_COMPACT).toString()
-   else -> raw
+   ext in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(KnowledgeTextDecoder.decode(bytes),Html.FROM_HTML_MODE_COMPACT).toString()
+   else -> KnowledgeTextDecoder.decode(bytes)
   }
   val normalized=parsed.replace("\u0000","").replace("\r\n","\n").trim()
   require(normalized.isNotBlank()) { "文件没有可索引的文本内容。" }

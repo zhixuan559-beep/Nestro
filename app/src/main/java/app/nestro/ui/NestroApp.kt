@@ -3814,6 +3814,16 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         KnowledgeChunkEntity(id, documentId, projectId, position, content)
     }
     require(restoredKnowledgeChunks.map { it.id }.distinct().size == restoredKnowledgeChunks.size) { "知识库片段 ID 重复" }
+    val knowledgePayloadChars = restoredKnowledgeChunks.sumOf { it.content.length.toLong() } +
+        restoredKnowledgeDocuments.sumOf { it.name.length.toLong() }
+    require(knowledgePayloadChars <= 3_000_000L) { "知识库备份文本超过安全容量" }
+    val chunksByDocument = restoredKnowledgeChunks.groupBy { it.documentId }
+    restoredKnowledgeDocuments.forEach { document ->
+        val positions = chunksByDocument[document.id].orEmpty().map { it.position }.sorted()
+        require(positions.isNotEmpty() && positions == positions.indices.toList()) {
+            "知识库文档「${document.name}」的片段缺失或顺序索引不连续"
+        }
+    }
     val restoredMemories = (0 until memoryRows.length()).map { index ->
         val item = memoryRows.getJSONObject(index)
         val category = item.optString("category")
