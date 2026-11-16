@@ -561,11 +561,14 @@ fun NestroApp() {
             projects = loadProjects(prefs)
             status = "本地数据库暂不可用，已回退到本机旧存储"
         }
-        activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
-        activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
+        val savedProjectId = prefs.getString("active_project_id", "default") ?: "default"
+        activeProjectId = savedProjectId.takeIf { id -> projects.any { it.id == id } } ?: "default"
+        val savedConversationId = prefs.getString("active_conversation_id", "") ?: ""
+        activeConversationId = conversations.firstOrNull {
+            it.id == savedConversationId && it.projectId == activeProjectId
+        }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
         messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
-        activeProjectId = conversations.firstOrNull { it.id == activeConversationId }?.projectId ?: activeProjectId
-        prefs.edit().putString("active_project_id", activeProjectId).apply()
+        prefs.edit().putString("active_project_id", activeProjectId).putString("active_conversation_id", activeConversationId).apply()
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
@@ -1775,17 +1778,23 @@ fun NestroApp() {
                                                                             val dao = database.dao()
                                                                             projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
                                                                                 dao.projectConversationIds(project.id)).toSet()
+                                                                            val latestActiveProjectId = prefs.getString("active_project_id", activeProjectId) ?: activeProjectId
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val hasLocalConversationData = conversations.any {
                                                                                 it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
                                                                             }
+                                                                            val hasLinkedData = dao.projectHasLinkedData(project.id)
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
                                                                             check(!hasLocalConversationData) { "该空间还有尚未同步的会话内容，请等待保存完成后再删除" }
                                                                             check(pendingRequest?.optString("status") != "running" || pendingRequest?.optString("project_id") != project.id) {
                                                                                 "该空间仍有正在执行的请求，请等待请求结束后再删除"
                                                                             }
-                                                                            check(dao.deleteProjectIfEmpty(project.id, activeProjectId)) {
+                                                                            check(ProjectSpaceRules.canDelete(
+                                                                                project.id, latestActiveProjectId,
+                                                                                if (hasLinkedData) setOf(project.id) else emptySet()
+                                                                            )) { "默认空间、当前空间或含有关联数据的空间不可删除" }
+                                                                            check(dao.deleteProjectIfEmpty(project.id, latestActiveProjectId)) {
                                                                                 "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
                                                                         }
@@ -3345,13 +3354,24 @@ private fun loadProjects(prefs: android.content.SharedPreferences): List<Project
 }
 
 private fun parseProjects(array: JSONArray?): List<ProjectRecord> {
-    val parsed = if (array == null) emptyList() else runCatching {
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ProjectRecord(item.getString("id"), item.optString("name", "项目"), item.optString("instructions", ""), item.optLong("created_at", System.currentTimeMillis()))
-        }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
-    }.getOrDefault(emptyList())
-    return (if (parsed.any { it.id == "default" }) parsed else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed).take(100)
+    val parsed = if (array == null) emptyList() else (0 until array.length()).map { index ->
+        val item = array.getJSONObject(index)
+        ProjectRecord(
+            item.getString("id"),
+            item.optString("name", "项目"),
+            item.optString("instructions", ""),
+            item.optLong("created_at", System.currentTimeMillis())
+        )
+    }
+    val withDefault = if (parsed.any { it.id == "default" }) parsed
+        else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
+    require(withDefault.size <= 100) { "项目空间数量超出 100 个上限" }
+    require(withDefault.all { it.id.isNotBlank() && it.id.length <= 120 && it.name.trim().length in 1..40 && it.instructions.length <= 4000 }) {
+        "项目空间字段无效"
+    }
+    require(withDefault.map { it.id }.distinct().size == withDefault.size) { "项目空间 ID 重复" }
+    require(withDefault.map { it.name.trim().lowercase() }.distinct().size == withDefault.size) { "项目空间名称重复" }
+    return withDefault
 }
 
 private fun projectsToJson(projects: List<ProjectRecord>): String {
