@@ -15,6 +15,13 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 
 data class KnowledgeImportResult(val document: KnowledgeDocumentEntity, val duplicate: Boolean)
+data class KnowledgeSearchResult(
+ val documentName: String,
+ val chunkPosition: Int,
+ val content: String,
+ val matchedTerms: List<String>,
+ val score: Int
+)
 object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
@@ -51,24 +58,42 @@ object KnowledgeStore {
   KnowledgeImportResult(saved,saved.id!=document.id)
  }
 
- suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String):String=withContext(Dispatchers.IO) {
-  val terms=KnowledgeSearchEngine.extractTerms(prompt)
-  if(terms.isEmpty()) return@withContext ""
-  val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
-  terms.forEach { term ->
-   dao.searchKnowledgeChunks(projectId,term,12).forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
+ suspend fun search(
+   dao:NestroDao,
+   projectId:String,
+   prompt:String,
+   limit:Int=6
+  ):List<KnowledgeSearchResult> = withContext(Dispatchers.IO) {
+   if(limit<=0) return@withContext emptyList()
+   val terms=KnowledgeSearchEngine.extractTerms(prompt)
+   if(terms.isEmpty()) return@withContext emptyList()
+   val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
+   terms.forEach { term ->
+    dao.searchKnowledgeChunks(projectId,term,12).forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
+   }
+   if(candidates.isEmpty()) return@withContext emptyList()
+   val documents=dao.knowledgeDocuments(projectId).associateBy { it.id }
+   KnowledgeSearchEngine.rank(prompt,candidates.values.toList(),limit).map { match ->
+    KnowledgeSearchResult(
+     documentName=documents[match.chunk.documentId]?.name ?: "本地文档",
+     chunkPosition=match.chunk.position,
+     content=match.chunk.content,
+     matchedTerms=match.matchedTerms,
+     score=match.score
+    )
+   }
   }
-  val ranked=KnowledgeSearchEngine.rank(prompt,candidates.values.toList(),6)
-  if(ranked.isEmpty()) return@withContext ""
-  val docs=dao.knowledgeDocuments(projectId).associateBy { it.id }
-  val snippets=ranked.joinToString("\n\n") { match ->
-   val item=match.chunk
-   val source=docs[item.documentId]?.name ?: "本地文档"
-   "[来源：$source · 片段 ${item.position+1} · 匹配词：${match.matchedTerms.joinToString("、")} ]\n${item.content.take(1200)}"
-  }.take(7000)
-  "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
- }
- private fun extractOfficeText(ext:String,bytes:ByteArray):String {
+
+  suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String):String {
+   val matches=search(dao,projectId,prompt,6)
+   if(matches.isEmpty()) return ""
+   val snippets=matches.joinToString("\n\n") { match ->
+    "[来源：${match.documentName} · 片段 ${match.chunkPosition+1} · 匹配词：${match.matchedTerms.joinToString("、")} ]\n${match.content.take(1200)}"
+   }.take(7000)
+   return "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
+  }
+
+  private fun extractOfficeText(ext:String,bytes:ByteArray):String {
   val entries=linkedMapOf<String,ByteArray>()
   var expanded=0
   ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
