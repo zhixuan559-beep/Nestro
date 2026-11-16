@@ -280,6 +280,7 @@ fun NestroApp() {
                     selectedTeamId = prefs.getString("selected_team_id", "") ?: ""
                     skills = loadSkills(prefs)
                     skillMetadata = loadSkillMetadata(prefs)
+                    workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
                     automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
@@ -2304,7 +2305,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 3)
+    root.put("version", 4)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -2318,6 +2319,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
+    root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("projects", projectsToJson(loadProjects(prefs)))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val memories = JSONArray()
@@ -2381,7 +2383,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..3) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..4) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -2399,6 +2401,12 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
             require(item.has("id") && item.has("content")) { "消息字段缺失" }
         }
     }
+    val workflowRaw = root.optString("workflows_v1", "[]")
+    val workflowArray = JSONArray(workflowRaw)
+    require(workflowArray.length() <= 100) { "工作流数量超出限制" }
+    val restoredWorkflows = WorkflowDefinitionCodec.decode(workflowRaw)
+    require(restoredWorkflows.size == workflowArray.length()) { "工作流备份包含无效定义" }
+    restoredWorkflows.forEach { WorkflowDefinitionCodec.validate(it) }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
@@ -2547,6 +2555,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("selected_team_id", validSelectedTeam)
         .putString("skills", cleanSkills.toString())
         .putString("skill_metadata_v1", cleanSkillMetadata.toString())
+        .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
         .putString("active_project_id", root.optString("active_project_id", "default"))
         .putLong("local_snapshot_saved_at", System.currentTimeMillis())
