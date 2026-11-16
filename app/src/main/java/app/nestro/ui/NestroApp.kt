@@ -1970,9 +1970,9 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("user_memories", memories)
     val taskArray = JSONArray()
     val taskLogArray = JSONArray()
-    dao.projectIds().forEach { projectId ->
-        dao.phoneAgentTasks(projectId, 50).forEach { task ->
-            if (taskArray.length() >= 500) return@forEach
+    dao.projectIds().forEach projectLoop@ { projectId ->
+        dao.phoneAgentTasks(projectId, 50).forEach taskLoop@ { task ->
+            if (taskArray.length() >= 500) return@taskLoop
             taskArray.put(
                 JSONObject()
                     .put("id", task.id)
@@ -1986,8 +1986,8 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
                     .put("createdAt", task.createdAt)
                     .put("updatedAt", task.updatedAt)
             )
-            dao.phoneAgentTaskLogs(task.id, 100).forEach { log ->
-                if (taskLogArray.length() >= 5000) return@forEach
+            dao.phoneAgentTaskLogs(task.id, 100).forEach logLoop@ { log ->
+                if (taskLogArray.length() >= 5000) return@logLoop
                 taskLogArray.put(
                     JSONObject()
                         .put("id", log.id)
