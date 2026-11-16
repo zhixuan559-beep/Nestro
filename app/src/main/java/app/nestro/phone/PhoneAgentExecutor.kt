@@ -116,7 +116,7 @@ object PhoneAgentExecutor {
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
             if (!success) {
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
                 return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, detail)
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, index + 1)
