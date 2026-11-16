@@ -199,6 +199,7 @@ fun NestroApp() {
     var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
     var automaticMemoryEnabled by remember { mutableStateOf(prefs.getBoolean("automatic_memory_enabled", false)) }
     var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
+    var manualMemoryDraft by remember { mutableStateOf("") }
     var memoryStatus by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -838,8 +839,9 @@ fun NestroApp() {
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val memoryQuery = (requestHistory.filter { it.role == "user" }.takeLast(7).map { it.content } + prompt)
-                        .distinct().joinToString("\n").take(2400)
+                    val memoryQuery = UserMemoryStore.buildRecallQuery(
+                        requestHistory.filter { it.role == "user" }.takeLast(7).map { it.content }, prompt
+                    )
                     val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, memoryQuery).context
                     val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
@@ -936,12 +938,12 @@ fun NestroApp() {
                 busy = false
                 activeRequestId = ""
                 val userFacts = (requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt)
-                    .distinct().takeLast(6)
+                val extractionInput = UserMemoryStore.prepareExtractionInput(userFacts)
                 if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
-                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(userFacts.joinToString("\n"))
+                    extractionInput.isNotEmpty() && UserMemoryStore.shouldExtractFrom(extractionInput)
                 ) {
                     scope.launch(Dispatchers.IO) {
-                        val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
+                        val candidates = runCatching { extractMemoryCandidates(config, extractionInput) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
                             runCatching {
                                 UserMemoryStore.saveCandidates(
@@ -1702,6 +1704,35 @@ fun NestroApp() {
                                 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("保存全局记忆")
                                 }
+                                Text("项目记忆 · 手动添加", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                OutlinedTextField(
+                                    value = manualMemoryDraft,
+                                    onValueChange = { manualMemoryDraft = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("例如：这个项目默认使用 Kotlin + Jetpack Compose…") },
+                                    minLines = 2,
+                                    supportingText = { Text("按长期偏好保存到当前项目；8–180 字，不接受敏感信息。") }
+                                )
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                runCatching { UserMemoryStore.saveManual(database.dao(), activeProjectId, manualMemoryDraft) }
+                                            }
+                                            memoryStatus = result.fold(
+                                                { saved -> if (saved) "项目记忆已添加" else "这条记忆已存在，无需重复添加" },
+                                                { "添加失败：" + (it.message ?: "内容无效") }
+                                            )
+                                            if (result.getOrNull() == true) {
+                                                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                                                manualMemoryDraft = ""
+                                            }
+                                        }
+                                    },
+                                    enabled = manualMemoryDraft.trim().length in 8..180,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("添加到当前项目") }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.weight(1f)) {
@@ -3099,11 +3130,6 @@ private fun loadDisabledSkills(prefs: android.content.SharedPreferences): Set<St
 private fun disabledSkillsToJson(names:Set<String>):String = JSONArray(names.sorted()).toString()
 
 private fun prefsRate(context: Context): Float = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getFloat("tts_speech_rate", 1.0f).coerceIn(0.7f, 1.3f)
-
-private fun shouldExtractAutomaticMemory(prompt: String): Boolean {
-    val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
-    return prompt.length in 8..4000 && signals.any { prompt.contains(it) }
-}
 
 private fun extractMemoryCandidates(config: ModelConfig, userMessages: List<String>): List<MemoryCandidate> {
     val system = """

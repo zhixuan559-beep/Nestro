@@ -121,6 +121,60 @@ object UserMemoryStore {
         return saved
     }
 
+    fun buildRecallQuery(recentUserTurns: List<String>, currentPrompt: String, maxChars: Int = 2400): String {
+        if (maxChars <= 0) return ""
+        val current = currentPrompt.trim()
+        if (current.length >= maxChars) return current.takeLast(maxChars)
+        var remaining = maxChars - current.length - if (current.isNotBlank()) 1 else 0
+        val history = recentUserTurns.asReversed().map { it.trim() }
+            .filter { it.isNotBlank() && it != current }.distinct()
+            .mapNotNull { value ->
+                if (remaining <= 0) return@mapNotNull null
+                val kept = if (value.length > remaining) value.takeLast(remaining) else value
+                remaining -= kept.length + 1
+                kept
+            }.asReversed()
+        return (history + listOf(current).filter { it.isNotBlank() }).joinToString("\n").takeLast(maxChars)
+    }
+
+    fun prepareExtractionInput(messages: List<String>, maxMessages: Int = 6, maxChars: Int = 6000): List<String> {
+        if (maxMessages <= 0 || maxChars <= 0) return emptyList()
+        val safe = messages.map { it.trim() }
+            .filter { it.isNotBlank() && isSafeContent(it) }
+            .distinct().takeLast(maxMessages)
+        var remaining = maxChars
+        val selected = mutableListOf<String>()
+        for (message in safe.asReversed()) {
+            if (remaining <= 0) break
+            val kept = if (message.length > remaining) message.takeLast(remaining) else message
+            if (kept.isNotBlank()) selected += kept
+            remaining -= kept.length + 1
+        }
+        return selected.asReversed()
+    }
+
+    fun shouldExtractFrom(messages: List<String>): Boolean {
+        val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
+        return messages.any { it.length in 8..4000 && signals.any(it::contains) }
+    }
+
+    suspend fun saveManual(dao: NestroDao, projectId: String, content: String): Boolean {
+        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+        require(projectId.isNotBlank()) { "项目空间无效" }
+        require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
+        require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
+        val fingerprint = fingerprint("preference|" + normalized.lowercase())
+        if (dao.userMemoryByFingerprint(projectId, fingerprint) != null) return false
+        val now = System.currentTimeMillis()
+        dao.putUserMemory(UserMemoryEntity(
+            id = UUID.randomUUID().toString(), projectId = projectId, category = "preference",
+            content = normalized, fingerprint = fingerprint, sourceConversationId = "",
+            sourceMessageId = "", confidence = 1.0, createdAt = now, updatedAt = now
+        ))
+        dao.trimUserMemories(projectId, 200)
+        return true
+    }
+
     suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall {
         val ranked = MemoryRecallRanker.rank(query, dao.userMemoriesVisible(projectId, 200), limit)
         if (ranked.isEmpty()) return MemoryRecall("", emptyList())

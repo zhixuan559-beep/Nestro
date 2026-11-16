@@ -26,6 +26,28 @@ class UserMemoryStoreTest {
         assertTrue(MemoryRecallRanker.rank("完全无关的火星探测", listOf(memory("m1", "我偏好简洁直接的表达"))).isEmpty())
     }
 
+    @Test fun recallQueryAlwaysPreservesCurrentPromptWhenHistoryIsLarge() {
+        val query = UserMemoryStore.buildRecallQuery(
+            listOf("旧历史内容".repeat(500), "中间历史".repeat(500)),
+            "当前问题必须保留在检索词中",
+            maxChars = 80
+        )
+        assertTrue(query.length <= 80)
+        assertTrue(query.contains("当前问题必须保留在检索词中"))
+    }
+
+    @Test fun extractionUsesSafeRecentTurnsAndCanTriggerFromEarlierTurn() {
+        val input = UserMemoryStore.prepareExtractionInput(listOf(
+            "我偏好以后所有技术回答先给结论，再解释原因",
+            "我的银行卡号是 6222021234567890123",
+            "请帮我看看这段代码"
+        ))
+        assertEquals(2, input.size)
+        assertTrue(UserMemoryStore.shouldExtractFrom(input))
+        assertFalse(UserMemoryStore.prepareExtractionInput(listOf("我的手机号是 13812345678")).isNotEmpty())
+        assertFalse(UserMemoryStore.shouldExtractFrom(listOf("请帮我看看这段代码")))
+    }
+
     @Test fun recallContextUsesRealLineBreaksAndHonorsEmptyInput() {
         assertEquals("", UserMemoryStore.buildContext("p1", emptyList()))
         val context = UserMemoryStore.buildContext("p1", listOf(memory("m1", "回答时先给结论"), memory("m2", "偏好本地优先")))
