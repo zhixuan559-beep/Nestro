@@ -34,6 +34,8 @@ class UserMemoryStoreTest {
         )
         assertTrue(query.length <= 80)
         assertTrue(query.contains("当前问题必须保留在检索词中"))
+        val oversizedPrompt = "当前问题开头".repeat(30)
+        assertTrue(UserMemoryStore.buildRecallQuery(emptyList(), oversizedPrompt, 30).startsWith("当前问题开头"))
     }
 
     @Test fun extractionUsesSafeRecentTurnsAndCanTriggerFromEarlierTurn() {

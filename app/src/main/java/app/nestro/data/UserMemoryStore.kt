@@ -124,7 +124,7 @@ object UserMemoryStore {
     fun buildRecallQuery(recentUserTurns: List<String>, currentPrompt: String, maxChars: Int = 2400): String {
         if (maxChars <= 0) return ""
         val current = currentPrompt.trim()
-        if (current.length >= maxChars) return current.takeLast(maxChars)
+        if (current.length >= maxChars) return current.take(maxChars)
         var remaining = maxChars - current.length - if (current.isNotBlank()) 1 else 0
         val history = recentUserTurns.asReversed().map { it.trim() }
             .filter { it.isNotBlank() && it != current }.distinct()
@@ -146,7 +146,7 @@ object UserMemoryStore {
         val selected = mutableListOf<String>()
         for (message in safe.asReversed()) {
             if (remaining <= 0) break
-            val kept = if (message.length > remaining) message.takeLast(remaining) else message
+            val kept = if (message.length > remaining) message.take(remaining) else message
             if (kept.isNotBlank()) selected += kept
             remaining -= kept.length + 1
         }
@@ -155,7 +155,7 @@ object UserMemoryStore {
 
     fun shouldExtractFrom(messages: List<String>): Boolean {
         val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
-        return messages.any { it.length in 8..4000 && signals.any(it::contains) }
+        return messages.any { message -> message.length in 8..4000 && signals.any { signal -> message.contains(signal) } }
     }
 
     suspend fun saveManual(dao: NestroDao, projectId: String, content: String): Boolean {
