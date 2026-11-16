@@ -929,7 +929,10 @@ fun NestroApp() {
                                                              stopRequested -> "工作流已停止。"
                                                              result.isSuccess -> {
                                                                  val completed = result.getOrThrow()
-                                                                 "工作流「${workflow.name}」已完成（${completed.completedSteps} 步）。\n\n${completed.output}"
+                                                                 "工作流「${workflow.name}」已完成（${completed.completedSteps} 步成功）。\n" +
+                                                                     completed.stepRuns.joinToString("\n") { run ->
+                                                                         "${if (run.status == "success") "✓" else "⚠"} ${run.title} · ${run.attempts} 次尝试"
+                                                                     } + "\n\n" + completed.output
                                                              }
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
@@ -1839,6 +1842,32 @@ fun NestroApp() {
                                 minLines = 3,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = {
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(retries = (item.retries + 1) % 4) else item
+                                    }
+                                }) { Text("失败重试：${step.retries} 次", color = Mint) }
+                                TextButton(onClick = {
+                                    val limits = listOf(30, 60, 120, 180, 300)
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) {
+                                            val next = limits.indexOf(item.timeoutSeconds).let { (it + 1).mod(limits.size) }
+                                            item.copy(timeoutSeconds = limits[next])
+                                        } else item
+                                    }
+                                }) { Text("超时：${step.timeoutSeconds} 秒", color = Mint) }
+                            }
+                            TextButton(onClick = {
+                                workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                    if (stepIndex == index) item.copy(continueOnError = !item.continueOnError) else item
+                                }
+                            }) {
+                                Text(
+                                    if (step.continueOnError) "失败后：继续执行" else "失败后：停止工作流",
+                                    color = if (step.continueOnError) Mint else Muted
+                                )
+                            }
                         }
                     }
                     OutlinedButton(
