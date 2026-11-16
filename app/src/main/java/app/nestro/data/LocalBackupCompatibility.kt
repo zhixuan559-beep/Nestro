@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object LocalBackupCompatibility {
-    const val CURRENT_VERSION = 10
+    const val CURRENT_VERSION = 11
 
     fun isSupported(version: Int): Boolean = version in 1..CURRENT_VERSION
 

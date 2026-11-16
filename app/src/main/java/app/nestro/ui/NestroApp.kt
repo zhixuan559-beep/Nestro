@@ -3418,6 +3418,15 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
+    root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
+    root.put("tts_speech_rate", prefs.getFloat("tts_speech_rate", 1.0f).toDouble())
+    val phoneAudit = runCatching { JSONArray(prefs.getString("phone_audit", "[]") ?: "[]") }.getOrDefault(JSONArray())
+    val auditSnapshot = JSONArray()
+    for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
+        val item = phoneAudit.optJSONObject(index) ?: continue
+        auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", item.optString("action").take(60)).put("detail", item.optString("detail").take(180)))
+    }
+    root.put("phone_audit_v1", auditSnapshot)
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
@@ -3576,6 +3585,18 @@ private suspend fun restoreLocalBackup(context: Context, prefs: android.content.
     require(restoredTeamHistory.size==teamHistoryArray.length()) { "专家团队运行记录包含无效数据" }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
+    val restoredSpeechRate = root.optDouble("tts_speech_rate", 1.0).toFloat()
+    require(restoredSpeechRate.isFinite() && restoredSpeechRate in 0.7f..1.3f) { "语音播放速度无效" }
+    val auditRows = root.optJSONArray("phone_audit_v1") ?: JSONArray()
+    require(auditRows.length() <= 100) { "Phone Agent 安全审计记录数量超出限制" }
+    val restoredPhoneAudit = JSONArray()
+    for (index in 0 until auditRows.length()) {
+        val item = auditRows.getJSONObject(index)
+        val action = item.optString("action")
+        val detail = item.optString("detail")
+        require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 审计记录字段无效" }
+        restoredPhoneAudit.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
+    }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
     val restoredProjects = parseProjects(root.optJSONArray("projects"))
@@ -3826,6 +3847,9 @@ private suspend fun restoreLocalBackup(context: Context, prefs: android.content.
         .putString("conversations_v1", normalizedConversationBackup.toString())
         .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
+        .putBoolean("automatic_memory_enabled", root.optBoolean("automatic_memory_enabled", false))
+        .putFloat("tts_speech_rate", restoredSpeechRate)
+        .putString("phone_audit", restoredPhoneAudit.toString())
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("selected_expert", restoredSelectedExpert)
