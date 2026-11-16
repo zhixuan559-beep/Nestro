@@ -403,6 +403,18 @@ interface NestroDao {
 
     @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY position ASC LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
+
+    @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId")
+    suspend fun knowledgeChunkCount(projectId: String): Int
+
+    @Query("SELECT AVG(LENGTH(content)) FROM knowledge_chunks WHERE projectId = :projectId")
+    suspend fun knowledgeAverageChunkLength(projectId: String): Double?
+
+    @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0")
+    suspend fun knowledgeChunkDocumentFrequency(projectId: String, term: String): Int
+
+    @Query("SELECT COUNT(*) FROM knowledge_chunks_fts JOIN knowledge_chunks AS kc ON kc.id = knowledge_chunks_fts.chunkId WHERE knowledge_chunks_fts MATCH :matchQuery AND kc.projectId = :projectId")
+    suspend fun knowledgeFtsDocumentFrequency(projectId: String, matchQuery: String): Int
 }
 
 @Database(

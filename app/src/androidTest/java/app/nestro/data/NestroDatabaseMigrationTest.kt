@@ -36,6 +36,29 @@ class NestroDatabaseMigrationTest {
         }
     }
 
+    @Test fun knowledgeSearchIsolatedByProjectForFtsAndChineseFallback() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("p1-doc", "p1", "项目一资料", "text/plain", 1, 1, "1".repeat(64)))
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("p2-doc", "p2", "项目二资料", "text/plain", 1, 1, "2".repeat(64)))
+            dao.insertKnowledgeChunks(listOf(
+                KnowledgeChunkEntity("p1-chunk", "p1-doc", "p1", 0, "SQLite 私有知识库定位资料"),
+                KnowledgeChunkEntity("p2-chunk", "p2-doc", "p2", 0, "SQLite 公开知识库定位资料")
+            ))
+
+            val p1English = KnowledgeStore.search(dao, "p1", "SQLite", 6)
+            val p2English = KnowledgeStore.search(dao, "p2", "SQLite", 6)
+            assertEquals(listOf("项目一资料"), p1English.map { it.documentName })
+            assertEquals(listOf("项目二资料"), p2English.map { it.documentName })
+
+            val p1Chinese = KnowledgeStore.search(dao, "p1", "私有知识库定位", 6)
+            assertEquals(listOf("项目一资料"), p1Chinese.map { it.documentName })
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun projectDeletionGuardChecksEveryProjectOwnedDataFamily() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {

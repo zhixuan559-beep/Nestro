@@ -30,7 +30,7 @@ data class KnowledgeSearchResult(
 object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
- private const val MAX_CANDIDATES_PER_TERM=80
+ private const val MAX_CANDIDATES_PER_TERM=200
 
  suspend fun importText(context:Context,resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
   val mime=resolver.getType(uri).orEmpty().lowercase()
@@ -83,7 +83,26 @@ object KnowledgeStore {
    }
    if(candidates.isEmpty()) return@withContext emptyList()
    val documents=dao.knowledgeDocuments(projectId).associateBy { it.id }
-   KnowledgeSearchEngine.rank(prompt,candidates.values.toList(),limit).map { match ->
+   val corpusSize = dao.knowledgeChunkCount(projectId)
+   val averageDocumentLength = dao.knowledgeAverageChunkLength(projectId) ?: 1.0
+   val documentFrequencies = terms.associateWith { term ->
+    if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
+     dao.knowledgeFtsDocumentFrequency(
+      projectId,
+      "\"" + term.replace("\"", "\"\"") + "\""
+     )
+    } else {
+     dao.knowledgeChunkDocumentFrequency(projectId, term)
+    }
+   }
+   KnowledgeSearchEngine.rank(
+    prompt,
+    candidates.values.toList(),
+    limit,
+    corpusSize = corpusSize,
+    documentFrequencies = documentFrequencies,
+    averageDocumentLength = averageDocumentLength
+   ).map { match ->
     KnowledgeSearchResult(
      documentName=documents[match.chunk.documentId]?.name ?: "本地文档",
      chunkPosition=match.chunk.position,

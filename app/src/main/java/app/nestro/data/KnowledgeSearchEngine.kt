@@ -22,15 +22,16 @@ object KnowledgeSearchEngine {
         "我们", "你们", "他们", "一个", "没有", "不是", "需要"
     )
 
-    fun extractTerms(prompt: String, limit: Int = 24): List<String> {
+    fun extractTerms(prompt: String, limit: Int = 64): List<String> {
         if (limit <= 0) return emptyList()
-        val terms = linkedSetOf<String>()
+        val latinTerms = linkedSetOf<String>()
         val normalized = prompt.lowercase()
         Regex("[a-z0-9][a-z0-9_-]{1,31}").findAll(normalized).forEach {
             val term = it.value
-            if (term !in ignoredTerms) terms += term
+            if (term !in ignoredTerms) latinTerms += term
         }
 
+        val cjkTerms = linkedSetOf<String>()
         val cjkSearchText = ignoredTerms
             .sortedByDescending { it.length }
             .fold(normalized) { text, ignored -> text.replace(ignored, " ") }
@@ -42,17 +43,34 @@ object KnowledgeSearchEngine {
                 if (run.length < size) continue
                 for (index in 0..(run.length - size)) {
                     val term = run.substring(index, index + size)
-                    if (term !in ignoredTerms) terms += term
+                    if (term !in ignoredTerms) cjkTerms += term
                 }
             }
         }
-        return terms.take(limit)
+
+        if (latinTerms.size >= limit) return latinTerms.take(limit)
+        val selected = latinTerms.toMutableList()
+        val remaining = limit - selected.size
+        if (cjkTerms.size <= remaining) return selected + cjkTerms
+        if (remaining == 1) {
+            selected += cjkTerms.first()
+        } else if (remaining > 1) {
+            val candidates = cjkTerms.toList()
+            for (slot in 0 until remaining) {
+                val index = slot * (candidates.size - 1) / (remaining - 1)
+                selected += candidates[index]
+            }
+        }
+        return selected.distinct().take(limit)
     }
 
     fun rank(
         prompt: String,
         chunks: List<KnowledgeChunkEntity>,
-        limit: Int = 6
+        limit: Int = 6,
+        corpusSize: Int = chunks.size,
+        documentFrequencies: Map<String, Int> = emptyMap(),
+        averageDocumentLength: Double? = null
     ): List<Match> {
         if (limit <= 0 || chunks.isEmpty()) return emptyList()
         val terms = extractTerms(prompt)
@@ -65,11 +83,13 @@ object KnowledgeSearchEngine {
             }
             Triple(chunk, frequencies, content.length.coerceAtLeast(1))
         }
-        val averageLength = tokenized.map { it.third }.average().coerceAtLeast(1.0)
+        val averageLength = (averageDocumentLength ?: tokenized.map { it.third }.average()).coerceAtLeast(1.0)
         val documentFrequency = terms.associateWith { term ->
-            tokenized.count { (_, frequencies, _) -> (frequencies[term] ?: 0) > 0 }
+            documentFrequencies[term]
+                ?.coerceIn(0, corpusSize.coerceAtLeast(0))
+                ?: tokenized.count { (_, frequencies, _) -> (frequencies[term] ?: 0) > 0 }
         }
-        val totalDocuments = tokenized.size.toDouble()
+        val totalDocuments = corpusSize.coerceAtLeast(tokenized.size).toDouble()
 
         return tokenized.mapNotNull { (chunk, frequencies, length) ->
             val matched = terms.filter { (frequencies[it] ?: 0) > 0 }

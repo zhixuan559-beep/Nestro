@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.nestro.data.ConversationEntity
 import app.nestro.data.KnowledgeChunkEntity
+import app.nestro.data.KnowledgeStore
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.MessageEntity
@@ -72,6 +73,8 @@ class LocalBackupRoundTripTest {
             assertEquals("保留这条消息", dao.loadConversations().single().messages.single().content)
             assertTrue("恢复必须保留非默认项目", dao.loadProjects().any { it.id == "p1" })
             assertEquals("这是需要恢复的知识库片段内容", dao.allKnowledgeChunks().single().content)
+            val restoredHits = KnowledgeStore.search(dao, "p1", "需要恢复的知识库", 6)
+            assertTrue("恢复后必须能通过重建/同步的检索索引命中文档", restoredHits.any { it.content.contains("这是需要恢复的知识库片段内容") })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
