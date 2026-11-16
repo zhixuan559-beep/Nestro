@@ -2391,7 +2391,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "重试任务"; else -> "继续任务" }) }
+                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
