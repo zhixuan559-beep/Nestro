@@ -119,6 +119,12 @@ private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
 private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 
 private data class ChatMessage(val id: String, val role: String, val content: String, val versions: List<String> = emptyList(), val activeVersion: Int = 0)
+
+private fun ChatMessage.allVersions(): List<String> = when {
+    versions.isEmpty() -> listOf(content)
+    activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
+    else -> versions.distinct().takeLast(20)
+}
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long)
 private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
@@ -193,6 +199,7 @@ fun NestroApp() {
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var stopRequested by remember { mutableStateOf(false) }
+    var activeRequestId by remember { mutableStateOf("") }
     var reuseLastUserOnSend by remember { mutableStateOf(false) }
     var pendingAssistantRevision by remember { mutableStateOf<ChatMessage?>(null) }
     var status by remember { mutableStateOf("尚未配置模型") }
@@ -703,6 +710,7 @@ fun NestroApp() {
             val previousAssistant = pendingAssistantRevision
             pendingAssistantRevision = null
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
+            activeRequestId = assistantId
             val requestProjectId = activeProjectId
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
@@ -815,10 +823,12 @@ fun NestroApp() {
                     result.isSuccess -> result.getOrThrow()
                     partialAnswer.isNotEmpty() -> partialAnswer.toString()
                     stopRequested -> "已停止生成。"
+                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
-                val priorVersions = previousAssistant?.let { (it.versions + it.content).filter(String::isNotBlank).distinct().takeLast(20) }.orEmpty()
-                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, priorVersions, priorVersions.size)
+                val priorVersions = previousAssistant?.allVersions().orEmpty()
+                val nextVersions = (priorVersions + finalText).filter(String::isNotBlank).distinct().takeLast(20)
+                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, nextVersions, nextVersions.lastIndex)
                 conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
@@ -827,6 +837,7 @@ fun NestroApp() {
                     else -> "连接失败"
                 }
                 busy = false
+                activeRequestId = ""
                 if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
                     shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(prompt)
                 ) {
@@ -969,9 +980,9 @@ fun NestroApp() {
                     onVersionChange = { version ->
                         val index = messages.indexOfFirst { it.id == msg.id }
                         if (index >= 0) {
-                            val allVersions = (msg.versions + msg.content).distinct()
+                            val allVersions = msg.allVersions()
                             val chosen = version.coerceIn(0, allVersions.lastIndex)
-                            messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions.filterIndexed { i, _ -> i != chosen }, activeVersion = chosen) }
+                            messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions, activeVersion = chosen) }
                             conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
                         }
                     },
@@ -2660,7 +2671,7 @@ private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = n
                 }
             }
             if (!user && message.versions.isNotEmpty() && onVersionChange != null) {
-                val versionCount = message.versions.size + 1
+                val versionCount = message.allVersions().size
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(enabled = message.activeVersion > 0, onClick = { onVersionChange(message.activeVersion - 1) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("‹", color = Mint) }
                     Text("版本 ${message.activeVersion + 1}/$versionCount", color = Muted, style = MaterialTheme.typography.labelSmall)
