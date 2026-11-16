@@ -6,6 +6,8 @@ import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.nestro.data.ConversationEntity
+import app.nestro.data.CapabilityTaskStore
+import app.nestro.data.CapabilityTaskState
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.KnowledgeDocumentEntity
@@ -55,6 +57,16 @@ class LocalBackupRoundTripTest {
             ))
             dao.putConversation(ConversationEntity("c1", "备份测试会话", 3L, "p1"))
             dao.putConversation(ConversationEntity("c2", "另一条会话", 4L, "p1"))
+            val capabilityTask = CapabilityTaskStore.enqueue(
+                dao, "p1", "c1", "chat_dispatch", "dispatcher",
+                "统一任务备份测试", "恢复后仍可查看任务状态", "backup-round-trip-task"
+            )
+            assertTrue(CapabilityTaskStore.claimNext(dao, "p1") != null)
+            assertTrue(CapabilityTaskStore.transition(
+                dao, capabilityTask.id, CapabilityTaskState.SUCCEEDED, "test_complete", "测试任务完成",
+                resultSummary = "已完成并纳入备份"
+            ))
+
             dao.putMessages(listOf(
                 MessageEntity("m1", "c1", 0, "user", "保留这条消息", "[]", 0),
                 MessageEntity("m2", "c2", 0, "user", "另一条会话的消息", "[]", 0)
@@ -74,6 +86,7 @@ class LocalBackupRoundTripTest {
                 dao.deleteAllKnowledgeDocuments()
                 dao.deleteAllUserMemories()
                 dao.deleteAllPhoneAgentTasks()
+                dao.deleteAllCapabilityTasks()
                 dao.deleteAllProjects()
             }
             prefs.edit().putBoolean("automatic_memory_enabled", false).putFloat("tts_speech_rate", 1.0f).putString("phone_audit", "[]").commit()
@@ -86,6 +99,12 @@ class LocalBackupRoundTripTest {
             val restoredHits = KnowledgeStore.search(dao, "p1", "需要恢复的知识库", 6)
             assertTrue("恢复后必须能通过重建/同步的检索索引命中文档", restoredHits.any { it.content.contains("这是需要恢复的知识库片段内容") })
             assertEquals(3, dao.allUserMemories().size)
+            val restoredCapabilityTask = dao.capabilityTasks("p1").single()
+            assertEquals(capabilityTask.id, restoredCapabilityTask.id)
+            assertEquals(CapabilityTaskState.SUCCEEDED, restoredCapabilityTask.state)
+            assertEquals("已完成并纳入备份", restoredCapabilityTask.resultSummary)
+            assertTrue("任务状态变化应有持久事件轨迹", dao.capabilityTaskEvents(restoredCapabilityTask.id).size >= 3)
+
             val restoredPreference = dao.allUserMemories().first { it.id == "mem1" }
             assertEquals("偏好使用简洁中文表达", restoredPreference.content)
             assertEquals("c1", restoredPreference.sourceConversationId)

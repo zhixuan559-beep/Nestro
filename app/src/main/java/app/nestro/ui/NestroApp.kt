@@ -822,6 +822,7 @@ fun NestroApp() {
                 CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.WAITING_USER, "chat_waiting_model", "等待配置可用模型", error = "尚未配置模型 API")
             }
             status = "请先配置模型 API"
+            if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
             conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
         } else {
@@ -880,6 +881,7 @@ fun NestroApp() {
                     }
                     busy = false
                     activeRequestId = ""
+                    if (activeCapabilityTaskId == requestCapabilityTaskId) activeCapabilityTaskId = ""
                     stopRequested = false
                     return@launch
                 }
