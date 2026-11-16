@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.ln
 
-data class MemoryCandidate(val category: String, val content: String, val confidence: Double)
+data class MemoryCandidate(val category: String, val content: String, val confidence: Double, val supersedesId: String? = null)
 data class MemoryRecall(val context: String, val memories: List<UserMemoryEntity>)
 
 /** Offline memory recall using BM25-style weighting, CJK n-grams, phrase coverage and recency. */
@@ -111,8 +111,17 @@ object UserMemoryStore {
             if (category !in allowedCategories || content.length !in 8..180) return@forEach
             if (candidate.confidence !in 0.8..1.0 || containsSensitiveData(content)) return@forEach
             val fingerprint = fingerprintFor(category + "|" + content.lowercase())
-            val old = dao.userMemoryByFingerprint(projectId, fingerprint)
             val now = System.currentTimeMillis()
+            val supersedesId = candidate.supersedesId?.trim().orEmpty()
+            if (supersedesId.isNotBlank() && dao.replaceUserMemoryIfUnconflicted(
+                    supersedesId, projectId, category, content, fingerprint, conversationId, messageId,
+                    candidate.confidence, now
+                )
+            ) {
+                saved++
+                return@forEach
+            }
+            val old = dao.userMemoryByFingerprint(projectId, fingerprint)
             dao.upsertUserMemoryByFingerprint(UserMemoryEntity(
                 id = old?.id ?: UUID.randomUUID().toString(), projectId = projectId, category = category,
                 content = content, fingerprint = fingerprint, sourceConversationId = conversationId,

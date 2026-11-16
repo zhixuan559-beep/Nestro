@@ -152,6 +152,48 @@ class NestroDatabaseMigrationTest {
         }
     }
 
+    @Test fun explicitMemoryCorrectionReplacesOnlyTheNamedOwnerProjectRecord() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            dao.putUserMemory(UserMemoryEntity("old-id", "p1", "project", "项目此前采用 SQLite 数据库", "old-fingerprint", "", "", 0.9, 10, 10, true))
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("project", "项目现在采用 PostgreSQL 数据库", 0.96, "old-id"))
+            )
+            val current = dao.userMemories("p1").single()
+            assertEquals(1, saved)
+            assertEquals("old-id", current.id)
+            assertEquals("项目现在采用 PostgreSQL 数据库", current.content)
+            assertTrue(current.shareAcrossProjects)
+            assertEquals("c1", current.sourceConversationId)
+            assertEquals("m1", current.sourceMessageId)
+            assertEquals(10L, current.createdAt)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun memoryCrudEditsCategoryFingerprintAndReportsDeleteResult() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            assertTrue(UserMemoryStore.saveManual(dao, "p1", "项目默认使用本地数据库存储配置", "preference"))
+            val saved = dao.userMemories("p1").single()
+            UserMemoryStore.edit(dao, saved.id, "p1", "项目默认使用 SQLite 数据库存储配置", "workflow")
+            val edited = dao.userMemories("p1").single()
+            assertEquals("workflow", edited.category)
+            assertEquals(UserMemoryStore.fingerprintFor("workflow|项目默认使用 sqlite 数据库存储配置"), edited.fingerprint)
+            assertTrue(UserMemoryStore.delete(dao, edited.id, "p1"))
+            assertFalse(UserMemoryStore.delete(dao, edited.id, "p1"))
+            assertTrue(dao.userMemories("p1").isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun memorySharingRequiresExplicitOwnerAuthorization() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {

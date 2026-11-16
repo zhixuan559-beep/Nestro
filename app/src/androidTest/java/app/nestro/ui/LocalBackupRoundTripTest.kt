@@ -86,7 +86,14 @@ class LocalBackupRoundTripTest {
             val restoredHits = KnowledgeStore.search(dao, "p1", "需要恢复的知识库", 6)
             assertTrue("恢复后必须能通过重建/同步的检索索引命中文档", restoredHits.any { it.content.contains("这是需要恢复的知识库片段内容") })
             assertEquals(3, dao.allUserMemories().size)
-            assertEquals("偏好使用简洁中文表达", dao.allUserMemories().first { it.id == "mem1" }.content)
+            val restoredPreference = dao.allUserMemories().first { it.id == "mem1" }
+            assertEquals("偏好使用简洁中文表达", restoredPreference.content)
+            assertEquals("c1", restoredPreference.sourceConversationId)
+            assertEquals("m1", restoredPreference.sourceMessageId)
+            assertFalse(restoredPreference.shareAcrossProjects)
+            assertTrue(dao.allUserMemories().first { it.id == "mem2" }.shareAcrossProjects)
+            val localProjectRecall = UserMemoryStore.recall(dao, "p1", "简洁中文表达").memories.map { it.id }
+            assertTrue("恢复后的本项目记忆必须可以正常召回", "mem1" in localProjectRecall)
             val otherProjectRecall = UserMemoryStore.recall(dao, "p2", "授权共享偏好记忆").memories.map { it.id }
             assertTrue("明确授权的记忆应能跨项目召回", "mem2" in otherProjectRecall)
             assertFalse("未授权的项目记忆不得跨项目召回", "mem1" in otherProjectRecall)

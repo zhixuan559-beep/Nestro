@@ -233,6 +233,22 @@ interface NestroDao {
 
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
     suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
+    @Query("SELECT * FROM user_memories WHERE id = :id AND projectId = :projectId LIMIT 1")
+    suspend fun userMemoryById(id: String, projectId: String): UserMemoryEntity?
+
+    @Query("UPDATE user_memories SET content = :content, fingerprint = :fingerprint, sourceConversationId = :conversationId, sourceMessageId = :messageId, confidence = :confidence, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId AND category = :category")
+    suspend fun replaceUserMemoryContent(id: String, projectId: String, category: String, content: String, fingerprint: String, conversationId: String, messageId: String, confidence: Double, updatedAt: Long): Int
+
+    @Transaction
+    suspend fun replaceUserMemoryIfUnconflicted(
+        id: String, projectId: String, category: String, content: String, fingerprint: String,
+        conversationId: String, messageId: String, confidence: Double, updatedAt: Long
+    ): Boolean {
+        val current = userMemoryById(id, projectId) ?: return false
+        if (current.category != category) return false
+        if (userMemoryFingerprintExists(projectId, fingerprint, id)) return false
+        return replaceUserMemoryContent(id, projectId, category, content, fingerprint, conversationId, messageId, confidence, updatedAt) > 0
+    }
     @Query("SELECT EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint AND id != :excludeId)")
     suspend fun userMemoryFingerprintExists(projectId: String, fingerprint: String, excludeId: String): Boolean
 
