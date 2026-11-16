@@ -44,12 +44,12 @@ class NestroDatabaseMigrationTest {
 
             dao.putPhoneAgentTask(PhoneAgentTaskEntity("task1", "p1", "c-missing", "目标", "general", "queued", "[]", 0, 1, 1))
             assertEquals(true, dao.projectHasLinkedData("p1"))
-            assertEquals(false, dao.deleteProjectIfEmpty("p1"))
+            assertEquals(false, dao.deleteProjectIfEmpty("p1", "default"))
             dao.deleteAllPhoneAgentTasks()
 
-            assertEquals(true, dao.deleteProjectIfEmpty("p1"))
+            assertEquals(true, dao.deleteProjectIfEmpty("p1", "default"))
             assertEquals(emptyList<String>(), dao.projectIds())
-            assertEquals(false, dao.deleteProjectIfEmpty("default"))
+            assertEquals(false, dao.deleteProjectIfEmpty("default", "default"))
         } finally {
             db.close()
         }
