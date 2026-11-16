@@ -535,10 +535,14 @@ interface NestroDao {
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
     @Query("DELETE FROM phone_agent_tasks WHERE projectId = :projectId")
     suspend fun deletePhoneAgentTasksForProject(projectId: String)
+
+    @Query("DELETE FROM capability_tasks WHERE projectId = :projectId")
+    suspend fun deleteCapabilityTasksForProject(projectId: String)
     @Transaction
     suspend fun deleteProjectAndKnowledge(projectId: String) {
         deleteKnowledgeDocumentsForProject(projectId)
         deletePhoneAgentTasksForProject(projectId)
+        deleteCapabilityTasksForProject(projectId)
         deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }

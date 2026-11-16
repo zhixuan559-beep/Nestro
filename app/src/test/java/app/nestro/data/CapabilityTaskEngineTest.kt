@@ -28,4 +28,14 @@ class CapabilityTaskEngineTest {
         assertFalse(CapabilityTaskState.canTransition(CapabilityTaskState.QUEUED, CapabilityTaskState.SUCCEEDED))
         assertFalse(CapabilityTaskState.canTransition(CapabilityTaskState.QUEUED, CapabilityTaskState.RETRY_WAIT))
     }
+    @Test fun idempotencyKeysAreStableAndProjectScoped() {
+        val first = CapabilityTaskStore.idempotencyKey("project-a", "workflow", "request-123")
+        val repeated = CapabilityTaskStore.idempotencyKey("project-a", "workflow", "request-123")
+        val otherProject = CapabilityTaskStore.idempotencyKey("project-b", "workflow", "request-123")
+        assertTrue(first == repeated)
+        assertTrue(first != otherProject)
+        assertTrue(first.matches(Regex("[a-f0-9]{64}")))
+    }
+
+
 }
