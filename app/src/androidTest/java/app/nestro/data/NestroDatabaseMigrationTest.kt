@@ -135,7 +135,22 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionTenWithoutLosingConversationData() = runBlocking {
+    @Test fun memorySharingRequiresExplicitOwnerAuthorization() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putUserMemory(UserMemoryEntity("private", "p1", "preference", "项目一私有记忆", "fp-private", "c1", "m1", 0.9, 1, 1))
+            dao.putUserMemory(UserMemoryEntity("shared", "p1", "constraint", "项目一授权共享记忆", "fp-shared", "c1", "m2", 0.9, 2, 2, true))
+            assertEquals(listOf("shared"), dao.userMemoriesVisible("p2").map { it.id })
+            assertEquals(setOf("private", "shared"), dao.userMemoriesVisible("p1").map { it.id }.toSet())
+            assertEquals(1, dao.setUserMemorySharing("shared", "p1", false, 3))
+            assertEquals(emptyList<UserMemoryEntity>(), dao.userMemoriesVisible("p2"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun migratesVersionOneDatabaseThroughVersionElevenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -156,7 +171,7 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(10, schemaVersion)
+            assertEquals(11, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
@@ -172,6 +187,14 @@ class NestroDatabaseMigrationTest {
             }
             assertTrue(indexNames.contains("index_knowledge_chunks_documentId_position"))
             assertTrue(indexNames.contains("index_knowledge_chunks_projectId_position"))
+            val memoryColumnsCursor = migrated.openHelper.writableDatabase.query("PRAGMA table_info('user_memories')")
+            val memoryColumns = memoryColumnsCursor.use { cursor ->
+                val names = mutableSetOf<String>()
+                val nameColumn = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) names += cursor.getString(nameColumn)
+                names
+            }
+            assertTrue(memoryColumns.contains("shareAcrossProjects"))
             val dao = migrated.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fts-doc", "default", "FTS", "text/plain", 1, 2, "b".repeat(64)))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("fts-chunk", "fts-doc", "default", 0, "Android offline search index")))

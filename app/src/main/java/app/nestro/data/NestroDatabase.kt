@@ -97,7 +97,8 @@ data class UserMemoryEntity(
     val sourceMessageId: String,
     val confidence: Double,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "0") val shareAcrossProjects: Boolean = false
 )
 
 @Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
@@ -221,6 +222,12 @@ interface NestroDao {
     ): List<ConversationMemoryHit>
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+
+    @Query("SELECT * FROM user_memories WHERE projectId = :projectId OR shareAcrossProjects = 1 ORDER BY CASE WHEN projectId = :projectId THEN 0 ELSE 1 END, updatedAt DESC LIMIT :limit")
+    suspend fun userMemoriesVisible(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+
+    @Query("UPDATE user_memories SET shareAcrossProjects = :enabled, updatedAt = :updatedAt WHERE id = :id AND projectId = :ownerProjectId")
+    suspend fun setUserMemorySharing(id: String, ownerProjectId: String, enabled: Boolean, updatedAt: Long): Int
     @Query("SELECT * FROM user_memories ORDER BY projectId, updatedAt DESC")
     suspend fun allUserMemories(): List<UserMemoryEntity>
 
@@ -426,7 +433,7 @@ interface NestroDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
@@ -444,6 +451,12 @@ abstract class NestroDatabase : RoomDatabase() {
         internal val KNOWLEDGE_FTS_CALLBACK = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 createKnowledgeFts(db)
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_memories ADD COLUMN shareAcrossProjects INTEGER NOT NULL DEFAULT 0")
             }
         }
 
@@ -515,7 +528,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =

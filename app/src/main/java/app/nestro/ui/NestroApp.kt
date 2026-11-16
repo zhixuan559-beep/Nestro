@@ -1720,14 +1720,58 @@ fun NestroApp() {
                                     automaticMemories.forEach { memory ->
                                         Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Text("${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
-                                                OutlinedTextField(
-                                                    value = memoryEdits[memory.id] ?: memory.content,
-                                                    onValueChange = { memoryEdits = memoryEdits + (memory.id to it) },
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    minLines = 2
-                                                )
-                                                Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                val ownerProjectName = projects.firstOrNull { it.id == memory.projectId }?.name ?: memory.projectId
+                                                val isOwnerProject = memory.projectId == activeProjectId
+                                                val categoryLabel = when (memory.category) {
+                                                    "preference" -> "长期偏好"
+                                                    "workflow" -> "工作方式"
+                                                    "project" -> "项目信息"
+                                                    "constraint" -> "执行约束"
+                                                    else -> memory.category
+                                                }
+                                                Text("$categoryLabel · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                if (isOwnerProject) {
+                                                    OutlinedTextField(
+                                                        value = memoryEdits[memory.id] ?: memory.content,
+                                                        onValueChange = { memoryEdits = memoryEdits + (memory.id to it) },
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        minLines = 2
+                                                    )
+                                                } else {
+                                                    Text(memory.content, color = Ink, style = MaterialTheme.typography.bodyMedium)
+                                                    Text("来自项目「$ownerProjectName」的授权共享记忆 · 只读", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                                Text("所属项目：$ownerProjectName · 来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+                                                Text("创建：${dateFormat.format(Date(memory.createdAt))} · 最近更新：${dateFormat.format(Date(memory.updatedAt))}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                if (isOwnerProject) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                                        Column(Modifier.weight(1f)) {
+                                                            Text("跨项目读取授权", color = Ink, style = MaterialTheme.typography.bodyMedium)
+                                                            Text("开启后，其他项目的对话可检索这条记忆；关闭立即撤销。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                        }
+                                                        Switch(
+                                                            checked = memory.shareAcrossProjects,
+                                                            onCheckedChange = { enabled ->
+                                                                scope.launch {
+                                                                    val result = withContext(Dispatchers.IO) {
+                                                                        runCatching { UserMemoryStore.setShareAcrossProjects(database.dao(), memory.id, activeProjectId, enabled) }
+                                                                    }
+                                                                    memoryStatus = result.fold(
+                                                                        { changed -> if (changed) if (enabled) "已授权其他项目读取这条记忆" else "已撤销跨项目读取授权" else "记忆状态已变化，请刷新后重试" },
+                                                                        { "授权更新失败：${it.message ?: "未知错误"}" }
+                                                                    )
+                                                                    if (result.getOrNull() == true) {
+                                                                        automaticMemories = automaticMemories.map { item ->
+                                                                            if (item.id == memory.id) item.copy(shareAcrossProjects = enabled, updatedAt = System.currentTimeMillis()) else item
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        )
+                                                    }
+                                                }
+
                                                 TextButton(
                                                     onClick = {
                                                         val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
@@ -1737,15 +1781,15 @@ fun NestroApp() {
                                                             page = "home"
                                                         }
                                                     },
-                                                    enabled = conversations.any { it.id == memory.sourceConversationId }
+                                                    enabled = memory.projectId == activeProjectId && conversations.any { it.id == memory.sourceConversationId }
                                                 ) { Text("打开来源会话", color = Mint) }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (isOwnerProject) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
                                                         scope.launch {
                                                             val result = withContext(Dispatchers.IO) {
                                                                 runCatching {
                                                                     UserMemoryStore.edit(
-                                                                        database.dao(), memory.id, activeProjectId,
+                                                                        database.dao(), memory.id, memory.projectId,
                                                                         memoryEdits[memory.id] ?: memory.content, memory.category
                                                                     )
                                                                 }
@@ -1759,7 +1803,7 @@ fun NestroApp() {
                                                     }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存修改") }
                                                     TextButton(onClick = {
                                                         scope.launch {
-                                                            withContext(Dispatchers.IO) { UserMemoryStore.delete(database.dao(), memory.id, activeProjectId) }
+                                                            withContext(Dispatchers.IO) { UserMemoryStore.delete(database.dao(), memory.id, memory.projectId) }
                                                             automaticMemories = automaticMemories.filterNot { it.id == memory.id }
                                                             memoryEdits = memoryEdits - memory.id
                                                             memoryStatus = "记忆已删除"
@@ -3664,7 +3708,8 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
         memories.put(JSONObject().put("id", memory.id).put("projectId", memory.projectId).put("category", memory.category)
             .put("content", memory.content).put("fingerprint", memory.fingerprint).put("sourceConversationId", memory.sourceConversationId)
             .put("sourceMessageId", memory.sourceMessageId).put("confidence", memory.confidence)
-            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt))
+            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt)
+            .put("shareAcrossProjects", memory.shareAcrossProjects))
     }
     root.put("user_memories", memories)
     val taskArray = JSONArray()
@@ -3848,7 +3893,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             sourceMessageId = sourceMessageId,
             confidence = confidence,
             createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+            updatedAt = item.optLong("updatedAt", System.currentTimeMillis()),
+            shareAcrossProjects = item.optBoolean("shareAcrossProjects", false)
         )
     }
     val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
