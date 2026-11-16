@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,14 +43,22 @@ jobs:
 
       - name: Verify Room migrations on Android emulator
         uses: ReactiveCircus/android-emulator-runner@v2
-        timeout-minutes: 18
+        timeout-minutes: 15
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none
           disable-animations: true
-          emulator-boot-timeout: 900000
-          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
+          emulator-boot-timeout: 600000
+          script: |
+            set +e
+            gradle --no-daemon --stacktrace connectedDebugAndroidTest
+            test_status=$?
+            adb logcat -d -b all > /tmp/nestro-emulator-logcat.txt
+            if [ "$test_status" -ne 0 ]; then
+              grep -E -i 'FATAL EXCEPTION|AndroidRuntime|Process:|Fatal signal|am_crash|instrumentation' /tmp/nestro-emulator-logcat.txt | tail -n 250 || tail -n 250 /tmp/nestro-emulator-logcat.txt
+            fi
+            exit "$test_status"
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
