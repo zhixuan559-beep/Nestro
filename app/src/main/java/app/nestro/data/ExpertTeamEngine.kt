@@ -15,6 +15,15 @@ data class ExpertTeamMemberTask(
     val rolePrompt:String
 )
 
+object ExpertTeamDefaults {
+    fun rolePrompt(name:String):String = when(name) {
+        "文案官" -> "负责内容表达与文案质量：梳理受众、核心信息、结构、语气和传播表达，指出空话与表达风险。"
+        "选题狐" -> "负责选题与用户洞察：识别真实需求、内容切口、差异化角度、受众痛点和选题验证方式。"
+        "代码佬" -> "负责技术分析与实现判断：评估技术可行性、系统结构、实现步骤、边界条件和工程风险。"
+        else -> ""
+    }
+}
+
 data class ExpertTeamMemberRun(
     val name:String,
     val status:String,

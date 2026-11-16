@@ -647,7 +647,7 @@ fun NestroApp() {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
                         val memberTasks = selectedTeam.members.filter { it in experts }.take(4).map { member ->
-                            ExpertTeamMemberTask(member, expertPrompts[member].orEmpty())
+                            ExpertTeamMemberTask(member, expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) })
                         }
                         val teamRun = ExpertTeamEngine.run(
                             teamName = selectedTeam.name,
@@ -1181,7 +1181,8 @@ fun NestroApp() {
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
                                             TextButton(onClick = {
                                                 val memberBundles = team.members.mapNotNull { member ->
-                                                    expertPrompts[member]?.takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
+                                                    (expertPrompts[member]?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(member))
+                                                        .takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
                                                 }
                                                 if (memberBundles.size >= 2) {
                                                     teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)

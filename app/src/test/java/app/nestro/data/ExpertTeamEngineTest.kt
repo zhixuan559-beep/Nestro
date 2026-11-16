@@ -57,6 +57,13 @@ class ExpertTeamEngineTest {
         assertTrue(result.members.first { it.name=="研究员" }.error.contains("超时"))
     }
 
+    @Test fun builtInExpertsHaveUsableDefaultRoles() {
+        listOf("文案官","选题狐","代码佬").forEach { name ->
+            assertTrue(ExpertTeamDefaults.rolePrompt(name).isNotBlank())
+        }
+        assertEquals("",ExpertTeamDefaults.rolePrompt("未知专家"))
+    }
+
     @Test fun rejectsInvalidTeamSizeAndMissingRoles()=runBlocking {
         try {
             ExpertTeamEngine.run("分析组","分工","任务",members.take(1)) { _,_ -> "x" }
