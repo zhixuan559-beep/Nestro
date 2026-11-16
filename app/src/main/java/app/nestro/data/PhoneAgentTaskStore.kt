@@ -50,6 +50,26 @@ object PhoneAgentTaskStore {
         dao.updatePhoneAgentTaskPlan(taskId, encoded, System.currentTimeMillis())
     }
 
+    fun validatePlanJson(planJson: String): Int {
+        require(planJson.isNotBlank() && planJson.length <= 120_000) { "任务计划为空或超出大小限制" }
+        val rootObject = runCatching { JSONObject(planJson) }.getOrNull()
+        if (rootObject != null && rootObject.has("format")) {
+            return decodeActions(planJson).size
+        }
+        val steps = runCatching { JSONArray(planJson) }.getOrElse { error("任务计划格式无效") }
+        require(steps.length() in 0..80) { "任务步骤数量无效" }
+        val validKinds = PhoneAgentPlanner.StepKind.values().map { it.name }.toSet()
+        val validRisks = PhoneAgentPlanner.Risk.values().map { it.name }.toSet()
+        for (index in 0 until steps.length()) {
+            val step = steps.optJSONObject(index) ?: error("任务步骤格式无效")
+            require(step.optString("kind") in validKinds) { "任务步骤类型无效" }
+            require(step.optString("title").isNotBlank() && step.optString("title").length <= 300) { "任务步骤标题无效" }
+            require(step.optString("risk") in validRisks) { "任务步骤风险等级无效" }
+            require(step.has("requiresUserConfirmation")) { "任务步骤缺少确认策略" }
+        }
+        return steps.length()
+    }
+
     fun decodeActions(planJson: String): List<PhoneAgentExecutor.Action> {
         val root = JSONObject(planJson)
         require(root.optString("format") == "phone_agent_actions_v1") { "任务没有可恢复的动作计划" }

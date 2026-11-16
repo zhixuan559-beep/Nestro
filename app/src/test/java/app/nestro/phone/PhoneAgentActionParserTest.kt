@@ -56,4 +56,39 @@ class PhoneAgentActionParserTest {
         )
         assertEquals(PhoneAgentExecutor.Action.Wait(500), plan.actions.single())
     }
+
+    @Test
+    fun validatesPersistedExecutableActionPlan() {
+        val plan = """{"format":"phone_agent_actions_v1","actions":[{"type":"wait","millis":500}]}"""
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(plan))
+    }
+
+    @Test
+    fun validatesInitialPlannerStepSnapshot() {
+        val plan = """[{"kind":"VERIFY_PAGE","title":"核对页面","risk":"LOW","requiresUserConfirmation":false}]"""
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(plan))
+    }
+
+    @Test
+    fun allowsEmptyPlanAfterTaskClarification() {
+        assertEquals(0, PhoneAgentTaskStore.validatePlanJson("[]"))
+    }
+
+    @Test
+    fun rejectsUnknownActionInRestoredBackup() {
+        try {
+            PhoneAgentTaskStore.validatePlanJson("""{"format":"phone_agent_actions_v1","actions":[{"type":"run_shell"}]}""")
+            fail("unknown action must be rejected")
+        } catch (_: RuntimeException) {
+        }
+    }
+
+    @Test
+    fun rejectsMalformedPlannerStepInRestoredBackup() {
+        try {
+            PhoneAgentTaskStore.validatePlanJson("""[{"kind":"RUN_CODE","title":"执行代码","risk":"LOW","requiresUserConfirmation":false}]""")
+            fail("unknown planner step must be rejected")
+        } catch (_: RuntimeException) {
+        }
+    }
 }
