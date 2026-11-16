@@ -49,6 +49,7 @@ object UserMemoryStore {
             )
             saved++
         }
+        dao.trimUserMemories(projectId, 200)
         return saved
     }
 

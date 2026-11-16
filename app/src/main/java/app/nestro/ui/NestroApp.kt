@@ -457,7 +457,7 @@ fun NestroApp() {
                 }
                 busy = false
                 if (result.isSuccess && !stopRequested && shouldExtractAutomaticMemory(prompt)) {
-                    val userFacts = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content } + prompt
+                    val userFacts = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content }
                     scope.launch(Dispatchers.IO) {
                         val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
@@ -770,7 +770,7 @@ fun NestroApp() {
                                     Text("保存全局记忆")
                                 }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                Text("来源仅限用户明确说过的内容，可逐条修改或删除。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("使用你配置的模型从用户明确表达中提取候选记忆，保存在本机；可逐条修改或删除。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (automaticMemories.isEmpty()) {
                                     Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 } else {
