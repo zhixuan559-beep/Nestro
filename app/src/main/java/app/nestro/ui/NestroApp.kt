@@ -3419,7 +3419,7 @@ private data class LocalBackupDatabaseSnapshot(
     val taskLogs: List<PhoneAgentTaskLogEntity>
 )
 
-private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
+internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val dao = database.dao()
     val snapshot = database.withTransaction {
         val tasks = dao.allPhoneAgentTasks()
@@ -3528,7 +3528,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     return encoded
 }
 
-private suspend fun restoreLocalBackup(context: Context, prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
+internal suspend fun restoreLocalBackup(context: Context, prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     require(raw.length <= 10_000_000) { "备份文件过大" }
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }

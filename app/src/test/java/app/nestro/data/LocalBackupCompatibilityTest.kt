@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
