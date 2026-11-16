@@ -23,6 +23,12 @@ import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.ExpertCatalogRules
+import app.nestro.data.ExpertProfile
+import app.nestro.data.ExpertProfileCodec
+import app.nestro.data.ExpertRevision
+import app.nestro.data.ExpertRevisionCodec
+import app.nestro.data.ExpertTemplate
+import app.nestro.data.ExpertTemplateCodec
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
@@ -179,6 +185,14 @@ fun NestroApp() {
     var showRecallDialog by remember { mutableStateOf(false) }
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
+    var expertProfiles by remember { mutableStateOf(ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")) }
+    var expertRevisions by remember { mutableStateOf(ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")) }
+    var expertTemplates by remember { mutableStateOf(ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")) }
+    var showExpertTemplatesDialog by remember { mutableStateOf(false) }
+    var templateNameDraft by remember { mutableStateOf("") }
+    var showExpertHistoryDialog by remember { mutableStateOf(false) }
+    var historyExpertName by remember { mutableStateOf("") }
+    var historyCompareVersion by remember { mutableStateOf("") }
     var skills by remember { mutableStateOf(loadSkills(prefs)) }
     var skillMetadata by remember { mutableStateOf(loadSkillMetadata(prefs)) }
     var disabledSkills by remember { mutableStateOf(loadDisabledSkills(prefs)) }
@@ -197,6 +211,13 @@ fun NestroApp() {
     var expertDraft by remember { mutableStateOf("") }
     var editingExpertName by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
+    var expertGroupDraft by remember { mutableStateOf("默认") }
+    var expertAvatarDraft by remember { mutableStateOf("✦") }
+    var expertEnabledDraft by remember { mutableStateOf(true) }
+    var expertSkillDraft by remember { mutableStateOf(emptySet<String>()) }
+    var expertTemperatureDraft by remember { mutableStateOf("") }
+    var expertMaxTokensDraft by remember { mutableStateOf("") }
+    var expertDescriptionDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
     var expertDialogError by remember { mutableStateOf("") }
     var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
@@ -611,9 +632,11 @@ fun NestroApp() {
             val requestHistory = messages.toList()
             val assistantId = UUID.randomUUID().toString()
             val requestProjectId = activeProjectId
+            val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                if (selectedTeamId.isBlank()) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (selectedTeamId.isBlank() && expertProfiles[selectedExpert]?.enabled != false) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(expertProfiles[selectedExpert], skills, disabledSkills) else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
@@ -654,8 +677,10 @@ fun NestroApp() {
                     val teamContext = if (selectedTeam != null) {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
-                        val memberTasks = selectedTeam.members.filter { it in experts }.take(4).map { member ->
-                            ExpertTeamMemberTask(member, expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) })
+                        val memberTasks = selectedTeam.members.filter { it in experts && expertProfiles[it]?.enabled != false }.take(4).map { member ->
+                            val role = expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
+                            val attached = ExpertProfileCodec.skillContext(expertProfiles[member], skills, disabledSkills)
+                            ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
                         val teamRun = ExpertTeamEngine.run(
                             teamName = selectedTeam.name,
@@ -686,7 +711,9 @@ fun NestroApp() {
                                     listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
                                         .joinToString("\n\n").take(18000),
                                     connectTimeoutMillis = 15_000,
-                                    readTimeoutMillis = 25_000
+                                    readTimeoutMillis = 25_000,
+                                    temperature = expertProfiles[member]?.temperature,
+                                    maxTokens = expertProfiles[member]?.maxTokens
                                 ).take(2200)
                             }
                         }
@@ -701,7 +728,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.stream(config, requestHistory, finalSystemContext) { chunk ->
+                    OpenAiClient.stream(config, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens) { chunk ->
                         partialAnswer.append(chunk)
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
@@ -993,14 +1020,26 @@ fun NestroApp() {
                                                      scope.launch {
                                                          val result = runCatching {
                                                              WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
+                                                                 val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
                                                                  val roleContext = when (step.kind) {
-                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.targetId.ifBlank { step.title }].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(step.targetId.ifBlank { step.title }) }
-                                                                     WorkflowStepKind.SKILL -> skills[step.targetId.ifBlank { step.title }].orEmpty()
+                                                                     WorkflowStepKind.EXPERT -> {
+                                                                          val expertName = step.targetId.ifBlank { step.title }
+                                                                          val profile = expertProfiles[expertName]
+                                                                          check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
+                                                                          listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, skills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
+                                                                      }
+                                                                      WorkflowStepKind.SKILL -> {
+                                                                          val skillName = step.targetId.ifBlank { step.title }
+                                                                          check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
+                                                                          skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
+                                                                      }
                                                                      WorkflowStepKind.PROMPT -> ""
                                                                  }
                                                                  withContext(Dispatchers.IO) {
                                                                      OpenAiClient.complete(config, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
-                                                                         listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000))
+                                                                         listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
+                                                                         temperature = expertOptions?.temperature,
+                                                                         maxTokens = expertOptions?.maxTokens)
                                                                  }
                                                              }, onStep = { index, step ->
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
@@ -1107,42 +1146,84 @@ fun NestroApp() {
                                 Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
+                                     OutlinedButton(onClick = { templateNameDraft = selectedExpert.takeIf { it != "通用助手" } ?: ""; showExpertTemplatesDialog = true }) { Text("模板库") }
                                 }
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
 
-                                experts.forEach { name ->
+                                experts.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f).clickable { selectedExpert = name; page = "home" }) {
-                                                Text("✦  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                            Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) { selectedExpert = name; page = "home" }) {
+                                                Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                                Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                expertProfiles[name]?.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
                                                 Text(expertPrompts[name]?.take(100)?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(name).ifBlank { "尚未设置角色指令" }.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                             TextButton(onClick = {
                                                 editingExpertName = name
                                                 expertDraft = name
                                                 expertPromptDraft = expertPrompts[name].orEmpty()
+                                                val profile = expertProfiles[name] ?: ExpertProfile()
+                                                expertGroupDraft = profile.group
+                                                expertAvatarDraft = profile.avatar
+                                                expertEnabledDraft = profile.enabled
+                                                expertSkillDraft = profile.skillNames.toSet()
+                                                expertTemperatureDraft = profile.temperature?.toString().orEmpty()
+                                                expertMaxTokensDraft = profile.maxTokens?.toString().orEmpty()
+                                                expertDescriptionDraft = profile.description
                                                 expertDialogError = ""
-showExpertDialog = true
+                                                showExpertDialog = true
                                             }) { Text("编辑", color = Mint) }
+                                            TextButton(onClick = {
+                                                val profile = expertProfiles[name] ?: ExpertProfile()
+                                                expertProfiles = expertProfiles + (name to profile.copy(enabled = !profile.enabled))
+                                                prefs.edit().putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles)).apply()
+                                                if (profile.enabled && selectedExpert == name) selectedExpert = "通用助手"
+                                            }) { Text(if (expertProfiles[name]?.enabled == false) "启用" else "停用", color = if (expertProfiles[name]?.enabled == false) Mint else Muted) }
+                                            TextButton(onClick = {
+                                                val index = experts.indexOf(name)
+                                                if (index > 0) {
+                                                    val reordered = experts.toMutableList()
+                                                    val item = reordered.removeAt(index)
+                                                    reordered.add(index - 1, item)
+                                                    experts = reordered
+                                                    prefs.edit().putString("experts", JSONArray(experts).toString()).apply()
+                                                }
+                                            }) { Text("↑", color = Mint) }
+                                            TextButton(onClick = {
+                                                val index = experts.indexOf(name)
+                                                if (index >= 0 && index < experts.lastIndex) {
+                                                    val reordered = experts.toMutableList()
+                                                    val item = reordered.removeAt(index)
+                                                    reordered.add(index + 1, item)
+                                                    experts = reordered
+                                                    prefs.edit().putString("experts", JSONArray(experts).toString()).apply()
+                                                }
+                                            }) { Text("↓", color = Mint) }
+                                            TextButton(onClick = { historyExpertName = name; historyCompareVersion = ""; showExpertHistoryDialog = true }) { Text("版本", color = Mint) }
                                             if (name !in setOf("文案官", "选题狐", "代码佬")) {
                                                 TextButton(onClick = {
-                                                 expertExportJson = ExpertBundleParser.exportJson(name, expertPrompts[name].orEmpty())
+                                                 expertExportJson = ExpertBundleParser.exportJson(name, expertPrompts[name].orEmpty(), expertProfiles[name]?.description.orEmpty(), expertProfiles[name] ?: ExpertProfile())
                                                  val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "expert" }
                                                  exportExpertLauncher.launch("$safeName.nestro-expert.json")
                                              }) { Text("导出", color = Mint) }
                                              TextButton(onClick = {
                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
+                                                    expertProfiles = expertProfiles - name
                                                      workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
                                                     if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
                                                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                                                        .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                                                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                                                          .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
                                                         .putString("selected_team_id", selectedTeamId).apply()
                                                     if (selectedExpert == name) selectedExpert = "通用助手"
+                                                    expertRevisions = expertRevisions - name
+                                                    prefs.edit().putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
@@ -1152,6 +1233,13 @@ showExpertDialog = true
                                     editingExpertName = ""
                                     expertDraft = ""
                                     expertPromptDraft = ""
+                                    expertGroupDraft = "默认"
+                                    expertAvatarDraft = "✦"
+                                    expertEnabledDraft = true
+                                    expertSkillDraft = emptySet()
+                                    expertTemperatureDraft = ""
+                                    expertMaxTokensDraft = ""
+                                    expertDescriptionDraft = ""
                                     expertDialogError = ""
                                     showExpertDialog = true
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
@@ -1563,9 +1651,17 @@ showExpertDialog = true
                                                     skills = skills - name
                                                     skillMetadata = skillMetadata - name
                                                     disabledSkills = disabledSkills - name
+                                                    expertProfiles = expertProfiles.mapValues { (_, profile) -> profile.copy(skillNames = profile.skillNames - name) }
+                                                    expertRevisions = expertRevisions.mapValues { (_, rows) -> rows.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) } }
+                                                    expertTemplates = expertTemplates.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) }
+                                                    workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.SKILL && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
                                                     prefs.edit().putString("skills",skillMapToJson(skills))
                                                         .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
-                                                        .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills)).apply()
+                                                        .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
+                                                        .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
+                                                        .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
+                                                        .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
+                                                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                                                     if(selectedSkill==name) selectedSkill=""
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
@@ -1609,7 +1705,7 @@ showExpertDialog = true
                     Text("选择成员，至少 2 位", color = Ink, style = MaterialTheme.typography.labelLarge)
                     experts.forEach { expert ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = expert in teamDraftMembers, onCheckedChange = { checked ->
+                            Checkbox(checked = expert in teamDraftMembers, enabled = expertProfiles[expert]?.enabled != false, onCheckedChange = { checked ->
                                 teamDraftMembers = if (checked) teamDraftMembers + expert else teamDraftMembers - expert
                             })
                             Text(expert, color = Ink)
@@ -1832,6 +1928,10 @@ showExpertDialog = true
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
+                            expertProfiles = expertProfiles.mapValues { (_, profile) -> profile.copy(skillNames = profile.skillNames.map { if (it == oldName) name else it }) }
+                            expertRevisions = expertRevisions.mapValues { (_, rows) -> rows.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames.map { skill -> if (skill == oldName) name else skill })) } }
+                            expertTemplates = expertTemplates.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames.map { skill -> if (skill == oldName) name else skill })) }
+                            workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.SKILL && step.targetId.ifBlank { step.title } == oldName) step.copy(targetId = name) else step }) }
                             val oldMetadata=skillMetadata[oldName]
                             skillMetadata = skillMetadata - oldName
                             if(oldMetadata!=null) skillMetadata = skillMetadata + (name to oldMetadata)
@@ -1841,7 +1941,11 @@ showExpertDialog = true
                         }
                         prefs.edit().putString("skills",skillMapToJson(skills))
                             .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
-                            .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills)).apply()
+                            .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
+                            .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
+                             .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
+                             .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
+                             .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                         if(name !in disabledSkills) selectedSkill=name
                         skillDraftName = ""
                         skillDraftPrompt = ""
@@ -1893,17 +1997,31 @@ showExpertDialog = true
             title = { Text("导入专家预览") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
-                Text("版本：${bundle.version}", color = Muted)
+                Text("版本：${bundle.version} · ${bundle.group} 组 · ${bundle.avatar}", color = Muted)
                 Text(bundle.description.ifBlank { "无描述" }, color = Muted)
+                Text("挂载技能：${bundle.skillNames.joinToString().ifBlank { "无" }}", color = Muted)
+                Text("状态：${if (bundle.enabled) "启用" else "停用"} · Temperature：${bundle.temperature ?: "模型默认"} · Max tokens：${bundle.maxTokens ?: "模型默认"}", color = Muted)
                 Text("角色指令", color = Mint)
                 Text(bundle.prompt, color = Ink)
                 if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
             } },
             confirmButton = { TextButton(onClick = {
+                val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
+                if (missingSkills.isNotEmpty()) {
+                    expertImportStatus = "导入未完成，以下挂载技能不存在或已停用：${missingSkills.joinToString()}"
+                    return@TextButton
+                }
+                val previousProfile = expertProfiles[bundle.name] ?: if (bundle.name in experts) ExpertProfile() else null
+                if (previousProfile != null) {
+                    expertRevisions = expertRevisions + (bundle.name to (expertRevisions[bundle.name].orEmpty() + ExpertRevision(previousProfile.version, expertPrompts[bundle.name].orEmpty(), previousProfile, System.currentTimeMillis())).takeLast(20))
+                }
                 experts = if (bundle.name in experts) experts else experts + bundle.name
                 expertPrompts = expertPrompts + (bundle.name to bundle.prompt)
+                expertProfiles = expertProfiles + (bundle.name to bundle.profile())
                 prefs.edit().putString("experts", JSONArray(experts).toString())
-                    .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
+                    .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                    .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
+                    .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
                 expertImportStatus = "已导入专家：${bundle.name}"
                 pendingExpertBundle = null
             }) { Text("导入", color = Mint) } },
@@ -2126,10 +2244,25 @@ showExpertDialog = true
             onDismissRequest = { showExpertDialog = false; expertDialogError = "" },
             title = { Text(if (editingExpertName.isBlank()) "创建专家" else "编辑专家") },
             text = {
-                Column {
+                Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it; expertDialogError = "" }, label = { Text("专家名称") }, singleLine = true)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = expertPromptDraft, onValueChange = { expertPromptDraft = it }, label = { Text("专家角色与工作要求") }, placeholder = { Text("例如：你是一位严谨的中文文案编辑，先判断目标读者，再给出可直接发布的文案。") }, minLines = 4)
+                    OutlinedTextField(value = expertGroupDraft, onValueChange = { expertGroupDraft = it.take(30) }, label = { Text("分组") }, singleLine = true)
+                    OutlinedTextField(value = expertAvatarDraft, onValueChange = { expertAvatarDraft = it.take(8) }, label = { Text("头像 Emoji") }, singleLine = true)
+                    OutlinedTextField(value = expertDescriptionDraft, onValueChange = { expertDescriptionDraft = it.take(300) }, label = { Text("专家简介") }, singleLine = false, minLines = 2)
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = expertEnabledDraft, onCheckedChange = { expertEnabledDraft = it }); Text("启用此专家", color = Ink) }
+                    Text("挂载技能（仅启用技能可新挂载）", color = Mint, style = MaterialTheme.typography.titleSmall)
+                    skills.forEach { (skillName, _) ->
+                        val attached = skillName in expertSkillDraft
+                        val disabled = skillName in disabledSkills
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = attached, enabled = !disabled || attached, onCheckedChange = { checked -> expertSkillDraft = if (checked) expertSkillDraft + skillName else expertSkillDraft - skillName })
+                            Text(skillName + if (disabled) "（已停用，执行时跳过）" else "", color = if (disabled) Muted else Ink)
+                        }
+                    }
+                    OutlinedTextField(value = expertTemperatureDraft, onValueChange = { expertTemperatureDraft = it.take(8) }, label = { Text("Temperature（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                    OutlinedTextField(value = expertMaxTokensDraft, onValueChange = { expertMaxTokensDraft = it.filter(Char::isDigit).take(5) }, label = { Text("最大输出 Token（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     if (expertDialogError.isNotBlank()) Text(expertDialogError, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
                 }
             },
@@ -2142,14 +2275,48 @@ showExpertDialog = true
                         expertDialogError = validationError
                         return@TextButton
                     }
+                    val temperature = expertTemperatureDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val maxTokens = expertMaxTokensDraft.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
+                    if ((expertTemperatureDraft.isNotBlank() && temperature == null) || (expertMaxTokensDraft.isNotBlank() && maxTokens == null)) {
+                        expertDialogError = "模型参数格式无效，请检查 Temperature 和最大 Token。"
+                        return@TextButton
+                    }
+                    var profile = ExpertProfile(
+                        group = expertGroupDraft.trim(),
+                        avatar = expertAvatarDraft.trim(),
+                        enabled = expertEnabledDraft,
+                        skillNames = expertSkillDraft.toList(),
+                        temperature = temperature,
+                        maxTokens = maxTokens,
+                        description = expertDescriptionDraft.trim(),
+                        version = expertProfiles[oldName]?.version ?: "1.0.0",
+                        source = expertProfiles[oldName]?.source ?: "Nestro 本地专家"
+                    )
+                    val profileError = ExpertProfileCodec.validate(profile, skills.keys)
+                    if (profileError != null) {
+                        expertDialogError = profileError
+                        return@TextButton
+                    }
+                    val previousProfile = expertProfiles[oldName] ?: if (oldName in experts) ExpertProfile() else null
+                    val previousPrompt = expertPrompts[oldName].orEmpty()
+                    if (oldName.isNotBlank() && previousProfile != null && (previousPrompt != expertPromptDraft.trim() || previousProfile.copy(version = profile.version) != profile)) {
+                        expertRevisions = expertRevisions + (oldName to (expertRevisions[oldName].orEmpty() + ExpertRevision(previousProfile.version, previousPrompt, previousProfile, System.currentTimeMillis())).takeLast(20))
+                        profile = profile.copy(version = ExpertRevisionCodec.bumpVersion(previousProfile.version))
+                    }
+                    if (oldName.isNotBlank() && oldName != name) {
+                        expertRevisions = (expertRevisions - oldName) + (name to expertRevisions[oldName].orEmpty())
+                    }
                     experts = if (oldName.isBlank()) experts + name else experts.map { if (it == oldName) name else it }
                     expertPrompts = (expertPrompts - oldName) + (name to expertPromptDraft.trim())
+                    expertProfiles = (expertProfiles - oldName) + (name to profile)
                     if (oldName.isNotBlank() && oldName != name) {
                         expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
                         workflows = ExpertCatalogRules.renameWorkflowReferences(workflows, oldName, name)
                     }
                     prefs.edit().putString("experts", JSONArray(experts).toString())
                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                        .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
+                        .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                     if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
@@ -2161,6 +2328,115 @@ showExpertDialog = true
                 }) { Text("保存专家", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showExpertDialog = false; expertDialogError = "" }) { Text("取消") } }
+        )
+    }
+
+    if (showExpertHistoryDialog) {
+        val name = historyExpertName
+        val revisions = expertRevisions[name].orEmpty()
+        val compared = revisions.lastOrNull { it.version == historyCompareVersion }
+        AlertDialog(
+            onDismissRequest = { showExpertHistoryDialog = false; historyCompareVersion = "" },
+            title = { Text("$name · 版本历史") },
+            text = {
+                Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("当前版本 v${expertProfiles[name]?.version ?: "1.0.0"}", color = Mint)
+                    if (revisions.isEmpty()) Text("暂无历史版本。修改并保存专家后，会自动留下上一版。", color = Muted)
+                    revisions.asReversed().forEach { revision ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("v${revision.version}", color = Ink)
+                                Text(SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(revision.savedAt)), color = Muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                            TextButton(onClick = { historyCompareVersion = revision.version }) { Text("对比", color = Mint) }
+                            TextButton(onClick = {
+                                val currentProfile = expertProfiles[name] ?: ExpertProfile()
+                                expertRevisions = expertRevisions + (name to (expertRevisions[name].orEmpty() + ExpertRevision(currentProfile.version, expertPrompts[name].orEmpty(), currentProfile, System.currentTimeMillis())).takeLast(20))
+                                expertPrompts = expertPrompts + (name to revision.prompt)
+                                expertProfiles = expertProfiles + (name to revision.profile.copy(version = ExpertRevisionCodec.bumpVersion(currentProfile.version)))
+                                prefs.edit().putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                                    .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
+                                    .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
+                                historyCompareVersion = ""
+                                showExpertHistoryDialog = false
+                            }) { Text("恢复", color = Mint) }
+                        }
+                    }
+                    if (compared != null) {
+                        Text("与当前版本的差异 · v${compared.version}", color = Mint, style = MaterialTheme.typography.titleSmall)
+                        val currentProfile = expertProfiles[name] ?: ExpertProfile()
+                        val metadataDiff = buildList {
+                            if (compared.profile.group != currentProfile.group) add("分组：${compared.profile.group} → ${currentProfile.group}")
+                            if (compared.profile.avatar != currentProfile.avatar) add("头像：${compared.profile.avatar} → ${currentProfile.avatar}")
+                            if (compared.profile.skillNames != currentProfile.skillNames) add("挂载技能：${compared.profile.skillNames.joinToString()} → ${currentProfile.skillNames.joinToString()}")
+                            if (compared.profile.temperature != currentProfile.temperature) add("Temperature：${compared.profile.temperature} → ${currentProfile.temperature}")
+                            if (compared.profile.maxTokens != currentProfile.maxTokens) add("Max tokens：${compared.profile.maxTokens} → ${currentProfile.maxTokens}")
+                            if (compared.profile.enabled != currentProfile.enabled) add("启用状态：${compared.profile.enabled} → ${currentProfile.enabled}")
+                        }
+                        Text((ExpertRevisionCodec.diff(compared.prompt, expertPrompts[name].orEmpty()) + metadataDiff).joinToString("\n").ifBlank { "内容没有变化" }.take(7000), color = Ink, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showExpertHistoryDialog = false; historyCompareVersion = "" }) { Text("关闭") } }
+        )
+    }
+
+    if (showExpertTemplatesDialog) {
+        AlertDialog(
+            onDismissRequest = { showExpertTemplatesDialog = false },
+            title = { Text("专家模板库") },
+            text = {
+                Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = templateNameDraft, onValueChange = { templateNameDraft = it.take(40) }, label = { Text("模板名称") }, singleLine = true)
+                    Button(onClick = {
+                        val name = templateNameDraft.trim()
+                        val sourceName = selectedExpert
+                        val prompt = expertPrompts[sourceName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(sourceName) }
+                        val profile = expertProfiles[sourceName] ?: ExpertProfile()
+                        if (name.isBlank() || prompt.isBlank()) {
+                            expertImportStatus = "模板名称或当前专家指令为空，无法保存。"
+                        } else if (name !in expertTemplates.map { it.name } && expertTemplates.size >= 100) {
+                            expertImportStatus = "模板库已达到 100 个上限。"
+                        } else {
+                            val template = ExpertTemplate(name = name, description = profile.description, prompt = prompt, profile = profile)
+                            expertTemplates = expertTemplates.filterNot { it.name == name } + template
+                            prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
+                            expertImportStatus = "模板「$name」已保存。"
+                        }
+                    }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存当前专家为模板") }
+                    if (expertTemplates.isEmpty()) Text("还没有模板。可以先选中一个专家，再保存为模板。", color = Muted)
+                    expertTemplates.forEach { template ->
+                        Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall)
+                                Text(template.description.ifBlank { "无描述" }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    TextButton(onClick = {
+                                        editingExpertName = template.name.takeIf { it in experts }.orEmpty()
+                                        expertDraft = template.name
+                                        expertPromptDraft = template.prompt
+                                        expertGroupDraft = template.profile.group
+                                        expertAvatarDraft = template.profile.avatar
+                                        expertEnabledDraft = template.profile.enabled
+                                        expertSkillDraft = template.profile.skillNames.filter { it in skills && it !in disabledSkills }.toSet()
+                                        expertTemperatureDraft = template.profile.temperature?.toString().orEmpty()
+                                        expertMaxTokensDraft = template.profile.maxTokens?.toString().orEmpty()
+                                        expertDescriptionDraft = template.profile.description
+                                        expertDialogError = ""
+                                        showExpertTemplatesDialog = false
+                                        showExpertDialog = true
+                                    }) { Text("应用", color = Mint) }
+                                    TextButton(onClick = {
+                                        expertTemplates = expertTemplates.filterNot { it.id == template.id }
+                                        prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
+                                    }) { Text("删除", color = ColorStop) }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showExpertTemplatesDialog = false }) { Text("关闭") } }
         )
     }
 }
@@ -2383,7 +2659,7 @@ private object OpenAiClient {
 
     fun cancel() { activeConnections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
 
-    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000): String {
+    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -2397,6 +2673,8 @@ private object OpenAiClient {
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
+                if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
+                if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history).forEach { msg ->
@@ -2421,7 +2699,7 @@ private object OpenAiClient {
         }
     }
 
-    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
+    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
         val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -2438,6 +2716,8 @@ private object OpenAiClient {
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
+                if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
+                if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
@@ -2685,7 +2965,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 7)
+    root.put("version", 9)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -2695,6 +2975,9 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
+    root.put("expert_profiles_v1", prefs.getString("expert_profiles_v1", "{}") ?: "{}")
+    root.put("expert_versions_v1", prefs.getString("expert_versions_v1", "{}") ?: "{}")
+    root.put("expert_templates_v1", prefs.getString("expert_templates_v1", "[]") ?: "[]")
     root.put("expert_teams_v1", prefs.getString("expert_teams_v1", "[]") ?: "[]")
     root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
@@ -2888,11 +3171,27 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     }
     val experts = JSONArray(root.getString("experts"))
     require(experts.length() <= 100) { "专家数量超出限制" }
-    for (i in 0 until experts.length()) require(experts.getString(i).length <= 80) { "专家名称过长" }
+    for (i in 0 until experts.length()) require(experts.getString(i).length <= 40) { "专家名称过长" }
+    val expertNames = (0 until experts.length()).map { experts.getString(it) }.toSet()
+    require(expertNames.size == experts.length()) { "专家名称重复" }
     val prompts = JSONObject(root.getString("expert_prompts"))
+    val profileRaw = root.optString("expert_profiles_v1", "{}")
+    require(profileRaw.length <= 100_000) { "专家配置元数据过大" }
+    val restoredExpertProfiles = ExpertProfileCodec.decode(profileRaw)
+    require(profileRaw == "{}" || restoredExpertProfiles.isNotEmpty()) { "专家配置元数据格式无效" }
+    require(restoredExpertProfiles.size <= 100 && restoredExpertProfiles.keys.all { it in expertNames }) { "专家配置元数据引用无效" }
+    val revisionRaw = root.optString("expert_versions_v1", "{}")
+    require(revisionRaw.length <= 500_000) { "专家版本历史过大" }
+    val restoredExpertRevisions = ExpertRevisionCodec.decode(revisionRaw)
+    require(revisionRaw == "{}" || restoredExpertRevisions.isNotEmpty()) { "专家版本历史格式无效" }
+    require(restoredExpertRevisions.size <= 100 && restoredExpertRevisions.keys.all { it in expertNames }) { "专家版本历史引用无效" }
+    val templateRaw = root.optString("expert_templates_v1", "[]")
+    require(templateRaw.length <= 300_000) { "专家模板数据过大" }
+    val restoredExpertTemplates = ExpertTemplateCodec.decode(templateRaw)
+    require(templateRaw == "[]" || restoredExpertTemplates.isNotEmpty()) { "专家模板格式无效" }
+    require(restoredExpertTemplates.size <= 100) { "专家模板数量超出限制" }
     val teamArray = JSONArray(root.optString("expert_teams_v1", "[]"))
     require(teamArray.length() <= 50) { "专家团队数量超出限制" }
-    val expertNames = (0 until experts.length()).map { experts.getString(it) }.toSet()
     val cleanTeams = JSONArray()
     for (i in 0 until teamArray.length()) {
         val item = teamArray.getJSONObject(i)
@@ -2933,13 +3232,27 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         cleanSkills.put(name, prompt)
     }
     require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
+    val availableSkillNames = buildSet { val names = cleanSkills.keys(); while (names.hasNext()) add(names.next()) }
+    restoredExpertProfiles.forEach { (name, profile) ->
+        val profileError = ExpertProfileCodec.validate(profile, availableSkillNames)
+        require(profileError == null) { "专家「$name」配置无效：$profileError" }
+    }
+    restoredExpertRevisions.values.flatten().forEach { revision ->
+        require(revision.prompt.length <= 8000) { "专家历史提示词过长" }
+        val revisionError = ExpertProfileCodec.validate(revision.profile, availableSkillNames)
+        require(revisionError == null) { "专家历史版本配置无效：$revisionError" }
+    }
+    restoredExpertTemplates.forEach { template ->
+        val templateError = ExpertProfileCodec.validate(template.profile, availableSkillNames)
+        require(templateError == null) { "专家模板「${template.name}」配置无效：$templateError" }
+    }
     require(prompts.length() <= 100) { "专家提示词数量超出限制" }
     val cleanPrompts = JSONObject()
     val keys = prompts.keys()
     while (keys.hasNext()) {
         val name = keys.next()
         val prompt = prompts.optString(name)
-        require(prompt.length <= 20000) { "专家提示词过长" }
+        require(prompt.length <= 8_000) { "专家提示词过长" }
         cleanPrompts.put(name, prompt)
     }
     val editor = prefs.edit()
@@ -2949,6 +3262,9 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
+        .putString("expert_profiles_v1", ExpertProfileCodec.encode(restoredExpertProfiles))
+        .putString("expert_versions_v1", ExpertRevisionCodec.encode(restoredExpertRevisions))
+        .putString("expert_templates_v1", ExpertTemplateCodec.encode(restoredExpertTemplates))
         .putString("expert_teams_v1", cleanTeams.toString())
         .putString("selected_team_id", validSelectedTeam)
         .putString("skills", cleanSkills.toString())

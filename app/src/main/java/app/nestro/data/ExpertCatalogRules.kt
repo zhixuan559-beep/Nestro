@@ -7,6 +7,7 @@ object ExpertCatalogRules {
         if (cleanName.isBlank() || cleanName.length > 40) return "专家名称必须为 1 到 40 个字符"
         if (cleanPrompt.isBlank() || cleanPrompt.length > 8_000) return "专家角色指令必须为 1 到 8000 个字符"
         if (cleanName != oldName && cleanName in existingNames) return "已存在同名专家，请更换名称"
+        if (oldName.isBlank() && existingNames.size >= 100) return "专家数量已达到 100 个上限"
         if (oldName in setOf("文案官", "选题狐", "代码佬") && cleanName != oldName) return "内置专家不可改名"
         return null
     }
