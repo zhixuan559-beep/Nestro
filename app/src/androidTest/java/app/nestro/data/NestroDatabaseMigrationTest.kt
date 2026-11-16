@@ -145,6 +145,7 @@ class NestroDatabaseMigrationTest {
             assertEquals(setOf("private", "shared"), dao.userMemoriesVisible("p1").map { it.id }.toSet())
             assertEquals(1, dao.setUserMemorySharing("shared", "p1", false, 3))
             assertEquals(emptyList<UserMemoryEntity>(), dao.userMemoriesVisible("p2"))
+            assertEquals(1, dao.setUserMemorySharing("shared", "p1", true, 4))
             repeat(200) { index ->
                 dao.putUserMemory(UserMemoryEntity("local-$index", "p2", "preference", "项目二私有记忆内容 $index", "fp-local-$index", "c2", "m2", 0.9, index.toLong(), index.toLong()))
             }
