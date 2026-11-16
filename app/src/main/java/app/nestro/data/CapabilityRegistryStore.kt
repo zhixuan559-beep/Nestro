@@ -36,6 +36,7 @@ object CapabilityToolPolicy {
 
     fun safeParameterNames(names: List<String>): List<String> = names.asSequence()
         .filter { it.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) }
+        .filterNot { it.lowercase() in setOf("token", "access_token", "api_key", "password", "secret", "authorization") }
         .distinct().take(20).toList()
 }
 
@@ -169,6 +170,18 @@ object CapabilityRegistryStore {
             .put("parameter_names", JSONArray(safeNames)).put("created_at", System.currentTimeMillis()))
         for (i in 0 until minOf(old.length(), MAX_RECORDS - 1)) old.optJSONObject(i)?.let(next::put)
         prefs.edit().putString(TOOL_AUDIT_KEY, next.toString()).apply()
+    }
+
+    fun authorizeToolCall(
+        prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
+        parameterNames: List<String> = emptyList()
+    ): Boolean {
+        val granted = isToolGranted(prefs, projectId, serviceId, toolName)
+        recordToolAudit(
+            prefs, projectId, serviceId, toolName, "invoke",
+            if (granted) "authorized" else "denied", parameterNames
+        )
+        return granted
     }
 
     fun recentToolAudit(prefs: SharedPreferences, projectId: String, limit: Int = 30): List<CapabilityToolAuditRecord> {

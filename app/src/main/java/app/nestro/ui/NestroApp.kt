@@ -3982,6 +3982,8 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
             capabilityTaskEvents = capabilityTasks.flatMap { dao.capabilityTaskEvents(it.id, 200) }
         )
     }
+    require(snapshot.capabilityTasks.size <= 1000) { "统一任务数量超过备份上限 1000" }
+    require(snapshot.capabilityTaskEvents.size <= 20000) { "统一任务事件超过备份上限 20000" }
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
     root.put("version", LocalBackupCompatibility.CURRENT_VERSION)

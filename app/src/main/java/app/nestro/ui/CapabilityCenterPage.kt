@@ -5,6 +5,7 @@ import app.nestro.data.CapabilityDescriptor
 import app.nestro.data.CapabilityRegistryStore
 import app.nestro.data.NestroDao
 import app.nestro.data.CapabilityTaskEntity
+import app.nestro.data.CapabilityTaskEventEntity
 import app.nestro.data.CapabilityTaskState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -22,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CapabilityCenterPage(
@@ -48,7 +51,14 @@ fun CapabilityCenterPage(
     var refresh by remember { mutableIntStateOf(0) }; var pending by remember { mutableStateOf<CapabilityDescriptor?>(null) }
     var taskDraft by remember { mutableStateOf("") }; var showAudit by remember { mutableStateOf(false) }
     var taskRows by remember { mutableStateOf(emptyList<CapabilityTaskEntity>()) }
-    LaunchedEffect(projectId, refresh) { taskRows = dao.capabilityTasks(projectId, 50) }
+    var taskEvents by remember { mutableStateOf(emptyMap<String, List<CapabilityTaskEventEntity>>()) }
+    LaunchedEffect(projectId, refresh) {
+        val loaded = withContext(Dispatchers.IO) { dao.capabilityTasks(projectId, 50) }
+        taskRows = loaded
+        taskEvents = withContext(Dispatchers.IO) {
+            loaded.associate { task -> task.id to dao.capabilityTaskEvents(task.id, 12) }
+        }
+    }
 
     val builtIns=listOf(
         CapabilityDescriptor("models","模型服务","基础能力","管理模型服务商、API 配置、主模型切换与故障切换。",status=if(modelReady)"已配置" else "未配置",detail=if(modelReady)activeModel else "尚未启用可用模型配置",route="models"),
@@ -149,6 +159,9 @@ fun CapabilityCenterPage(
                             Text(stateLabel,color=if(task.state==CapabilityTaskState.SUCCEEDED) mint else if(task.state==CapabilityTaskState.FAILED) warning else muted,style=MaterialTheme.typography.labelSmall)
                         }
                         Text(task.input.take(180),color=muted,style=MaterialTheme.typography.bodySmall,maxLines=2)
+                        taskEvents[task.id].orEmpty().takeLast(3).forEach { event ->
+                            Text("${event.event} · ${event.detail}",color=muted,style=MaterialTheme.typography.labelSmall,maxLines=1)
+                        }
                         if(task.error.isNotBlank()) Text(task.error,color=warning,style=MaterialTheme.typography.labelSmall,maxLines=2)
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             if(task.state==CapabilityTaskState.QUEUED || task.state==CapabilityTaskState.RUNNING) {
