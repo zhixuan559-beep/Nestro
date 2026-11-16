@@ -163,37 +163,49 @@ fun NestroApp() {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         if (uri != null) {
-            backupStatus = runCatching {
-                val json = buildLocalBackup(prefs)
-                context.contentResolver.openOutputStream(uri)?.use {
-                    it.write(json.toByteArray(Charsets.UTF_8))
-                } ?: error("无法创建备份文件")
-                "备份已导出"
-            }.getOrElse { "导出失败：${it.message ?: "未知错误"}" }
+            backupStatus = "正在导出本机数据…"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val json = buildLocalBackup(prefs, database)
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(json.toByteArray(Charsets.UTF_8))
+                        } ?: error("无法创建备份文件")
+                    }
+                }
+                backupStatus = result.fold({ "备份已导出" }, { "导出失败：${it.message ?: "未知错误"}" })
+            }
         }
     }
     val importBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            backupStatus = runCatching {
-                val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                    ?: error("无法读取文件")
-                require(raw.length <= 10_000_000) { "备份文件过大" }
-                restoreLocalBackup(prefs, raw)
-                persistedConversationVersions.clear()
-                conversations = loadConversations(prefs)
-                projects = loadProjects(prefs)
-                activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
-                activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
-                messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
-                globalMemory = prefs.getString("global_memory_v1", "") ?: ""
-                memoryDraft = globalMemory
-                experts = loadExperts(prefs)
-                expertPrompts = loadExpertPrompts(prefs)
-                skills = loadSkills(prefs)
-                "恢复完成。模型 Key 未被覆盖，请检查模型管理。"
-            }.getOrElse { "恢复失败：${it.message ?: "文件格式无效"}" }
+            backupStatus = "正在恢复本机数据…"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                            ?: error("无法读取文件")
+                        require(raw.length <= 10_000_000) { "备份文件过大" }
+                        restoreLocalBackup(prefs, raw, database)
+                    }
+                }
+                if (result.isSuccess) {
+                    persistedConversationVersions.clear()
+                    conversations = loadConversations(prefs)
+                    projects = loadProjects(prefs)
+                    activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
+                    activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
+                    messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
+                    globalMemory = prefs.getString("global_memory_v1", "") ?: ""
+                    memoryDraft = globalMemory
+                    experts = loadExperts(prefs)
+                    expertPrompts = loadExpertPrompts(prefs)
+                    skills = loadSkills(prefs)
+                }
+                backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
+            }
         }
     }
 
@@ -668,7 +680,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含本机对话、全局记忆、专家配置与技能。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含本机对话、全局记忆、项目级自动记忆、专家配置与技能。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
@@ -1447,6 +1459,13 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
     }
     val editor = prefs.edit().putString("conversations_v1", array.toString())
     if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+    val dao = database.dao()
+    database.withTransaction {
+        (dao.projectIds() + restoredMemories.map { it.projectId }).distinct().forEach { projectId ->
+            dao.deleteUserMemoriesForProject(projectId)
+        }
+        restoredMemories.forEach { dao.putUserMemory(it) }
+    }
     editor.apply()
 }
 
@@ -1537,10 +1556,10 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
     return json.toString()
 }
 
-private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
+private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 1)
+    root.put("version", 2)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -1553,13 +1572,33 @@ private fun buildLocalBackup(prefs: android.content.SharedPreferences): String {
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("projects", projectsToJson(loadProjects(prefs)))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
+    val memories = JSONArray()
+    val dao = database.dao()
+    dao.projectIds().forEach { projectId ->
+        dao.userMemories(projectId, 200).forEach { memory ->
+            memories.put(
+                JSONObject()
+                    .put("id", memory.id)
+                    .put("projectId", memory.projectId)
+                    .put("category", memory.category)
+                    .put("content", memory.content)
+                    .put("fingerprint", memory.fingerprint)
+                    .put("sourceConversationId", memory.sourceConversationId)
+                    .put("sourceMessageId", memory.sourceMessageId)
+                    .put("confidence", memory.confidence)
+                    .put("createdAt", memory.createdAt)
+                    .put("updatedAt", memory.updatedAt)
+            )
+        }
+    }
+    root.put("user_memories", memories)
     return root.toString(2)
 }
 
-private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String) {
+private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") == 1) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..2) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -1579,6 +1618,31 @@ private fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: St
     }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
+    val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
+    require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
+    val restoredMemories = (0 until memoryRows.length()).map { index ->
+        val item = memoryRows.getJSONObject(index)
+        val category = item.optString("category")
+        val content = item.optString("content")
+        val projectId = item.optString("projectId")
+        require(item.optString("id").isNotBlank() && projectId.isNotBlank()) { "记忆标识缺失" }
+        require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
+        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank()) { "记忆内容无效" }
+        val confidence = item.optDouble("confidence", 0.0)
+        require(confidence in 0.8..1.0) { "记忆置信度无效" }
+        UserMemoryEntity(
+            id = item.getString("id"),
+            projectId = projectId,
+            category = category,
+            content = content,
+            fingerprint = item.getString("fingerprint"),
+            sourceConversationId = item.optString("sourceConversationId"),
+            sourceMessageId = item.optString("sourceMessageId"),
+            confidence = confidence,
+            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+        )
+    }
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
