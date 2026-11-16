@@ -22,6 +22,7 @@ import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
+import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
 import app.nestro.data.ExpertProfileCodec
@@ -2973,7 +2974,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 9)
+    root.put("version", LocalBackupCompatibility.CURRENT_VERSION)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -3057,7 +3058,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..7) { "暂不支持此备份版本" }
+    require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
