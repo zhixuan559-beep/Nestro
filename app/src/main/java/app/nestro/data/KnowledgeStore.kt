@@ -25,6 +25,7 @@ data class KnowledgeSearchResult(
 object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
+ private const val MAX_CANDIDATES_PER_TERM=80
 
  suspend fun importText(resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
   val mime=resolver.getType(uri).orEmpty().lowercase()
@@ -67,9 +68,9 @@ object KnowledgeStore {
    val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
    terms.forEach { term ->
     val matches = if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
-     dao.searchKnowledgeChunksFts(projectId, "\"" + term.replace("\"", "\"\"") + "\"", 12)
+     dao.searchKnowledgeChunksFts(projectId, "\"" + term.replace("\"", "\"\"") + "\"", MAX_CANDIDATES_PER_TERM)
     } else {
-     dao.searchKnowledgeChunks(projectId, term, 12)
+     dao.searchKnowledgeChunks(projectId, term, MAX_CANDIDATES_PER_TERM)
     }
     matches.forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
    }
