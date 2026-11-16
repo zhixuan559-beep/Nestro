@@ -135,6 +135,23 @@ class NestroDatabaseMigrationTest {
         }
     }
 
+    @Test fun clearingProjectMemoriesDoesNotDeleteOtherProjects() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L), ProjectEntity("p2", "项目二", "", 2L)))
+            dao.putUserMemory(UserMemoryEntity("p1-private", "p1", "preference", "项目一的独立记忆内容", "p1-private-fp", "", "", 1.0, 1, 1))
+            dao.putUserMemory(UserMemoryEntity("p1-shared", "p1", "constraint", "项目一授权共享的记忆内容", "p1-shared-fp", "", "", 1.0, 1, 1, true))
+            dao.putUserMemory(UserMemoryEntity("p2-private", "p2", "workflow", "项目二自己的记忆内容", "p2-private-fp", "", "", 1.0, 1, 1))
+            UserMemoryStore.clearProject(dao, "p1")
+            assertEquals(emptyList<UserMemoryEntity>(), dao.userMemories("p1"))
+            assertEquals(listOf("p2-private"), dao.userMemories("p2").map { it.id })
+            assertEquals(emptyList<UserMemoryEntity>(), dao.userMemoriesVisible("p2").filter { it.projectId == "p1" })
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun memorySharingRequiresExplicitOwnerAuthorization() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {

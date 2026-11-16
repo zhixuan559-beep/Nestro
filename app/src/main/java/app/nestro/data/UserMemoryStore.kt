@@ -57,23 +57,26 @@ internal object MemoryRecallRanker {
     internal fun extractTerms(text: String): List<String> {
         val normalized = text.lowercase()
         val terms = linkedSetOf<String>()
-        Regex("[a-z0-9_]{2,}", RegexOption.IGNORE_CASE).findAll(normalized).forEach { terms += it.value }
-        Regex("[\\u3400-\\u9fff\\uf900-\\ufaff]{2,}").findAll(normalized).forEach { match ->
-            val run = match.value
-            if (run.length <= 12 && run !in stopWords) terms += run
-            for (size in listOf(3, 2)) {
-                var index = 0
-                while (index + size <= run.length) {
-                    val gram = run.substring(index, index + size)
-                    if (gram !in stopWords) terms += gram
-                    index += if (size == 3) 2 else 1
+        Regex("[a-z0-9_]{2,}|[\\u3400-\\u9fff\\uf900-\\ufaff]{2,}", RegexOption.IGNORE_CASE)
+            .findAll(normalized).forEach { match ->
+                val run = match.value
+                val first = run.first()
+                if (first in 'a'..'z' || first.isDigit() || first == '_') {
+                    terms += run
+                } else {
+                    if (run.length <= 12 && run !in stopWords) terms += run
+                    for (size in listOf(3, 2)) {
+                        var index = 0
+                        while (index + size <= run.length) {
+                            val gram = run.substring(index, index + size)
+                            if (gram !in stopWords) terms += gram
+                            index += if (size == 3) 2 else 1
+                        }
+                    }
                 }
             }
-        }
         val filtered = terms.filter { it !in stopWords && it.length >= 2 }
-        if (filtered.size <= MAX_TERMS) return filtered
-        val stride = filtered.size.toDouble() / MAX_TERMS
-        return (0 until MAX_TERMS).map { filtered[(it * stride).toInt()] }.distinct()
+        return if (filtered.size <= MAX_TERMS) filtered else filtered.takeLast(MAX_TERMS)
     }
 
     private fun tokenizeLength(value: String): Int =
@@ -100,7 +103,7 @@ object UserMemoryStore {
     fun isSafeContent(value: String): Boolean = !containsSensitiveData(value)
 
     suspend fun saveCandidates(dao: NestroDao, projectId: String, conversationId: String, messageId: String, candidates: List<MemoryCandidate>): Int {
-        if (projectId.isBlank() || !dao.projectExists(projectId)) return 0
+        if (projectId.isBlank() || conversationId.isBlank() || messageId.isBlank() || !dao.projectExists(projectId)) return 0
         var saved = 0
         candidates.take(5).forEach { candidate ->
             val category = candidate.category.trim().lowercase()
@@ -159,7 +162,7 @@ object UserMemoryStore {
         val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认", "i prefer", "i like", "i always", "i never", "remember that", "from now on", "my workflow", "this project uses")
         return messages.any { message ->
             message.length in 8..4000 && signals.any { signal ->
-                if (signal.firstOrNull()?.isAsciiLetter() == true) message.contains(signal, ignoreCase = true)
+                if (signal.first() in 'a'..'z') message.contains(signal, ignoreCase = true)
                 else message.contains(signal)
             }
         }
@@ -228,8 +231,12 @@ object UserMemoryStore {
         }
     }
 
-    suspend fun delete(dao: NestroDao, id: String, projectId: String) {
-        dao.deleteUserMemory(id, projectId)
+    suspend fun delete(dao: NestroDao, id: String, projectId: String): Boolean =
+        dao.deleteUserMemory(id, projectId) > 0
+
+    suspend fun clearProject(dao: NestroDao, projectId: String) {
+        require(projectId.isNotBlank() && dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
+        dao.deleteUserMemoriesForProject(projectId)
     }
 
     private fun containsSensitiveData(value: String): Boolean =
@@ -237,8 +244,11 @@ object UserMemoryStore {
             Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
             Regex("""(?i)\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b""").containsMatchIn(value) ||
-            Regex("""(?i)\b(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|password|passcode|secret)\b""").containsMatchIn(value) ||
-            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "住址", "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
+            Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}""").containsMatchIn(value) ||
+            Regex("""\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b""").containsMatchIn(value) ||
+            Regex("""(?i)\b(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|password|passcode|secret|medical history|diagnosis|religion|political affiliation|sexual orientation|home address|date of birth|salary|income|debt|bank account|passport|national id)\b""").containsMatchIn(value) ||
+            Regex("""(?:我住在|家庭住址|详细地址|收货地址|住址是).{0,48}(?:省|市|区|县|路|街|巷|号|栋|单元|室)""").containsMatchIn(value) ||
+            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "住址", "家庭住址", "详细地址", "收货地址", "门牌号", "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
     internal fun fingerprintFor(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

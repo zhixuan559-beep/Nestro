@@ -258,7 +258,7 @@ interface NestroDao {
     suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
 
     @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
-    suspend fun deleteUserMemory(id: String, projectId: String)
+    suspend fun deleteUserMemory(id: String, projectId: String): Int
 
     @Query("DELETE FROM user_memories WHERE projectId = :projectId")
     suspend fun deleteUserMemoriesForProject(projectId: String)

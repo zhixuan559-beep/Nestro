@@ -49,6 +49,12 @@ class UserMemoryStoreTest {
         assertTrue(UserMemoryStore.buildRecallQuery(emptyList(), oversizedPrompt, 30).startsWith("当前问题开头"))
     }
 
+    @Test fun currentPromptTermsWinWhenRecallQueryExceedsTermBudget() {
+        val history = (1..8).map { "旧历史内容包含很多不同的工作记录和偏好信息 $it ".repeat(80) }
+        val query = UserMemoryStore.buildRecallQuery(history, "当前问题需要查询 SQLite 数据库索引优化")
+        assertTrue(MemoryRecallRanker.extractTerms(query).contains("sqlite"))
+    }
+
     @Test fun extractionUsesSafeRecentTurnsAndCanTriggerFromEarlierTurn() {
         val input = UserMemoryStore.prepareExtractionInput(listOf(
             "我偏好以后所有技术回答先给结论，再解释原因",
@@ -59,6 +65,7 @@ class UserMemoryStoreTest {
         assertTrue(UserMemoryStore.shouldExtractFrom(input))
         assertFalse(UserMemoryStore.prepareExtractionInput(listOf("我的手机号是 13812345678")).isNotEmpty())
         assertFalse(UserMemoryStore.shouldExtractFrom(listOf("请帮我看看这段代码")))
+        assertTrue(UserMemoryStore.shouldExtractFrom(listOf("I prefer concise answers for technical questions")))
         assertTrue(UserMemoryStore.shouldExtractFrom(listOf("I prefer concise answers for technical questions")))
     }
 
@@ -88,6 +95,10 @@ class UserMemoryStoreTest {
         assertFalse(UserMemoryStore.isSafeContent("我的收入和负债情况如下"))
         assertFalse(UserMemoryStore.isSafeContent("项目密钥是 sk-12345678901234567890abcdef"))
         assertFalse(UserMemoryStore.isSafeContent("请记住我的 API key"))
+        assertFalse(UserMemoryStore.isSafeContent("Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456"))
+        assertFalse(UserMemoryStore.isSafeContent("JWT eyJabcdefgh.ijklmnop.qrstuvwx"))
+        assertFalse(UserMemoryStore.isSafeContent("我的家庭住址在某某路 123 号"))
+        assertFalse(UserMemoryStore.isSafeContent("我住在人民路 123 号"))
         assertFalse(UserMemoryStore.isSafeContent("我最近的病史需要长期记录"))
     }
 }
