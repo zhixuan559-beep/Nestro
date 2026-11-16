@@ -58,6 +58,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -550,20 +553,24 @@ fun NestroApp() {
                     val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
                     val teamContext = if (selectedTeam != null) {
                         val contributions = withContext(Dispatchers.IO) {
-                            selectedTeam.members.filter { it in experts }.take(4).mapNotNull { member ->
-                                val rolePrompt = expertPrompts[member].orEmpty()
-                                runCatching {
-                                    OpenAiClient.complete(
-                                        config,
-                                        requestHistory,
-                                        listOf(
-                                            requestSystemContext,
-                                            "你是专家团队成员“" + member + "”。角色要求：" + rolePrompt,
-                                            "团队任务：" + selectedTeam.description,
-                                            "请独立分析用户目标，列出关键判断、依据、风险和建议。不要直接代替团队总协调人回答用户；不确定的信息明确标记，不要编造。"
-                                        ).filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
-                                    ).take(2200)
-                                }.getOrNull()?.let { "【" + member + "】" + System.lineSeparator() + it }
+                            coroutineScope {
+                                selectedTeam.members.filter { it in experts }.take(4).map { member ->
+                                    async {
+                                        val rolePrompt = expertPrompts[member].orEmpty()
+                                        runCatching {
+                                            OpenAiClient.complete(
+                                                config,
+                                                requestHistory,
+                                                listOf(
+                                                    requestSystemContext,
+                                                    "你是专家团队成员“" + member + "”。角色要求：" + rolePrompt,
+                                                    "团队任务：" + selectedTeam.description,
+                                                    "请独立分析用户目标，列出关键判断、依据、风险和建议。不要直接代替团队总协调人回答用户；不确定的信息明确标记，不要编造。"
+                                                ).filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
+                                            ).take(2200)
+                                        }.getOrNull()?.let { "【" + member + "】" + System.lineSeparator() + it }
+                                    }
+                                }.awaitAll().filterNotNull()
                             }
                         }
                         if (contributions.isEmpty()) "" else
