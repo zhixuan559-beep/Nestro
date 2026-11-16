@@ -3171,6 +3171,8 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
+    root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
+    root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
@@ -3486,9 +3488,16 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         val restoredBaseUrl = root.optString("base_url")
         val restoredModel = root.optString("model")
         require(restoredBaseUrl.length <= 2048 && restoredModel.length <= 200) { "模型配置字段过长" }
+        val restoredProfilesRaw = root.optString("model_profiles_v1", "[]")
+        val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
+        require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
+        val restoredActiveProfileId = root.optString("active_model_profile_id", "")
+            .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
         val previousBaseUrl = prefs.getString("base_url", "") ?: ""
         val previousModel = prefs.getString("model", "") ?: ""
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
+            .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
+            .putString("active_model_profile_id", restoredActiveProfileId)
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
