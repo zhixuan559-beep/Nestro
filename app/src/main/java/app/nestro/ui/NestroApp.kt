@@ -3487,9 +3487,10 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
-    val payload = root.toString()
     root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
-    return root.toString(2)
+    val encoded = root.toString(2)
+    require(encoded.length <= 10_000_000) { "备份超过 10 MB，请减少历史数据或知识库文档后重试" }
+    return encoded
 }
 
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
@@ -3506,7 +3507,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
     val conversations = JSONArray(conversationsRaw)
-    require(conversations.length() <= 100) { "会话数量超出限制" }
+    require(conversations.length() <= 200) { "会话数量超出限制" }
     for (i in 0 until conversations.length()) {
         val conversation = conversations.getJSONObject(i)
         require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
@@ -3571,6 +3572,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         }
         listOf(ConversationEntity("legacy-restored", "恢复的旧对话", System.currentTimeMillis(), "default") to legacyMessages)
     } else emptyList()
+    require(completeRestoredConversations.map { it.first.id }.distinct().size == completeRestoredConversations.size) { "备份中存在重复会话 ID" }
     val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
     require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
     val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
@@ -3659,6 +3661,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         )
     }
     val restoredTaskIds = restoredTasks.map { it.id }.toSet()
+    require(restoredTaskIds.size == restoredTasks.size) { "Phone Agent 任务 ID 重复" }
     val taskLogRows = root.optJSONArray("phone_agent_task_logs") ?: JSONArray()
     require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
     val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
@@ -3678,7 +3681,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
-        require(item.has("content") && item.has("id")) { "消息字段缺失" }
+        require(item.has("content") && item.has("id") && item.optString("id").isNotBlank() && item.optString("content").length <= 200_000) { "消息字段缺失或内容过长" }
     }
     val experts = JSONArray(root.getString("experts"))
     require(experts.length() <= 100) { "专家数量超出限制" }
