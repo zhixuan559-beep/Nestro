@@ -3730,8 +3730,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val sourceConversationId = item.optString("sourceConversationId")
         val sourceMessageId = item.optString("sourceMessageId")
         require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
-        require(sourceConversationId.isBlank() || conversationProjectById[sourceConversationId] == projectId) { "记忆引用了其他项目空间的会话" }
-        require(sourceMessageId.isBlank() || messageProjectById[sourceMessageId] == projectId) { "记忆引用了其他项目空间的消息" }
+        require(conversationProjectById[sourceConversationId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的会话" }
+        require(messageProjectById[sourceMessageId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的消息" }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
         require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
         val confidence = item.optDouble("confidence", 0.0)
@@ -3769,7 +3769,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val planJson = item.optString("planJson", "[]")
         val currentStep = item.optInt("currentStep", 0)
         require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
-        require(conversationId.isBlank() || conversationProjectById[conversationId] == projectId) { "Phone Agent 任务引用了其他项目空间的会话" }
+        require(conversationProjectById[conversationId]?.let { it == projectId } != false) { "Phone Agent 任务引用了其他项目空间的会话" }
         require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
         val planCount = PhoneAgentTaskStore.validatePlanJson(planJson)
         require(currentStep in 0..planCount) { "Phone Agent 任务步骤位置无效" }
