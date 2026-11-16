@@ -67,6 +67,27 @@ data class PhoneAgentTaskLogEntity(
     val createdAt: Long
 )
 
+@Entity(
+    tableName = "user_memories",
+    indices = [
+        Index(value = ["projectId", "updatedAt"]),
+        Index(value = ["projectId", "fingerprint"], unique = true),
+        Index(value = ["sourceConversationId"])
+    ]
+)
+data class UserMemoryEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val category: String,
+    val content: String,
+    val fingerprint: String,
+    val sourceConversationId: String,
+    val sourceMessageId: String,
+    val confidence: Double,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
 @Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
 data class PhoneAgentTaskEntity(
     @PrimaryKey val id: String,
@@ -185,6 +206,24 @@ interface NestroDao {
         term12: String,
         limit: Int = 40
     ): List<ConversationMemoryHit>
+    @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+
+    @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
+    suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putUserMemory(memory: UserMemoryEntity)
+
+    @Query("UPDATE user_memories SET content = :content, category = :category, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
+    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, updatedAt: Long)
+
+    @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
+    suspend fun deleteUserMemory(id: String, projectId: String)
+
+    @Query("DELETE FROM user_memories WHERE projectId = :projectId")
+    suspend fun deleteUserMemoriesForProject(projectId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putPhoneAgentTask(task: PhoneAgentTaskEntity)
 
@@ -269,6 +308,7 @@ interface NestroDao {
     suspend fun deleteProjectAndKnowledge(projectId: String) {
         deleteKnowledgeDocumentsForProject(projectId)
         deletePhoneAgentTasksForProject(projectId)
+        deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }
     @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND content LIKE '%' || :term || '%' LIMIT :limit")
@@ -276,14 +316,23 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class],
-    version = 5,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
+    version = 6,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS user_memories (id TEXT NOT NULL, projectId TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, fingerprint TEXT NOT NULL, sourceConversationId TEXT NOT NULL, sourceMessageId TEXT NOT NULL, confidence REAL NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_user_memories_projectId_updatedAt ON user_memories(projectId, updatedAt)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_user_memories_projectId_fingerprint ON user_memories(projectId, fingerprint)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_user_memories_sourceConversationId ON user_memories(sourceConversationId)")
+            }
+        }
+
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS phone_agent_task_logs (id TEXT NOT NULL, taskId TEXT NOT NULL, actionIndex INTEGER NOT NULL, action TEXT NOT NULL, success INTEGER NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(id), FOREIGN KEY(taskId) REFERENCES phone_agent_tasks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
@@ -325,7 +374,7 @@ abstract class NestroDatabase : RoomDatabase() {
                     context.applicationContext,
                     NestroDatabase::class.java,
                     "nestro_local.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
             }
     }
 }
