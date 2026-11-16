@@ -5,6 +5,17 @@ object PhoneAgentPlanner {
     enum class Category { SHOPPING, FOOD_ORDER, BOOKING, WEB_RESEARCH, FORM, DEVICE_TASK, GENERAL }
     enum class Risk { LOW, MEDIUM, HIGH }
     enum class StepKind { CLARIFY_REQUIREMENTS, DISCOVER_OPTIONS, COMPARE_TOTAL_COST, SELECT_CANDIDATE, OPEN_DESTINATION, VERIFY_PAGE, FILL_NON_SENSITIVE_DETAILS, REVIEW_ORDER, REQUEST_USER_CONFIRMATION, HANDOFF_TO_USER, VERIFY_COMPLETION }
+
+    fun categoryLabel(category: String): String = when (category) {
+        Category.SHOPPING.name -> "购物"
+        Category.FOOD_ORDER.name -> "外卖/点餐"
+        Category.BOOKING.name -> "预约/预订"
+        Category.WEB_RESEARCH.name -> "网页检索"
+        Category.FORM.name -> "表单处理"
+        Category.DEVICE_TASK.name -> "手机操作"
+        Category.GENERAL.name -> "通用任务"
+        else -> "其他任务"
+    }
     data class Step(val kind: StepKind, val title: String, val risk: Risk = Risk.LOW, val requiresUserConfirmation: Boolean = false)
     data class Plan(val category: Category, val goal: String, val steps: List<Step>, val requiresHumanAtCommit: Boolean = true)
 

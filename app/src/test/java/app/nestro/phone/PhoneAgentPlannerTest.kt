@@ -6,6 +6,12 @@ import org.junit.Test
 
 class PhoneAgentPlannerTest {
     @Test
+    fun categoryLabelsAreReadable() {
+        assertEquals("手机操作", PhoneAgentPlanner.categoryLabel(PhoneAgentPlanner.Category.DEVICE_TASK.name))
+        assertEquals("外卖/点餐", PhoneAgentPlanner.categoryLabel(PhoneAgentPlanner.Category.FOOD_ORDER.name))
+    }
+
+    @Test
     fun shoppingGoalIncludesTotalCostAndHumanConfirmation() {
         val plan = PhoneAgentPlanner.plan("帮我买一杯咖啡，比较价格和配送费")
         assertEquals(PhoneAgentPlanner.Category.SHOPPING, plan.category)

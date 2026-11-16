@@ -9,6 +9,12 @@ import org.junit.Test
 
 class PhoneAgentActionParserTest {
     @Test
+    fun taskStatusesHaveReadableChineseLabels() {
+        assertEquals("中断待核对", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_INTERRUPTED))
+        assertEquals("等待你处理", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_WAITING_USER))
+    }
+
+    @Test
     fun ambiguousInterruptionRequiresExplicitRetryAndNeverLooksRunning() {
         assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, true))
         assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, false))
@@ -108,6 +114,22 @@ class PhoneAgentActionParserTest {
                 """{"done":false,"actions":[{"type":"open_url","url":"file:///etc/passwd"}]}"""
             )
             fail("file URL should be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun parserRejectsActionsThatCannotBeSafelyRestored() {
+        val longUrl = "https://example.com/" + "a".repeat(2050)
+        try {
+            PhoneAgentActionParser.parse("""{"done":false,"actions":[{"type":"open_url","url":"$longUrl"}]}""")
+            fail("oversized URL must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+        val longExpected = "x".repeat(101)
+        try {
+            PhoneAgentActionParser.parse("""{"done":false,"actions":[{"type":"click","text":"继续","expectedAfter":"$longExpected"}]}""")
+            fail("oversized expected text must be rejected")
         } catch (_: IllegalArgumentException) {
         }
     }

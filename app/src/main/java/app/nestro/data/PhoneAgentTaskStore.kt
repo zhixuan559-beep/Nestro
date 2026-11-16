@@ -17,6 +17,18 @@ object PhoneAgentTaskStore {
     const val STATUS_INTERRUPTED = "interrupted"
     const val STATUS_CANCELLED = "cancelled"
 
+    fun statusLabel(status: String): String = when (status) {
+        STATUS_PLANNED -> "待执行"
+        STATUS_RUNNING -> "执行中"
+        STATUS_WAITING_USER -> "等待你处理"
+        STATUS_PAUSED -> "已暂停"
+        STATUS_INTERRUPTED -> "中断待核对"
+        STATUS_COMPLETED -> "已完成"
+        STATUS_FAILED -> "执行异常"
+        STATUS_CANCELLED -> "已取消"
+        else -> "未知状态"
+    }
+
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
         val now = System.currentTimeMillis()
         val task = PhoneAgentTaskEntity(
@@ -48,6 +60,7 @@ object PhoneAgentTaskStore {
         }
         val encoded = JSONObject().put("format", "phone_agent_actions_v1").put("actions", rows).toString()
         require(encoded.length <= 120_000) { "任务动作数据过大" }
+        decodeActions(encoded)
         check(dao.phoneAgentTask(taskId) != null) { "任务不存在" }
         dao.updatePhoneAgentTaskPlan(taskId, encoded, System.currentTimeMillis())
     }

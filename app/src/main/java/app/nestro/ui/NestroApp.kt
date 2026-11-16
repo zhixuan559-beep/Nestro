@@ -4875,7 +4875,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "状态：${task.status} · 进度：${task.currentStep} · ${task.category}",
+                            "状态：${PhoneAgentTaskStore.statusLabel(task.status)} · 进度：${task.currentStep} · ${PhoneAgentPlanner.categoryLabel(task.category)}",
                             color = Muted,
                             style = MaterialTheme.typography.bodySmall
                         )

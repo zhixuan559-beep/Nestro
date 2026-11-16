@@ -25,7 +25,7 @@ object PhoneAgentActionParser {
                 "open_url" -> {
                     val url = item.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("模型生成的网址无效") }
-                    require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "模型生成了不安全的网址" }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "模型生成了不安全的网址" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
@@ -39,7 +39,9 @@ object PhoneAgentActionParser {
                     if (isHighRisk(label)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("页面出现高风险操作“$label”，请核对页面后由你本人处理。")
                     } else {
-                        PhoneAgentExecutor.Action.ClickText(label, item.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
+                        val expectedAfter = item.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(expectedAfter == null || expectedAfter.length <= 100) { "动作后的验证文字过长" }
+                    PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                     }
                 }
                 "enter_text" -> {
