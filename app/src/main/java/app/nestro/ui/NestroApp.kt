@@ -3404,8 +3404,11 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     val backupProjects = if (roomProjects.isEmpty()) loadProjects(prefs) else roomProjects
     root.put("projects", projectsToJson(backupProjects))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
+    val roomConversationRows = dao.loadConversations()
+    require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
+    roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
     val conversationArray = JSONArray()
-    dao.loadConversations().forEach { row ->
+    roomConversationRows.forEach { row ->
         val messages = JSONArray()
         row.messages.sortedBy { it.position }.forEach { message ->
             val versions = runCatching { JSONArray(message.versionsJson) }.getOrDefault(JSONArray())
@@ -3421,10 +3424,13 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     val drafts = JSONObject()
     prefs.all.forEach { (key, value) -> if (key.startsWith("draft_") && value is String && value.isNotBlank()) drafts.put(key.removePrefix("draft_"), value.take(100_000)) }
     root.put("conversation_drafts_v1", drafts)
+    val roomKnowledgeDocuments = dao.allKnowledgeDocuments()
+    val roomKnowledgeChunks = dao.allKnowledgeChunks()
+    require(roomKnowledgeDocuments.size <= 500 && roomKnowledgeChunks.size <= 50_000) { "知识库数据超过备份上限，请先清理文档" }
     val docs = JSONArray()
-    dao.allKnowledgeDocuments().forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
+    roomKnowledgeDocuments.forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
     val chunks = JSONArray()
-    dao.allKnowledgeChunks().forEach { chunk -> chunks.put(JSONObject().put("id", chunk.id).put("documentId", chunk.documentId).put("projectId", chunk.projectId).put("position", chunk.position).put("content", chunk.content)) }
+    roomKnowledgeChunks.forEach { chunk -> chunks.put(JSONObject().put("id", chunk.id).put("documentId", chunk.documentId).put("projectId", chunk.projectId).put("position", chunk.position).put("content", chunk.content)) }
     root.put("knowledge_documents_v1", docs)
     root.put("knowledge_chunks_v1", chunks)
     val memories = JSONArray()
@@ -3482,7 +3488,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
     val payload = root.toString()
-    root.put("checksum_sha256", LocalBackupCompatibility.sha256(payload))
+    root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
     return root.toString(2)
 }
 
@@ -3493,8 +3499,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
     val checksum = root.optString("checksum_sha256")
     if (checksum.isNotBlank()) {
-        val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }.toString()
-        require(checksum.equals(LocalBackupCompatibility.sha256(payload), ignoreCase = true)) { "备份完整性校验失败，文件可能已损坏或被修改" }
+        val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }
+        require(checksum.equals(LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(payload)), ignoreCase = true)) { "备份完整性校验失败，文件可能已损坏或被修改" }
     }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
@@ -3557,7 +3563,15 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         }
         ConversationEntity(id, title, item.optLong("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
     }
-    val messageIds = restoredConversations.flatMap { it.second.map { row -> row.id } }
+    val completeRestoredConversations = if (restoredConversations.isNotEmpty()) restoredConversations else if (messages.length() > 0) {
+        val legacyMessages = (0 until messages.length()).mapIndexed { index, messageIndex ->
+            val item = messages.getJSONObject(messageIndex)
+            MessageEntity(item.getString("id"), "legacy-restored", index, item.getString("role"), item.getString("content"),
+                (item.optJSONArray("versions") ?: JSONArray()).toString(), item.optInt("active_version", 0))
+        }
+        listOf(ConversationEntity("legacy-restored", "恢复的旧对话", System.currentTimeMillis(), "default") to legacyMessages)
+    } else emptyList()
+    val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
     require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
     val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
     require(draftObject.length() <= 200) { "草稿数量超出限制" }
@@ -3565,7 +3579,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     val draftKeys = draftObject.keys()
     while (draftKeys.hasNext()) {
         val id = draftKeys.next(); val value = draftObject.optString(id)
-        require(restoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
+        require(completeRestoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
         restoredDrafts[id] = value
     }
     val documentRows = root.optJSONArray("knowledge_documents_v1") ?: JSONArray()
@@ -3757,7 +3771,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("conversations_v1", conversations.toString())
-        .putString("active_conversation_id", root.optString("active_conversation_id", ""))
+        .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
@@ -3808,7 +3822,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         dao.deleteAllPhoneAgentTasks()
         dao.deleteAllProjects()
         if (restoredProjects.isNotEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt) })
-        restoredConversations.forEach { (conversation, rows) ->
+        completeRestoredConversations.forEach { (conversation, rows) ->
             dao.putConversation(conversation)
             if (rows.isNotEmpty()) dao.putMessages(rows)
         }
