@@ -1,5 +1,6 @@
 package app.nestro.data
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Html
@@ -13,6 +14,9 @@ import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Document
 import org.w3c.dom.Element
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 
 data class KnowledgeImportResult(val document: KnowledgeDocumentEntity, val duplicate: Boolean)
 data class KnowledgeSearchResult(
@@ -27,11 +31,11 @@ object KnowledgeStore {
  private const val MAX_TEXT_CHARS=500_000
  private const val MAX_CANDIDATES_PER_TERM=80
 
- suspend fun importText(resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
+ suspend fun importText(context:Context,resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
   val mime=resolver.getType(uri).orEmpty().lowercase()
   val name=resolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c -> if(c.moveToFirst()) c.getString(0) else null } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "导入文档"
   val ext=name.substringAfterLast('.',"").lowercase()
-  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx") || mime.startsWith("text/") || mime=="application/json") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX；PDF 文本解析暂未接入。" }
+  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/") || mime=="application/json") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。" }
   val bytes=resolver.openInputStream(uri)?.use { input ->
    val out=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0
    while(true) { val n=input.read(buffer); if(n<0) break; total+=n; require(total<=MAX_FILE_BYTES) { "文件超过 2 MB，请先拆分或压缩。" }; out.write(buffer,0,n) }
@@ -96,7 +100,7 @@ object KnowledgeStore {
    return "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
   }
 
-  private fun extractOfficeText(ext:String,bytes:ByteArray):String {
+  private fun extractPdfText(context:Context,bytes:ByteArray):String {\n  PDFBoxResourceLoader.init(context.applicationContext)\n  PDDocument.load(ByteArrayInputStream(bytes)).use { document ->\n   require(!document.isEncrypted) { "暂不支持加密 PDF，请先解除密码保护。" }\n   require(document.numberOfPages<=300) { "PDF 超过 300 页，请拆分后导入。" }\n   val text=PDFTextStripper().getText(document)\n   require(text.isNotBlank()) { "PDF 没有可提取的文字，可能是扫描图片版，当前尚未接入 OCR。" }\n   return text\n  }\n }\n\n private fun extractOfficeText(ext:String,bytes:ByteArray):String {
   val entries=linkedMapOf<String,ByteArray>()
   var expanded=0
   ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->

@@ -56,7 +56,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    loading=true; status="正在读取并建立本地索引…"
    val requestedProjectId=projectId
    scope.launch {
-    val result=runCatching { KnowledgeStore.importText(context.contentResolver,uri,requestedProjectId,database.dao()) }
+    val result=runCatching { KnowledgeStore.importText(context,context.contentResolver,uri,requestedProjectId,database.dao()) }
     if(latestProjectId==requestedProjectId) {
      result.onSuccess { refresh(requestedProjectId); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
       .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
@@ -68,8 +68,8 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
  Column(Modifier.fillMaxSize().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
   Text("本地知识库",color=KnowledgeInk,style=MaterialTheme.typography.headlineSmall)
   Text("当前空间：$projectId。资料只存入本机 Room 数据库，回答时检索当前项目的相关片段。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
-  Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
-  Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX。单文件上限 2 MB，Office 文件解压后上限 8 MB。PDF 文本解析尚未接入。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
+  Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/pdf","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
+  Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。单文件上限 2 MB，Office 文件解压后上限 8 MB；PDF 最多 300 页，扫描件暂不支持 OCR。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Text(status,color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   OutlinedTextField(
    value=searchQuery,
