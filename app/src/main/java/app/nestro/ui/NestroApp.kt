@@ -338,6 +338,8 @@ fun NestroApp() {
     var workflowInputDraft by remember { mutableStateOf("") }
     var workflowRunStatus by remember { mutableStateOf("") }
     var runningWorkflowId by remember { mutableStateOf("") }
+    var runningWorkflowTaskId by remember { mutableStateOf("") }
+    var pendingWorkflowTaskId by remember { mutableStateOf("") }
     var workflowPaused by remember { mutableStateOf(false) }
     var workflowPauseGate by remember { mutableStateOf<CompletableDeferred<Unit>?>(null) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
@@ -1347,10 +1349,20 @@ fun NestroApp() {
                                          OutlinedButton(
                                              onClick = {
                                                  if (workflowPaused) {
-                                                     workflowPauseGate?.complete(Unit)
-                                                     workflowPauseGate = null
-                                                     workflowPaused = false
-                                                     workflowRunStatus = "正在继续工作流…"
+                                                     val taskId = runningWorkflowTaskId
+                                                     scope.launch {
+                                                         if (taskId.isNotBlank()) withContext(Dispatchers.IO) {
+                                                             val task = database.dao().capabilityTask(taskId)
+                                                             if (task?.state == CapabilityTaskState.PAUSED) {
+                                                                 CapabilityTaskStore.resume(database.dao(), taskId)
+                                                                 CapabilityTaskStore.transition(database.dao(), taskId, CapabilityTaskState.RUNNING, "workflow_resumed", "工作流继续执行")
+                                                             }
+                                                         }
+                                                         workflowPauseGate?.complete(Unit)
+                                                         workflowPauseGate = null
+                                                         workflowPaused = false
+                                                         workflowRunStatus = "正在继续工作流…"
+                                                     }
                                                  } else {
                                                      workflowPauseGate = CompletableDeferred()
                                                      workflowPaused = true
@@ -1361,6 +1373,8 @@ fun NestroApp() {
                                          ) { Text(if (workflowPaused) "继续执行" else "暂停") }
                                          TextButton(onClick = {
                                              stopRequested = true
+                                             val taskId = runningWorkflowTaskId
+                                             if (taskId.isNotBlank()) scope.launch(Dispatchers.IO) { CapabilityTaskStore.cancel(database.dao(), taskId) }
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
                                              OpenAiClient.cancel()
@@ -1388,6 +1402,30 @@ fun NestroApp() {
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
+                                                         val workflowTask = withContext(Dispatchers.IO) {
+                                                             if (pendingWorkflowTaskId.isNotBlank()) {
+                                                                 val existing = database.dao().capabilityTask(pendingWorkflowTaskId) ?: error("工作流任务记录不存在")
+                                                                 if (existing.state == CapabilityTaskState.PAUSED || existing.state == CapabilityTaskState.WAITING_USER) {
+                                                                     CapabilityTaskStore.resume(database.dao(), existing.id)
+                                                                 }
+                                                                 existing
+                                                             } else {
+                                                                 CapabilityTaskStore.enqueue(
+                                                                     database.dao(), projectId, conversationId,
+                                                                     kind = "workflow", capabilityId = workflow.id,
+                                                                     title = workflow.name, input = input,
+                                                                     callerKey = UUID.randomUUID().toString()
+                                                                 )
+                                                             }
+                                                         }
+                                                         pendingWorkflowTaskId = ""
+                                                         runningWorkflowTaskId = workflowTask.id
+                                                         withContext(Dispatchers.IO) {
+                                                             val current = database.dao().capabilityTask(workflowTask.id)
+                                                             if (current?.state == CapabilityTaskState.QUEUED) {
+                                                                 CapabilityTaskStore.transition(database.dao(), workflowTask.id, CapabilityTaskState.RUNNING, "workflow_started", "工作流开始执行")
+                                                             }
+                                                         }
                                                          val result = runCatching {
                                                              WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
                                                                  val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
@@ -1414,10 +1452,32 @@ fun NestroApp() {
                                                                  }
                                                              }, onStep = { index, step ->
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
+                                                                 if (workflowPaused) {
+                                                                     val taskId = runningWorkflowTaskId
+                                                                     if (taskId.isNotBlank()) withContext(Dispatchers.IO) {
+                                                                         val current = database.dao().capabilityTask(taskId)
+                                                                         if (current?.state == CapabilityTaskState.RUNNING) {
+                                                                             CapabilityTaskStore.pause(database.dao(), taskId)
+                                                                         }
+                                                                     }
+                                                                 }
                                                                  workflowPauseGate?.await()
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
                                                                  workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
+                                                         }
+                                                         val workflowTaskId = runningWorkflowTaskId
+                                                         if (workflowTaskId.isNotBlank()) withContext(Dispatchers.IO) {
+                                                             val current = database.dao().capabilityTask(workflowTaskId)
+                                                             if (current?.state == CapabilityTaskState.RUNNING) {
+                                                                 CapabilityTaskStore.transition(
+                                                                     database.dao(), workflowTaskId,
+                                                                     if (stopRequested) CapabilityTaskState.CANCELLED else if (result.isSuccess) CapabilityTaskState.SUCCEEDED else CapabilityTaskState.FAILED,
+                                                                     "workflow_finished", if (result.isSuccess) "工作流执行完成" else "工作流执行失败",
+                                                                     resultSummary = result.getOrNull()?.let { "完成步骤：${it.completedSteps}" } ?: "",
+                                                                     error = result.exceptionOrNull()?.message?.take(2000) ?: ""
+                                                                 )
+                                                             }
                                                          }
                                                          val assistantText = when {
                                                              stopRequested -> "工作流已停止。"
@@ -1455,6 +1515,7 @@ fun NestroApp() {
                                                          workflowPauseGate = null
                                                          workflowPaused = false
                                                          runningWorkflowId = ""
+                                                         runningWorkflowTaskId = ""
                                                          busy = false
                                                          stopRequested = false
                                                          workflowInputDraft = ""
@@ -2275,9 +2336,16 @@ fun NestroApp() {
                                     pauseRequestedCapabilityTaskId = task.id
                                     stopRequested = true
                                 }
+                                if (task.kind == "workflow" && runningWorkflowTaskId == task.id) {
+                                    workflowPauseGate = CompletableDeferred()
+                                    workflowPaused = true
+                                    workflowRunStatus = "已请求暂停，将在当前步骤结束后暂停。"
+                                }
                                 val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch(Dispatchers.IO) {
-                                    CapabilityTaskStore.pause(database.dao(), task.id)
+                                    if (task.kind != "workflow" || runningWorkflowTaskId != task.id) {
+                                        CapabilityTaskStore.pause(database.dao(), task.id)
+                                    }
                                     if (linkedPhoneTaskId != null) {
                                         PhoneAgentWorkScheduler.cancel(context, linkedPhoneTaskId)
                                         val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
@@ -2290,18 +2358,29 @@ fun NestroApp() {
                             onResumeTask = { task ->
                                 val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        CapabilityTaskStore.resume(database.dao(), task.id)
-                                        if (linkedPhoneTaskId != null) {
+                                    if (linkedPhoneTaskId != null) {
+                                        withContext(Dispatchers.IO) {
+                                            CapabilityTaskStore.resume(database.dao(), task.id)
                                             val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
                                             if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                                 PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_PLANNED, child.currentStep)
                                             }
                                         }
-                                    }
-                                    if (linkedPhoneTaskId != null) {
                                         PhoneAgentWorkScheduler.enqueue(context, linkedPhoneTaskId, afterUserHandoff = true, allowRetryCurrentAction = true)
+                                    } else if (task.kind == "workflow" && runningWorkflowTaskId == task.id) {
+                                        withContext(Dispatchers.IO) {
+                                            CapabilityTaskStore.resume(database.dao(), task.id)
+                                            CapabilityTaskStore.transition(database.dao(), task.id, CapabilityTaskState.RUNNING, "workflow_resumed", "工作流继续执行")
+                                        }
+                                        workflowPauseGate?.complete(Unit)
+                                        workflowPauseGate = null
+                                        workflowPaused = false
+                                    } else if (task.kind == "workflow") {
+                                        pendingWorkflowTaskId = task.id
+                                        workflowInputDraft = task.input
+                                        page = "workflows"
                                     } else {
+                                        withContext(Dispatchers.IO) { CapabilityTaskStore.resume(database.dao(), task.id) }
                                         pendingCapabilityTaskId = task.id
                                         draft = task.input
                                         page = "home"
@@ -2310,6 +2389,12 @@ fun NestroApp() {
                             },
                             onCancelTask = { task ->
                                 if (activeCapabilityTaskId == task.id) stopRequested = true
+                                if (task.kind == "workflow" && runningWorkflowTaskId == task.id) {
+                                    stopRequested = true
+                                    workflowPauseGate?.complete(Unit)
+                                    workflowPauseGate = null
+                                    OpenAiClient.cancel()
+                                }
                                 val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch(Dispatchers.IO) {
                                     CapabilityTaskStore.cancel(database.dao(), task.id)
