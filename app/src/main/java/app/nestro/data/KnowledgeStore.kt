@@ -119,7 +119,7 @@ object KnowledgeStore {
       val paragraph=paragraphs.item(i) as? Element ?: continue
       val texts=paragraph.getElementsByTagNameNS("*","t")
       val line=(0 until texts.length).joinToString("") { texts.item(it).textContent.orEmpty() }
-      if(line.isNotBlank()) append(line).append('\\n')
+      if(line.isNotBlank()) append(line).append('\n')
      }
     }
    }
@@ -138,7 +138,7 @@ object KnowledgeStore {
     require(sheets.isNotEmpty()) { "XLSX 文件没有可读取的工作表。" }
     buildString {
      sheets.forEach { (sheetName,xml) ->
-      append("工作表：").append(sheetName.substringAfterLast('/')).append('\\n')
+      append("工作表：").append(sheetName.substringAfterLast('/')).append('\n')
       val document=parseXml(xml)
       val rows=document.getElementsByTagNameNS("*","row")
       for(r in 0 until rows.length) {
@@ -160,7 +160,7 @@ object KnowledgeStore {
         }
         if(value.isNotBlank()) values += cell.getAttribute("r") + "=" + value
        }
-       if(values.isNotEmpty()) append(values.joinToString(" | ")).append('\\n')
+       if(values.isNotEmpty()) append(values.joinToString(" | ")).append('\n')
       }
      }
     }
@@ -171,13 +171,13 @@ object KnowledgeStore {
     require(slides.isNotEmpty()) { "PPTX 文件没有可读取的幻灯片。" }
     buildString {
      slides.forEach { (slideName,xml) ->
-      append("幻灯片：").append(slideName.substringAfterLast('/')).append('\\n')
+      append("幻灯片：").append(slideName.substringAfterLast('/')).append('\n')
       val document=parseXml(xml)
       val paragraphs=document.getElementsByTagNameNS("*","p")
       for(p in 0 until paragraphs.length) {
        val texts=(paragraphs.item(p) as Element).getElementsByTagNameNS("*","t")
        val line=(0 until texts.length).joinToString("") { texts.item(it).textContent.orEmpty() }
-       if(line.isNotBlank()) append(line).append('\\n')
+       if(line.isNotBlank()) append(line).append('\n')
       }
      }
     }
