@@ -328,6 +328,7 @@ fun NestroApp() {
                 if (result.isSuccess) {
                     modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
                     activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
+                    modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
                     val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
                     config = if (restoredActiveProfile != null) {
                         ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
@@ -600,7 +601,10 @@ fun NestroApp() {
 
     val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputChars, outputChars ->
         scope.launch {
-            val profileId = modelProfiles.firstOrNull { it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model }?.id
+            val profileId = modelProfiles.firstOrNull {
+                it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
+                    LocalVault.readProfile(context, it.id) == usedConfig.apiKey
+            }?.id
                 ?: activeModelProfileId.takeIf { it.isNotBlank() }
             if (profileId != null) {
                 modelUsage = ModelUsageStatsCodec.record(modelUsage, profileId, inputChars, outputChars)
@@ -3279,6 +3283,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("model", prefs.getString("model", "") ?: "")
     root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
+    root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("messages", prefs.getString("messages", "[]") ?: "[]")
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
@@ -3599,11 +3604,15 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
         val restoredActiveProfileId = root.optString("active_model_profile_id", "")
             .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
+        val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
+        val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
+        require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
         val previousBaseUrl = prefs.getString("base_url", "") ?: ""
         val previousModel = prefs.getString("model", "") ?: ""
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
+            .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
