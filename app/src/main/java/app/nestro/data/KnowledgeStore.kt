@@ -43,6 +43,7 @@ object KnowledgeStore {
   } ?: error("无法读取所选文件")
   val raw=bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
   val parsed=when {
+   ext=="pdf" || mime=="application/pdf" -> extractPdfText(context,bytes)
    ext in setOf("docx","xlsx","pptx") -> extractOfficeText(ext, bytes)
    ext in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(raw,Html.FROM_HTML_MODE_COMPACT).toString()
    else -> raw
