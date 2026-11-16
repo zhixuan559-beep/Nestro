@@ -3,6 +3,10 @@ package app.nestro.ui
 import android.content.SharedPreferences
 import app.nestro.data.CapabilityDescriptor
 import app.nestro.data.CapabilityRegistryStore
+import app.nestro.data.NestroDao
+import app.nestro.data.CapabilityTaskEntity
+import app.nestro.data.CapabilityTaskStore
+import app.nestro.data.CapabilityTaskState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,10 +23,14 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CapabilityCenterPage(
     prefs: SharedPreferences,
+    dao: NestroDao,
     projectId: String,
     onDispatchTask: (String) -> Unit,
     activeModel: String,
@@ -39,6 +47,9 @@ fun CapabilityCenterPage(
     var query by remember { mutableStateOf("") }; var filter by remember { mutableStateOf("全部") }
     var refresh by remember { mutableIntStateOf(0) }; var pending by remember { mutableStateOf<CapabilityDescriptor?>(null) }
     var taskDraft by remember { mutableStateOf("") }; var showAudit by remember { mutableStateOf(false) }
+    var taskRows by remember { mutableStateOf(emptyList<CapabilityTaskEntity>()) }
+    val taskScope = rememberCoroutineScope()
+    LaunchedEffect(projectId, refresh) { taskRows = withContext(Dispatchers.IO) { dao.capabilityTasks(projectId, 50) } }
 
     val builtIns=listOf(
         CapabilityDescriptor("models","模型服务","基础能力","管理模型服务商、API 配置、主模型切换与故障切换。",status=if(modelReady)"已配置" else "未配置",detail=if(modelReady)activeModel else "尚未启用可用模型配置",route="models"),
@@ -109,6 +120,50 @@ fun CapabilityCenterPage(
                     CapabilityRegistryStore.record(prefs,projectId,"dispatcher","统一任务入口","dispatch_to_chat","handed_to_main_chat")
                     onDispatchTask(prompt)
                 },enabled=taskDraft.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("带入主对话") }
+            }
+        }
+        Surface(color=card,shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,line),modifier=Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("持久任务队列",color=ink,fontWeight=FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("${taskRows.size} 条",color=muted,style=MaterialTheme.typography.labelSmall)
+                }
+                Text("统一入口提交的任务会先写入本机数据库，再交给主对话处理；切换页面或重启应用后仍可查看任务状态与运行事件。",color=muted,style=MaterialTheme.typography.bodySmall)
+                if(taskRows.isEmpty()) Text("当前项目暂无任务。",color=muted,style=MaterialTheme.typography.bodySmall)
+                taskRows.forEach { task ->
+                    val stateLabel = when(task.state) {
+                        CapabilityTaskState.QUEUED -> "排队中"
+                        CapabilityTaskState.RUNNING -> "执行中"
+                        CapabilityTaskState.PAUSED -> "已暂停"
+                        CapabilityTaskState.WAITING_USER -> "等待用户处理"
+                        CapabilityTaskState.RETRY_WAIT -> "等待重试"
+                        CapabilityTaskState.SUCCEEDED -> "已完成"
+                        CapabilityTaskState.FAILED -> "失败"
+                        CapabilityTaskState.CANCELLED -> "已取消"
+                        else -> task.state
+                    }
+                    Column(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment=Alignment.CenterVertically) {
+                            Text(task.title,color=ink,fontWeight=FontWeight.Medium,modifier=Modifier.weight(1f))
+                            Text(stateLabel,color=if(task.state==CapabilityTaskState.SUCCEEDED) mint else if(task.state==CapabilityTaskState.FAILED) warning else muted,style=MaterialTheme.typography.labelSmall)
+                        }
+                        Text(task.input.take(180),color=muted,style=MaterialTheme.typography.bodySmall,maxLines=2)
+                        if(task.error.isNotBlank()) Text(task.error,color=warning,style=MaterialTheme.typography.labelSmall,maxLines=2)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            if(task.state==CapabilityTaskState.QUEUED || task.state==CapabilityTaskState.RUNNING) {
+                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.pause(dao,task.id) }; refresh++ } }) { Text("暂停") }
+                            }
+                            if(task.state==CapabilityTaskState.PAUSED || task.state==CapabilityTaskState.WAITING_USER) {
+                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.resume(dao,task.id) }; refresh++ } }) { Text("继续") }
+                            }
+                            if(!CapabilityTaskState.isTerminal(task.state)) {
+                                TextButton(onClick={ taskScope.launch { withContext(Dispatchers.IO) { CapabilityTaskStore.cancel(dao,task.id) }; refresh++ } }) { Text("取消",color=warning) }
+                            }
+                        }
+                    }
+                    Divider(color=line)
+                }
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically) {

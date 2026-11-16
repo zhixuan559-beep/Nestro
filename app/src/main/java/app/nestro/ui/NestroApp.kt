@@ -2228,6 +2228,7 @@ fun NestroApp() {
                         "knowledge" -> KnowledgePage(database, activeProjectId)
                         "capabilities" -> CapabilityCenterPage(
                             prefs = prefs,
+                            dao = database.dao(),
                             projectId = activeProjectId,
                             onDispatchTask = { task ->
                                 val taskProjectId = activeProjectId
