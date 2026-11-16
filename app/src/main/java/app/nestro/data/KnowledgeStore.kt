@@ -52,32 +52,19 @@ object KnowledgeStore {
  }
 
  suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String):String=withContext(Dispatchers.IO) {
-  val candidates=linkedSetOf<String>()
-  prompt.lowercase().split(Regex("[\\s，。！？；：、,.!?;:（）()]+" )).forEach { segment ->
-   Regex("[a-z0-9][a-z0-9_-]{1,31}").findAll(segment).forEach { candidates+=it.value }
-   val cjk=segment.filter { ch -> ch.code in 0x3400..0x9FFF || ch.code in 0xF900..0xFAFF }
-   for(size in listOf(4,3,2)) {
-    var offset=0
-    while(offset+size<=cjk.length) { candidates+=cjk.substring(offset,offset+size); offset+=if(size==4) 3 else 1 }
-   }
-  }
-  val ignored=setOf("帮我","请帮","一下","这个","那个","进行","关于","如何","可以","里面","内容","文档","怎么","什么","然后","现在","之前")
-  val terms=candidates.filter { it.length>=2 && it !in ignored }.take(16)
+  val terms=KnowledgeSearchEngine.extractTerms(prompt)
   if(terms.isEmpty()) return@withContext ""
-  val scores=linkedMapOf<String,Pair<KnowledgeChunkEntity,Int>>()
+  val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
   terms.forEach { term ->
-   val safe=term.replace("%","").replace("_","").replace("\\","")
-   if(safe.length>=2) dao.searchKnowledgeChunks(projectId,safe,8).forEach { chunk ->
-    val old=scores[chunk.id]
-    scores[chunk.id]=chunk to ((old?.second ?: 0)+1)
-   }
+   dao.searchKnowledgeChunks(projectId,term,12).forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
   }
-  val ranked=scores.values.sortedWith(compareByDescending<Pair<KnowledgeChunkEntity,Int>> { it.second }.thenBy { it.first.position }).take(6)
+  val ranked=KnowledgeSearchEngine.rank(prompt,candidates.values.toList(),6)
   if(ranked.isEmpty()) return@withContext ""
   val docs=dao.knowledgeDocuments(projectId).associateBy { it.id }
-  val snippets=ranked.joinToString("\n\n") { (item,score) ->
+  val snippets=ranked.joinToString("\n\n") { match ->
+   val item=match.chunk
    val source=docs[item.documentId]?.name ?: "本地文档"
-   "[来源：$source · 片段 ${item.position+1} · 匹配度 $score]\n${item.content.take(1200)}"
+   "[来源：$source · 片段 ${item.position+1} · 匹配词：${match.matchedTerms.joinToString("、")} ]\n${item.content.take(1200)}"
   }.take(7000)
   "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
  }
