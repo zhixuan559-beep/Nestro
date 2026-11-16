@@ -712,8 +712,8 @@ fun NestroApp() {
                                         .joinToString("\n\n").take(18000),
                                     connectTimeoutMillis = 15_000,
                                     readTimeoutMillis = 25_000,
-                                    temperature = expertProfiles[member]?.temperature,
-                                    maxTokens = expertProfiles[member]?.maxTokens
+                                    temperature = expertProfiles[member.name]?.temperature,
+                                    maxTokens = expertProfiles[member.name]?.maxTokens
                                 ).take(2200)
                             }
                         }
