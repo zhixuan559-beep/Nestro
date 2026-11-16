@@ -2617,7 +2617,7 @@ private fun ModelManager(
     onDelete: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var editingId by remember { mutableStateOf("") }
+    var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
     var name by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
@@ -2673,7 +2673,6 @@ private fun ModelManager(
                 }
             }
         }
-        if (editingId.isBlank()) beginNew()
         Text(if (editingId in profiles.map { it.id }) "编辑模型配置" else "新增模型配置", color = Ink, style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(name, { name = it.take(40) }, modifier = Modifier.fillMaxWidth(), label = { Text("配置名称") }, singleLine = true)
         OutlinedTextField(endpoint, { endpoint = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true)
