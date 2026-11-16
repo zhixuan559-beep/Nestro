@@ -66,7 +66,12 @@ object KnowledgeStore {
    if(terms.isEmpty()) return@withContext emptyList()
    val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
    terms.forEach { term ->
-    dao.searchKnowledgeChunks(projectId,term,12).forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
+    val matches = if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
+     dao.searchKnowledgeChunksFts(projectId, "\"" + term.replace("\"", "\"\"") + "\"", 12)
+    } else {
+     dao.searchKnowledgeChunks(projectId, term, 12)
+    }
+    matches.forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
    }
    if(candidates.isEmpty()) return@withContext emptyList()
    val documents=dao.knowledgeDocuments(projectId).associateBy { it.id }
