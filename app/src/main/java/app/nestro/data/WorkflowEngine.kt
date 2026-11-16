@@ -69,7 +69,7 @@ object WorkflowEngine {
         workflow:WorkflowDefinition,
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
-        onStep:(Int,WorkflowStep)->Unit={}
+        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> }
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }

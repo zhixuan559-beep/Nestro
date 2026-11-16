@@ -25,6 +25,11 @@ import app.nestro.data.ExpertBundleParser
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
+import app.nestro.data.WorkflowDefinition
+import app.nestro.data.WorkflowStep
+import app.nestro.data.WorkflowStepKind
+import app.nestro.data.WorkflowDefinitionCodec
+import app.nestro.data.WorkflowEngine
 import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
@@ -671,6 +676,7 @@ fun NestroApp() {
                         DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
                         DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
                         DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
+                         DrawerItem("⇢", "工作流") { page = "workflows"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
@@ -838,7 +844,86 @@ fun NestroApp() {
                             status = if (newConfig.apiKey.isNotBlank()) "模型配置已保存" else "尚未配置模型"
                             page = "home"
                         })
-                        "experts" -> {
+                        "workflows" -> {
+                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                 Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                 Text("把复杂任务拆成连续步骤。每一步接收上一步结果，支持提示词、专家角色和技能指令。", color = Muted)
+                                 OutlinedTextField(value = workflowInputDraft, onValueChange = { workflowInputDraft = it.take(12000) }, label = { Text("本次运行目标") }, placeholder = { Text("例如：研究一个市场，最后形成可执行分析。") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                                 if (workflowRunStatus.isNotBlank()) Text(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                 workflows.forEach { workflow ->
+                                     Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                             Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
+                                             Text(workflow.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                             workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${step.kind.name}", color = Mint, style = MaterialTheme.typography.bodySmall) }
+                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
+                                                     val input = workflowInputDraft.trim()
+                                                     val conversationId = activeConversationId
+                                                     val projectId = activeProjectId
+                                                     val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
+                                                     runningWorkflowId = workflow.id
+                                                     workflowRunStatus = "正在启动工作流…"
+                                                     scope.launch {
+                                                         val result = runCatching {
+                                                             WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
+                                                                 val roleContext = when (step.kind) {
+                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.title].orEmpty()
+                                                                     WorkflowStepKind.SKILL -> skills[step.title].orEmpty()
+                                                                     WorkflowStepKind.PROMPT -> ""
+                                                                 }
+                                                                 withContext(Dispatchers.IO) {
+                                                                     OpenAiClient.complete(config, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                         listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000))
+                                                                 }
+                                                             }, onStep = { index, step ->
+                                                                 workflowRunStatus = "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
+                                                             })
+                                                         }
+                                                         val assistantText = result.fold(
+                                                             { "工作流「${workflow.name}」已完成（${it.completedSteps} 步）。\n\n${it.output}" },
+                                                             { "工作流执行失败：${it.message ?: "未知错误"}" }
+                                                         )
+                                                         val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
+                                                         conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
+                                                         if (activeConversationId == conversationId) messages = completed
+                                                         workflowRunStatus = if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
+                                                         runningWorkflowId = ""
+                                                         workflowInputDraft = ""
+                                                         page = "home"
+                                                     }
+                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (runningWorkflowId == workflow.id) "执行中…" else "运行") }
+                                                 TextButton(onClick = {
+                                                     editingWorkflowId = workflow.id
+                                                     workflowDraftName = workflow.name
+                                                     workflowDraftDescription = workflow.description
+                                                     workflowStepOneTitle = workflow.steps.getOrNull(0)?.title ?: "分析需求"
+                                                     workflowStepOnePrompt = workflow.steps.getOrNull(0)?.instruction.orEmpty()
+                                                     workflowStepTwoTitle = workflow.steps.getOrNull(1)?.title ?: "形成结果"
+                                                     workflowStepTwoPrompt = workflow.steps.getOrNull(1)?.instruction.orEmpty()
+                                                     showWorkflowDialog = true
+                                                 }) { Text("编辑", color = Mint) }
+                                                 TextButton(onClick = {
+                                                     workflows = workflows.filterNot { it.id == workflow.id }
+                                                     prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                             }
+                                         }
+                                     }
+                                 }
+                                 Button(onClick = {
+                                     editingWorkflowId = ""
+                                     workflowDraftName = ""
+                                     workflowDraftDescription = ""
+                                     workflowStepOneTitle = "分析需求"
+                                     workflowStepOnePrompt = "拆解用户目标，列出关键事实、约束和待解决问题。"
+                                     workflowStepTwoTitle = "形成结果"
+                                     workflowStepTwoPrompt = "根据上一步分析，形成可直接交付的结果，并检查完整性。"
+                                     showWorkflowDialog = true
+                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 新建工作流") }
+                             }
+                         }
+                         "experts" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("我的专家", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
@@ -1576,6 +1661,44 @@ fun NestroApp() {
                 pendingExpertBundle = null
             }) { Text("导入", color = Mint) } },
             dismissButton = { TextButton(onClick = { pendingExpertBundle = null }) { Text("取消") } }
+        )
+    }
+
+    if (showWorkflowDialog) {
+        AlertDialog(
+            onDismissRequest = { showWorkflowDialog = false },
+            title = { Text(if (editingWorkflowId.isBlank()) "新建工作流" else "编辑工作流") },
+            text = {
+                Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(workflowDraftName, { workflowDraftName = it.take(40) }, label = { Text("工作流名称") }, singleLine = true)
+                    OutlinedTextField(workflowDraftDescription, { workflowDraftDescription = it.take(300) }, label = { Text("用途说明") }, minLines = 2)
+                    Text("步骤 1", color = Mint)
+                    OutlinedTextField(workflowStepOneTitle, { workflowStepOneTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
+                    OutlinedTextField(workflowStepOnePrompt, { workflowStepOnePrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
+                    Text("步骤 2", color = Mint)
+                    OutlinedTextField(workflowStepTwoTitle, { workflowStepTwoTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
+                    OutlinedTextField(workflowStepTwoPrompt, { workflowStepTwoPrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val workflow = WorkflowDefinition(
+                        id = editingWorkflowId.ifBlank { UUID.randomUUID().toString() },
+                        name = workflowDraftName.trim(),
+                        description = workflowDraftDescription.trim(),
+                        steps = listOf(
+                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = workflowStepOneTitle.trim(), instruction = workflowStepOnePrompt.trim()),
+                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = workflowStepTwoTitle.trim(), instruction = workflowStepTwoPrompt.trim())
+                        )
+                    )
+                    runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
+                        workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
+                        prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                        showWorkflowDialog = false
+                    }.onFailure { workflowRunStatus = it.message ?: "工作流内容无效" }
+                }) { Text("保存工作流", color = Mint) }
+            },
+            dismissButton = { TextButton(onClick = { showWorkflowDialog = false }) { Text("取消") } }
         )
     }
 
