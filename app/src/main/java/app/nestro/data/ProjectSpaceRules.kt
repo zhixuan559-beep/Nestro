@@ -23,6 +23,12 @@ object ProjectSpaceRules {
         return null
     }
 
+    fun canArchive(projectId: String, activeProjectId: String): Boolean =
+        projectId.isNotBlank() && projectId != "default" && projectId != activeProjectId
+
+    fun canRestore(projectId: String): Boolean =
+        projectId.isNotBlank() && projectId != "default"
+
     fun canDelete(projectId: String, activeProjectId: String, linkedProjectIds: Set<String>): Boolean =
         projectId.isNotBlank() && projectId != "default" && projectId != activeProjectId && projectId !in linkedProjectIds
 

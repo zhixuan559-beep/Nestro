@@ -131,6 +131,45 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
+    @Test fun archiveAndRestorePreserveProjectAndAllLinkedData() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("default", "默认空间", "", 1L),
+                ProjectEntity("archived", "待归档项目", "专属指令", 2L)
+            ))
+            dao.putConversation(ConversationEntity("archived-chat", "历史会话", 3L, "archived"))
+            dao.putMessages(listOf(MessageEntity("archived-message", "archived-chat", 0, "user", "必须保留")))
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity("archived-doc", "archived", "资料.txt", "text/plain", 4L, 4L, "archive-hash"))
+            dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("archived-chunk", "archived-doc", "archived", 0, "知识片段")))
+            dao.putUserMemory(UserMemoryEntity("archived-memory", "archived", "fact", "长期记忆", "archive-fp", "", "", 0.9, 5L, 5L))
+            dao.putPhoneAgentTask(PhoneAgentTaskEntity("archived-task", "archived", "archived-chat", "保留任务", "general", "planned", "[]", 0, 6L, 6L))
+
+            assertTrue(ProjectSpaceRules.canArchive("archived", "default"))
+            assertFalse(ProjectSpaceRules.canArchive("default", "archived"))
+            assertFalse(ProjectSpaceRules.canArchive("archived", "archived"))
+            assertTrue(ProjectSpaceRules.canRestore("archived"))
+            assertFalse(ProjectSpaceRules.canRestore("default"))
+
+            val original = dao.loadProjects().single { it.id == "archived" }
+            dao.putProjects(listOf(original.copy(archivedAt = 100L)))
+            assertEquals(100L, dao.loadProjects().single { it.id == "archived" }.archivedAt)
+            assertEquals("必须保留", dao.loadConversations().single().messages.single().content)
+            assertEquals(listOf("archived-doc"), dao.knowledgeDocuments("archived").map { it.id })
+            assertEquals(listOf("archived-memory"), dao.userMemories("archived").map { it.id })
+            assertEquals(listOf("archived-task"), dao.phoneAgentTasks("archived").map { it.id })
+
+            val archived = dao.loadProjects().single { it.id == "archived" }
+            dao.putProjects(listOf(archived.copy(archivedAt = 0L)))
+            assertEquals(0L, dao.loadProjects().single { it.id == "archived" }.archivedAt)
+            assertEquals("知识片段", dao.searchKnowledgeChunks("archived", "知识", 5).single().content)
+        } finally {
+            database.close()
+        }
+    }
+
     @Test fun projectAndConversationDataSurviveDatabaseReopen() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "nestro_project_space_lifecycle.db"
