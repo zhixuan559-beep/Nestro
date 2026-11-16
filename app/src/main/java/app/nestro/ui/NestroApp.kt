@@ -3771,9 +3771,20 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         require(prompt.length <= 8_000) { "专家提示词过长" }
         cleanPrompts.put(name, prompt)
     }
+    val normalizedConversationBackup = JSONArray()
+    completeRestoredConversations.forEach { (conversation, rows) ->
+        val messageArray = JSONArray()
+        rows.forEach { message ->
+            messageArray.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
+                .put("versions", JSONArray(message.versionsJson)).put("active_version", message.activeVersion))
+        }
+        normalizedConversationBackup.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
+            .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messageArray))
+    }
+    val restoreSyncTimestamp = System.currentTimeMillis()
     val editor = prefs.edit()
         .putString("messages", messages.toString())
-        .putString("conversations_v1", conversations.toString())
+        .putString("conversations_v1", normalizedConversationBackup.toString())
         .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
@@ -3792,7 +3803,8 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
         .putString("projects", projectsToJson(restoredProjects))
         .putString("active_project_id", root.optString("active_project_id", "default").takeIf { it in restoredProjectIds } ?: "default")
-        .putLong("local_snapshot_saved_at", System.currentTimeMillis())
+        .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
+        .putLong("room_synced_at", restoreSyncTimestamp)
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.optString("base_url")
         val restoredModel = root.optString("model")

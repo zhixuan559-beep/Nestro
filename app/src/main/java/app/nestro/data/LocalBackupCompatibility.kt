@@ -12,18 +12,16 @@ object LocalBackupCompatibility {
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
-    fun canonicalJson(value: JSONObject): String {
-        val sorted = JSONObject()
-        val keys = value.keys().asSequence().toList().sorted()
-        keys.forEach { key -> sorted.put(key, canonicalValue(value.opt(key))) }
-        return sorted.toString()
-    }
+    fun canonicalJson(value: JSONObject): String = canonicalValue(value)
 
-    private fun canonicalValue(value: Any?): Any? = when (value) {
-        is JSONObject -> JSONObject(canonicalJson(value))
-        is JSONArray -> JSONArray().apply {
-            for (index in 0 until value.length()) put(canonicalValue(value.opt(index)))
+    private fun canonicalValue(value: Any?): String = when {
+        value == null || value === JSONObject.NULL -> "null"
+        value is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->
+            JSONObject.quote(key) + ":" + canonicalValue(value.opt(key))
         }
-        else -> value
+        value is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { index -> canonicalValue(value.opt(index)) }
+        value is String -> JSONObject.quote(value)
+        value is Number || value is Boolean -> value.toString()
+        else -> JSONObject.quote(value.toString())
     }
 }
