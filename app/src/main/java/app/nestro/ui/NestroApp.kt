@@ -842,11 +842,6 @@ fun NestroApp() {
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
             val requestProjectId = activeProjectId
-            if (requestCapabilityTaskId.isNotBlank()) {
-                withContext(Dispatchers.IO) {
-                    CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.RUNNING, "chat_started", "主对话已开始处理统一能力任务")
-                }
-            }
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
             val requestMemoryMutationVersion = UserMemoryStore.mutationVersion(requestProjectId)
             val requestExpertsAuthorized = CapabilityRegistryStore.isGranted(prefs, requestProjectId, "experts", true)
@@ -873,6 +868,9 @@ fun NestroApp() {
                 skills[requestSkillName].orEmpty().takeIf { requestSkillName !in disabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
+                if (requestCapabilityTaskId.isNotBlank()) withContext(Dispatchers.IO) {
+                    CapabilityTaskStore.transition(database.dao(), requestCapabilityTaskId, CapabilityTaskState.RUNNING, "chat_started", "主对话已开始处理统一能力任务")
+                }
                 val phonePlan = PhoneAgentPlanner.plan(prompt)
                 if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL && !requestPhoneAuthorized) {
                     CapabilityRegistryStore.record(prefs, requestProjectId, "phone", "Phone Agent", "invoke", "denied")
