@@ -22,7 +22,7 @@ object KnowledgeChunker {
             if (end < text.length) {
                 val boundary = text.lastIndexOfAny(
                     charArrayOf('\n', '。', '！', '？', '.', '!', '?'),
-                    end
+                    end - 1
                 )
                 if (boundary > start + chunkSize / 2) end = boundary + 1
             }

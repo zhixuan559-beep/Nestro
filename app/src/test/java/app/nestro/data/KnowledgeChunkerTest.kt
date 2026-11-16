@@ -26,6 +26,13 @@ class KnowledgeChunkerTest {
     }
 
     @Test
+    fun punctuationAtNextChunkBoundaryDoesNotOverflowChunkSize() {
+        val source = "x".repeat(1_000) + "。" + "y".repeat(500)
+        val chunks = KnowledgeChunker.split(source)
+        assertTrue(chunks.all { it.length <= 1_000 })
+    }
+
+    @Test
     fun refusesToSilentlyTruncateWhenChunkLimitIsReached() {
         val source = "x".repeat(5_000)
         val failure = runCatching {
