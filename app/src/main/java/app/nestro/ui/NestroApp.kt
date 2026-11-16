@@ -3818,7 +3818,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         restoredPhoneAudit.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
     }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
-    require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
+    require(memoryRows.length() <= 20_000) { "自动记忆数量超出限制" }
     val restoredProjects = when (val projectsValue = root.opt("projects")) {
         is JSONArray -> parseProjects(projectsValue)
         is String -> parseProjects(JSONArray(projectsValue))
@@ -3926,6 +3926,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             shareAcrossProjects = item.optBoolean("shareAcrossProjects", false)
         )
     }
+    require(restoredMemories.map { it.id }.distinct().size == restoredMemories.size) { "备份中存在重复记忆 ID" }
+    require(restoredMemories.map { it.projectId to it.fingerprint }.distinct().size == restoredMemories.size) { "备份中存在重复记忆指纹" }
     val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
     require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
     val validTaskStatuses = setOf(
