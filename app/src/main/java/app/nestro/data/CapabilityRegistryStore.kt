@@ -50,7 +50,7 @@ object CapabilityRegistryStore {
             source=item.optString("source","builtin").take(80), status=item.optString("status","已接入").take(30),
             detail=item.optString("detail").take(200), route=item.optString("route").takeIf { it.isNotBlank() },
             available=item.optBoolean("available",true), projectScoped=item.optBoolean("project_scoped",true),
-            requiresConfirmation=item.optBoolean("requires_confirmation",true), defaultGranted=item.optBoolean("default_granted",true)
+            requiresConfirmation=item.optBoolean("requires_confirmation",true), defaultGranted=item.optBoolean("default_granted",false)
         )
     }
 

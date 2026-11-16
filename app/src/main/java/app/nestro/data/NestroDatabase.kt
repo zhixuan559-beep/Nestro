@@ -115,6 +115,53 @@ data class PhoneAgentTaskEntity(
     val updatedAt: Long
 )
 
+
+@Entity(
+    tableName = "capability_tasks",
+    indices = [
+        Index(value = ["projectId", "state", "updatedAt"]),
+        Index(value = ["conversationId"]),
+        Index(value = ["idempotencyKey"], unique = true)
+    ]
+)
+data class CapabilityTaskEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val conversationId: String,
+    val kind: String,
+    val capabilityId: String,
+    val title: String,
+    val input: String,
+    val state: String,
+    val idempotencyKey: String,
+    val checkpoint: String,
+    val resultSummary: String,
+    val error: String,
+    val attempts: Int,
+    val maxRetries: Int,
+    val requiresConfirmation: Boolean,
+    val availableAt: Long,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val startedAt: Long,
+    val finishedAt: Long
+)
+
+@Entity(
+    tableName = "capability_task_events",
+    foreignKeys = [ForeignKey(entity = CapabilityTaskEntity::class, parentColumns = ["id"], childColumns = ["taskId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["taskId", "createdAt"])]
+)
+data class CapabilityTaskEventEntity(
+    @PrimaryKey val id: String,
+    val taskId: String,
+    val fromState: String,
+    val toState: String,
+    val event: String,
+    val detail: String,
+    val createdAt: Long
+)
+
 @Entity(tableName = "projects")
 data class ProjectEntity(
     @PrimaryKey val id: String,
@@ -318,6 +365,37 @@ interface NestroDao {
     @Query("UPDATE phone_agent_tasks SET goal = :goal, updatedAt = :updatedAt WHERE id = :taskId")
     suspend fun updatePhoneAgentTaskGoal(taskId: String, goal: String, updatedAt: Long)
 
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCapabilityTask(task: CapabilityTaskEntity): Long
+
+    @Query("SELECT * FROM capability_tasks WHERE id = :taskId LIMIT 1")
+    suspend fun capabilityTask(taskId: String): CapabilityTaskEntity?
+
+    @Query("SELECT * FROM capability_tasks WHERE idempotencyKey = :key LIMIT 1")
+    suspend fun capabilityTaskByIdempotencyKey(key: String): CapabilityTaskEntity?
+
+    @Query("SELECT * FROM capability_tasks WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun capabilityTasks(projectId: String, limit: Int = 100): List<CapabilityTaskEntity>
+
+    @Query("SELECT * FROM capability_tasks WHERE projectId = :projectId AND state IN ('queued','retry_wait') AND availableAt <= :now ORDER BY createdAt ASC LIMIT 1")
+    suspend fun nextCapabilityTask(projectId: String, now: Long): CapabilityTaskEntity?
+
+    @Query("UPDATE capability_tasks SET state = 'running', attempts = attempts + 1, startedAt = CASE WHEN startedAt = 0 THEN :now ELSE startedAt END, updatedAt = :now WHERE id = :taskId AND state IN ('queued','retry_wait') AND availableAt <= :now")
+    suspend fun claimCapabilityTask(taskId: String, now: Long): Int
+
+    @Query("UPDATE capability_tasks SET state = :toState, checkpoint = :checkpoint, resultSummary = :resultSummary, error = :error, availableAt = :availableAt, updatedAt = :now, finishedAt = :finishedAt WHERE id = :taskId AND state = :fromState")
+    suspend fun transitionCapabilityTask(taskId: String, fromState: String, toState: String, checkpoint: String, resultSummary: String, error: String, availableAt: Long, now: Long, finishedAt: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertCapabilityTaskEvent(event: CapabilityTaskEventEntity)
+
+    @Query("SELECT * FROM capability_task_events WHERE taskId = :taskId ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun capabilityTaskEvents(taskId: String, limit: Int = 200): List<CapabilityTaskEventEntity>
+
+    @Query("DELETE FROM capability_task_events WHERE taskId = :taskId AND id NOT IN (SELECT id FROM capability_task_events WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :keep)")
+    suspend fun trimCapabilityTaskEvents(taskId: String, keep: Int = 200)
+
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 
@@ -468,8 +546,8 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
-    version = 11,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, CapabilityTaskEntity::class, CapabilityTaskEventEntity::class],
+    version = 12,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
@@ -487,6 +565,18 @@ abstract class NestroDatabase : RoomDatabase() {
         internal val KNOWLEDGE_FTS_CALLBACK = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 createKnowledgeFts(db)
+            }
+        }
+
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS capability_tasks (id TEXT NOT NULL, projectId TEXT NOT NULL, conversationId TEXT NOT NULL, kind TEXT NOT NULL, capabilityId TEXT NOT NULL, title TEXT NOT NULL, input TEXT NOT NULL, state TEXT NOT NULL, idempotencyKey TEXT NOT NULL, checkpoint TEXT NOT NULL, resultSummary TEXT NOT NULL, error TEXT NOT NULL, attempts INTEGER NOT NULL, maxRetries INTEGER NOT NULL, requiresConfirmation INTEGER NOT NULL, availableAt INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, startedAt INTEGER NOT NULL, finishedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_capability_tasks_projectId_state_updatedAt ON capability_tasks(projectId, state, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_capability_tasks_conversationId ON capability_tasks(conversationId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_capability_tasks_idempotencyKey ON capability_tasks(idempotencyKey)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS capability_task_events (id TEXT NOT NULL, taskId TEXT NOT NULL, fromState TEXT NOT NULL, toState TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(id), FOREIGN KEY(taskId) REFERENCES capability_tasks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_capability_task_events_taskId_createdAt ON capability_task_events(taskId, createdAt)")
             }
         }
 
@@ -564,7 +654,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
