@@ -14,6 +14,7 @@ import app.nestro.data.MessageEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ProjectEntity
 import app.nestro.data.UserMemoryEntity
+import app.nestro.data.UserMemoryStore
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -84,6 +85,8 @@ class LocalBackupRoundTripTest {
             val otherProjectRecall = UserMemoryStore.recall(dao, "p2", "授权共享偏好记忆").memories.map { it.id }
             assertTrue("明确授权的记忆应能跨项目召回", "mem2" in otherProjectRecall)
             assertFalse("未授权的项目记忆不得跨项目召回", "mem1" in otherProjectRecall)
+            assertTrue("应允许手动创建项目记忆", UserMemoryStore.saveManual(dao, "p2", "这个项目默认采用本地优先的记忆检索策略"))
+            assertFalse("重复的手动记忆不应重复入库", UserMemoryStore.saveManual(dao, "p2", "这个项目默认采用本地优先的记忆检索策略"))
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
