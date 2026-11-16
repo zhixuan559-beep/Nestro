@@ -17,6 +17,14 @@ class ExpertCatalogRulesTest {
         assertNull(ExpertCatalogRules.validateDefinition("文案官", "更新后的角色要求", "文案官", listOf("文案官")))
     }
 
+    @Test fun selectedExpertRestoresOnlyWhenItStillExistsAndIsEnabled() {
+        val profiles = mapOf("研究员" to ExpertProfile(enabled = true), "停用专家" to ExpertProfile(enabled = false))
+        assertEquals("研究员", ExpertCatalogRules.resolveSelection("研究员", listOf("研究员", "停用专家"), profiles))
+        assertEquals("通用助手", ExpertCatalogRules.resolveSelection("停用专家", listOf("研究员", "停用专家"), profiles))
+        assertEquals("通用助手", ExpertCatalogRules.resolveSelection("已删除", listOf("研究员"), profiles))
+        assertEquals("通用助手", ExpertCatalogRules.resolveSelection("通用助手", listOf("研究员"), profiles))
+    }
+
     @Test fun renamingExpertUpdatesWorkflowReferences() {
         val workflow = WorkflowDefinition(name = "写作流程", description = "测试专家重命名", steps = listOf(WorkflowStep(kind = WorkflowStepKind.EXPERT, title = "写作", targetId = "旧专家", instruction = "按专家角色执行")))
         val renamed = ExpertCatalogRules.renameWorkflowReferences(listOf(workflow), "旧专家", "新专家")

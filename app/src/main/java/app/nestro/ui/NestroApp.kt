@@ -208,7 +208,9 @@ fun NestroApp() {
     var skillDraftName by remember { mutableStateOf("") }
     var skillDraftPrompt by remember { mutableStateOf("") }
     var showSkillDialog by remember { mutableStateOf(false) }
-    var selectedExpert by remember { mutableStateOf("通用助手") }
+    var selectedExpert by remember {
+        mutableStateOf(ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles))
+    }
     var expertDraft by remember { mutableStateOf("") }
     var editingExpertName by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
@@ -329,9 +331,10 @@ fun NestroApp() {
                     expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
                     expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
                     expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
-                    if (selectedExpert != "通用助手" && (selectedExpert !in experts || expertProfiles[selectedExpert]?.enabled == false)) {
-                        selectedExpert = "通用助手"
-                    }
+                    selectedExpert = ExpertCatalogRules.resolveSelection(
+                        prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles
+                    )
+                    prefs.edit().putString("selected_expert", selectedExpert).apply()
                     expertTeams = loadExpertTeams(prefs)
                     selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
                     skills = loadSkills(prefs)
@@ -1162,7 +1165,11 @@ fun NestroApp() {
                                 experts.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) { selectedExpert = name; page = "home" }) {
+                                            Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
+                                                selectedExpert = name
+                                                prefs.edit().putString("selected_expert", name).apply()
+                                                page = "home"
+                                            }) {
                                                 Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 expertProfiles[name]?.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
@@ -1187,7 +1194,10 @@ fun NestroApp() {
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertProfiles = expertProfiles + (name to profile.copy(enabled = !profile.enabled))
                                                 prefs.edit().putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles)).apply()
-                                                if (profile.enabled && selectedExpert == name) selectedExpert = "通用助手"
+                                                if (profile.enabled && selectedExpert == name) {
+                                                    selectedExpert = "通用助手"
+                                                    prefs.edit().putString("selected_expert", selectedExpert).apply()
+                                                }
                                             }) { Text(if (expertProfiles[name]?.enabled == false) "启用" else "停用", color = if (expertProfiles[name]?.enabled == false) Mint else Muted) }
                                             TextButton(onClick = {
                                                 val index = experts.indexOf(name)
@@ -1229,7 +1239,10 @@ fun NestroApp() {
                                                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                                                          .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
                                                         .putString("selected_team_id", selectedTeamId).apply()
-                                                    if (selectedExpert == name) selectedExpert = "通用助手"
+                                                    if (selectedExpert == name) {
+                                                        selectedExpert = "通用助手"
+                                                        prefs.edit().putString("selected_expert", selectedExpert).apply()
+                                                    }
                                                     expertRevisions = expertRevisions - name
                                                     prefs.edit().putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
@@ -2026,7 +2039,10 @@ fun NestroApp() {
                 experts = if (bundle.name in experts) experts else experts + bundle.name
                 expertPrompts = expertPrompts + (bundle.name to bundle.prompt)
                 expertProfiles = expertProfiles + (bundle.name to bundle.profile())
-                if (!bundle.enabled && selectedExpert == bundle.name) selectedExpert = "通用助手"
+                if (!bundle.enabled && selectedExpert == bundle.name) {
+                    selectedExpert = "通用助手"
+                    prefs.edit().putString("selected_expert", selectedExpert).apply()
+                }
                 prefs.edit().putString("experts", JSONArray(experts).toString())
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
@@ -2327,8 +2343,11 @@ fun NestroApp() {
                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
-                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
-                    if (selectedExpert == oldName || selectedExpert == name) selectedExpert = if (profile.enabled) name else "通用助手"
+                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
+                        .putString("selected_expert", selectedExpert).apply()
+                    if (selectedExpert == oldName || selectedExpert == name) {
+                        selectedExpert = if (profile.enabled) name else "通用助手"
+                    }
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
@@ -2984,6 +3003,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
+    root.put("selected_expert", prefs.getString("selected_expert", "通用助手") ?: "通用助手")
     root.put("expert_profiles_v1", prefs.getString("expert_profiles_v1", "{}") ?: "{}")
     root.put("expert_versions_v1", prefs.getString("expert_versions_v1", "{}") ?: "{}")
     root.put("expert_templates_v1", prefs.getString("expert_templates_v1", "[]") ?: "[]")
@@ -3189,6 +3209,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     val restoredExpertProfiles = ExpertProfileCodec.decode(profileRaw)
     require(profileRaw == "{}" || restoredExpertProfiles.isNotEmpty()) { "专家配置元数据格式无效" }
     require(restoredExpertProfiles.size <= 100 && restoredExpertProfiles.keys.all { it in expertNames }) { "专家配置元数据引用无效" }
+    val restoredSelectedExpertRaw = root.optString("selected_expert", "通用助手")
     val revisionRaw = root.optString("expert_versions_v1", "{}")
     require(revisionRaw.length <= 500_000) { "专家版本历史过大" }
     val restoredExpertRevisions = ExpertRevisionCodec.decode(revisionRaw)
@@ -3242,6 +3263,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     }
     require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
     val availableSkillNames = buildSet { val names = cleanSkills.keys(); while (names.hasNext()) add(names.next()) }
+    val restoredSelectedExpert = ExpertCatalogRules.resolveSelection(restoredSelectedExpertRaw, expertNames.toList(), restoredExpertProfiles)
     restoredExpertProfiles.forEach { (name, profile) ->
         val profileError = ExpertProfileCodec.validate(profile, availableSkillNames)
         require(profileError == null) { "专家「$name」配置无效：$profileError" }
@@ -3271,6 +3293,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("global_memory_v1", globalMemory)
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
+        .putString("selected_expert", restoredSelectedExpert)
         .putString("expert_profiles_v1", ExpertProfileCodec.encode(restoredExpertProfiles))
         .putString("expert_versions_v1", ExpertRevisionCodec.encode(restoredExpertRevisions))
         .putString("expert_templates_v1", ExpertTemplateCodec.encode(restoredExpertTemplates))

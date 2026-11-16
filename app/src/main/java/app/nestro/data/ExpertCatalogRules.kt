@@ -12,6 +12,9 @@ object ExpertCatalogRules {
         return null
     }
 
+    fun resolveSelection(name: String, experts: List<String>, profiles: Map<String, ExpertProfile>): String =
+        name.takeIf { it == "通用助手" || (it in experts && profiles[it]?.enabled != false) } ?: "通用助手"
+
     fun renameWorkflowReferences(workflows: List<WorkflowDefinition>, oldName: String, newName: String): List<WorkflowDefinition> =
         workflows.map { workflow ->
             workflow.copy(steps = workflow.steps.map { step ->
