@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 import java.io.ByteArrayInputStream
+import java.io.Writer
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Document
@@ -101,12 +102,22 @@ object KnowledgeStore {
    return "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
   }
 
-  private fun extractPdfText(context:Context,bytes:ByteArray):String {
+  internal fun extractPdfText(context:Context,bytes:ByteArray):String {
   PDFBoxResourceLoader.init(context.applicationContext)
   PDDocument.load(ByteArrayInputStream(bytes)).use { document ->
    require(!document.isEncrypted) { "暂不支持加密 PDF，请先解除密码保护。" }
    require(document.numberOfPages<=300) { "PDF 超过 300 页，请拆分后导入。" }
-   val text=PDFTextStripper().getText(document)
+   val output=StringBuilder()
+   val boundedWriter=object:Writer() {
+    override fun write(buffer:CharArray,offset:Int,length:Int) {
+     require(output.length+length<=MAX_TEXT_CHARS) { "PDF 提取文本超过 50 万字符，请拆分文件后导入。" }
+     output.append(buffer,offset,length)
+    }
+    override fun flush() {}
+    override fun close() {}
+   }
+   PDFTextStripper().writeText(document,boundedWriter)
+   val text=output.toString()
    require(text.isNotBlank()) { "PDF 没有可提取的文字，可能是扫描图片版，当前尚未接入 OCR。" }
    return text
   }
