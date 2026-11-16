@@ -708,7 +708,7 @@ fun NestroApp() {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含本机对话、全局记忆、项目级自动记忆、专家配置与技能。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("包含本机对话、全局记忆、项目级自动记忆、专家配置、技能提示词与导入元数据。API Key 和知识库原文暂不进入备份，迁移设备时需重新导入知识库文件。导出文件请自行保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
                                             val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
@@ -1692,6 +1692,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
     root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
+    root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
     root.put("projects", projectsToJson(loadProjects(prefs)))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val memories = JSONArray()
@@ -1777,6 +1778,17 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     val prompts = JSONObject(root.getString("expert_prompts"))
     val skills = JSONObject(root.optString("skills", "{}"))
     require(skills.length() <= 100) { "技能数量超出限制" }
+    val skillMetadata = JSONObject(root.optString("skill_metadata_v1", "{}"))
+    require(skillMetadata.length() <= 100) { "技能元数据数量超出限制" }
+    val cleanSkillMetadata = JSONObject()
+    val metadataKeys = skillMetadata.keys()
+    while (metadataKeys.hasNext()) {
+        val name = metadataKeys.next()
+        val metadata = skillMetadata.optString(name)
+        require(name.length <= 40 && metadata.length <= 4000) { "技能元数据无效" }
+        runCatching { JSONObject(metadata) }.getOrElse { error("技能元数据格式无效") }
+        cleanSkillMetadata.put(name, metadata)
+    }
     val cleanSkills = JSONObject()
     val skillKeys = skills.keys()
     while (skillKeys.hasNext()) {
@@ -1802,6 +1814,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
         .putString("skills", cleanSkills.toString())
+        .putString("skill_metadata_v1", cleanSkillMetadata.toString())
         .putString("projects", projectsToJson(parseProjects(root.optJSONArray("projects"))))
         .putString("active_project_id", root.optString("active_project_id", "default"))
         .putLong("local_snapshot_saved_at", System.currentTimeMillis())
