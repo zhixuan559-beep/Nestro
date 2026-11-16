@@ -220,12 +220,14 @@ fun NestroApp() {
     var editingWorkflowId by remember { mutableStateOf("") }
     var workflowDraftName by remember { mutableStateOf("") }
     var workflowDraftDescription by remember { mutableStateOf("") }
-    var workflowStepOneTitle by remember { mutableStateOf("分析需求") }
-    var workflowStepOneKind by remember { mutableStateOf(WorkflowStepKind.PROMPT) }
-    var workflowStepOnePrompt by remember { mutableStateOf("拆解用户目标，列出关键事实、约束和待解决问题。") }
-    var workflowStepTwoTitle by remember { mutableStateOf("形成结果") }
-    var workflowStepTwoKind by remember { mutableStateOf(WorkflowStepKind.PROMPT) }
-    var workflowStepTwoPrompt by remember { mutableStateOf("根据上一步分析，形成可直接交付的结果，并检查完整性。") }
+    var workflowDraftSteps by remember {
+        mutableStateOf(
+            listOf(
+                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "分析需求", instruction = "拆解用户目标，列出关键事实、约束和待解决问题。"),
+                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成结果", instruction = "根据上一步分析，形成可直接交付的结果，并检查完整性。")
+            )
+        )
+    }
     var workflowInputDraft by remember { mutableStateOf("") }
     var workflowRunStatus by remember { mutableStateOf("") }
     var runningWorkflowId by remember { mutableStateOf("") }
@@ -944,12 +946,7 @@ fun NestroApp() {
                                                      editingWorkflowId = workflow.id
                                                      workflowDraftName = workflow.name
                                                      workflowDraftDescription = workflow.description
-                                                     workflowStepOneTitle = workflow.steps.getOrNull(0)?.title ?: "分析需求"
-                                                     workflowStepOneKind = workflow.steps.getOrNull(0)?.kind ?: WorkflowStepKind.PROMPT
-                                                     workflowStepOnePrompt = workflow.steps.getOrNull(0)?.instruction.orEmpty()
-                                                     workflowStepTwoTitle = workflow.steps.getOrNull(1)?.title ?: "形成结果"
-                                                     workflowStepTwoKind = workflow.steps.getOrNull(1)?.kind ?: WorkflowStepKind.PROMPT
-                                                     workflowStepTwoPrompt = workflow.steps.getOrNull(1)?.instruction.orEmpty()
+                                                     workflowDraftSteps = workflow.steps.toList()
                                                      showWorkflowDialog = true
                                                  }) { Text("编辑", color = Mint) }
                                                  TextButton(onClick = {
@@ -964,12 +961,10 @@ fun NestroApp() {
                                      editingWorkflowId = ""
                                      workflowDraftName = ""
                                      workflowDraftDescription = ""
-                                     workflowStepOneTitle = "分析需求"
-                                     workflowStepOneKind = WorkflowStepKind.PROMPT
-                                     workflowStepOnePrompt = "拆解用户目标，列出关键事实、约束和待解决问题。"
-                                     workflowStepTwoTitle = "形成结果"
-                                     workflowStepTwoKind = WorkflowStepKind.PROMPT
-                                     workflowStepTwoPrompt = "根据上一步分析，形成可直接交付的结果，并检查完整性。"
+                                     workflowDraftSteps = listOf(
+                                         WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "分析需求", instruction = "拆解用户目标，列出关键事实、约束和待解决问题。"),
+                                         WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成结果", instruction = "根据上一步分析，形成可直接交付的结果，并检查完整性。")
+                                     )
                                      showWorkflowDialog = true
                                  }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 新建工作流") }
                              }
@@ -1723,14 +1718,89 @@ fun NestroApp() {
                 Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(workflowDraftName, { workflowDraftName = it.take(40) }, label = { Text("工作流名称") }, singleLine = true)
                     OutlinedTextField(workflowDraftDescription, { workflowDraftDescription = it.take(300) }, label = { Text("用途说明") }, minLines = 2)
-                    Text("步骤 1", color = Mint)
-                    OutlinedTextField(workflowStepOneTitle, { workflowStepOneTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
-                    TextButton(onClick = { workflowStepOneKind = WorkflowStepKind.values()[(workflowStepOneKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${when (workflowStepOneKind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）", color = Mint) }
-                    OutlinedTextField(workflowStepOnePrompt, { workflowStepOnePrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
-                    Text("步骤 2", color = Mint)
-                    OutlinedTextField(workflowStepTwoTitle, { workflowStepTwoTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
-                    TextButton(onClick = { workflowStepTwoKind = WorkflowStepKind.values()[(workflowStepTwoKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${when (workflowStepTwoKind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）", color = Mint) }
-                    OutlinedTextField(workflowStepTwoPrompt, { workflowStepTwoPrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
+                    workflowDraftSteps.forEachIndexed { index, step ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth().background(Card, RoundedCornerShape(12.dp)).padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("步骤 ${index + 1}", color = Mint, modifier = Modifier.weight(1f))
+                                TextButton(
+                                    enabled = index > 0,
+                                    onClick = {
+                                        val updated = workflowDraftSteps.toMutableList()
+                                        val current = updated[index]
+                                        updated[index] = updated[index - 1]
+                                        updated[index - 1] = current
+                                        workflowDraftSteps = updated
+                                    }
+                                ) { Text("上移") }
+                                TextButton(
+                                    enabled = index < workflowDraftSteps.lastIndex,
+                                    onClick = {
+                                        val updated = workflowDraftSteps.toMutableList()
+                                        val current = updated[index]
+                                        updated[index] = updated[index + 1]
+                                        updated[index + 1] = current
+                                        workflowDraftSteps = updated
+                                    }
+                                ) { Text("下移") }
+                                TextButton(
+                                    enabled = workflowDraftSteps.size > 1,
+                                    onClick = {
+                                        workflowDraftSteps = workflowDraftSteps.filterIndexed { stepIndex, _ -> stepIndex != index }
+                                    }
+                                ) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                            }
+                            OutlinedTextField(
+                                value = step.title,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(title = value.take(40)) else item
+                                    }
+                                },
+                                label = { Text("步骤名称") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            TextButton(
+                                onClick = {
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(
+                                            kind = WorkflowStepKind.values()[(item.kind.ordinal + 1) % WorkflowStepKind.values().size]
+                                        ) else item
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    "节点类型：${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）",
+                                    color = Mint
+                                )
+                            }
+                            OutlinedTextField(
+                                value = step.instruction,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(instruction = value.take(4000)) else item
+                                    }
+                                },
+                                label = { Text("执行指令") },
+                                minLines = 3,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        enabled = workflowDraftSteps.size < 20,
+                        onClick = {
+                            workflowDraftSteps = workflowDraftSteps + WorkflowStep(
+                                kind = WorkflowStepKind.PROMPT,
+                                title = "新步骤 ${workflowDraftSteps.size + 1}",
+                                instruction = "描述这一步需要完成的任务。"
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (workflowDraftSteps.size >= 20) "已达到 20 步上限" else "＋ 添加步骤") }
                 }
             },
             confirmButton = {
@@ -1739,10 +1809,9 @@ fun NestroApp() {
                         id = editingWorkflowId.ifBlank { UUID.randomUUID().toString() },
                         name = workflowDraftName.trim(),
                         description = workflowDraftDescription.trim(),
-                        steps = listOf(
-                            WorkflowStep(kind = workflowStepOneKind, title = workflowStepOneTitle.trim(), instruction = workflowStepOnePrompt.trim()),
-                            WorkflowStep(kind = workflowStepTwoKind, title = workflowStepTwoTitle.trim(), instruction = workflowStepTwoPrompt.trim())
-                        )
+                        steps = workflowDraftSteps.map { step ->
+                            step.copy(title = step.title.trim(), instruction = step.instruction.trim())
+                        }
                     )
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
