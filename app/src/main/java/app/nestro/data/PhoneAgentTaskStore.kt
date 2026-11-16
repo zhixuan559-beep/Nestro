@@ -101,7 +101,7 @@ object PhoneAgentTaskStore {
         val clean = clarification.trim().take(500)
         require(clean.length >= 2) { "补充内容太短" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
-        val updatedGoal = (task.goal + "\\n用户补充说明：" + clean).take(2000)
+        val updatedGoal = (task.goal + System.lineSeparator() + "用户补充说明：" + clean).take(2000)
         require(updatedGoal.length > task.goal.length) { "补充内容无效" }
         val now = System.currentTimeMillis()
         dao.updatePhoneAgentTaskGoal(taskId, updatedGoal, now)
