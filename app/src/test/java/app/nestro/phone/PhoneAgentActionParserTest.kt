@@ -148,6 +148,30 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun sensitiveValuesInGenericFieldsRequireUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"备注","value":"收货地址：成都市锦江区某某路88号"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun restoredActionPlansRejectSensitiveTextAndUnsafeUrls() {
+        val sensitive = """{"format":"phone_agent_actions_v1","actions":[{"type":"enter_text","label":"备注","value":"收货地址：成都市锦江区某某路88号"}]}"""
+        try {
+            PhoneAgentTaskStore.validatePlanJson(sensitive)
+            fail("restored plans must not contain personal information")
+        } catch (_: IllegalArgumentException) {
+        }
+        val unsafeUrl = """{"format":"phone_agent_actions_v1","actions":[{"type":"open_url","url":"file:///etc/passwd"}]}"""
+        try {
+            PhoneAgentTaskStore.validatePlanJson(unsafeUrl)
+            fail("restored plans must reject non-web URLs")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
     fun rejectsUnknownActionInRestoredBackup() {
         try {
             PhoneAgentTaskStore.validatePlanJson("""{"format":"phone_agent_actions_v1","actions":[{"type":"run_shell"}]}""")

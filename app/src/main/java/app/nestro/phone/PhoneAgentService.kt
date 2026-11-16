@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
 import app.nestro.data.CapabilityRegistryStore
+import app.nestro.data.PhoneAgentTaskStore
 
 class PhoneAgentService : AccessibilityService() {
     override fun onServiceConnected() {
@@ -94,6 +95,7 @@ class PhoneAgentService : AccessibilityService() {
         require(value.length <= 1000) { "输入内容过长" }
         require(!isHighRisk(value)) { "输入内容触发高风险规则，必须由用户本人处理" }
         require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
+        require(!PhoneAgentTaskStore.containsSensitiveText(value)) { "输入内容包含个人敏感信息，必须由用户本人填写" }
         require(hasValidGrant(projectId)) { "设备授权已失效，或当前项目已撤销 Phone Agent 权限" }
         val root = rootInActiveWindow ?: return false
         val node = findEditableField(root, target) ?: return false

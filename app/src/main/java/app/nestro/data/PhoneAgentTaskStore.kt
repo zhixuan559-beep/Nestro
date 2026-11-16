@@ -5,6 +5,7 @@ import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import java.util.UUID
+import java.net.URI
 
 object PhoneAgentTaskStore {
     const val STATUS_PLANNED = "planned"
@@ -79,15 +80,47 @@ object PhoneAgentTaskStore {
         return (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             when (row.getString("type")) {
-                "open_url" -> PhoneAgentExecutor.Action.OpenUrl(row.getString("url"))
-                "launch_app" -> PhoneAgentExecutor.Action.LaunchApp(row.getString("package"))
-                "click" -> PhoneAgentExecutor.Action.ClickText(row.getString("text"), row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
-                "enter_text" -> PhoneAgentExecutor.Action.EnterText(row.getString("label"), row.getString("value"))
-                "scroll" -> PhoneAgentExecutor.Action.Scroll(row.getString("direction"))
-                "wait" -> PhoneAgentExecutor.Action.Wait(row.getLong("millis"))
-                "verify" -> PhoneAgentExecutor.Action.VerifyText(row.getString("text"))
+                "open_url" -> {
+                    val url = row.getString("url").trim()
+                    val uri = runCatching { URI(url) }.getOrElse { error("恢复的网页地址无效") }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "恢复的网页地址不安全" }
+                    PhoneAgentExecutor.Action.OpenUrl(url)
+                }
+                "launch_app" -> {
+                    val packageName = row.getString("package").trim()
+                    require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "恢复的应用包名无效" }
+                    PhoneAgentExecutor.Action.LaunchApp(packageName)
+                }
+                "click" -> {
+                    val label = row.getString("text").trim()
+                    val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 100)) { "恢复的点击目标无效" }
+                    PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
+                }
+                "enter_text" -> {
+                    val label = row.getString("label").trim()
+                    val value = row.getString("value")
+                    require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "恢复的输入字段无效" }
+                    require(!containsSensitiveLabel(label) && !containsSensitiveText(value)) { "恢复的动作包含个人敏感信息，必须由用户本人填写" }
+                    PhoneAgentExecutor.Action.EnterText(label, value)
+                }
+                "scroll" -> {
+                    val direction = row.getString("direction")
+                    require(direction == "forward" || direction == "backward") { "恢复的滚动方向无效" }
+                    PhoneAgentExecutor.Action.Scroll(direction)
+                }
+                "wait" -> {
+                    val millis = row.getLong("millis")
+                    require(millis in 0..10_000) { "恢复的等待时间无效" }
+                    PhoneAgentExecutor.Action.Wait(millis)
+                }
+                "verify" -> {
+                    val expected = row.getString("text").trim()
+                    require(expected.isNotBlank() && expected.length <= 100) { "恢复的验证目标无效" }
+                    PhoneAgentExecutor.Action.VerifyText(expected)
+                }
                 "back" -> PhoneAgentExecutor.Action.Back
-                "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(row.getString("description"))
+                "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(redactSensitiveText(row.getString("description")).take(240))
                 else -> error("任务包含未知动作类型")
             }
         }
@@ -108,7 +141,7 @@ object PhoneAgentTaskStore {
                 actionIndex = index,
                 action = action.take(60),
                 success = success,
-                detail = detail.take(240),
+                detail = redactSensitiveText(detail).take(240),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -188,6 +221,12 @@ object PhoneAgentTaskStore {
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址|收货地点|邮寄地址)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[地址已隐藏]" }
         .replace(Regex("(收货人|联系人|姓名)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[姓名已隐藏]" }
         .replace(Regex("(送到|寄到|住在|地址是)\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "[地址已隐藏]" }
+
+    fun containsSensitiveText(value: String): Boolean = redactSensitiveText(value) != value
+
+    private fun containsSensitiveLabel(value: String): Boolean =
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "地址", "联系人", "收货人", "姓名", "账号")
+            .any { value.contains(it, true) }
 
     private fun containsSensitiveClarification(value: String): Boolean =
         Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
