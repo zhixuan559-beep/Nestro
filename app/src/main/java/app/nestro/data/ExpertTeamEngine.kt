@@ -37,8 +37,13 @@ data class ExpertTeamRunResult(
     fun toContext(maxChars:Int=10_000):String {
         require(maxChars in 1000..20_000)
         val header="专家团队“$teamName”的成员独立分析如下。请比较各成员依据，识别冲突和不确定点，再给出综合结论。\n\n"
-        val body=members.filter { it.status=="success" && it.output.isNotBlank() }
-            .joinToString("\n\n") { "【${it.name}】\n${it.output.take(2200)}" }
+        val body=members.joinToString("\n\n") { member ->
+            if(member.status=="success" && member.output.isNotBlank()) {
+                "【${member.name}】\n${member.output.take(2200)}"
+            } else {
+                "【${member.name}】本轮分析未完成：${member.error.ifBlank { "调用失败" }}。请勿将其视为已提供意见。"
+            }
+        }
         return (header+body).take(maxChars)
     }
 }

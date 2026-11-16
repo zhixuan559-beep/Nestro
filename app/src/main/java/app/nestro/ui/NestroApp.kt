@@ -597,6 +597,8 @@ fun NestroApp() {
         } else {
             busy = true
             stopRequested = false
+            teamRunStatus = ""
+            teamMemberStatuses = emptyMap()
             val requestConversationId = activeConversationId
             val requestHistory = messages.toList()
             val assistantId = UUID.randomUUID().toString()
@@ -784,6 +786,7 @@ fun NestroApp() {
                             Column {
                                 Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 Text(status, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                if (busy && teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
                                     TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
                                         Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
