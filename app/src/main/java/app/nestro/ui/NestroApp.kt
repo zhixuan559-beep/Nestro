@@ -1972,6 +1972,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     val taskLogArray = JSONArray()
     dao.projectIds().forEach { projectId ->
         dao.phoneAgentTasks(projectId, 50).forEach { task ->
+            if (taskArray.length() >= 500) return@forEach
             taskArray.put(
                 JSONObject()
                     .put("id", task.id)
@@ -1986,6 +1987,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
                     .put("updatedAt", task.updatedAt)
             )
             dao.phoneAgentTaskLogs(task.id, 100).forEach { log ->
+                if (taskLogArray.length() >= 5000) return@forEach
                 taskLogArray.put(
                     JSONObject()
                         .put("id", log.id)
@@ -2080,7 +2082,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
             conversationId = item.optString("conversationId").take(120),
             goal = goal,
             category = category,
-            status = if (status == PhoneAgentTaskStore.STATUS_RUNNING) PhoneAgentTaskStore.STATUS_PAUSED else status,
+            status = status,
             planJson = planJson,
             currentStep = currentStep,
             createdAt = item.optLong("createdAt", System.currentTimeMillis()),
