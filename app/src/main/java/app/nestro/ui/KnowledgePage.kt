@@ -33,6 +33,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
  val documents=remember { mutableStateListOf<KnowledgeDocumentEntity>() }
  var status by remember { mutableStateOf("文档保存在本机，并按项目空间隔离。") }
  var loading by remember { mutableStateOf(false) }
+ var pendingDelete by remember { mutableStateOf<KnowledgeDocumentEntity?>(null) }
  var searchQuery by remember { mutableStateOf("") }
  var searching by remember { mutableStateOf(false) }
  val searchResults=remember { mutableStateListOf<KnowledgeSearchResult>() }
@@ -103,12 +104,33 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
        Text(doc.name,color=KnowledgeInk,style=MaterialTheme.typography.titleMedium)
        Text("${doc.sizeBytes/1024} KB · ${SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.getDefault()).format(Date(doc.importedAt))}",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
       }
-      IconButton(onClick={scope.launch { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(doc.id) }; documents.removeAll { it.id==doc.id }; status="已删除文档及其全部索引片段。" }}) {
+      IconButton(onClick={pendingDelete=doc}) {
        Icon(Icons.Outlined.Delete,contentDescription="删除文档",tint=androidx.compose.ui.graphics.Color(0xFFFF7777))
       }
      }
     }
    }
   }
+ }
+ pendingDelete?.let { target ->
+  AlertDialog(
+   onDismissRequest={pendingDelete=null},
+   title={Text("删除这份文档？")},
+   text={Text("「${target.name}」及其全部索引片段都会从当前项目空间删除，且无法撤销。")},
+   confirmButton={
+    TextButton(onClick={
+     pendingDelete=null
+     scope.launch {
+      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id) } }
+      result.onSuccess {
+       documents.removeAll { it.id==target.id }
+       searchResults.clear()
+       status="已删除文档及其全部索引片段。"
+      }.onFailure { status="删除失败：${it.message ?: "未知错误"}" }
+     }
+    }) { Text("删除",color=androidx.compose.ui.graphics.Color(0xFFFF7777)) }
+   },
+   dismissButton={TextButton(onClick={pendingDelete=null}) { Text("取消") }}
+  )
  }
 }
