@@ -1059,7 +1059,7 @@ fun NestroApp() {
                                     modelProfiles = (modelProfiles.filterNot { it.id == metadata.id } + metadata)
                                     LocalVault.writeProfile(context, metadata.id, apiKey)
                                     prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
-                                    if (activate) {
+                                    if (activate || metadata.id == activeModelProfileId) {
                                         activeModelProfileId = metadata.id
                                         config = ModelConfig(metadata.baseUrl, metadata.model, apiKey)
                                         LocalVault.write(context, config)
