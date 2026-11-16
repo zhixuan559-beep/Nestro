@@ -210,6 +210,8 @@ interface NestroDao {
     ): List<ConversationMemoryHit>
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+    @Query("SELECT * FROM user_memories ORDER BY projectId, updatedAt DESC")
+    suspend fun allUserMemories(): List<UserMemoryEntity>
 
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
     suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
@@ -234,6 +236,8 @@ interface NestroDao {
 
     @Query("SELECT * FROM phone_agent_tasks WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun phoneAgentTasks(projectId: String, limit: Int = 50): List<PhoneAgentTaskEntity>
+    @Query("SELECT * FROM phone_agent_tasks ORDER BY updatedAt DESC")
+    suspend fun allPhoneAgentTasks(): List<PhoneAgentTaskEntity>
 
     @Query("SELECT * FROM phone_agent_tasks WHERE id = :taskId LIMIT 1")
     suspend fun phoneAgentTask(taskId: String): PhoneAgentTaskEntity?
@@ -246,6 +250,8 @@ interface NestroDao {
 
     @Query("SELECT * FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :limit")
     suspend fun phoneAgentTaskLogs(taskId: String, limit: Int = 100): List<PhoneAgentTaskLogEntity>
+    @Query("SELECT * FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt DESC")
+    suspend fun allPhoneAgentTaskLogs(taskId: String): List<PhoneAgentTaskLogEntity>
 
     @Query("DELETE FROM phone_agent_task_logs WHERE taskId = :taskId AND id NOT IN (SELECT id FROM phone_agent_task_logs WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :keep)")
     suspend fun trimPhoneAgentTaskLogs(taskId: String, keep: Int = 100)

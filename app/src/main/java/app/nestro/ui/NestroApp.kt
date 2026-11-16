@@ -3407,7 +3407,27 @@ private fun readBackupText(context: Context, uri: Uri): String {
     return output.toByteArray().toString(Charsets.UTF_8)
 }
 
+private data class LocalBackupDatabaseSnapshot(
+    val projects: List<ProjectEntity>,
+    val conversations: List<app.nestro.data.ConversationWithMessages>,
+    val documents: List<KnowledgeDocumentEntity>,
+    val chunks: List<KnowledgeChunkEntity>,
+    val memories: List<UserMemoryEntity>,
+    val tasks: List<PhoneAgentTaskEntity>,
+    val taskLogs: List<PhoneAgentTaskLogEntity>
+)
+
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
+    val dao = database.dao()
+    val snapshot = database.withTransaction {
+        val tasks = dao.allPhoneAgentTasks()
+        LocalBackupDatabaseSnapshot(
+            projects = dao.loadProjects(), conversations = dao.loadConversations(),
+            documents = dao.allKnowledgeDocuments(), chunks = dao.allKnowledgeChunks(),
+            memories = dao.allUserMemories(), tasks = tasks,
+            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) }
+        )
+    }
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
     root.put("version", LocalBackupCompatibility.CURRENT_VERSION)
@@ -3445,12 +3465,11 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-    val dao = database.dao()
-    val roomProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt) }
+    val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt) }
     val backupProjects = if (roomProjects.isEmpty()) loadProjects(prefs) else roomProjects
     root.put("projects", projectsToJson(backupProjects))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
-    val roomConversationRows = dao.loadConversations()
+    val roomConversationRows = snapshot.conversations
     require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
     roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
     val conversationArray = JSONArray()
@@ -3470,8 +3489,8 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     val drafts = JSONObject()
     prefs.all.forEach { (key, value) -> if (key.startsWith("draft_") && value is String && value.isNotBlank()) drafts.put(key.removePrefix("draft_"), value.take(100_000)) }
     root.put("conversation_drafts_v1", drafts)
-    val roomKnowledgeDocuments = dao.allKnowledgeDocuments()
-    val roomKnowledgeChunks = dao.allKnowledgeChunks()
+    val roomKnowledgeDocuments = snapshot.documents
+    val roomKnowledgeChunks = snapshot.chunks
     require(roomKnowledgeDocuments.size <= 500 && roomKnowledgeChunks.size <= 50_000) { "知识库数据超过备份上限，请先清理文档" }
     val docs = JSONArray()
     roomKnowledgeDocuments.forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
@@ -3480,56 +3499,24 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("knowledge_documents_v1", docs)
     root.put("knowledge_chunks_v1", chunks)
     val memories = JSONArray()
-    dao.projectIds().forEach { projectId ->
-        dao.userMemories(projectId, 200).forEach { memory ->
-            memories.put(
-                JSONObject()
-                    .put("id", memory.id)
-                    .put("projectId", memory.projectId)
-                    .put("category", memory.category)
-                    .put("content", memory.content)
-                    .put("fingerprint", memory.fingerprint)
-                    .put("sourceConversationId", memory.sourceConversationId)
-                    .put("sourceMessageId", memory.sourceMessageId)
-                    .put("confidence", memory.confidence)
-                    .put("createdAt", memory.createdAt)
-                    .put("updatedAt", memory.updatedAt)
-            )
-        }
+    snapshot.memories.forEach { memory ->
+        memories.put(JSONObject().put("id", memory.id).put("projectId", memory.projectId).put("category", memory.category)
+            .put("content", memory.content).put("fingerprint", memory.fingerprint).put("sourceConversationId", memory.sourceConversationId)
+            .put("sourceMessageId", memory.sourceMessageId).put("confidence", memory.confidence)
+            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt))
     }
     root.put("user_memories", memories)
     val taskArray = JSONArray()
     val taskLogArray = JSONArray()
-    dao.projectIds().forEach projectLoop@ { projectId ->
-        dao.phoneAgentTasks(projectId, 50).forEach taskLoop@ { task ->
-            if (taskArray.length() >= 500) return@taskLoop
-            taskArray.put(
-                JSONObject()
-                    .put("id", task.id)
-                    .put("projectId", task.projectId)
-                    .put("conversationId", task.conversationId)
-                    .put("goal", task.goal)
-                    .put("category", task.category)
-                    .put("status", task.status)
-                    .put("planJson", task.planJson)
-                    .put("currentStep", task.currentStep)
-                    .put("createdAt", task.createdAt)
-                    .put("updatedAt", task.updatedAt)
-            )
-            dao.phoneAgentTaskLogs(task.id, 100).forEach logLoop@ { log ->
-                if (taskLogArray.length() >= 5000) return@logLoop
-                taskLogArray.put(
-                    JSONObject()
-                        .put("id", log.id)
-                        .put("taskId", log.taskId)
-                        .put("actionIndex", log.actionIndex)
-                        .put("action", log.action)
-                        .put("success", log.success)
-                        .put("detail", log.detail)
-                        .put("createdAt", log.createdAt)
-                )
-            }
-        }
+    require(snapshot.tasks.size <= 500 && snapshot.taskLogs.size <= 5000) { "Phone Agent 任务或日志数量超过备份上限，未导出任何不完整备份" }
+    snapshot.tasks.forEach { task ->
+        taskArray.put(JSONObject().put("id", task.id).put("projectId", task.projectId).put("conversationId", task.conversationId)
+            .put("goal", task.goal).put("category", task.category).put("status", task.status).put("planJson", task.planJson)
+            .put("currentStep", task.currentStep).put("createdAt", task.createdAt).put("updatedAt", task.updatedAt))
+    }
+    snapshot.taskLogs.forEach { log ->
+        taskLogArray.put(JSONObject().put("id", log.id).put("taskId", log.taskId).put("actionIndex", log.actionIndex)
+            .put("action", log.action).put("success", log.success).put("detail", log.detail).put("createdAt", log.createdAt))
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
