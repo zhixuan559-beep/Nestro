@@ -233,14 +233,12 @@ interface NestroDao {
 
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
     suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
-    @Query("SELECT EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint AND id != :excludeId)")
-    suspend fun userMemoryFingerprintExists(projectId: String, fingerprint: String, excludeId: String): Boolean
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
     @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
-    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
+    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long)
 
     @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
     suspend fun deleteUserMemory(id: String, projectId: String)

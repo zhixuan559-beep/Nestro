@@ -205,7 +205,7 @@ object UserMemoryStore {
         dao.setUserMemorySharing(id, ownerProjectId, enabled, System.currentTimeMillis()) > 0
 
     suspend fun edit(dao: NestroDao, id: String, projectId: String, content: String, category: String) {
-        val normalized = content.trim().replace(Regex("[\p{Cntrl}]"), " ").replace(Regex("\s+"), " ")
+        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
         val normalizedCategory = category.trim().lowercase()
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(normalizedCategory in allowedCategories) { "记忆分类无效" }
