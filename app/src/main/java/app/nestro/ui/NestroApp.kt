@@ -180,6 +180,9 @@ fun NestroApp() {
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
     var skills by remember { mutableStateOf(loadSkills(prefs)) }
     var skillMetadata by remember { mutableStateOf(loadSkillMetadata(prefs)) }
+    var disabledSkills by remember { mutableStateOf(loadDisabledSkills(prefs)) }
+    var editingSkillName by remember { mutableStateOf("") }
+    var skillDialogError by remember { mutableStateOf("") }
     var pendingSkillBundle by remember { mutableStateOf<SkillBundle?>(null) }
     var showSkillImportDialog by remember { mutableStateOf(false) }
     var skillImportStatus by remember { mutableStateOf("") }
@@ -303,6 +306,8 @@ fun NestroApp() {
                     selectedTeamId = prefs.getString("selected_team_id", "") ?: ""
                     skills = loadSkills(prefs)
                     skillMetadata = loadSkillMetadata(prefs)
+                    disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
+                    if(selectedSkill in disabledSkills) selectedSkill = ""
                     workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
                     workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
                     expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
@@ -608,7 +613,7 @@ fun NestroApp() {
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
                 if (selectedTeamId.isBlank()) expertPrompts[selectedExpert].orEmpty() else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
-                skills[selectedSkill].orEmpty()
+                skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 val phonePlan = PhoneAgentPlanner.plan(prompt)
@@ -1511,41 +1516,64 @@ fun NestroApp() {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("技能是可复用的工作指令。导入包只读取文本和元数据，不执行其中代码，也不会自动授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 skills.forEach { (name, prompt) ->
-                                    Surface(color = if (selectedSkill == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f).clickable { selectedSkill = if (selectedSkill == name) "" else name; page = "home" }) {
-                                                Text(name, color = if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
-                                                Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
-                                                skillMetadata[name]?.let { raw ->
-                                                    val metadata = runCatching { JSONObject(raw) }.getOrNull()
-                                                    if (metadata != null) Text(
-                                                        "v${metadata.optString("version")} · ${metadata.optString("source")}",
-                                                        color = Muted,
-                                                        style = MaterialTheme.typography.labelSmall
-                                                    )
+                                    val isDisabled = name in disabledSkills
+                                    Surface(color = if (selectedSkill == name && !isDisabled) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(name, color = if (isDisabled) Muted else if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                                    Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    skillMetadata[name]?.let { raw ->
+                                                        val metadata = runCatching { JSONObject(raw) }.getOrNull()
+                                                        if (metadata != null) Text("v${metadata.optString("version")} · ${metadata.optString("source")}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                    }
                                                 }
+                                                Text(if(isDisabled) "已停用" else "已启用", color = if(isDisabled) Muted else Mint, style = MaterialTheme.typography.labelSmall)
                                             }
-                                            TextButton(onClick = {
-                                                 skillExportJson = SkillBundleParser.exportJson(name, prompt, skillMetadata[name])
-                                                 val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "skill" }
-                                                 exportSkillLauncher.launch("$safeName.nestro-skill.json")
-                                             }) { Text("导出", color = Mint) }
-                                             if (name !in DEFAULT_SKILLS.keys) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                TextButton(enabled = !isDisabled, onClick = {
+                                                    selectedSkill = name
+                                                    page = "home"
+                                                    if(draft.isBlank()) draft = "请使用「$name」处理：\n"
+                                                }) { Text("试用", color = if(isDisabled) Muted else Mint) }
                                                 TextButton(onClick = {
+                                                    editingSkillName = name
+                                                    skillDraftName = name
+                                                    skillDraftPrompt = prompt
+                                                    skillDialogError = ""
+                                                    showSkillDialog = true
+                                                }) { Text("编辑", color = Mint) }
+                                                TextButton(onClick = {
+                                                    disabledSkills = if(isDisabled) disabledSkills - name else disabledSkills + name
+                                                    if(!isDisabled && selectedSkill==name) selectedSkill = ""
+                                                    prefs.edit().putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills)).apply()
+                                                }) { Text(if(isDisabled) "启用" else "停用", color = if(isDisabled) Mint else Muted) }
+                                                TextButton(onClick = {
+                                                    skillExportJson = SkillBundleParser.exportJson(name, prompt, skillMetadata[name])
+                                                    val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "skill" }
+                                                    exportSkillLauncher.launch("$safeName.nestro-skill.json")
+                                                }) { Text("导出", color = Mint) }
+                                                if(name !in DEFAULT_SKILLS.keys) TextButton(onClick = {
                                                     skills = skills - name
                                                     skillMetadata = skillMetadata - name
-                                                    prefs.edit()
-                                                        .putString("skills", skillMapToJson(skills))
-                                                        .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
-                                                        .apply()
-                                                    if (selectedSkill == name) selectedSkill = ""
+                                                    disabledSkills = disabledSkills - name
+                                                    prefs.edit().putString("skills",skillMapToJson(skills))
+                                                        .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
+                                                        .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills)).apply()
+                                                    if(selectedSkill==name) selectedSkill=""
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
                                     }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Button(onClick = { showSkillDialog = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                    Button(onClick = {
+                                        editingSkillName = ""
+                                        skillDraftName = ""
+                                        skillDraftPrompt = ""
+                                        skillDialogError = ""
+                                        showSkillDialog = true
+                                    }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                         Text("＋ 创建技能")
                                     }
                                     OutlinedButton(onClick = { importSkillLauncher.launch(arrayOf("application/json", "text/markdown", "text/plain")) }, modifier = Modifier.weight(1f)) {
@@ -1655,17 +1683,16 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (bundle.name in skills) {
-                        skillImportStatus = "导入失败：技能名称已存在，请先重命名或删除旧技能。"
-                    } else {
-                        skills = skills + (bundle.name to bundle.prompt)
-                        skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
-                        prefs.edit()
-                            .putString("skills", skillMapToJson(skills))
-                            .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
-                            .apply()
-                        skillImportStatus = "技能已安装到本地"
-                    }
+                    val replacing = bundle.name in skills
+                    skills = skills + (bundle.name to bundle.prompt)
+                    skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
+                    disabledSkills = disabledSkills - bundle.name
+                    prefs.edit()
+                        .putString("skills", skillMapToJson(skills))
+                        .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
+                        .putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills))
+                        .apply()
+                    skillImportStatus = if(replacing) "同名技能已更新并启用" else "技能已安装到本地"
                     showSkillImportDialog = false
                     pendingSkillBundle = null
                 }) { Text("确认安装", color = Mint) }
@@ -1774,29 +1801,51 @@ fun NestroApp() {
     if (showSkillDialog) {
         AlertDialog(
             onDismissRequest = { showSkillDialog = false },
-            title = { Text("创建本地技能") },
+            title = { Text(if(editingSkillName.isBlank()) "创建本地技能" else "编辑本地技能") },
             text = {
                 Column {
                     OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it }, label = { Text("技能名称") }, singleLine = true)
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
+                    OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it.take(8000) }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
+                    if(skillDialogError.isNotBlank()) Text(skillDialogError,color=androidx.compose.ui.graphics.Color(0xFFF87171),style=MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val name = skillDraftName.trim()
                     val prompt = skillDraftPrompt.trim()
-                    if (name.isNotBlank() && prompt.isNotBlank() && name.length <= 40 && prompt.length <= 8000) {
-                        skills = skills + (name to prompt)
-                        prefs.edit().putString("skills", skillMapToJson(skills)).apply()
-                        selectedSkill = name
+                    val duplicate = name in skills && name != editingSkillName
+                    if(name.isBlank() || prompt.isBlank()) {
+                        skillDialogError = "名称和工作指令不能为空。"
+                    } else if(name.length>40 || prompt.length>8000) {
+                        skillDialogError = "名称最多 40 字，指令最多 8000 字。"
+                    } else if(duplicate) {
+                        skillDialogError = "已有同名技能，请更换名称。"
+                    } else {
+                        val oldName = editingSkillName
+                        val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
+                        skills = updated + (name to prompt)
+                        if(oldName.isNotBlank() && oldName!=name) {
+                            val oldMetadata=skillMetadata[oldName]
+                            skillMetadata = skillMetadata - oldName
+                            if(oldMetadata!=null) skillMetadata = skillMetadata + (name to oldMetadata)
+                            val wasDisabled = oldName in disabledSkills
+                            if(wasDisabled) disabledSkills = (disabledSkills - oldName) + name
+                            if(selectedSkill==oldName) selectedSkill=if(wasDisabled) "" else name
+                        }
+                        prefs.edit().putString("skills",skillMapToJson(skills))
+                            .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
+                            .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills)).apply()
+                        if(name !in disabledSkills) selectedSkill=name
+                        skillDraftName = ""
+                        skillDraftPrompt = ""
+                        editingSkillName = ""
+                        skillDialogError = ""
+                        showSkillDialog = false
                     }
-                    skillDraftName = ""
-                    skillDraftPrompt = ""
-                    showSkillDialog = false
                 }) { Text("保存", color = Mint) }
             },
-            dismissButton = { TextButton(onClick = { showSkillDialog = false }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { showSkillDialog = false; editingSkillName=""; skillDialogError="" }) { Text("取消") } }
         )
     }
 
@@ -1860,7 +1909,7 @@ fun NestroApp() {
         val targetStep = workflowDraftSteps[workflowTargetPickerIndex]
         val targets = when (targetStep.kind) {
             WorkflowStepKind.EXPERT -> experts
-            WorkflowStepKind.SKILL -> skills.keys.toList()
+            WorkflowStepKind.SKILL -> skills.keys.filterNot { it in disabledSkills }
             WorkflowStepKind.PROMPT -> emptyList()
         }
         AlertDialog(
@@ -2241,6 +2290,14 @@ private fun loadSkillMetadata(prefs: android.content.SharedPreferences): Map<Str
 private fun skillMetadataToJson(metadata: Map<String, String>): String =
     JSONObject().apply { metadata.forEach { (name, value) -> put(name, value) } }.toString()
 
+private fun loadDisabledSkills(prefs: android.content.SharedPreferences): Set<String> =
+    runCatching {
+        val array=JSONArray(prefs.getString("disabled_skills_v1","[]") ?: "[]")
+        (0 until array.length()).map { array.getString(it) }.filter { it.length<=40 }.toSet()
+    }.getOrDefault(emptySet())
+
+private fun disabledSkillsToJson(names:Set<String>):String = JSONArray(names.sorted()).toString()
+
 private fun prefsRate(context: Context): Float = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getFloat("tts_speech_rate", 1.0f).coerceIn(0.7f, 1.3f)
 
 private fun shouldExtractAutomaticMemory(prompt: String): Boolean {
@@ -2616,7 +2673,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 6)
+    root.put("version", 7)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -2630,6 +2687,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
     root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
     root.put("skills", prefs.getString("skills", "{}") ?: "{}")
     root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
+    root.put("disabled_skills_v1", prefs.getString("disabled_skills_v1", "[]") ?: "[]")
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
@@ -2696,7 +2754,7 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..6) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..7) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
@@ -2842,6 +2900,9 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(skills.length() <= 100) { "技能数量超出限制" }
     val skillMetadata = JSONObject(root.optString("skill_metadata_v1", "{}"))
     require(skillMetadata.length() <= 100) { "技能元数据数量超出限制" }
+    val disabledSkillArray = JSONArray(root.optString("disabled_skills_v1", "[]"))
+    require(disabledSkillArray.length()<=100) { "停用技能数量超出限制" }
+    val disabledSkillNames = (0 until disabledSkillArray.length()).map { disabledSkillArray.getString(it) }.toSet()
     val cleanSkillMetadata = JSONObject()
     val metadataKeys = skillMetadata.keys()
     while (metadataKeys.hasNext()) {
@@ -2859,6 +2920,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         require(name.length <= 40 && prompt.length <= 8000) { "技能内容超出限制" }
         cleanSkills.put(name, prompt)
     }
+    require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
     require(prompts.length() <= 100) { "专家提示词数量超出限制" }
     val cleanPrompts = JSONObject()
     val keys = prompts.keys()
@@ -2879,6 +2941,7 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
         .putString("selected_team_id", validSelectedTeam)
         .putString("skills", cleanSkills.toString())
         .putString("skill_metadata_v1", cleanSkillMetadata.toString())
+        .putString("disabled_skills_v1", JSONArray(disabledSkillNames).toString())
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
