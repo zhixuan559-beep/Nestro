@@ -3,6 +3,7 @@ package app.nestro.ui
 import app.nestro.data.ConversationEntity
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
+import app.nestro.data.ProjectSpaceRules
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.NestroDatabase
