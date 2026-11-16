@@ -14,6 +14,13 @@ object LocalBackupCompatibility {
 
     fun canonicalJson(value: JSONObject): String = canonicalValue(value)
 
+    fun verifyChecksum(root: JSONObject): Boolean {
+        val checksum = root.optString("checksum_sha256")
+        if (checksum.isBlank()) return true
+        val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }
+        return checksum.equals(sha256(canonicalJson(payload)), ignoreCase = true)
+    }
+
     private fun canonicalValue(value: Any?): String = when {
         value == null || value === JSONObject.NULL -> "null"
         value is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->

@@ -3531,11 +3531,7 @@ private suspend fun restoreLocalBackup(context: Context, prefs: android.content.
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
     require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
-    val checksum = root.optString("checksum_sha256")
-    if (checksum.isNotBlank()) {
-        val payload = JSONObject(root.toString()).apply { remove("checksum_sha256") }
-        require(checksum.equals(LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(payload)), ignoreCase = true)) { "备份完整性校验失败，文件可能已损坏或被修改" }
-    }
+    require(LocalBackupCompatibility.verifyChecksum(root)) { "备份完整性校验失败，文件可能已损坏或被修改" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")

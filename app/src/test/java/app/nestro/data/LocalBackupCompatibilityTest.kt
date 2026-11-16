@@ -42,4 +42,17 @@ class LocalBackupCompatibilityTest {
         val modified = LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(org.json.JSONObject("""{"messages":[{"id":"m1"}]}""")))
         org.junit.Assert.assertNotEquals(original, modified)
     }
+
+    @Test fun verifiesBackupChecksumAndRejectsTampering() {
+        val payload = org.json.JSONObject("""{"version":10,"messages":[]}""")
+        val checksum = LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(payload))
+        val backup = org.json.JSONObject(payload.toString()).put("checksum_sha256", checksum)
+        org.junit.Assert.assertTrue(LocalBackupCompatibility.verifyChecksum(backup))
+        backup.put("messages", org.json.JSONArray().put(org.json.JSONObject().put("id", "tampered")))
+        org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
+    }
+
+    @Test fun acceptsLegacyBackupWithoutChecksum() {
+        org.junit.Assert.assertTrue(LocalBackupCompatibility.verifyChecksum(org.json.JSONObject("""{"version":9}""")))
+    }
 }
