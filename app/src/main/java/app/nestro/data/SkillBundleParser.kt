@@ -68,4 +68,19 @@ object SkillBundleParser {
                 bundle.dependencies.forEach { put(JSONObject().put("name", it.name).put("version", it.version)) }
             })
             .toString()
+
+    fun exportJson(name: String, prompt: String, metadataRaw: String?): String {
+        require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
+        require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
+        val metadata = runCatching { JSONObject(metadataRaw ?: "{}") }.getOrDefault(JSONObject())
+        return JSONObject()
+            .put("name", name)
+            .put("version", metadata.optString("version", "1.0.0"))
+            .put("description", metadata.optString("description", ""))
+            .put("prompt", prompt)
+            .put("source", metadata.optString("source", "Nestro 本地技能"))
+            .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
+            .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
+            .toString(2)
+    }
 }

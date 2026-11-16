@@ -161,6 +161,8 @@ fun NestroApp() {
     var pendingSkillBundle by remember { mutableStateOf<SkillBundle?>(null) }
     var showSkillImportDialog by remember { mutableStateOf(false) }
     var skillImportStatus by remember { mutableStateOf("") }
+     var skillExportStatus by remember { mutableStateOf("") }
+     var skillExportJson by remember { mutableStateOf("") }
     var selectedSkill by remember { mutableStateOf("") }
     var skillDraftName by remember { mutableStateOf("") }
     var skillDraftPrompt by remember { mutableStateOf("") }
@@ -250,6 +252,29 @@ fun NestroApp() {
                 result.fold(
                     { pendingSkillBundle = it; showSkillImportDialog = true; skillImportStatus = "" },
                     { skillImportStatus = "导入失败：${it.message ?: "文件格式无效"}" }
+                )
+            }
+        }
+    }
+
+    val exportSkillLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) {
+            skillExportStatus = "已取消技能导出。"
+        } else {
+            val content = skillExportJson
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(content.toByteArray(Charsets.UTF_8))
+                        } ?: error("无法创建技能文件")
+                    }
+                }
+                skillExportStatus = result.fold(
+                    { "技能包已导出，可在另一台设备导入。" },
+                    { "导出失败：${it.message ?: "未知错误"}" }
                 )
             }
         }
@@ -1148,7 +1173,12 @@ fun NestroApp() {
                                                     )
                                                 }
                                             }
-                                            if (name !in DEFAULT_SKILLS.keys) {
+                                            TextButton(onClick = {
+                                                 skillExportJson = SkillBundleParser.exportJson(name, prompt, skillMetadata[name])
+                                                 val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "skill" }
+                                                 exportSkillLauncher.launch("$safeName.nestro-skill.json")
+                                             }) { Text("导出", color = Mint) }
+                                             if (name !in DEFAULT_SKILLS.keys) {
                                                 TextButton(onClick = {
                                                     skills = skills - name
                                                     skillMetadata = skillMetadata - name
@@ -1172,6 +1202,7 @@ fun NestroApp() {
                                 }
                                 OutlinedButton(onClick = { selectedSkill = ""; page = "home" }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用技能") }
                                 if (skillImportStatus.isNotBlank()) Text(skillImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                 if (skillExportStatus.isNotBlank()) Text(skillExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")

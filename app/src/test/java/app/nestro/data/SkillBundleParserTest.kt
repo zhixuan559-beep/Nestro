@@ -57,4 +57,24 @@ class SkillBundleParserTest {
         assertEquals("2.0.1", metadata.getString("version"))
         assertEquals("network_read", metadata.getJSONArray("permissions").getString(0))
     }
+
+
+    @Test
+    fun exportedSkillPreservesPermissionsAndDependencies() {
+        val metadata = """{"version":"1.2.0","description":"研究","source":"local","permissions":["network_read"],"dependencies":[{"name":"web-search","version":">=1.0"}]}"""
+        val exported = org.json.JSONObject(SkillBundleParser.exportJson("资料研究员", prompt, metadata))
+        assertEquals("资料研究员", exported.getString("name"))
+        assertEquals("1.2.0", exported.getString("version"))
+        assertEquals("network_read", exported.getJSONArray("permissions").getString(0))
+        assertEquals("web-search", exported.getJSONArray("dependencies").getJSONObject(0).getString("name"))
+        assertEquals(prompt, exported.getString("prompt"))
+    }
+
+    @Test
+    fun exportsLocalSkillWithoutMetadataUsingSafeDefaults() {
+        val exported = org.json.JSONObject(SkillBundleParser.exportJson("自定义技能", prompt, null))
+        assertEquals("1.0.0", exported.getString("version"))
+        assertTrue(exported.getJSONArray("permissions").length() == 0)
+        assertTrue(exported.getJSONArray("dependencies").length() == 0)
+    }
 }
