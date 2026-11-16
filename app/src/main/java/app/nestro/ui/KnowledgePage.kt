@@ -38,8 +38,9 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
  var searchQuery by remember { mutableStateOf("") }
  var searching by remember { mutableStateOf(false) }
  val searchResults=remember { mutableStateListOf<KnowledgeSearchResult>() }
- suspend fun refresh() {
-  val rows=withContext(Dispatchers.IO) { database.dao().knowledgeDocuments(projectId) }
+ suspend fun refresh(targetProjectId:String=projectId) {
+  val rows=withContext(Dispatchers.IO) { database.dao().knowledgeDocuments(targetProjectId) }
+  if(latestProjectId!=targetProjectId) return
   documents.clear(); documents.addAll(rows)
  }
  LaunchedEffect(projectId) {
@@ -48,7 +49,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
   searchQuery=""
   pendingDelete=null
   status="正在读取当前项目的本地知识库…"
-  runCatching { refresh() }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
+  runCatching { refresh(projectId) }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
  }
  val launcher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
   if(uri!=null) {
@@ -57,7 +58,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    scope.launch {
     val result=runCatching { KnowledgeStore.importText(context.contentResolver,uri,requestedProjectId,database.dao()) }
     if(latestProjectId==requestedProjectId) {
-     result.onSuccess { refresh(); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
+     result.onSuccess { refresh(requestedProjectId); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
       .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
     }
     loading=false
