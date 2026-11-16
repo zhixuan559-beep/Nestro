@@ -1765,20 +1765,24 @@ fun NestroApp() {
                                                     }) { Text("编辑", color = Mint) }
                                                     if (project.id != "default") {
                                                         TextButton(onClick = {
-                                                            scope.launch {
-                                                                runCatching {
-                                                                    withContext(Dispatchers.IO) {
-                                                                        val dao = database.dao()
-                                                                        check(dao.deleteProjectIfEmpty(project.id)) {
-                                                                            "该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除"
+                                                            if (project.id == activeProjectId) {
+                                                                status = "当前空间正在使用，请先切换到其他空间再删除"
+                                                            } else {
+                                                                scope.launch {
+                                                                    runCatching {
+                                                                        withContext(Dispatchers.IO) {
+                                                                            val dao = database.dao()
+                                                                            check(dao.deleteProjectIfEmpty(project.id)) {
+                                                                                "该空间仍有关联数据（会话、知识文档、记忆或 Agent 任务），请先迁移或清理后再删除"
+                                                                            }
                                                                         }
+                                                                    }.onSuccess {
+                                                                        projects = projects.filterNot { it.id == project.id }
+                                                                        saveProjects(prefs, projects)
+                                                                        status = "空项目空间已删除"
+                                                                    }.onFailure {
+                                                                        status = it.message ?: "删除失败，项目空间已保留"
                                                                     }
-                                                                }.onSuccess {
-                                                                    projects = projects.filterNot { it.id == project.id }
-                                                                    saveProjects(prefs, projects)
-                                                                    status = "空项目空间已删除"
-                                                                }.onFailure {
-                                                                    status = it.message ?: "删除失败，项目空间已保留"
                                                                 }
                                                             }
                                                         }) { Text("删除", color = ColorStop) }

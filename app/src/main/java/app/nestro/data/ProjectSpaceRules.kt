@@ -13,6 +13,6 @@ object ProjectSpaceRules {
         return null
     }
 
-    fun canDelete(projectId: String, linkedProjectIds: Set<String>): Boolean =
-        projectId.isNotBlank() && projectId != "default" && projectId !in linkedProjectIds
+    fun canDelete(projectId: String, activeProjectId: String, linkedProjectIds: Set<String>): Boolean =
+        projectId.isNotBlank() && projectId != "default" && projectId != activeProjectId && projectId !in linkedProjectIds
 }

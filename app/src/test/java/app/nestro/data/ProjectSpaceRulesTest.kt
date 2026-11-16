@@ -26,9 +26,10 @@ class ProjectSpaceRulesTest {
     }
 
     @Test fun protectsDefaultAndProjectsWithLinkedDataFromDeletion() {
-        assertFalse(ProjectSpaceRules.canDelete("default", emptySet()))
-        assertFalse(ProjectSpaceRules.canDelete("work", setOf("work")))
-        assertTrue(ProjectSpaceRules.canDelete("work", emptySet()))
-        assertFalse(ProjectSpaceRules.canDelete("", emptySet()))
+        assertFalse(ProjectSpaceRules.canDelete("default", "work", emptySet()))
+        assertFalse(ProjectSpaceRules.canDelete("work", "default", setOf("work")))
+        assertFalse(ProjectSpaceRules.canDelete("work", "work", emptySet()))
+        assertTrue(ProjectSpaceRules.canDelete("work", "default", emptySet()))
+        assertFalse(ProjectSpaceRules.canDelete("", "default", emptySet()))
     }
 }
