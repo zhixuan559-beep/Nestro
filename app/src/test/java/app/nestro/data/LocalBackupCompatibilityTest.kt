@@ -28,4 +28,18 @@ class LocalBackupCompatibilityTest {
             LocalBackupCompatibility.sha256("abc")
         )
     }
+
+    @Test fun canonicalJsonIgnoresObjectKeyOrderButPreservesArrayOrder() {
+        val first = org.json.JSONObject("""{"z":1,"nested":{"b":2,"a":1},"items":[3,2]}""")
+        val reordered = org.json.JSONObject("""{"items":[3,2],"nested":{"a":1,"b":2},"z":1}""")
+        val changedArray = org.json.JSONObject("""{"items":[2,3],"nested":{"a":1,"b":2},"z":1}""")
+        org.junit.Assert.assertEquals(LocalBackupCompatibility.canonicalJson(first), LocalBackupCompatibility.canonicalJson(reordered))
+        org.junit.Assert.assertNotEquals(LocalBackupCompatibility.canonicalJson(first), LocalBackupCompatibility.canonicalJson(changedArray))
+    }
+
+    @Test fun checksumChangesWhenBackupPayloadChanges() {
+        val original = LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(org.json.JSONObject("""{"messages":[]}""")))
+        val modified = LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(org.json.JSONObject("""{"messages":[{"id":"m1"}]}""")))
+        org.junit.Assert.assertNotEquals(original, modified)
+    }
 }
