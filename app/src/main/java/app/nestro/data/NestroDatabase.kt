@@ -321,6 +321,9 @@ interface NestroDao {
     @Query("SELECT id FROM conversations")
     suspend fun conversationIds(): List<String>
 
+    @Query("SELECT projectId FROM conversations WHERE id = :conversationId LIMIT 1")
+    suspend fun conversationProjectId(conversationId: String): String?
+
     @Query("DELETE FROM conversations") suspend fun deleteAllConversations()
     @Query("DELETE FROM projects") suspend fun deleteAllProjects()
     @Query("DELETE FROM user_memories") suspend fun deleteAllUserMemories()

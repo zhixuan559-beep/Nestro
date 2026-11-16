@@ -94,11 +94,17 @@ class UserMemoryStoreTest {
         assertFalse(UserMemoryStore.isSafeContent("我的手机号是 13812345678"))
         assertFalse(UserMemoryStore.isSafeContent("我的收入和负债情况如下"))
         assertFalse(UserMemoryStore.isSafeContent("项目密钥是 sk-12345678901234567890abcdef"))
+        assertFalse(UserMemoryStore.isSafeContent("GitHub token 是 github_pat_123456789012345678901234"))
+        assertFalse(UserMemoryStore.isSafeContent("Google API key 是 AIza12345678901234567890123456789012"))
+        assertFalse(UserMemoryStore.isSafeContent("请记住我的种族身份"))
+        assertFalse(UserMemoryStore.isSafeContent("请记住我的工会成员身份"))
         assertFalse(UserMemoryStore.isSafeContent("请记住我的 API key"))
         assertFalse(UserMemoryStore.isSafeContent("Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456"))
         assertFalse(UserMemoryStore.isSafeContent("JWT eyJabcdefgh.ijklmnop.qrstuvwx"))
         assertFalse(UserMemoryStore.isSafeContent("我的家庭住址在某某路 123 号"))
         assertFalse(UserMemoryStore.isSafeContent("我住在人民路 123 号"))
         assertFalse(UserMemoryStore.isSafeContent("我最近的病史需要长期记录"))
+        assertFalse(UserMemoryStore.isSafeContent("我对青霉素过敏"))
+        assertFalse(UserMemoryStore.isSafeContent("My allergy is penicillin"))
     }
 }

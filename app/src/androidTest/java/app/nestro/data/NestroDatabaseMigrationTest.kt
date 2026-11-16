@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -194,6 +195,110 @@ class NestroDatabaseMigrationTest {
         }
     }
 
+    @Test fun staleAutomaticExtractionCannotRestoreADeletedMemory() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            assertTrue(UserMemoryStore.saveManual(dao, "p1", "项目长期采用本地优先的数据存储方式", "preference"))
+            val existing = dao.userMemories("p1").single()
+            val extractionVersion = UserMemoryStore.mutationVersion("p1")
+            assertTrue(UserMemoryStore.delete(dao, existing.id, "p1"))
+
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("preference", existing.content, 0.95)),
+                expectedMutationVersion = extractionVersion
+            )
+            assertEquals("用户删除后，先前启动的提取任务不得重新写回记忆", 0, saved)
+            assertTrue(dao.userMemories("p1").isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun globalExtractionInvalidationRejectsCandidatesStartedBeforeOptOut() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            val extractionVersion = UserMemoryStore.mutationVersion("p1")
+            UserMemoryStore.invalidateAndAwaitPendingExtractions()
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("preference", "项目长期采用本地优先的数据存储方式", 0.95)),
+                expectedMutationVersion = extractionVersion
+            )
+            assertEquals("关闭自动记忆后，关闭前启动的提取任务不得继续写入", 0, saved)
+            assertTrue(dao.userMemories("p1").isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun invalidExplicitCorrectionDoesNotFallBackToCreatingANewMemory() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            dao.putUserMemory(UserMemoryEntity("old-id", "p1", "preference", "项目默认使用 SQLite 数据库存储配置", "old-fingerprint", "", "", 0.9, 1, 1))
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("workflow", "项目现在使用 PostgreSQL 数据库执行迁移", 0.96, "old-id"))
+            )
+            assertEquals("类别不匹配的纠正目标必须拒绝，不能退化成新增记忆", 0, saved)
+            assertEquals(listOf("old-id"), dao.userMemories("p1").map { it.id })
+            assertEquals("项目默认使用 SQLite 数据库存储配置", dao.userMemories("p1").single().content)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun correctionFingerprintConflictDoesNotOverwriteOrDuplicateAnotherMemory() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            val conflictingContent = "项目现在采用 PostgreSQL 数据库"
+            val conflictingFingerprint = UserMemoryStore.fingerprintFor("preference|" + conflictingContent.lowercase())
+            dao.putUserMemory(UserMemoryEntity("old-id", "p1", "preference", "项目此前使用 SQLite 数据库存储配置", "old-fingerprint", "", "", 0.9, 1, 1))
+            dao.putUserMemory(UserMemoryEntity("existing-new-id", "p1", "preference", conflictingContent, conflictingFingerprint, "", "", 0.9, 2, 2))
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("preference", conflictingContent, 0.96, "old-id"))
+            )
+            assertEquals(0, saved)
+            val memories = dao.userMemories("p1").associateBy { it.id }
+            assertEquals(setOf("old-id", "existing-new-id"), memories.keys)
+            assertEquals("项目此前使用 SQLite 数据库存储配置", memories.getValue("old-id").content)
+            assertEquals("项目现在采用 PostgreSQL 数据库", memories.getValue("existing-new-id").content)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun conversationDeletionInvalidatesAnEarlierMemoryExtraction() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            dao.putConversation(ConversationEntity("c1", "来源会话", 1L, "p1"))
+            dao.putMessages(listOf(MessageEntity("m1", "c1", 0, "user", "记住项目偏好", "[]", 0)))
+            val extractionVersion = UserMemoryStore.mutationVersion("p1")
+            UserMemoryStore.invalidateAndAwaitPendingExtractions("p1")
+            dao.deleteConversations(listOf("c1"))
+            val saved = UserMemoryStore.saveCandidates(
+                dao, "p1", "c1", "m1",
+                listOf(MemoryCandidate("preference", "项目长期采用本地优先的数据存储方式", 0.95)),
+                expectedMutationVersion = extractionVersion
+            )
+            assertEquals(0, saved)
+            assertTrue(dao.userMemories("p1").isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun memorySharingRequiresExplicitOwnerAuthorization() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {
@@ -218,17 +323,19 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun memoryUpsertKeepsIdentityAndSharingWhileUpdatingContent() = runBlocking {
+    @Test fun memoryUpsertDeduplicatesFingerprintAndKeepsIdentityAndSharing() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {
             val dao = db.dao()
-            dao.putUserMemory(UserMemoryEntity("stable-id", "p1", "preference", "旧的偏好内容需要更新", "fp-old", "", "", 0.9, 10, 10, true))
-            val updated = dao.upsertUserMemoryByFingerprint(UserMemoryEntity("new-id", "p1", "preference", "新的偏好内容需要更新", "fp-new", "c1", "m1", 0.95, 20, 20, false))
+            val content = "偏好使用本地优先的记忆检索策略"
+            val fingerprint = UserMemoryStore.fingerprintFor("preference|" + content.lowercase())
+            dao.putUserMemory(UserMemoryEntity("stable-id", "p1", "preference", content, fingerprint, "", "", 0.9, 10, 10, true))
+            val updated = dao.upsertUserMemoryByFingerprint(UserMemoryEntity("new-id", "p1", "preference", content, fingerprint, "c1", "m1", 0.95, 20, 20, false))
             assertEquals("stable-id", updated.id)
             assertEquals(10L, updated.createdAt)
             assertTrue(updated.shareAcrossProjects)
-            assertEquals("新的偏好内容需要更新", dao.userMemories("p1").single().content)
-            assertEquals("fp-new", dao.userMemories("p1").single().fingerprint)
+            assertEquals(content, dao.userMemories("p1").single().content)
+            assertEquals(fingerprint, dao.userMemories("p1").single().fingerprint)
         } finally {
             db.close()
         }

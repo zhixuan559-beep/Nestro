@@ -3,6 +3,10 @@ package app.nestro.data
 import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.ln
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 data class MemoryCandidate(val category: String, val content: String, val confidence: Double, val supersedesId: String? = null)
 data class MemoryRecall(val context: String, val memories: List<UserMemoryEntity>)
@@ -100,11 +104,46 @@ internal object MemoryRecallRanker {
 
 object UserMemoryStore {
     private val allowedCategories = setOf("preference", "workflow", "project", "constraint")
+    private val mutationVersions = ConcurrentHashMap<String, AtomicLong>()
+    private val mutationLocks = ConcurrentHashMap<String, Mutex>()
+
+    private fun mutationLock(projectId: String): Mutex =
+        mutationLocks.computeIfAbsent(projectId) { Mutex() }
+
+    fun mutationVersion(projectId: String): Long =
+        mutationVersions.computeIfAbsent(projectId) { AtomicLong(0L) }.get()
+
+    private fun bumpMutationVersion(projectId: String) {
+        mutationVersions.computeIfAbsent(projectId) { AtomicLong(0L) }.incrementAndGet()
+    }
+
+    /** Invalidates stale extraction work for a project and waits for any in-flight save to finish. */
+    suspend fun invalidateAndAwaitPendingExtractions(projectId: String) {
+        if (projectId.isBlank()) return
+        bumpMutationVersion(projectId)
+        mutationLock(projectId).withLock { }
+    }
+
+    /** Invalidates and drains extraction work started before a full local backup restore. */
+    suspend fun invalidateAndAwaitPendingExtractions() {
+        mutationVersions.values.forEach { it.incrementAndGet() }
+        mutationLocks.values.toList().forEach { lock -> lock.withLock { } }
+    }
     fun isSafeContent(value: String): Boolean = !containsSensitiveData(value)
 
-    suspend fun saveCandidates(dao: NestroDao, projectId: String, conversationId: String, messageId: String, candidates: List<MemoryCandidate>): Int {
-        if (projectId.isBlank() || conversationId.isBlank() || messageId.isBlank() || !dao.projectExists(projectId)) return 0
-        var saved = 0
+    suspend fun saveCandidates(
+        dao: NestroDao,
+        projectId: String,
+        conversationId: String,
+        messageId: String,
+        candidates: List<MemoryCandidate>,
+        expectedMutationVersion: Long? = null
+    ): Int {
+        val versionAtStart = expectedMutationVersion ?: mutationVersion(projectId)
+        return mutationLock(projectId).withLock {
+            if (projectId.isBlank() || conversationId.isBlank() || messageId.isBlank() || !dao.projectExists(projectId)) return@withLock 0
+            if (mutationVersion(projectId) != versionAtStart) return@withLock 0
+            var saved = 0
         candidates.take(5).forEach { candidate ->
             val category = candidate.category.trim().lowercase()
             val content = candidate.content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
@@ -113,12 +152,13 @@ object UserMemoryStore {
             val fingerprint = fingerprintFor(category + "|" + content.lowercase())
             val now = System.currentTimeMillis()
             val supersedesId = candidate.supersedesId?.trim().orEmpty()
-            if (supersedesId.isNotBlank() && dao.replaceUserMemoryIfUnconflicted(
+            if (supersedesId.isNotBlank()) {
+                val replaced = dao.replaceUserMemoryIfUnconflicted(
                     supersedesId, projectId, category, content, fingerprint, conversationId, messageId,
                     candidate.confidence, now
                 )
-            ) {
-                saved++
+                if (replaced) saved++
+                // A failed explicit correction must never be silently re-saved as a new memory.
                 return@forEach
             }
             val old = dao.userMemoryByFingerprint(projectId, fingerprint)
@@ -131,8 +171,12 @@ object UserMemoryStore {
             ))
             saved++
         }
-        dao.trimUserMemories(projectId, 200)
-        return saved
+            if (saved > 0) {
+                bumpMutationVersion(projectId)
+                dao.trimUserMemories(projectId, 200)
+            }
+            saved
+        }
     }
 
     fun buildRecallQuery(recentUserTurns: List<String>, currentPrompt: String, maxChars: Int = 2400): String {
@@ -183,25 +227,27 @@ object UserMemoryStore {
         }
     }
 
-    suspend fun saveManual(dao: NestroDao, projectId: String, content: String, category: String = "preference"): Boolean {
-        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
-        val normalizedCategory = category.trim().lowercase()
-        require(projectId.isNotBlank()) { "项目空间无效" }
-        require(dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
-        require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
-        require(normalizedCategory in allowedCategories) { "记忆分类无效" }
-        require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
-        val fingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
-        val now = System.currentTimeMillis()
-        val inserted = dao.insertUserMemoryIfAbsent(UserMemoryEntity(
-            id = UUID.randomUUID().toString(), projectId = projectId, category = normalizedCategory,
-            content = normalized, fingerprint = fingerprint, sourceConversationId = "",
-            sourceMessageId = "", confidence = 1.0, createdAt = now, updatedAt = now
-        ))
-        if (inserted == -1L) return false
-        dao.trimUserMemories(projectId, 200)
-        return true
-    }
+    suspend fun saveManual(dao: NestroDao, projectId: String, content: String, category: String = "preference"): Boolean =
+        mutationLock(projectId).withLock {
+            val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+            val normalizedCategory = category.trim().lowercase()
+            require(projectId.isNotBlank()) { "项目空间无效" }
+            require(dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
+            require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
+            require(normalizedCategory in allowedCategories) { "记忆分类无效" }
+            require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
+            val fingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
+            val now = System.currentTimeMillis()
+            val inserted = dao.insertUserMemoryIfAbsent(UserMemoryEntity(
+                id = UUID.randomUUID().toString(), projectId = projectId, category = normalizedCategory,
+                content = normalized, fingerprint = fingerprint, sourceConversationId = "",
+                sourceMessageId = "", confidence = 1.0, createdAt = now, updatedAt = now
+            ))
+            if (inserted == -1L) return@withLock false
+            bumpMutationVersion(projectId)
+            dao.trimUserMemories(projectId, 200)
+            true
+        }
 
     suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall {
         // A project can own 200 memories and still have explicitly shared memories to recall.
@@ -231,39 +277,53 @@ object UserMemoryStore {
         dao.userMemoriesVisible(projectId, 400)
 
     suspend fun setShareAcrossProjects(dao: NestroDao, id: String, ownerProjectId: String, enabled: Boolean): Boolean =
-        dao.setUserMemorySharing(id, ownerProjectId, enabled, System.currentTimeMillis()) > 0
+        mutationLock(ownerProjectId).withLock {
+            val changed = dao.setUserMemorySharing(id, ownerProjectId, enabled, System.currentTimeMillis()) > 0
+            if (changed) bumpMutationVersion(ownerProjectId)
+            changed
+        }
 
     suspend fun edit(dao: NestroDao, id: String, projectId: String, content: String, category: String) {
-        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
-        val normalizedCategory = category.trim().lowercase()
-        require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
-        require(normalizedCategory in allowedCategories) { "记忆分类无效" }
-        require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
-        val nextFingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
-        require(!dao.userMemoryFingerprintExists(projectId, nextFingerprint, id)) { "已有相同内容的记忆，请先检查重复项" }
-        check(dao.updateUserMemory(id, projectId, normalized, normalizedCategory, nextFingerprint, System.currentTimeMillis()) > 0) {
-            "记忆不存在或已被删除"
+        mutationLock(projectId).withLock {
+            val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+            val normalizedCategory = category.trim().lowercase()
+            require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
+            require(normalizedCategory in allowedCategories) { "记忆分类无效" }
+            require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
+            val nextFingerprint = fingerprintFor(normalizedCategory + "|" + normalized.lowercase())
+            require(!dao.userMemoryFingerprintExists(projectId, nextFingerprint, id)) { "已有相同内容的记忆，请先检查重复项" }
+            check(dao.updateUserMemory(id, projectId, normalized, normalizedCategory, nextFingerprint, System.currentTimeMillis()) > 0) {
+                "记忆不存在或已被删除"
+            }
+            bumpMutationVersion(projectId)
         }
     }
 
     suspend fun delete(dao: NestroDao, id: String, projectId: String): Boolean =
-        dao.deleteUserMemory(id, projectId) > 0
+        mutationLock(projectId).withLock {
+            val deleted = dao.deleteUserMemory(id, projectId) > 0
+            if (deleted) bumpMutationVersion(projectId)
+            deleted
+        }
 
     suspend fun clearProject(dao: NestroDao, projectId: String) {
-        require(projectId.isNotBlank() && dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
-        dao.deleteUserMemoriesForProject(projectId)
+        mutationLock(projectId).withLock {
+            require(projectId.isNotBlank() && dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
+            dao.deleteUserMemoriesForProject(projectId)
+            bumpMutationVersion(projectId)
+        }
     }
 
     private fun containsSensitiveData(value: String): Boolean =
         Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
             Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
-            Regex("""(?i)\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b""").containsMatchIn(value) ||
+            Regex("""(?i)\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|ya29\.[A-Za-z0-9_-]{20,}|mfa\.[A-Za-z0-9_-]{40,}|xox[baprs]-[A-Za-z0-9-]{10,})\b""").containsMatchIn(value) ||
             Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}""").containsMatchIn(value) ||
             Regex("""\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b""").containsMatchIn(value) ||
-            Regex("""(?i)\b(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|password|passcode|secret|medical history|diagnosis|religion|political affiliation|sexual orientation|home address|date of birth|salary|income|debt|bank account|passport|national id)\b""").containsMatchIn(value) ||
+            Regex("""(?i)\b(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|password|passcode|secret|medical history|medical condition|health condition|diagnosis|allergy|medication|prescription|symptom|illness|disability|religion|political affiliation|sexual orientation|ethnicity|race|union membership|trade union|criminal history|sex life|sexual activity|social security number|national insurance number|tax id|home address|date of birth|salary|income|debt|bank account|passport|national id)\b""").containsMatchIn(value) ||
             Regex("""(?:我住在|家庭住址|详细地址|收货地址|住址是).{0,48}(?:省|市|区|县|路|街|巷|号|栋|单元|室)""").containsMatchIn(value) ||
-            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "住址", "家庭住址", "详细地址", "收货地址", "门牌号", "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
+            listOf("密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照", "病史", "疾病", "病情", "健康状况", "诊断", "过敏", "用药记录", "药物史", "宗教", "政治立场", "种族", "民族", "工会", "犯罪记录", "犯罪史", "性取向", "性行为", "性生活", "住址", "家庭住址", "详细地址", "收货地址", "门牌号", "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
     internal fun fingerprintFor(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

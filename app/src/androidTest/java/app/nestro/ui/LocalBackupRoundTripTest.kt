@@ -124,6 +124,15 @@ class LocalBackupRoundTripTest {
             assertTrue("来源消息与来源会话不匹配的记忆必须被拒绝", runCatching {
                 restoreLocalBackup(context, prefs, invalidMemorySourceBackup, database)
             }.isFailure)
+            val incompleteMemorySourceBackup = JSONObject(backup).apply {
+                val rows = getJSONArray("user_memories")
+                rows.getJSONObject(0).put("sourceConversationId", "")
+                remove("checksum_sha256")
+                put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(this)))
+            }.toString()
+            assertTrue("来源会话与消息不得只提供其中一个", runCatching {
+                restoreLocalBackup(context, prefs, incompleteMemorySourceBackup, database)
+            }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
             database.close()
