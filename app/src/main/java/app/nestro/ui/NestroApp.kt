@@ -23,6 +23,8 @@ import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
+import app.nestro.data.ModelProfileMetadata
+import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
 import app.nestro.data.ExpertProfileCodec
@@ -156,6 +158,8 @@ fun NestroApp() {
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
+    var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
+    var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
@@ -450,6 +454,20 @@ fun NestroApp() {
 
     LaunchedEffect(Unit) {
         config = LocalVault.read(context)
+        modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
+        activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
+        if (modelProfiles.isEmpty() && config.baseUrl.isNotBlank() && config.model.isNotBlank()) {
+            val migrated = ModelProfileMetadata("legacy-default", "默认模型", config.baseUrl, config.model)
+            modelProfiles = listOf(migrated)
+            activeModelProfileId = migrated.id
+            LocalVault.writeProfile(context, migrated.id, config.apiKey)
+            prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles))
+                .putString("active_model_profile_id", activeModelProfileId).apply()
+        }
+        val activeMetadata = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+        if (activeMetadata != null) {
+            config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, LocalVault.readProfile(context, activeMetadata.id))
+        }
         val loaded = runCatching {
             withContext(Dispatchers.IO) {
                 val dao = database.dao()
@@ -971,12 +989,66 @@ fun NestroApp() {
                                 Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
-                        "models" -> ModelManager(config, onSave = { newConfig ->
-                            config = newConfig
-                            LocalVault.write(context, newConfig)
-                            status = if (newConfig.apiKey.isNotBlank()) "模型配置已保存" else "尚未配置模型"
-                            page = "home"
-                        })
+                        "models" -> ModelManager(
+                            profiles = modelProfiles,
+                            activeProfileId = activeModelProfileId,
+                            activeConfig = config,
+                            loadKey = { id -> LocalVault.readProfile(context, id) },
+                            onActivate = { id ->
+                                val metadata = modelProfiles.firstOrNull { it.id == id }
+                                if (metadata != null) {
+                                    val key = LocalVault.readProfile(context, id)
+                                    if (key.isNotBlank()) {
+                                        activeModelProfileId = id
+                                        config = ModelConfig(metadata.baseUrl, metadata.model, key)
+                                        prefs.edit().putString("active_model_profile_id", id)
+                                            .putString("base_url", metadata.baseUrl).putString("model", metadata.model).apply()
+                                        LocalVault.write(context, config)
+                                        status = "已切换模型：${metadata.name}"
+                                    } else status = "该配置尚未填写 API Key"
+                                }
+                            },
+                            onSave = { metadata, apiKey, activate ->
+                                val error = ModelProfileCatalogCodec.validateCatalog(
+                                    (modelProfiles.filterNot { it.id == metadata.id } + metadata)
+                                )
+                                if (error != null) {
+                                    status = error
+                                } else {
+                                    modelProfiles = (modelProfiles.filterNot { it.id == metadata.id } + metadata)
+                                    LocalVault.writeProfile(context, metadata.id, apiKey)
+                                    prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
+                                    if (activate) {
+                                        activeModelProfileId = metadata.id
+                                        config = ModelConfig(metadata.baseUrl, metadata.model, apiKey)
+                                        LocalVault.write(context, config)
+                                        prefs.edit().putString("active_model_profile_id", metadata.id).apply()
+                                        status = "模型配置已保存并启用：${metadata.name}"
+                                    } else status = "模型配置已保存：${metadata.name}"
+                                }
+                            },
+                            onDelete = { id ->
+                                modelProfiles = modelProfiles.filterNot { it.id == id }
+                                LocalVault.deleteProfile(context, id)
+                                prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
+                                if (activeModelProfileId == id) {
+                                    val next = modelProfiles.firstOrNull()
+                                    if (next != null) {
+                                        val key = LocalVault.readProfile(context, next.id)
+                                        activeModelProfileId = next.id
+                                        config = ModelConfig(next.baseUrl, next.model, key)
+                                        LocalVault.write(context, config)
+                                        prefs.edit().putString("active_model_profile_id", next.id).apply()
+                                        status = if (key.isBlank()) "已切换到备用配置，请补充 API Key" else "已切换到：${next.name}"
+                                    } else {
+                                        activeModelProfileId = ""
+                                        config = ModelConfig("", "", "")
+                                        prefs.edit().remove("active_model_profile_id").putString("base_url", "").putString("model", "").remove("api_key_enc").apply()
+                                        status = "尚未配置模型"
+                                    }
+                                }
+                            }
+                        )
                         "workflows" -> {
                              Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                  Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -2535,49 +2607,119 @@ private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = n
 }
 
 @Composable
-private fun ModelManager(config: ModelConfig, onSave: (ModelConfig) -> Unit) {
+private fun ModelManager(
+    profiles: List<ModelProfileMetadata>,
+    activeProfileId: String,
+    activeConfig: ModelConfig,
+    loadKey: (String) -> String,
+    onActivate: (String) -> Unit,
+    onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
+    onDelete: (String) -> Unit
+) {
     val scope = rememberCoroutineScope()
+    var editingId by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var endpoint by remember { mutableStateOf("") }
+    var model by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    var activateAfterSave by remember { mutableStateOf(true) }
     var testing by remember { mutableStateOf(false) }
     var testStatus by remember { mutableStateOf("") }
-    var endpoint by remember(config.baseUrl) { mutableStateOf(config.baseUrl) }
-    var model by remember(config.model) { mutableStateOf(config.model) }
-    var key by remember { mutableStateOf(config.apiKey) }
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    var formError by remember { mutableStateOf("") }
+
+    fun beginNew() {
+        editingId = java.util.UUID.randomUUID().toString()
+        name = ""
+        endpoint = "https://"
+        model = ""
+        key = ""
+        activateAfterSave = true
+        testStatus = ""
+        formError = ""
+    }
+    fun edit(profile: ModelProfileMetadata) {
+        editingId = profile.id
+        name = profile.name
+        endpoint = profile.baseUrl
+        model = profile.model
+        key = loadKey(profile.id)
+        activateAfterSave = profile.id == activeProfileId
+        testStatus = ""
+        formError = ""
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text("支持 OpenAI Chat Completions 兼容接口。服务商可自行选择。", color = Muted)
-        OutlinedTextField(endpoint, { endpoint = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true)
-        OutlinedTextField(model, { model = it }, modifier = Modifier.fillMaxWidth(), label = { Text("模型名称") }, placeholder = { Text("例如 deepseek-chat") }, singleLine = true)
-        OutlinedTextField(key, { key = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
-        Text("Key 只保存在本机加密存储，不会写入仓库。", color = Muted, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(8.dp))
+        Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
+        if (profiles.isEmpty()) {
+            Text("还没有模型配置。先添加一组 API 地址、模型名称和 Key。", color = Muted)
+        } else {
+            profiles.forEach { profile ->
+                val active = profile.id == activeProfileId
+                Surface(color = if (active) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(profile.name + if (active) " · 当前使用" else "", color = if (active) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存" else "缺少 API Key", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { edit(profile) }) { Text("编辑", color = Mint) }
+                            TextButton(onClick = { onActivate(profile.id) }, enabled = !active && loadKey(profile.id).isNotBlank()) { Text("启用", color = Mint) }
+                            TextButton(onClick = { onDelete(profile.id); if (editingId == profile.id) beginNew() }) { Text("删除", color = ColorStop) }
+                        }
+                    }
+                }
+            }
+        }
+        if (editingId.isBlank()) beginNew()
+        Text(if (editingId in profiles.map { it.id }) "编辑模型配置" else "新增模型配置", color = Ink, style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(name, { name = it.take(40) }, modifier = Modifier.fillMaxWidth(), label = { Text("配置名称") }, singleLine = true)
+        OutlinedTextField(endpoint, { endpoint = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true)
+        OutlinedTextField(model, { model = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型名称") }, placeholder = { Text("例如 deepseek-chat") }, singleLine = true)
+        OutlinedTextField(key, { key = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+        Text("每组 Key 独立使用 Android Keystore AES-GCM 加密。备份只包含配置名称、地址和模型名，不包含 Key。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = activateAfterSave, onCheckedChange = { activateAfterSave = it })
+            Text("保存后立即设为当前模型", color = Ink)
+        }
         Button(
-            onClick = { onSave(ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), key.trim())) },
-            enabled = endpoint.startsWith("https://") && model.isNotBlank() && key.isNotBlank(),
+            onClick = {
+                val candidate = ModelProfileMetadata(editingId, name.trim(), endpoint.trim().trimEnd('/'), model.trim())
+                formError = ModelProfileCatalogCodec.validate(candidate)
+                    ?: ModelProfileCatalogCodec.validateCatalog(profiles.filterNot { it.id == editingId } + candidate).orEmpty()
+                if (formError.isBlank() && key.isBlank() && editingId !in profiles.map { it.id }) formError = "新配置必须填写 API Key"
+                if (formError.isBlank()) onSave(candidate, key.trim(), activateAfterSave)
+            },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
         ) { Text("保存模型配置") }
         OutlinedButton(
             onClick = {
+                val candidate = ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), key.trim())
                 testing = true
                 testStatus = "正在测试连接…"
-                val candidate = ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), key.trim())
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        runCatching { OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "") }
+                        runCatching {
+                            require(candidate.baseUrl.startsWith("https://") && candidate.model.isNotBlank() && candidate.apiKey.isNotBlank()) { "请填写 HTTPS 地址、模型名称和 API Key" }
+                            OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "")
+                        }
                     }
-                    testStatus = result.fold({ "连接成功：模型已返回内容。" }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
+                    testStatus = result.fold({ response ->
+                        if (response.isBlank()) "连接成功，但模型返回了空内容。" else "连接成功：模型已返回内容。"
+                    }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
                     testing = false
                 }
             },
             enabled = !testing && endpoint.startsWith("https://") && model.isNotBlank() && key.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
-        ) { Text(if (testing) "测试中…" else "测试连接") }
-        if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
-        OutlinedButton(
-            onClick = { onSave(ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), "")) },
-            enabled = config.apiKey.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("清除本机 API Key") }
+        ) { Text(if (testing) "测试中…" else "测试当前编辑配置") }
+        if (formError.isNotBlank()) Text(formError, color = ColorStop, style = MaterialTheme.typography.bodySmall)
+        if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) ColorStop else Muted, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { beginNew() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建另一组配置", color = Mint) }
+        Text("当前实际调用的模型：${activeConfig.model.ifBlank { "未配置" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -2825,6 +2967,38 @@ internal object LocalVault {
         }.getOrDefault("")
         return ModelConfig(prefs.getString("base_url", "") ?: "", prefs.getString("model", "") ?: "", key)
     }
+    fun writeProfile(context: Context, id: String, apiKey: String) {
+        require(id.isNotBlank() && id.length <= 80)
+        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        if (apiKey.isBlank()) {
+            prefs.edit().remove("model_api_key_enc_$id").apply()
+            return
+        }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getKey())
+        val encrypted = cipher.doFinal(apiKey.toByteArray(Charsets.UTF_8))
+        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
+            Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        prefs.edit().putString("model_api_key_enc_$id", packed).apply()
+    }
+
+    fun readProfile(context: Context, id: String): String {
+        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val packed = prefs.getString("model_api_key_enc_$id", null) ?: return ""
+        return runCatching {
+            val parts = packed.split(":")
+            require(parts.size == 2)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
+        }.getOrDefault("")
+    }
+
+    fun deleteProfile(context: Context, id: String) {
+        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit().remove("model_api_key_enc_$id").apply()
+    }
+
     private fun getKey(): SecretKey {
         val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
