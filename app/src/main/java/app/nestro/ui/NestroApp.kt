@@ -325,8 +325,14 @@ fun NestroApp() {
                     memoryDraft = globalMemory
                     experts = loadExperts(prefs)
                     expertPrompts = loadExpertPrompts(prefs)
+                    expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
+                    expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
+                    expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
+                    if (selectedExpert != "通用助手" && (selectedExpert !in experts || expertProfiles[selectedExpert]?.enabled == false)) {
+                        selectedExpert = "通用助手"
+                    }
                     expertTeams = loadExpertTeams(prefs)
-                    selectedTeamId = prefs.getString("selected_team_id", "") ?: ""
+                    selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
                     skills = loadSkills(prefs)
                     skillMetadata = loadSkillMetadata(prefs)
                     disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
