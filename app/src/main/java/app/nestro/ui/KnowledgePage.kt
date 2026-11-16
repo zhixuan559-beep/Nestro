@@ -121,7 +121,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
     TextButton(onClick={
      pendingDelete=null
      scope.launch {
-      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id) } }
+      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id, projectId) } }
       result.onSuccess {
        documents.removeAll { it.id==target.id }
        searchResults.clear()

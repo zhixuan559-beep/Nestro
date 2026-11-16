@@ -314,8 +314,8 @@ interface NestroDao {
         insertKnowledgeChunks(chunks)
         return document
     }
-    @Query("DELETE FROM knowledge_documents WHERE id = :documentId")
-    suspend fun deleteKnowledgeDocument(documentId: String)
+    @Query("DELETE FROM knowledge_documents WHERE id = :documentId AND projectId = :projectId")
+    suspend fun deleteKnowledgeDocument(documentId: String, projectId: String)
     @Query("DELETE FROM knowledge_documents WHERE projectId = :projectId")
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
     @Query("DELETE FROM phone_agent_tasks WHERE projectId = :projectId")
