@@ -36,6 +36,8 @@ class LocalBackupRoundTripTest {
                 .putString("messages", "[]")
                 .putString("active_project_id", "p1")
                 .putString("active_conversation_id", "c1")
+                .putString("draft_c1", "恢复后继续写的草稿")
+                .putString("global_memory_v1", "始终使用简洁中文")
                 .putBoolean("automatic_memory_enabled", true)
                 .putFloat("tts_speech_rate", 1.2f)
                 .putString("phone_audit", JSONArray().put(JSONObject().put("at", 123L).put("action", "TASK_START").put("detail", "round trip")).toString())
@@ -73,6 +75,14 @@ class LocalBackupRoundTripTest {
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
+            assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
+            assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
+
+            val tamperedBackup = backup.replace("保留这条消息", "被篡改的消息")
+            assertTrue("篡改后的备份必须被拒绝", runCatching {
+                restoreLocalBackup(context, prefs, tamperedBackup, database)
+            }.isFailure)
+            assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
             database.close()
             prefs.edit().clear().commit()
