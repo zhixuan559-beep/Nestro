@@ -14,6 +14,7 @@ object PhoneAgentPlanner {
         val diningReservation = Regex("(预约|预订|预定|订位|订座|订桌|订餐厅|订).{0,8}(餐厅|饭店|座位|餐位|包间)|餐厅.{0,6}(预约|预订|预定|订位|订座|订)")
             .containsMatchIn(normalized)
         val deviceTask = listOf("帮我打开", "请帮我打开", "打开微信", "打开抖音", "打开小红书", "打开设置", "打开相机", "打开浏览器", "打开应用", "启动应用", "帮我点击", "帮我操作", "开启蓝牙", "关闭蓝牙", "开启定位", "关闭定位", "发消息给", "发短信给", "发邮件给", "拨打电话", "打电话给").any { normalized.contains(it) } ||
+            Regex("(帮我|请帮我).{0,8}(打开|启动|关闭|退出|切换|开启|关掉|点击|操作|设置).{0,12}(应用|软件|微信|抖音|小红书|设置|相机|浏览器|计算器|蓝牙|定位|热点|手电筒|闹钟)").containsMatchIn(normalized) ||
             Regex("(帮我|请帮我)?给.{1,12}(发消息|发短信|发邮件|打电话)").containsMatchIn(normalized) ||
             (listOf("在手机上", "手机上", "手机里").any { normalized.contains(it) } && listOf("打开", "启动", "点击", "操作", "发消息", "发短信", "发邮件", "拨打", "打电话", "开启", "关闭", "切换").any { normalized.contains(it) })
         val category = when {

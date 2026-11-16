@@ -13,6 +13,7 @@ object PhoneAgentTaskStore {
     const val STATUS_PAUSED = "paused"
     const val STATUS_COMPLETED = "completed"
     const val STATUS_FAILED = "failed"
+    const val STATUS_INTERRUPTED = "interrupted"
     const val STATUS_CANCELLED = "cancelled"
 
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
@@ -127,10 +128,11 @@ object PhoneAgentTaskStore {
         val now = System.currentTimeMillis()
         dao.updatePhoneAgentTaskGoal(taskId, updatedGoal, now)
         dao.updatePhoneAgentTaskPlan(taskId, "[]", now)
+        // updatePhoneAgentTaskPlan resets status and currentStep atomically.
     }
 
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
-        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
+        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val actionCount = runCatching { JSONObject(task.planJson).getJSONArray("actions").length() }.getOrNull()
         val planCount = actionCount ?: runCatching { JSONArray(task.planJson).length() }.getOrDefault(0)
@@ -145,13 +147,29 @@ object PhoneAgentTaskStore {
         updateProgress(
             dao,
             taskId,
-            if (ambiguousActionPending) STATUS_RUNNING else STATUS_PAUSED,
+            interruptedStatus(task.status, ambiguousActionPending),
             task.currentStep
         )
     }
 
+    fun interruptedStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED)) return currentStatus
+        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
+    }
+
     suspend fun resumeCandidates(dao: NestroDao, projectId: String): List<PhoneAgentTaskEntity> =
-        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED) }
+        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED) }
+
+    /** Remove common personal identifiers before any task context is sent to a model provider. */
+    fun redactSensitiveText(value: String): String = value
+        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
+        .replace(Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)"), "[手机号已隐藏]")
+        .replace(Regex("(?<!\\d)\\d{16,19}(?!\\d)"), "[疑似卡号已隐藏]")
+        .replace(Regex("(?<!\\d)\\d{6}(?!\\d)"), "[六位数字已隐藏]")
+        .replace(Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])"), "[身份证号已隐藏]")
+        .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址|收货地点|邮寄地址)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[地址已隐藏]" }
+        .replace(Regex("(收货人|联系人|姓名)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[姓名已隐藏]" }
+        .replace(Regex("(送到|寄到|住在|地址是)\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "[地址已隐藏]" }
 
     private fun containsSensitiveClarification(value: String): Boolean =
         Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||

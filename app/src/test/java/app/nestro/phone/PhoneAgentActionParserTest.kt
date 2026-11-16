@@ -9,11 +9,28 @@ import org.junit.Test
 
 class PhoneAgentActionParserTest {
     @Test
+    fun ambiguousInterruptionRequiresExplicitRetryAndNeverLooksRunning() {
+        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, true))
+        assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_RUNNING, false))
+        assertEquals(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.interruptedStatus(PhoneAgentTaskStore.STATUS_COMPLETED, true))
+    }
+
+    @Test
     fun paymentButtonBecomesUserHandoff() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"click","text":"确认支付"}]}"""
         )
         assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun loginAndAuthorizationButtonsRequireUserHandoff() {
+        listOf("登录", "注册", "身份验证", "授权", "允许", "同意", "删除", "注销", "清空", "订阅").forEach { label ->
+            val plan = PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"click","text":"$label"}]}"""
+            )
+            assertTrue("$label must require user handoff", plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        }
     }
 
     @Test
@@ -25,6 +42,16 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun publishingSharingAndDialingButtonsRequireUserHandoff() {
+        listOf("发布", "分享", "拨打电话").forEach { label ->
+            val plan = PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"click","text":"$label"}]}"""
+            )
+            assertTrue("$label must require user handoff", plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        }
+    }
+
+    @Test
     fun personalInformationFieldBecomesUserHandoffWithoutPersistingValue() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"enter_text","label":"收货地址","value":"成都市某某街道 123 号"}]}"""
@@ -32,6 +59,19 @@ class PhoneAgentActionParserTest {
         val action = plan.actions.single()
         assertTrue(action is PhoneAgentExecutor.Action.ConfirmSensitive)
         assertTrue((action as PhoneAgentExecutor.Action.ConfirmSensitive).description.contains("收货地址"))
+    }
+
+    @Test
+    fun sensitiveTaskContextIsRedactedBeforeModelTransmission() {
+        val raw = "给13812345678发消息，邮箱 test@example.com，验证码123456，地址：成都市锦江区某某路88号"
+        val safe = PhoneAgentTaskStore.redactSensitiveText(raw)
+        assertTrue(safe.contains("[手机号已隐藏]"))
+        assertTrue(safe.contains("[邮箱已隐藏]"))
+        assertTrue(safe.contains("[六位数字已隐藏]"))
+        assertTrue(safe.contains("[地址已隐藏]"))
+        assertTrue(!safe.contains("13812345678"))
+        assertTrue(!safe.contains("test@example.com"))
+        assertTrue(!safe.contains("某某路88号"))
     }
 
     @Test

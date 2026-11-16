@@ -31,11 +31,14 @@ object PhoneAgentAgent {
                 dao = dao,
                 taskId = taskId,
                 afterUserHandoff = afterUserHandoff,
-                allowRetryCurrentAction = allowRetryCurrentAction
+                allowRetryCurrentAction = allowRetryCurrentAction,
+                markTaskCompleted = false
             )
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
             }
+            // Continue below: the model must re-evaluate the current screen and plan
+            // the next batch, or provide completion evidence for the overall goal.
         } else if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return Result(PhoneAgentExecutor.Outcome.PAUSED, "任务曾在规划期间中断，请核对当前页面后重新启动。")
@@ -124,13 +127,11 @@ object PhoneAgentAgent {
                 PhoneAgentTaskStore.STATUS_FAILED
             )
         ) {
-            if (task.status == PhoneAgentTaskStore.STATUS_RUNNING) {
-                PhoneAgentTaskStore.markInterrupted(dao, taskId)
-            } else {
-                PhoneAgentTaskStore.updateProgress(
-                    dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
-                )
-            }
+            // This path is a cooperative pause between actions, not process-death recovery.
+            // Preserve the next action index without marking it as ambiguously interrupted.
+            PhoneAgentTaskStore.updateProgress(
+                dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
+            )
         }
         if (task != null) {
             runCatching {

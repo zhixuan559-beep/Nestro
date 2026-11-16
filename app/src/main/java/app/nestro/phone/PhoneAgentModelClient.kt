@@ -2,6 +2,7 @@ package app.nestro.phone
 
 import android.content.Context
 import app.nestro.ui.LocalVault
+import app.nestro.data.PhoneAgentTaskStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -45,10 +46,10 @@ internal object PhoneAgentModelClient {
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
 """.trimIndent()
         val user = JSONObject()
-            .put("goal", goal)
+            .put("goal", PhoneAgentTaskStore.redactSensitiveText(goal).take(2000))
             .put("category", category)
-            .put("visibleScreenText", visibleScreen.take(7000))
-            .put("recentActionResults", recentActions.take(2500))
+            .put("visibleScreenText", PhoneAgentTaskStore.redactSensitiveText(visibleScreen).take(7000))
+            .put("recentActionResults", PhoneAgentTaskStore.redactSensitiveText(recentActions).take(2500))
             .toString()
         val connection = (URL(config.baseUrl.trimEnd('/') + "/chat/completions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"

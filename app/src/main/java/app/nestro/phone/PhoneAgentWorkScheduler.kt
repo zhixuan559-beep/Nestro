@@ -55,6 +55,15 @@ object PhoneAgentWorkScheduler {
         }
     }
 
+    /** Return the task currently holding the serial device worker, not merely the newest planned task. */
+    suspend fun runningTaskId(context: Context): String? = withContext(Dispatchers.IO) {
+        WorkManager.getInstance(context.applicationContext)
+            .getWorkInfosForUniqueWork(QUEUE_NAME).get()
+            .firstOrNull { it.state == WorkInfo.State.RUNNING }
+            ?.tags?.firstOrNull { it.startsWith("nestro-phone-agent-") }
+            ?.removePrefix("nestro-phone-agent-")
+    }
+
     /** Cooperative stop is task-scoped; queued tasks become no-ops when they reach the worker. */
     fun requestStop(context: Context, taskId: String) {
         if (taskId.isBlank()) return

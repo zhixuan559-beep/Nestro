@@ -63,7 +63,10 @@ import app.nestro.data.WorkflowExecutionException
 import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.content.Intent
 import android.provider.Settings
@@ -2368,14 +2371,26 @@ fun NestroApp() {
                                 val linkedPhoneTaskId = task.checkpoint.removePrefix("phone_agent_task_id:").takeIf { task.checkpoint.startsWith("phone_agent_task_id:") }
                                 scope.launch {
                                     if (linkedPhoneTaskId != null) {
+                                        var afterUserHandoff = false
+                                        var allowRetryCurrentAction = false
                                         withContext(Dispatchers.IO) {
                                             CapabilityTaskStore.resume(database.dao(), task.id)
                                             val child = database.dao().phoneAgentTask(linkedPhoneTaskId)
-                                            if (child != null && child.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
-                                                PhoneAgentTaskStore.updateProgress(database.dao(), linkedPhoneTaskId, PhoneAgentTaskStore.STATUS_PLANNED, child.currentStep)
+                                            if (child != null) {
+                                                // Preserve child state so handoff is skipped only after explicit user completion.
+                                                afterUserHandoff = child.status == PhoneAgentTaskStore.STATUS_WAITING_USER
+                                                allowRetryCurrentAction = child.status in setOf(
+                                                    PhoneAgentTaskStore.STATUS_RUNNING,
+                                                    PhoneAgentTaskStore.STATUS_FAILED,
+                                                    PhoneAgentTaskStore.STATUS_INTERRUPTED
+                                                )
                                             }
                                         }
-                                        PhoneAgentWorkScheduler.enqueue(context, linkedPhoneTaskId, afterUserHandoff = true, allowRetryCurrentAction = true)
+                                        PhoneAgentWorkScheduler.enqueue(
+                                            context, linkedPhoneTaskId,
+                                            afterUserHandoff = afterUserHandoff,
+                                            allowRetryCurrentAction = allowRetryCurrentAction
+                                        )
                                     } else if (task.kind == "workflow" && runningWorkflowTaskId == task.id) {
                                         withContext(Dispatchers.IO) {
                                             CapabilityTaskStore.resume(database.dao(), task.id)
@@ -4405,7 +4420,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
     val validTaskStatuses = setOf(
         PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING,
         PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED,
-        PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
+        PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
         PhoneAgentTaskStore.STATUS_CANCELLED
     )
     val validTaskCategories = PhoneAgentPlanner.Category.values().map { it.name }.toSet()
@@ -4738,6 +4753,13 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     var taskLogs by remember { mutableStateOf(emptyMap<String, List<app.nestro.data.PhoneAgentTaskLogEntity>>()) }
     var taskClarifications by remember { mutableStateOf(emptyMap<String, String>()) }
     var taskMessage by remember { mutableStateOf("") }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        taskMessage = if (granted) "任务通知已开启" else "通知权限未开启；系统可能只在任务管理器显示后台任务。"
+    }
+    val notificationsAllowed = Build.VERSION.SDK_INT < 33 ||
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     val enabledServices = Settings.Secure.getString(
         context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     ).orEmpty()
@@ -4747,7 +4769,9 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     )
     val grantUntil = prefs.getLong("phone_task_grant_until", 0L)
     val hasTaskGrant = grantUntil > System.currentTimeMillis()
-    val hasSingleGrant = prefs.getBoolean("phone_single_grant", false)
+    val singleGrantAt = prefs.getLong("phone_single_grant_at", 0L)
+    val hasSingleGrant = prefs.getBoolean("phone_single_grant", false) &&
+        singleGrantAt in (System.currentTimeMillis() - 15 * 60 * 1000L)..System.currentTimeMillis()
 
     LaunchedEffect(refresh, projectId) {
         tasks = withContext(Dispatchers.IO) {
@@ -4766,6 +4790,12 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     ) {
         Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text("Phone Agent 会先建立任务计划，再在授权范围内执行可验证的低风险动作。支付、验证码和最终提交始终由你接手。", color = Muted)
+        if (!notificationsAllowed) {
+            OutlinedButton(
+                onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("开启后台任务通知") }
+        }
         Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (serviceEnabled) "无障碍服务已开启" else "尚未开启无障碍服务", color = if (serviceEnabled) Mint else Ink)
@@ -4782,35 +4812,42 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                 Text("本次授权", color = Ink, style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
-                        hasTaskGrant -> "任务持续授权有效，剩余约 ${((grantUntil - System.currentTimeMillis()) / 60000).coerceAtLeast(1)} 分钟"
-                        hasSingleGrant -> "单次操作授权有效"
+                        hasTaskGrant -> "设备持续授权有效，剩余约 ${((grantUntil - System.currentTimeMillis()) / 60000).coerceAtLeast(1)} 分钟"
+                        hasSingleGrant -> "单次执行授权有效（15分钟内）"
                         else -> "当前没有操作授权"
                     },
                     color = if (hasTaskGrant || hasSingleGrant) Mint else Muted
                 )
                 Button(
-                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).putLong("phone_single_grant_at", System.currentTimeMillis()).remove("phone_task_grant_until").remove("phone_task_stop_requested").apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("授予单次操作") }
+                ) { Text("授予单次执行授权（15分钟内有效）") }
                 OutlinedButton(
-                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).remove("phone_single_grant").remove("phone_single_grant_at").remove("phone_task_stop_requested").apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("授予本次任务持续授权（最长 2 小时）") }
+                ) { Text("授予设备持续授权（最长 2 小时）") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = {
-                            val activeTask = tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }
-                                ?: tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_PLANNED }
-                            if (activeTask != null) {
-                                PhoneAgentWorkScheduler.requestStop(context, activeTask.id)
-                                PhoneAgentService.activeService?.requestTaskStop(activeTask.id)
-                                taskMessage = "已请求停止任务：${activeTask.goal.take(32)}"
-                            } else taskMessage = "当前没有正在执行的任务"
+                            scope.launch {
+                                val activeTaskId = runCatching {
+                                    PhoneAgentWorkScheduler.runningTaskId(context)
+                                }.getOrNull() ?: tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }?.id
+                                val activeTask = tasks.firstOrNull { it.id == activeTaskId }
+                                if (activeTaskId != null) {
+                                    PhoneAgentWorkScheduler.requestStop(context, activeTaskId)
+                                    PhoneAgentService.activeService?.requestTaskStop(activeTaskId)
+                                    taskMessage = "已请求停止任务：" + (activeTask?.goal?.take(32) ?: activeTaskId.take(8))
+                                } else {
+                                    taskMessage = "当前没有正在执行的任务"
+                                }
+                                refresh++
+                            }
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
                     TextButton(
-                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").putBoolean("phone_task_stop_requested", true).apply(); refresh++ },
+                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_single_grant_at").remove("phone_task_grant_until").putBoolean("phone_task_stop_requested", true).apply(); refresh++ },
                         modifier = Modifier.weight(1f)
                     ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                 }
@@ -4833,7 +4870,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.STATUS_FAILED)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
@@ -4881,6 +4918,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     PhoneAgentTaskStore.STATUS_PAUSED,
                                     PhoneAgentTaskStore.STATUS_RUNNING,
                                     PhoneAgentTaskStore.STATUS_WAITING_USER,
+                                    PhoneAgentTaskStore.STATUS_INTERRUPTED,
                                     PhoneAgentTaskStore.STATUS_FAILED
                                 )) || canStartAgent
                             ) {
@@ -4892,7 +4930,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                                     context,
                                                     task.id,
                                                     afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                                    allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                                                    allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_INTERRUPTED)
                                                 )
                                             }
                                             taskMessage = enqueueResult.fold(
@@ -4904,7 +4942,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
+                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_INTERRUPTED) -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {

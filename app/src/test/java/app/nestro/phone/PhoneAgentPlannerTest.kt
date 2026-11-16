@@ -35,6 +35,8 @@ class PhoneAgentPlannerTest {
     @Test
     fun genericPhoneActionsCreateDeviceTasks() {
         assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我打开微信").category)
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我打开计算器").category)
+        assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我关闭蓝牙").category)
         assertEquals(PhoneAgentPlanner.Category.DEVICE_TASK, PhoneAgentPlanner.plan("帮我给朋友发消息").category)
     }
 
