@@ -197,6 +197,7 @@ fun NestroApp() {
     var editingExpertName by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
+    var expertDialogError by remember { mutableStateOf("") }
     var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
     var selectedTeamId by remember { mutableStateOf((prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: "") }
     var showTeamDialog by remember { mutableStateOf(false) }
@@ -611,7 +612,7 @@ fun NestroApp() {
             val requestProjectId = activeProjectId
             val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                if (selectedTeamId.isBlank()) expertPrompts[selectedExpert].orEmpty() else "",
+                if (selectedTeamId.isBlank()) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
                 skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
@@ -992,7 +993,7 @@ fun NestroApp() {
                                                          val result = runCatching {
                                                              WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
                                                                  val roleContext = when (step.kind) {
-                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.targetId.ifBlank { step.title }].orEmpty()
+                                                                     WorkflowStepKind.EXPERT -> expertPrompts[step.targetId.ifBlank { step.title }].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(step.targetId.ifBlank { step.title }) }
                                                                      WorkflowStepKind.SKILL -> skills[step.targetId.ifBlank { step.title }].orEmpty()
                                                                      WorkflowStepKind.PROMPT -> ""
                                                                  }
@@ -1108,7 +1109,7 @@ fun NestroApp() {
                                 }
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                Text("PLACEHOLDER", color = Muted)
+
                                 experts.forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1120,7 +1121,8 @@ fun NestroApp() {
                                                 editingExpertName = name
                                                 expertDraft = name
                                                 expertPromptDraft = expertPrompts[name].orEmpty()
-                                                showExpertDialog = true
+                                                expertDialogError = ""
+showExpertDialog = true
                                             }) { Text("编辑", color = Mint) }
                                             if (name !in setOf("文案官", "选题狐", "代码佬")) {
                                                 TextButton(onClick = {
@@ -1147,6 +1149,7 @@ fun NestroApp() {
                                     editingExpertName = ""
                                     expertDraft = ""
                                     expertPromptDraft = ""
+                                    expertDialogError = ""
                                     showExpertDialog = true
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
@@ -2117,30 +2120,36 @@ fun NestroApp() {
 
     if (showExpertDialog) {
         AlertDialog(
-            onDismissRequest = { showExpertDialog = false },
+            onDismissRequest = { showExpertDialog = false; expertDialogError = "" },
             title = { Text(if (editingExpertName.isBlank()) "创建专家" else "编辑专家") },
             text = {
                 Column {
                     OutlinedTextField(value = expertDraft, onValueChange = { expertDraft = it }, label = { Text("专家名称") }, singleLine = true)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = expertPromptDraft, onValueChange = { expertPromptDraft = it }, label = { Text("专家角色与工作要求") }, placeholder = { Text("例如：你是一位严谨的中文文案编辑，先判断目标读者，再给出可直接发布的文案。") }, minLines = 4)
+                    if (expertDialogError.isNotBlank()) Text(expertDialogError, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val name = expertDraft.trim()
                     val oldName = editingExpertName
-                    if (name.isNotEmpty() && (name == oldName || name !in experts)) {
-                        experts = if (oldName.isBlank()) experts + name else experts.map { if (it == oldName) name else it }
-                        expertPrompts = (expertPrompts - oldName) + (name to expertPromptDraft.trim())
-                        if (oldName.isNotBlank() && oldName != name) {
-                            expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
-                        }
-                        prefs.edit().putString("experts", JSONArray(experts).toString())
-                            .putString("expert_prompts", expertPromptsToJson(expertPrompts))
-                            .putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
-                        if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
+                    val validationError = ExpertCatalogRules.validateDefinition(name, expertPromptDraft, oldName, experts)
+                    if (validationError != null) {
+                        expertDialogError = validationError
+                        return@TextButton
                     }
+                    experts = if (oldName.isBlank()) experts + name else experts.map { if (it == oldName) name else it }
+                    expertPrompts = (expertPrompts - oldName) + (name to expertPromptDraft.trim())
+                    if (oldName.isNotBlank() && oldName != name) {
+                        expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
+                        workflows = ExpertCatalogRules.renameWorkflowReferences(workflows, oldName, name)
+                    }
+                    prefs.edit().putString("experts", JSONArray(experts).toString())
+                        .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                        .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                    if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
