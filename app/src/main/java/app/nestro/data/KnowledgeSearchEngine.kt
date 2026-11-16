@@ -62,7 +62,7 @@ object KnowledgeSearchEngine {
             val frequency = matched.sumOf { term ->
                 Regex(Regex.escape(term)).findAll(content).count().coerceAtMost(5)
             }
-            val longerTermBonus = matched.sumOf { term -> if (term.length >= 3) 2 else 0 }
+            val longerTermBonus = matched.count { term -> term.length >= 3 } * 2
             // Coverage dominates frequency so a chunk answering several parts wins
             // over one that repeats a single keyword many times.
             val score = matched.size * 100 + frequency * 3 + longerTermBonus
