@@ -200,7 +200,22 @@ fun NestroApp() {
     var teamImportStatus by remember { mutableStateOf("") }
     var teamExportStatus by remember { mutableStateOf("") }
     var teamExportJson by remember { mutableStateOf("") }
-    var workflows by remember { mutableStateOf(WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")) }
+    var workflows by remember {
+        mutableStateOf(
+            WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]").ifEmpty {
+                listOf(
+                    WorkflowDefinition(
+                        name = "研究到方案",
+                        description = "先拆解问题，再形成可执行方案",
+                        steps = listOf(
+                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "拆解与研究", instruction = "识别目标、关键事实、约束和风险，形成结构化分析。"),
+                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成方案", instruction = "基于上一步结果，形成清晰、可执行、带优先级的方案。")
+                        )
+                    )
+                )
+            }
+        )
+    }
     var showWorkflowDialog by remember { mutableStateOf(false) }
     var editingWorkflowId by remember { mutableStateOf("") }
     var workflowDraftName by remember { mutableStateOf("") }
@@ -877,7 +892,7 @@ fun NestroApp() {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                              Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                                              Text(workflow.description, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                             workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${step.kind.name}", color = Mint, style = MaterialTheme.typography.bodySmall) }
+                                             workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}", color = Mint, style = MaterialTheme.typography.bodySmall) }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
@@ -905,10 +920,14 @@ fun NestroApp() {
                                                                  workflowRunStatus = "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
                                                          }
-                                                         val assistantText = result.fold(
-                                                             { "工作流「${workflow.name}」已完成（${it.completedSteps} 步）。\n\n${it.output}" },
-                                                             { "工作流执行失败：${it.message ?: "未知错误"}" }
-                                                         )
+                                                         val assistantText = when {
+                                                             stopRequested -> "工作流已停止。"
+                                                             result.isSuccess -> {
+                                                                 val completed = result.getOrThrow()
+                                                                 "工作流「${workflow.name}」已完成（${completed.completedSteps} 步）。\n\n${completed.output}"
+                                                             }
+                                                             else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+                                                         }
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
                                                          if (activeConversationId == conversationId) messages = completed
@@ -1705,11 +1724,11 @@ fun NestroApp() {
                     OutlinedTextField(workflowDraftDescription, { workflowDraftDescription = it.take(300) }, label = { Text("用途说明") }, minLines = 2)
                     Text("步骤 1", color = Mint)
                     OutlinedTextField(workflowStepOneTitle, { workflowStepOneTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
-                    TextButton(onClick = { workflowStepOneKind = WorkflowStepKind.values()[(workflowStepOneKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${workflowStepOneKind.name}（点击切换）", color = Mint) }
+                    TextButton(onClick = { workflowStepOneKind = WorkflowStepKind.values()[(workflowStepOneKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${when (workflowStepOneKind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）", color = Mint) }
                     OutlinedTextField(workflowStepOnePrompt, { workflowStepOnePrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
                     Text("步骤 2", color = Mint)
                     OutlinedTextField(workflowStepTwoTitle, { workflowStepTwoTitle = it.take(40) }, label = { Text("步骤名称") }, singleLine = true)
-                    TextButton(onClick = { workflowStepTwoKind = WorkflowStepKind.values()[(workflowStepTwoKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${workflowStepTwoKind.name}（点击切换）", color = Mint) }
+                    TextButton(onClick = { workflowStepTwoKind = WorkflowStepKind.values()[(workflowStepTwoKind.ordinal + 1) % WorkflowStepKind.values().size] }) { Text("节点类型：${when (workflowStepTwoKind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}（点击切换）", color = Mint) }
                     OutlinedTextField(workflowStepTwoPrompt, { workflowStepTwoPrompt = it.take(4000) }, label = { Text("执行指令") }, minLines = 3)
                 }
             },
