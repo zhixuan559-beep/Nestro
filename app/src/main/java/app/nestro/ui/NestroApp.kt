@@ -556,6 +556,7 @@ fun NestroApp() {
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
+                        DrawerItem("♧", "专家团队") { page = "teams"; showDrawer = false }
                         DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
                         DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
                         DrawerItem("▤", "数据与设置") { page = "settings"; showDrawer = false }
@@ -666,6 +667,7 @@ fun NestroApp() {
                                     AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
+                                    AssistChip(onClick = { page = "teams" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -753,6 +755,54 @@ fun NestroApp() {
                                     showExpertDialog = true
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
+                                }
+                            }
+                        }
+                        "teams" -> {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。", color = Muted)
+                                expertTeams.forEach { team ->
+                                    Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                            Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(onClick = {
+                                                    selectedTeamId = team.id
+                                                    prefs.edit().putString("selected_team_id", team.id).apply()
+                                                    page = "home"
+                                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (selectedTeamId == team.id) "当前团队" else "使用团队") }
+                                                TextButton(onClick = {
+                                                    editingTeamId = team.id
+                                                    teamDraftName = team.name
+                                                    teamDraftDescription = team.description
+                                                    teamDraftMembers = team.members.toSet()
+                                                    showTeamDialog = true
+                                                }) { Text("编辑", color = Mint) }
+                                                TextButton(onClick = {
+                                                    expertTeams = expertTeams.filterNot { it.id == team.id }
+                                                    if (selectedTeamId == team.id) selectedTeamId = ""
+                                                    prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+                                                        .putString("selected_team_id", selectedTeamId).apply()
+                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                            }
+                                        }
+                                    }
+                                }
+                                Button(onClick = {
+                                    editingTeamId = ""
+                                    teamDraftName = ""
+                                    teamDraftDescription = ""
+                                    teamDraftMembers = emptySet()
+                                    showTeamDialog = true
+                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 创建专家团队") }
+                                if (selectedTeamId.isNotBlank()) {
+                                    OutlinedButton(onClick = {
+                                        selectedTeamId = ""
+                                        prefs.edit().remove("selected_team_id").apply()
+                                    }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用团队") }
                                 }
                             }
                         }
