@@ -1769,10 +1769,11 @@ fun NestroApp() {
                                                                 status = "当前空间正在使用，请先切换到其他空间再删除"
                                                             } else {
                                                                 scope.launch {
+                                                                    var projectConversationIds = emptySet<String>()
                                                                     runCatching {
                                                                         withContext(Dispatchers.IO) {
                                                                             val dao = database.dao()
-                                                                            val projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
+                                                                            projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
                                                                                 dao.projectConversationIds(project.id)).toSet()
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
