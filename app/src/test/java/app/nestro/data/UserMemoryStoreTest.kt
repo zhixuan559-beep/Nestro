@@ -66,6 +66,7 @@ class UserMemoryStoreTest {
         assertFalse(UserMemoryStore.prepareExtractionInput(listOf("我的手机号是 13812345678")).isNotEmpty())
         assertFalse(UserMemoryStore.shouldExtractFrom(listOf("请帮我看看这段代码")))
         assertTrue(UserMemoryStore.shouldExtractFrom(listOf("I prefer concise answers for technical questions")))
+        assertTrue(UserMemoryStore.shouldExtractFrom(listOf("这个项目现在改用 PostgreSQL 数据库")))
     }
 
     @Test fun recallContextUsesRealLineBreaksAndHonorsEmptyInput() {

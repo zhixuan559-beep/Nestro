@@ -168,7 +168,13 @@ object UserMemoryStore {
     }
 
     fun shouldExtractFrom(messages: List<String>): Boolean {
-        val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认", "i prefer", "i like", "i always", "i never", "remember that", "from now on", "my workflow", "this project uses")
+        val signals = listOf(
+            "记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做",
+            "这个项目", "不要再", "我希望你", "我更倾向", "默认", "改为", "改用", "换成", "不再使用", "不再用",
+            "已经改成", "更新为", "从现在起", "我现在用", "i prefer", "i like", "i always", "i never",
+            "remember that", "from now on", "my workflow", "this project uses", "changed to", "switch to",
+            "now use", "no longer use", "updated to"
+        )
         return messages.any { message ->
             message.length in 8..4000 && signals.any { signal ->
                 if (signal.first() in 'a'..'z') message.contains(signal, ignoreCase = true)
