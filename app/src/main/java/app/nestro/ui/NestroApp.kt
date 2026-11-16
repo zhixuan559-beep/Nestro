@@ -1174,7 +1174,7 @@ fun NestroApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val name = teamDraftName.trim()
-                    if (name.isNotBlank() && teamDraftMembers.size >= 2 &&
+                    if (name.isNotBlank() && name.length <= 40 && teamDraftDescription.length <= 300 && teamDraftMembers.size in 2..4 &&
                         expertTeams.none { it.name == name && it.id != editingTeamId }
                     ) {
                         val team = ExpertTeam(
@@ -1406,8 +1406,12 @@ fun NestroApp() {
                     if (name.isNotEmpty() && (name == oldName || name !in experts)) {
                         experts = if (oldName.isBlank()) experts + name else experts.map { if (it == oldName) name else it }
                         expertPrompts = (expertPrompts - oldName) + (name to expertPromptDraft.trim())
+                        if (oldName.isNotBlank() && oldName != name) {
+                            expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
+                        }
                         prefs.edit().putString("experts", JSONArray(experts).toString())
-                            .putString("expert_prompts", expertPromptsToJson(expertPrompts)).apply()
+                            .putString("expert_prompts", expertPromptsToJson(expertPrompts))
+                            .putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
                         if (selectedExpert == oldName || selectedExpert == name) selectedExpert = name
                     }
                     editingExpertName = ""
