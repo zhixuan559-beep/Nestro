@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,7 +49,8 @@ class LocalBackupRoundTripTest {
             val dao = database.dao()
             dao.putProjects(listOf(
                 ProjectEntity("default", "默认项目", "", 1L),
-                ProjectEntity("p1", "测试项目", "项目指令", 2L)
+                ProjectEntity("p1", "测试项目", "项目指令", 2L),
+                ProjectEntity("p2", "隔离测试项目", "", 3L)
             ))
             dao.putConversation(ConversationEntity("c1", "备份测试会话", 3L, "p1"))
             dao.putMessages(listOf(MessageEntity("m1", "c1", 0, "user", "保留这条消息", "[]", 0)))
@@ -56,6 +58,7 @@ class LocalBackupRoundTripTest {
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "资料.txt", "text/plain", 3L, 4L, hash))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容")))
             dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
+            dao.putUserMemory(UserMemoryEntity("mem2", "p1", "preference", "授权共享的偏好记忆用于其他项目检索", "fp2", "c1", "m1", 0.95, 5L, 7L, true))
 
             val backup = buildLocalBackup(prefs, database)
             assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(backup)))
@@ -76,7 +79,11 @@ class LocalBackupRoundTripTest {
             assertEquals("这是需要恢复的知识库片段内容", dao.allKnowledgeChunks().single().content)
             val restoredHits = KnowledgeStore.search(dao, "p1", "需要恢复的知识库", 6)
             assertTrue("恢复后必须能通过重建/同步的检索索引命中文档", restoredHits.any { it.content.contains("这是需要恢复的知识库片段内容") })
-            assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
+            assertEquals(2, dao.allUserMemories().size)
+            assertEquals("偏好使用简洁中文表达", dao.allUserMemories().first { it.id == "mem1" }.content)
+            val otherProjectRecall = UserMemoryStore.recall(dao, "p2", "授权共享偏好记忆").memories.map { it.id }
+            assertTrue("明确授权的记忆应能跨项目召回", "mem2" in otherProjectRecall)
+            assertFalse("未授权的项目记忆不得跨项目召回", "mem1" in otherProjectRecall)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))

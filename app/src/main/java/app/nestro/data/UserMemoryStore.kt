@@ -205,11 +205,16 @@ object UserMemoryStore {
         dao.setUserMemorySharing(id, ownerProjectId, enabled, System.currentTimeMillis()) > 0
 
     suspend fun edit(dao: NestroDao, id: String, projectId: String, content: String, category: String) {
-        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+        val normalized = content.trim().replace(Regex("[\p{Cntrl}]"), " ").replace(Regex("\s+"), " ")
+        val normalizedCategory = category.trim().lowercase()
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
-        require(category in allowedCategories) { "记忆分类无效" }
-        require(!containsSensitiveData(normalized)) { "记忆包含敏感信息，请勿自动保存" }
-        dao.updateUserMemory(id, projectId, normalized, category, fingerprint(category + "|" + normalized.lowercase()), System.currentTimeMillis())
+        require(normalizedCategory in allowedCategories) { "记忆分类无效" }
+        require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
+        val nextFingerprint = fingerprint(normalizedCategory + "|" + normalized.lowercase())
+        require(!dao.userMemoryFingerprintExists(projectId, nextFingerprint, id)) { "已有相同内容的记忆，请先检查重复项" }
+        check(dao.updateUserMemory(id, projectId, normalized, normalizedCategory, nextFingerprint, System.currentTimeMillis()) > 0) {
+            "记忆不存在或已被删除"
+        }
     }
 
     suspend fun delete(dao: NestroDao, id: String, projectId: String) {
