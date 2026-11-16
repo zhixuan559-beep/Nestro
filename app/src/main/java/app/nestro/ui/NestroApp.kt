@@ -2348,6 +2348,7 @@ fun NestroApp() {
                     if (selectedExpert == oldName || selectedExpert == name) {
                         selectedExpert = if (profile.enabled) name else "通用助手"
                     }
+                    prefs.edit().putString("selected_expert", selectedExpert).apply()
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
