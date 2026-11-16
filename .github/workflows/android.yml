@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,10 +43,14 @@ jobs:
 
       - name: Verify Room migrations on Android emulator
         uses: ReactiveCircus/android-emulator-runner@v2
+        timeout-minutes: 18
         with:
           api-level: 35
           arch: x86_64
-          script: gradle --no-daemon connectedDebugAndroidTest
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 900000
+          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
