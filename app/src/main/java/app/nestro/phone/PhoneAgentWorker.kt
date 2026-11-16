@@ -22,7 +22,7 @@ class PhoneAgentWorker(
         if (task.status in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) return Result.success()
         if (PhoneAgentService.activeService == null) {
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
+                PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
             return Result.success()
         }
@@ -38,7 +38,7 @@ class PhoneAgentWorker(
         } catch (cancelled: CancellationException) {
             val latest = dao.phoneAgentTask(taskId)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, latest.currentStep)
+                PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
             throw cancelled
         } catch (_: Throwable) {

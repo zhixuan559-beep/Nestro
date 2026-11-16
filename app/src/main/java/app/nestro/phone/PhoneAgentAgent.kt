@@ -117,9 +117,13 @@ object PhoneAgentAgent {
                 PhoneAgentTaskStore.STATUS_FAILED
             )
         ) {
-            PhoneAgentTaskStore.updateProgress(
-                dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
-            )
+            if (task.status == PhoneAgentTaskStore.STATUS_RUNNING) {
+                PhoneAgentTaskStore.markInterrupted(dao, taskId)
+            } else {
+                PhoneAgentTaskStore.updateProgress(
+                    dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
+                )
+            }
         }
         if (task != null) {
             runCatching {
