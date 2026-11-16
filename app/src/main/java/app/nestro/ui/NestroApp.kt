@@ -134,6 +134,9 @@ fun NestroApp() {
     var activeConversationId by remember { mutableStateOf("") }
     var conversationSearch by remember { mutableStateOf("") }
     var showRenameConversation by remember { mutableStateOf(false) }
+    var showEditMessageDialog by remember { mutableStateOf(false) }
+    var editMessageId by remember { mutableStateOf("") }
+    var editMessageDraft by remember { mutableStateOf("") }
     var renameConversationId by remember { mutableStateOf("") }
     var renameConversationDraft by remember { mutableStateOf("") }
     var globalMemory by remember { mutableStateOf("") }
@@ -610,7 +613,26 @@ fun NestroApp() {
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     items(messages, key = { it.id }) { msg ->
-                                        MessageBubble(msg, onSpeak = speakMessage, onStopSpeak = stopSpeaking, onRetry = {
+                                        MessageBubble(
+                    msg,
+                    onSpeak = speakMessage,
+                    onStopSpeak = stopSpeaking,
+                    onEdit = if (msg.role == "user") ({
+                        editMessageId = msg.id
+                        editMessageDraft = msg.content
+                        showEditMessageDialog = true
+                    }) else null,
+                    onRegenerate = if (msg.role == "assistant" && !msg.content.startsWith("请求失败：")) ({
+                        val targetIndex = messages.indexOfFirst { it.id == msg.id }
+                        val userIndex = if (targetIndex >= 0) messages.subList(0, targetIndex + 1).indexOfLast { it.role == "user" } else -1
+                        if (targetIndex >= 0 && userIndex >= 0) {
+                            val retryPrompt = messages[userIndex].content
+                            messages = messages.take(userIndex)
+                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                            sendPrompt(retryPrompt)
+                        }
+                    }) else null,
+                    onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
                                                 val lastUserIndex = messages.indexOfLast { it.role == "user" }
                                                 if (lastUserIndex >= 0) {
@@ -1019,6 +1041,35 @@ fun NestroApp() {
         }
     }
 
+    if (showEditMessageDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditMessageDialog = false },
+            title = { Text("编辑用户消息") },
+            text = {
+                OutlinedTextField(
+                    value = editMessageDraft,
+                    onValueChange = { editMessageDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 8
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val edited = editMessageDraft.trim()
+                    val index = messages.indexOfFirst { it.id == editMessageId }
+                    if (edited.isNotBlank() && index >= 0) {
+                        messages = messages.take(index)
+                        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                        sendPrompt(edited)
+                    }
+                    showEditMessageDialog = false
+                }) { Text("保存并重新发送", color = Mint) }
+            },
+            dismissButton = { TextButton(onClick = { showEditMessageDialog = false }) { Text("取消") } }
+        )
+    }
+
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
         AlertDialog(
@@ -1230,7 +1281,7 @@ private fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onRetry: (() -> Unit)? = null) {
+private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null) {
     val user = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
@@ -1259,6 +1310,20 @@ private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = n
                     Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(5.dp))
                     Text("重试这条消息", color = Mint, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            if (user && onEdit != null) {
+                TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = Muted, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("编辑", color = Muted, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            if (!user && onRegenerate != null) {
+                TextButton(onClick = onRegenerate, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Muted, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("重新生成", color = Muted, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
