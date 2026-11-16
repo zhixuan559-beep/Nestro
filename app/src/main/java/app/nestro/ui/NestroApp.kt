@@ -895,19 +895,28 @@ fun NestroApp() {
                         "teams" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。"
+                                Text("把多个专家组合成协作组。发送任务时，各成员会先独立分析，再由主模型整合。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入团队") }
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                Text("PLACEHOLDER", color = Muted)
                                 expertTeams.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                             Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            TextButton(onClick = {
+                                                val memberBundles = team.members.mapNotNull { member ->
+                                                    expertPrompts[member]?.takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
+                                                }
+                                                if (memberBundles.size >= 2) {
+                                                    teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)
+                                                    val safeName = team.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "team" }
+                                                    exportTeamLauncher.launch("$safeName.nestro-team.json")
+                                                } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
+                                            }) { Text("导出团队", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Button(onClick = {
                                                     selectedTeamId = team.id
@@ -1094,17 +1103,7 @@ fun NestroApp() {
                                                     },
                                                     enabled = conversations.any { it.id == memory.sourceConversationId }
                                                 ) { Text("打开来源会话", color = Mint) }
-                                                TextButton(onClick = {
-                                                 val memberBundles = team.members.mapNotNull { member ->
-                                                     expertPrompts[member]?.takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
-                                                 }
-                                                 if (memberBundles.size >= 2) {
-                                                     teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)
-                                                     val safeName = team.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "team" }
-                                                     exportTeamLauncher.launch("$safeName.nestro-team.json")
-                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
-                                             }) { Text("导出团队", color = Mint) }
-                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
                                                         scope.launch {
                                                             val result = withContext(Dispatchers.IO) {
