@@ -6,7 +6,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class SkillBundleParserTest {
-    private val prompt = "请先理解用户目标，再核对事实来源，区分事实与推断，输出可执行步骤，并在涉及敏感操作时交还用户确认。"
+    private val prompt = "请先理解用户目标，再核对事实来源，区分事实与推断，输出可执行步骤，并在涉及敏感操作时交还用户确认。对于无法访问或无法核验的信息必须明确说明，不得猜测价格、库存、时间或完成状态，并记录关键依据。"
 
     @Test
     fun parsesSkillBundleAndPermissionDeclarations() {
