@@ -99,6 +99,7 @@ object UserMemoryStore {
     fun isSafeContent(value: String): Boolean = !containsSensitiveData(value)
 
     suspend fun saveCandidates(dao: NestroDao, projectId: String, conversationId: String, messageId: String, candidates: List<MemoryCandidate>): Int {
+        if (projectId.isBlank() || !dao.projectExists(projectId)) return 0
         var saved = 0
         candidates.take(5).forEach { candidate ->
             val category = candidate.category.trim().lowercase()
@@ -162,6 +163,7 @@ object UserMemoryStore {
         val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
         val normalizedCategory = category.trim().lowercase()
         require(projectId.isNotBlank()) { "项目空间无效" }
+        require(dao.projectExists(projectId)) { "项目空间不存在或已被删除" }
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(normalizedCategory in allowedCategories) { "记忆分类无效" }
         require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }

@@ -1806,7 +1806,11 @@ fun NestroApp() {
                                                     Text(memory.content, color = Ink, style = MaterialTheme.typography.bodyMedium)
                                                     Text("来自项目「$ownerProjectName」的授权共享记忆 · 只读", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                 }
-                                                Text("所属项目：$ownerProjectName · 来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                if (memory.sourceConversationId.isBlank()) {
+                                                    Text("所属项目：$ownerProjectName · 手动添加", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                } else {
+                                                    Text("所属项目：$ownerProjectName · 来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                }
                                                 val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
                                                 Text("创建：${dateFormat.format(Date(memory.createdAt))} · 最近更新：${dateFormat.format(Date(memory.updatedAt))}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 if (isOwnerProject) {
