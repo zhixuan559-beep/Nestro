@@ -1930,7 +1930,7 @@ private fun expertPromptsToJson(prompts: Map<String, String>): String {
 private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
-    root.put("version", 2)
+    root.put("version", 3)
     root.put("created_at", System.currentTimeMillis())
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
@@ -1966,13 +1966,46 @@ private suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, d
         }
     }
     root.put("user_memories", memories)
+    val taskArray = JSONArray()
+    val taskLogArray = JSONArray()
+    dao.projectIds().forEach { projectId ->
+        dao.phoneAgentTasks(projectId, 50).forEach { task ->
+            taskArray.put(
+                JSONObject()
+                    .put("id", task.id)
+                    .put("projectId", task.projectId)
+                    .put("conversationId", task.conversationId)
+                    .put("goal", task.goal)
+                    .put("category", task.category)
+                    .put("status", task.status)
+                    .put("planJson", task.planJson)
+                    .put("currentStep", task.currentStep)
+                    .put("createdAt", task.createdAt)
+                    .put("updatedAt", task.updatedAt)
+            )
+            dao.phoneAgentTaskLogs(task.id, 100).forEach { log ->
+                taskLogArray.put(
+                    JSONObject()
+                        .put("id", log.id)
+                        .put("taskId", log.taskId)
+                        .put("actionIndex", log.actionIndex)
+                        .put("action", log.action)
+                        .put("success", log.success)
+                        .put("detail", log.detail)
+                        .put("createdAt", log.createdAt)
+                )
+            }
+        }
+    }
+    root.put("phone_agent_tasks", taskArray)
+    root.put("phone_agent_task_logs", taskLogArray)
     return root.toString(2)
 }
 
 private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(root.optInt("version") in 1..2) { "暂不支持此备份版本" }
+    require(root.optInt("version") in 1..3) { "暂不支持此备份版本" }
     val messages = JSONArray(root.getString("messages"))
     require(messages.length() <= 200) { "对话记录数量超出限制" }
     val conversationsRaw = root.optString("conversations_v1", "[]")
