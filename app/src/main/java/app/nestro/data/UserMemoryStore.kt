@@ -180,7 +180,8 @@ object UserMemoryStore {
     }
 
     suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall {
-        val ranked = MemoryRecallRanker.rank(query, dao.userMemoriesVisible(projectId, 200), limit)
+        // A project can own 200 memories and still have explicitly shared memories to recall.
+        val ranked = MemoryRecallRanker.rank(query, dao.userMemoriesVisible(projectId, 400), limit)
         if (ranked.isEmpty()) return MemoryRecall("", emptyList())
         return MemoryRecall(buildContext(projectId, ranked), ranked)
     }

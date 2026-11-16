@@ -145,6 +145,11 @@ class NestroDatabaseMigrationTest {
             assertEquals(setOf("private", "shared"), dao.userMemoriesVisible("p1").map { it.id }.toSet())
             assertEquals(1, dao.setUserMemorySharing("shared", "p1", false, 3))
             assertEquals(emptyList<UserMemoryEntity>(), dao.userMemoriesVisible("p2"))
+            repeat(200) { index ->
+                dao.putUserMemory(UserMemoryEntity("local-$index", "p2", "preference", "项目二私有记忆内容 $index", "fp-local-$index", "c2", "m2", 0.9, index.toLong(), index.toLong()))
+            }
+            val recalledShared = UserMemoryStore.recall(dao, "p2", "授权共享记忆").memories.map { it.id }
+            assertTrue("本项目记忆达到上限时仍应召回明确授权的共享记忆", "shared" in recalledShared)
         } finally {
             db.close()
         }
