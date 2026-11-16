@@ -81,6 +81,7 @@ private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 private data class ChatMessage(val id: String, val role: String, val content: String)
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long)
+private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
 internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
 
 @Composable
@@ -166,6 +167,13 @@ fun NestroApp() {
     var editingExpertName by remember { mutableStateOf("") }
     var expertPromptDraft by remember { mutableStateOf("") }
     var showExpertDialog by remember { mutableStateOf(false) }
+    var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
+    var selectedTeamId by remember { mutableStateOf(prefs.getString("selected_team_id", "") ?: "") }
+    var showTeamDialog by remember { mutableStateOf(false) }
+    var editingTeamId by remember { mutableStateOf("") }
+    var teamDraftName by remember { mutableStateOf("") }
+    var teamDraftDescription by remember { mutableStateOf("") }
+    var teamDraftMembers by remember { mutableStateOf(emptySet<String>()) }
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
     var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
@@ -1750,6 +1758,28 @@ private fun saveMessages(prefs: android.content.SharedPreferences, messages: Lis
     }
     prefs.edit().putString("messages", array.toString()).apply()
 }
+
+private fun loadExpertTeams(prefs: android.content.SharedPreferences): List<ExpertTeam> = runCatching {
+    val array = JSONArray(prefs.getString("expert_teams_v1", "[]"))
+    (0 until array.length()).mapNotNull { index ->
+        val item = array.optJSONObject(index) ?: return@mapNotNull null
+        val members = item.optJSONArray("members") ?: JSONArray()
+        ExpertTeam(
+            id = item.optString("id"),
+            name = item.optString("name"),
+            description = item.optString("description"),
+            members = (0 until members.length()).map { members.getString(it) }.distinct()
+        ).takeIf { it.id.isNotBlank() && it.name.isNotBlank() && it.members.size >= 2 }
+    }
+}.getOrDefault(emptyList())
+
+private fun expertTeamsToJson(teams: List<ExpertTeam>): String =
+    JSONArray().apply {
+        teams.forEach { team ->
+            put(JSONObject().put("id", team.id).put("name", team.name).put("description", team.description)
+                .put("members", JSONArray(team.members)))
+        }
+    }.toString()
 
 private fun loadExperts(prefs: android.content.SharedPreferences): List<String> = runCatching {
     val array = JSONArray(prefs.getString("experts", """["文案官","选题狐","代码佬"]"""))
