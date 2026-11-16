@@ -1776,8 +1776,12 @@ fun NestroApp() {
                                                                             projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
                                                                                 dao.projectConversationIds(project.id)).toSet()
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
+                                                                            val hasLocalConversationData = conversations.any {
+                                                                                it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
+                                                                            }
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
+                                                                            check(!hasLocalConversationData) { "该空间还有尚未同步的会话内容，请等待保存完成后再删除" }
                                                                             check(pendingRequest?.optString("status") != "running" || pendingRequest?.optString("project_id") != project.id) {
                                                                                 "该空间仍有正在执行的请求，请等待请求结束后再删除"
                                                                             }
