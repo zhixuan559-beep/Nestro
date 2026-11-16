@@ -562,7 +562,28 @@ fun NestroApp() {
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
         expertPrompts = loadExpertPrompts(prefs)
-        status = if (config.apiKey.isNotBlank() && config.model.isNotBlank()) "模型已就绪" else status
+        val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
+        if (pendingRequest?.optString("status") == "running") {
+            val requestId = pendingRequest.optString("request_id")
+            val conversationId = pendingRequest.optString("conversation_id")
+            val projectId = pendingRequest.optString("project_id", "default")
+            val restoredPrompt = pendingRequest.optString("prompt")
+            val partial = pendingRequest.optString("partial_answer")
+            val record = conversations.firstOrNull { it.id == conversationId }
+            if (record != null && record.messages.none { it.id == requestId }) {
+                val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
+                val recovered = record.messages + ChatMessage(requestId, "assistant", content)
+                conversations = saveConversationMessages(prefs, conversationId, recovered, projectId)
+                if (activeConversationId == conversationId) messages = recovered
+            }
+            if (restoredPrompt.isNotBlank() && activeConversationId == conversationId) {
+                draft = restoredPrompt
+                prefs.edit().putString("draft_$conversationId", restoredPrompt).apply()
+            }
+            status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
+        }
+        prefs.edit().remove("chat_request_state_v1").apply()
+        if (config.apiKey.isNotBlank() && config.model.isNotBlank() && status == "尚未配置模型") status = "模型已就绪"
     }
 
     LaunchedEffect(conversations, projects, databaseReady) {
@@ -712,6 +733,10 @@ fun NestroApp() {
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
             val requestProjectId = activeProjectId
+            prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
+                .put("request_id", assistantId).put("conversation_id", requestConversationId)
+                .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
+                .put("started_at", System.currentTimeMillis()).toString()).apply()
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
@@ -813,6 +838,11 @@ fun NestroApp() {
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
                     OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
                         partialAnswer.append(chunk)
+                        prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
+                            .put("request_id", assistantId).put("conversation_id", requestConversationId)
+                            .put("project_id", requestProjectId).put("prompt", prompt)
+                            .put("partial_answer", partialAnswer.toString().take(24000))
+                            .put("started_at", System.currentTimeMillis()).toString()).apply()
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
                                 messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString(), previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
@@ -832,6 +862,7 @@ fun NestroApp() {
                 val nextVersions = (priorVersions + finalText).filter(String::isNotBlank).distinct().takeLast(20)
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, nextVersions, nextVersions.lastIndex)
                 conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                prefs.edit().remove("chat_request_state_v1").apply()
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
                     stopRequested -> "已停止生成"
