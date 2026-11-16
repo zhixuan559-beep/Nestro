@@ -25,9 +25,6 @@ data class KnowledgeSearchResult(
 object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
- private const val CHUNK_SIZE=1_000
- private const val CHUNK_OVERLAP=120
- private const val MAX_CHUNKS=600
 
  suspend fun importText(resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
   val mime=resolver.getType(uri).orEmpty().lowercase()
@@ -52,7 +49,7 @@ object KnowledgeStore {
   val existing=dao.knowledgeDocumentByHash(hash)
   if(existing!=null) return@withContext KnowledgeImportResult(existing,true)
   val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.take(180),mime.ifBlank { "text/plain" },bytes.size.toLong(),System.currentTimeMillis(),hash)
-  val chunks=split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
+  val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
   val saved=dao.insertKnowledgeBundleIfAbsent(document,chunks)
   KnowledgeImportResult(saved,saved.id!=document.id)
@@ -208,15 +205,5 @@ object KnowledgeStore {
   }
   return factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
  }
- private fun split(text:String):List<String> {
-  val result=ArrayList<String>(); var start=0
-  while(start<text.length && result.size<MAX_CHUNKS) {
-   var end=minOf(start+CHUNK_SIZE,text.length)
-   if(end<text.length) { val boundary=text.lastIndexOfAny(charArrayOf('\n','。','！','？','.', '!', '?'),end); if(boundary>start+CHUNK_SIZE/2) end=boundary+1 }
-   val part=text.substring(start,end).trim(); if(part.isNotBlank()) result+=part
-   if(end>=text.length) break
-   start=maxOf(start+1,end-CHUNK_OVERLAP)
-  }
-  return result
- }
+ 
 }
