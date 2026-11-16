@@ -1789,7 +1789,7 @@ fun NestroApp() {
                                         Surface(color = if (project.id == activeProjectId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Column(Modifier.weight(1f).clickable {
+                                                    Column(Modifier.weight(1f).clickable(enabled = deletingProjectId != project.id) {
                                                         activeProjectId = project.id
                                                         prefs.edit().putString("active_project_id", project.id).apply()
                                                         val target = conversations.firstOrNull { it.projectId == project.id }
@@ -1809,7 +1809,7 @@ fun NestroApp() {
                                                         Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                         Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
-                                                    TextButton(onClick = {
+                                                    TextButton(enabled = deletingProjectId != project.id, onClick = {
                                                         editingProjectId = project.id
                                                         projectDraftName = project.name
                                                         projectDraftInstructions = project.instructions
@@ -1822,6 +1822,7 @@ fun NestroApp() {
                                                             } else if (!prefs.edit().putString("pending_project_delete_id", project.id).commit()) {
                                                                 status = "删除保护标记写入失败，未执行删除"
                                                             } else {
+                                                                deletingProjectId = project.id
                                                                 scope.launch {
                                                                     var projectConversationIds = emptySet<String>()
                                                                     runCatching {
