@@ -54,14 +54,14 @@ object ExpertRevisionCodec {
         val oldLines = previous.lines()
         val newLines = current.lines()
         val max = maxOf(oldLines.size, newLines.size)
-        return (0 until max).mapNotNull { index ->
-            val old = oldLines.getOrNull(index)
-            val fresh = newLines.getOrNull(index)
-            when {
-                old == fresh -> null
-                old == null -> "+ $fresh"
-                fresh == null -> "- $old"
-                else -> listOf("- $old", "+ $fresh").joinToString("\n")
+        return buildList {
+            for (index in 0 until max) {
+                val old = oldLines.getOrNull(index)
+                val fresh = newLines.getOrNull(index)
+                if (old != fresh) {
+                    if (old != null) add("- $old")
+                    if (fresh != null) add("+ $fresh")
+                }
             }
         }
     }
