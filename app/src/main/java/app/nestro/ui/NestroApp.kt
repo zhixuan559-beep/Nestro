@@ -785,6 +785,17 @@ fun NestroApp() {
                                                     minLines = 2
                                                 )
                                                 Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                TextButton(
+                                                    onClick = {
+                                                        val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
+                                                        if (source != null) {
+                                                            activeConversationId = source.id
+                                                            messages = source.messages
+                                                            page = "home"
+                                                        }
+                                                    },
+                                                    enabled = conversations.any { it.id == memory.sourceConversationId }
+                                                ) { Text("打开来源会话", color = Mint) }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
                                                         scope.launch {
