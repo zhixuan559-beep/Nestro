@@ -16,6 +16,8 @@ import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.UserMemoryStore
 import app.nestro.data.MemoryCandidate
+import app.nestro.data.SkillBundle
+import app.nestro.data.SkillBundleParser
 import app.nestro.data.UserMemoryEntity
 import app.nestro.ui.VoiceInputButton
 
@@ -148,6 +150,10 @@ fun NestroApp() {
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
     var skills by remember { mutableStateOf(loadSkills(prefs)) }
+    var skillMetadata by remember { mutableStateOf(loadSkillMetadata(prefs)) }
+    var pendingSkillBundle by remember { mutableStateOf<SkillBundle?>(null) }
+    var showSkillImportDialog by remember { mutableStateOf(false) }
+    var skillImportStatus by remember { mutableStateOf("") }
     var selectedSkill by remember { mutableStateOf("") }
     var skillDraftName by remember { mutableStateOf("") }
     var skillDraftPrompt by remember { mutableStateOf("") }
@@ -206,6 +212,26 @@ fun NestroApp() {
                     skills = loadSkills(prefs)
                 }
                 backupStatus = result.fold({ "恢复完成。模型 Key 未被覆盖，请检查模型管理。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
+            }
+        }
+    }
+
+    val importSkillLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                            ?: error("无法读取技能文件")
+                        SkillBundleParser.parse(raw, uri.lastPathSegment ?: "本地技能")
+                    }
+                }
+                result.fold(
+                    { pendingSkillBundle = it; showSkillImportDialog = true; skillImportStatus = "" },
+                    { skillImportStatus = "导入失败：${it.message ?: "文件格式无效"}" }
+                )
             }
         }
     }
@@ -940,31 +966,48 @@ fun NestroApp() {
                         }
                         "knowledge" -> KnowledgePage(database, activeProjectId)
                         "skills" -> {
-                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("技能是可复用的工作指令。选择后会与当前专家提示词组合，仅影响新发送的请求。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("技能是可复用的工作指令。导入包只读取文本和元数据，不执行其中代码，也不会自动授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 skills.forEach { (name, prompt) ->
                                     Surface(color = if (selectedSkill == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Column(Modifier.weight(1f).clickable { selectedSkill = if (selectedSkill == name) "" else name; page = "home" }) {
                                                 Text(name, color = if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                skillMetadata[name]?.let { raw ->
+                                                    val metadata = runCatching { JSONObject(raw) }.getOrNull()
+                                                    if (metadata != null) Text(
+                                                        "v${metadata.optString("version")} · ${metadata.optString("source")}",
+                                                        color = Muted,
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
                                             }
                                             if (name !in DEFAULT_SKILLS.keys) {
                                                 TextButton(onClick = {
                                                     skills = skills - name
-                                                    prefs.edit().putString("skills", skillMapToJson(skills)).apply()
+                                                    skillMetadata = skillMetadata - name
+                                                    prefs.edit()
+                                                        .putString("skills", skillMapToJson(skills))
+                                                        .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
+                                                        .apply()
                                                     if (selectedSkill == name) selectedSkill = ""
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
                                     }
                                 }
-                                Button(onClick = { showSkillDialog = true }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
-                                    Text("＋ 创建本地技能")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(onClick = { showSkillDialog = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                        Text("＋ 创建技能")
+                                    }
+                                    OutlinedButton(onClick = { importSkillLauncher.launch(arrayOf("application/json", "text/markdown", "text/plain")) }, modifier = Modifier.weight(1f)) {
+                                        Text("导入技能包")
+                                    }
                                 }
                                 OutlinedButton(onClick = { selectedSkill = ""; page = "home" }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用技能") }
-                                Text("外部 Skill / MCP 仓库导入仍未开放。导入功能上线前不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                if (skillImportStatus.isNotBlank()) Text(skillImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
@@ -972,6 +1015,46 @@ fun NestroApp() {
                 }
             }
         }
+    }
+
+    if (showSkillImportDialog && pendingSkillBundle != null) {
+        val bundle = pendingSkillBundle!!
+        AlertDialog(
+            onDismissRequest = { showSkillImportDialog = false; pendingSkillBundle = null },
+            title = { Text("审核技能导入") },
+            text = {
+                Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
+                    Text("版本：${bundle.version} · 来源：${bundle.source}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    if (bundle.description.isNotBlank()) Text(bundle.description, color = Muted)
+                    Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else androidx.compose.ui.graphics.Color(0xFFFBBF24))
+                    Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
+                    Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text("安装只保存提示词和元数据。权限声明不会自动开启无障碍、文件访问或 MCP，也不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (bundle.name in skills) {
+                        skillImportStatus = "导入失败：技能名称已存在，请先重命名或删除旧技能。"
+                    } else {
+                        skills = skills + (bundle.name to bundle.prompt)
+                        skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
+                        prefs.edit()
+                            .putString("skills", skillMapToJson(skills))
+                            .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
+                            .apply()
+                        skillImportStatus = "技能已安装到本地"
+                    }
+                    showSkillImportDialog = false
+                    pendingSkillBundle = null
+                }) { Text("确认安装", color = Mint) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSkillImportDialog = false; pendingSkillBundle = null }) { Text("取消") }
+            }
+        )
     }
 
     if (showProjectDialog) {
@@ -1234,6 +1317,24 @@ private fun SimplePage(title: String, description: String) {
         Text(description, color = Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }
+
+private fun loadSkillMetadata(prefs: android.content.SharedPreferences): Map<String, String> {
+    val raw = prefs.getString("skill_metadata_v1", "{}") ?: "{}"
+    return runCatching {
+        val json = JSONObject(raw)
+        val result = linkedMapOf<String, String>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = json.optString(key)
+            if (key.length <= 40 && value.length <= 4000) result[key] = value
+        }
+        result
+    }.getOrDefault(emptyMap())
+}
+
+private fun skillMetadataToJson(metadata: Map<String, String>): String =
+    JSONObject().apply { metadata.forEach { (name, value) -> put(name, value) } }.toString()
 
 private fun prefsRate(context: Context): Float = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getFloat("tts_speech_rate", 1.0f).coerceIn(0.7f, 1.3f)
 
