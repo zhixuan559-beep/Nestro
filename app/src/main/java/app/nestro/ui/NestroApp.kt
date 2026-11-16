@@ -1613,12 +1613,13 @@ private suspend fun restoreLocalBackup(prefs: android.content.SharedPreferences,
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
+    val restoredProjectIds = (parseProjects(root.optJSONArray("projects")).map { it.id } + "default").toSet()
     val restoredMemories = (0 until memoryRows.length()).map { index ->
         val item = memoryRows.getJSONObject(index)
         val category = item.optString("category")
         val content = item.optString("content")
         val projectId = item.optString("projectId")
-        require(item.optString("id").isNotBlank() && projectId.isNotBlank()) { "记忆标识缺失" }
+        require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
         require(content.length in 8..180 && item.optString("fingerprint").isNotBlank()) { "记忆内容无效" }
         val confidence = item.optDouble("confidence", 0.0)
