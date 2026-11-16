@@ -115,6 +115,11 @@ object PhoneAgentAgent {
                 dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
             )
         }
+        if (task != null) {
+            runCatching {
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "任务状态", false, message)
+            }
+        }
         return Result(PhoneAgentExecutor.Outcome.PAUSED, message)
     }
 }

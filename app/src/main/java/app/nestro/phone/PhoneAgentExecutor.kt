@@ -62,6 +62,7 @@ object PhoneAgentExecutor {
             }
             val action = actions[index]
             if (action is Action.ConfirmSensitive) {
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, action.description)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }

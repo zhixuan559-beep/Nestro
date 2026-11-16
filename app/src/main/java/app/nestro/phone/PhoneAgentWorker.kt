@@ -42,6 +42,7 @@ class PhoneAgentWorker(
         } catch (_: Throwable) {
             val latest = dao.phoneAgentTask(taskId)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, latest.currentStep, "任务失败", false, "后台执行发生未处理异常")
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, latest.currentStep)
             }
             Result.failure()
