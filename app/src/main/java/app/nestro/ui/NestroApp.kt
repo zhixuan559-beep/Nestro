@@ -1862,8 +1862,7 @@ fun NestroApp() {
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
-                                                                        check(markerCleared) { "项目已从数据库删除，待本机同步完成后会自动清理残留记录" }
-                                                                        status = "空项目空间已删除"
+                                                                        status = if (markerCleared) "空项目空间已删除" else "项目已删除，启动时会自动清理残留标记"
                                                                     }.onFailure {
                                                                         status = it.message ?: "删除失败，项目空间已保留；下次启动会自动核对删除状态"
                                                                     }.also {
