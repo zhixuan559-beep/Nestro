@@ -113,7 +113,8 @@ object PhoneAgentAgent {
         if (task != null && task.status !in setOf(
                 PhoneAgentTaskStore.STATUS_COMPLETED,
                 PhoneAgentTaskStore.STATUS_CANCELLED,
-                PhoneAgentTaskStore.STATUS_WAITING_USER
+                PhoneAgentTaskStore.STATUS_WAITING_USER,
+                PhoneAgentTaskStore.STATUS_FAILED
             )
         ) {
             PhoneAgentTaskStore.updateProgress(
