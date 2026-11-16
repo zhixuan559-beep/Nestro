@@ -182,50 +182,81 @@ object WorkflowEngine {
         val active=workflow.steps.filter { it.enabled }
         require(active.isNotEmpty()) { "工作流没有启用的步骤" }
         active.forEachIndexed { index,step ->
-            onStep(index+1,step)
-            val prompt=buildString {
-                append("工作流：").append(workflow.name).append("\n")
-                append("当前步骤：").append(step.title).append("\n")
-                append("步骤要求：").append(step.instruction).append("\n\n")
-                append("用户原始目标：\n").append(userInput).append("\n\n")
-                if(previousOutput.isNotBlank()) append("前序步骤输出：\n").append(previousOutput.take(12000)).append("\n\n")
-                append("请只完成当前步骤，输出可供下一步骤继续处理的结果。不要重复用户目标。")
+            if(step.skipIfPreviousContains.isNotBlank() &&
+                previousOutput.contains(step.skipIfPreviousContains,ignoreCase=true)) {
+                runs += WorkflowStepRun(step.id,step.title,"skipped",0,output=previousOutput)
+                outputs += previousOutput
+                return@forEachIndexed
             }
-            var attempts=0
-            var result=""
-            var failure:Throwable?=null
-            while(attempts<=step.retries && result.isBlank()) {
-                attempts++
-                try {
-                    result=kotlinx.coroutines.withTimeout(step.timeoutSeconds*1000L) {
-                        invokeModel(step,prompt).trim()
+            var stepOutput=previousOutput
+            var totalAttempts=0
+            var failedMessage=""
+            var completedIterations=0
+            for(iteration in 1..step.repeatCount) {
+                val iterationInput=stepOutput
+                val prompt=buildString {
+                    append("工作流：").append(workflow.name).append("\n")
+                    append("当前步骤：").append(step.title).append("\n")
+                    append("当前迭代：").append(iteration).append(" / ").append(step.repeatCount).append("\n")
+                    append("步骤要求：").append(step.instruction).append("\n\n")
+                    append("用户原始目标：\n").append(userInput).append("\n\n")
+                    if(iterationInput.isNotBlank()) {
+                        append(if(iteration==1) "前序步骤输出：" else "本步骤上一次迭代输出：")
+                            .append("\n").append(iterationInput.take(12000)).append("\n\n")
                     }
-                    require(result.isNotBlank()) { "模型返回了空结果" }
-                } catch (cancelled:kotlinx.coroutines.CancellationException) {
-                    if(cancelled is kotlinx.coroutines.TimeoutCancellationException) {
-                        failure=IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
-                    } else throw cancelled
-                } catch (error:Exception) {
-                    failure=error
+                    append("请只完成当前步骤的本次迭代，输出可供后续迭代或下一步骤继续处理的结果。")
                 }
-                if(result.isBlank() && attempts<=step.retries) {
-                    onStep(index+1,step.copy(title="${step.title}（重试 ${attempts}/${step.retries}）"))
+                var attempts=0
+                var result=""
+                var failure:Throwable?=null
+                while(attempts<=step.retries && result.isBlank()) {
+                    attempts++
+                    onStep(index+1,step.copy(title=if(iteration==1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
+                    try {
+                        result=kotlinx.coroutines.withTimeout(step.timeoutSeconds*1000L) {
+                            invokeModel(step,prompt).trim()
+                        }
+                        require(result.isNotBlank()) { "模型返回了空结果" }
+                    } catch (cancelled:kotlinx.coroutines.CancellationException) {
+                        if(cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+                            failure=IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
+                        } else throw cancelled
+                    } catch (error:Exception) {
+                        failure=error
+                    }
+                    if(result.isBlank() && attempts<=step.retries) {
+                        onStep(index+1,step.copy(title="${step.title}（重试 $attempts/${step.retries}）"))
+                    }
                 }
+                totalAttempts += attempts
+                if(result.isBlank()) {
+                    failedMessage=failure?.message ?: "未知错误"
+                    if(!step.continueOnError) {
+                        runs += WorkflowStepRun(step.id,step.title,"failed",totalAttempts,error=failedMessage,iterations=completedIterations)
+                        throw WorkflowExecutionException(
+                            "步骤“${step.title}”失败：$failedMessage",
+                            runs.toList(),
+                            failure
+                        )
+                    }
+                    stepOutput="步骤失败，已按设置继续。错误：$failedMessage"
+                    break
+                }
+                stepOutput=result
+                completedIterations++
             }
-            if(result.isBlank()) {
-                val message=failure?.message ?: "未知错误"
-                runs += WorkflowStepRun(step.id,step.title,"failed",attempts,error=message)
-                if(!step.continueOnError) throw WorkflowExecutionException(
-                    "步骤“${step.title}”失败：$message",
-                    runs.toList(),
-                    failure
-                )
-                result="步骤失败，已按设置继续。错误：$message"
-            } else {
-                runs += WorkflowStepRun(step.id,step.title,"success",attempts,output=result)
-            }
-            previousOutput=result
-            outputs += result
+            val runStatus=if(failedMessage.isBlank()) "success" else "failed"
+            runs += WorkflowStepRun(
+                stepId=step.id,
+                title=step.title,
+                status=runStatus,
+                attempts=totalAttempts,
+                output=stepOutput,
+                error=failedMessage,
+                iterations=completedIterations
+            )
+            previousOutput=stepOutput
+            outputs += stepOutput
         }
         return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs)
     }
