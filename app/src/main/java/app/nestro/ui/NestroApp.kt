@@ -86,6 +86,7 @@ fun NestroApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var ttsReady by remember { mutableStateOf(false) }
+    var speechRate by remember { mutableFloatStateOf(prefsRate(context)) }
     val speechEngine = remember(context) {
         TextToSpeech(context) { result ->
             if (result == TextToSpeech.SUCCESS) {
@@ -100,10 +101,10 @@ fun NestroApp() {
             ttsReady = false
         }
     }
-    LaunchedEffect(speechEngine, ttsReady) {
+    LaunchedEffect(speechEngine, ttsReady, speechRate) {
         if (ttsReady) {
             speechEngine.language = Locale.SIMPLIFIED_CHINESE
-            speechEngine.setSpeechRate(1.0f)
+            speechEngine.setSpeechRate(speechRate)
         }
     }
     val speakMessage: (String) -> Unit = { text ->
@@ -513,6 +514,7 @@ fun NestroApp() {
                         DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
+                        DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
                         DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
                         DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
@@ -912,6 +914,30 @@ fun NestroApp() {
                             }
                         }
                         "phone" -> PhoneAgentPage(context, database, activeProjectId)
+                        "voice" -> {
+                            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Text("语音设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text(if (ttsReady) "系统中文语音引擎已就绪" else "系统语音引擎正在初始化或不可用", color = if (ttsReady) Mint else Muted)
+                                Text("朗读速度：${"%.1f".format(speechRate)}×", color = Ink)
+                                Slider(
+                                    value = speechRate,
+                                    onValueChange = {
+                                        speechRate = it
+                                        prefs.edit().putFloat("tts_speech_rate", it).apply()
+                                    },
+                                    valueRange = 0.7f..1.3f,
+                                    steps = 5
+                                )
+                                Text("朗读使用 Android 系统 TTS，不会把文字发送到额外的语音服务。可在系统设置中安装或切换中文语音引擎。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    onClick = { speakMessage("Nestro 语音朗读测试。你可以在这里调整朗读速度。") },
+                                    enabled = ttsReady,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("试听中文朗读") }
+                                OutlinedButton(onClick = { stopSpeaking() }, modifier = Modifier.fillMaxWidth()) { Text("停止朗读") }
+                            }
+                        }
                         "knowledge" -> KnowledgePage(database, activeProjectId)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1208,6 +1234,8 @@ private fun SimplePage(title: String, description: String) {
         Text(description, color = Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }
+
+private fun prefsRate(context: Context): Float = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getFloat("tts_speech_rate", 1.0f).coerceIn(0.7f, 1.3f)
 
 private fun shouldExtractAutomaticMemory(prompt: String): Boolean {
     val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
