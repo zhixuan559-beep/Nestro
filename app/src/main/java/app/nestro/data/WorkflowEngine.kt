@@ -63,7 +63,8 @@ object WorkflowRunHistoryCodec {
                     record.stepRuns.take(20).forEach { step ->
                         put(JSONObject().put("stepId",step.stepId).put("title",step.title)
                             .put("status",step.status).put("attempts",step.attempts)
-                            .put("output",step.output.take(12000)).put("error",step.error.take(2000)))
+                            .put("output",step.output.take(12000)).put("error",step.error.take(2000))
+                            .put("iterations",step.iterations))
                     }
                 }))
         }
@@ -84,7 +85,8 @@ object WorkflowRunHistoryCodec {
                     status=step.optString("status"),
                     attempts=step.optInt("attempts").coerceIn(0,4),
                     output=step.optString("output").take(12000),
-                    error=step.optString("error").take(2000)
+                    error=step.optString("error").take(2000),
+                    iterations=step.optInt("iterations",1).coerceIn(0,3)
                 )
             }.take(20)
             WorkflowRunRecord(

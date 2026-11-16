@@ -38,6 +38,37 @@ class WorkflowEngineTest {
         assertEquals("研究结果",restored.stepRuns.single().output)
     }
 
+    @Test fun runnerSkipsConditionalStepWhenPreviousOutputMatches() = runBlocking {
+        val workflow=WorkflowDefinition(name="条件分支",description="",steps=listOf(
+            WorkflowStep(title="检查",instruction="检查内容",retries=0),
+            WorkflowStep(title="跳过节点",instruction="无需执行",skipIfPreviousContains="无需处理"),
+            WorkflowStep(title="继续",instruction="继续处理",retries=0)
+        ))
+        var calls=0
+        val result=WorkflowEngine.run(workflow,"输入",{ _, _ ->
+            calls++
+            if(calls==1) "此项无需处理" else "继续完成"
+        })
+        assertEquals(2,calls)
+        assertEquals("skipped",result.stepRuns[1].status)
+        assertEquals(2,result.completedSteps)
+    }
+
+    @Test fun runnerRepeatsStepAndFeedsPriorIterationOutput() = runBlocking {
+        val workflow=WorkflowDefinition(name="循环",description="",steps=listOf(
+            WorkflowStep(title="迭代",instruction="逐步完善",retries=0,repeatCount=2)
+        ))
+        val prompts=mutableListOf<String>()
+        val result=WorkflowEngine.run(workflow,"输入",{ _, prompt ->
+            prompts += prompt
+            if(prompts.size==1) "第一轮结果" else "第二轮结果"
+        })
+        assertEquals(2,prompts.size)
+        assertEquals(true,prompts[1].contains("第一轮结果"))
+        assertEquals(2,result.stepRuns.single().iterations)
+        assertEquals("第二轮结果",result.output)
+    }
+
     @Test fun runnerPassesPreviousStepOutputIntoNextStep()= runBlocking {
         val workflow=WorkflowDefinition(name="流水线",description="",steps=listOf(
             WorkflowStep(title="分析",instruction="拆解目标"),

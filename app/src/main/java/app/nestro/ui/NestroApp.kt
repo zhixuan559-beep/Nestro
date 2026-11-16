@@ -1914,6 +1914,22 @@ fun NestroApp() {
                                     color = if (step.continueOnError) Mint else Muted
                                 )
                             }
+                            OutlinedTextField(
+                                value = step.skipIfPreviousContains,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(skipIfPreviousContains = value.take(120)) else item
+                                    }
+                                },
+                                label = { Text("条件跳过：前一步包含此词时跳过（可留空）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            TextButton(onClick = {
+                                workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                    if (stepIndex == index) item.copy(repeatCount = item.repeatCount % 3 + 1) else item
+                                }
+                            }) { Text("本步骤循环：${step.repeatCount} 次", color = Mint) }
                         }
                     }
                     OutlinedButton(
