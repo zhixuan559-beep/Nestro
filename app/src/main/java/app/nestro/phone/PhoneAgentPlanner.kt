@@ -13,8 +13,8 @@ object PhoneAgentPlanner {
         val normalized = text.lowercase()
         val category = when {
             listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any { normalized.contains(it) } -> Category.SHOPPING
-            listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any { normalized.contains(it) } -> Category.FOOD_ORDER
             listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any { normalized.contains(it) } -> Category.BOOKING
+            listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any { normalized.contains(it) } -> Category.FOOD_ORDER
             listOf("搜索", "查找", "调查", "对比", "资料", "网页").any { normalized.contains(it) } -> Category.WEB_RESEARCH
             listOf("填写", "提交表单", "申请", "报名").any { normalized.contains(it) } -> Category.FORM
             else -> Category.GENERAL

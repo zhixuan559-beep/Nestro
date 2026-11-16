@@ -26,6 +26,12 @@ class PhoneAgentPlannerTest {
     }
 
     @Test
+    fun foodDeliveryGoalRemainsFoodOrder() {
+        val plan = PhoneAgentPlanner.plan("帮我点一份外卖")
+        assertEquals(PhoneAgentPlanner.Category.FOOD_ORDER, plan.category)
+    }
+
+    @Test
     fun generalConversationDoesNotInjectPhoneAgentInstructions() {
         val prompt = "解释一下 Kotlin 协程的结构化并发"
         assertEquals(PhoneAgentPlanner.Category.GENERAL, PhoneAgentPlanner.plan(prompt).category)
