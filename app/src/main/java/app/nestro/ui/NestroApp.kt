@@ -505,6 +505,42 @@ fun NestroApp() {
         val loaded = runCatching {
             withContext(Dispatchers.IO) {
                 val dao = database.dao()
+                val pendingProjectDeleteId = prefs.getString("pending_project_delete_id", "").orEmpty()
+                if (pendingProjectDeleteId.isNotBlank()) {
+                    val localRecords = loadConversations(prefs)
+                    val roomConversationIds = dao.projectConversationIds(pendingProjectDeleteId)
+                    val activeId = prefs.getString("active_project_id", "default") ?: "default"
+                    val pendingRequest = runCatching {
+                        JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}")
+                    }.getOrNull()
+                    val hasRunningRequest = pendingRequest?.optString("status") == "running" &&
+                        pendingRequest.optString("project_id") == pendingProjectDeleteId
+                    val projectExists = dao.projectExists(pendingProjectDeleteId)
+                    val deleted = pendingProjectDeleteId != "default" && !hasRunningRequest && if (projectExists) {
+                        dao.deleteProjectIfEmpty(pendingProjectDeleteId, activeId)
+                    } else if (!projectExists && !dao.projectHasLinkedData(pendingProjectDeleteId)) {
+                        dao.deleteEmptyProjectConversations(pendingProjectDeleteId)
+                        true
+                    } else false
+                    if (deleted) {
+                        saveConversationList(
+                            prefs,
+                            localRecords.filterNot { it.projectId == pendingProjectDeleteId },
+                            markDirty = false
+                        )
+                        saveProjects(
+                            prefs,
+                            loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
+                            markDirty = false
+                        )
+                        val editor = prefs.edit()
+                        (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
+                            .distinct().forEach { editor.remove("draft_$it") }
+                        editor.remove("pending_project_delete_id").commit()
+                    } else {
+                        prefs.edit().remove("pending_project_delete_id").commit()
+                    }
+                }
                 val stored = dao.loadConversations()
                 val hasPendingLocalSnapshot = prefs.getLong("local_snapshot_saved_at", 0L) >
                     prefs.getLong("room_synced_at", 0L)
@@ -1771,6 +1807,8 @@ fun NestroApp() {
                                                         TextButton(onClick = {
                                                             if (project.id == activeProjectId) {
                                                                 status = "当前空间正在使用，请先切换到其他空间再删除"
+                                                            } else if (!prefs.edit().putString("pending_project_delete_id", project.id).commit()) {
+                                                                status = "删除保护标记写入失败，未执行删除"
                                                             } else {
                                                                 scope.launch {
                                                                     var projectConversationIds = emptySet<String>()
@@ -1803,15 +1841,19 @@ fun NestroApp() {
                                                                         val removedPlaceholderIds = conversations.filter {
                                                                             it.id in projectConversationIds && it.title == "新对话" && it.messages.isEmpty()
                                                                         }.map { it.id }.toSet()
-                                                                        projectConversationIds.forEach { id -> prefs.edit().remove("draft_$id").apply() }
                                                                         if (removedPlaceholderIds.isNotEmpty()) {
                                                                             conversations = conversations.filterNot { it.id in removedPlaceholderIds }
-                                                                            saveConversationList(prefs, conversations)
                                                                         }
+                                                                        saveConversationList(prefs, conversations)
                                                                         projects = projects.filterNot { it.id == project.id }
                                                                         saveProjects(prefs, projects)
+                                                                        val editor = prefs.edit()
+                                                                        projectConversationIds.forEach { id -> editor.remove("draft_$id") }
+                                                                        val markerCleared = editor.remove("pending_project_delete_id").commit()
+                                                                        check(markerCleared) { "项目已从数据库删除，待本机同步完成后会自动清理残留记录" }
                                                                         status = "空项目空间已删除"
                                                                     }.onFailure {
+                                                                        prefs.edit().remove("pending_project_delete_id").commit()
                                                                         status = it.message ?: "删除失败，项目空间已保留"
                                                                     }.also {
                                                                         deletingProjectId = ""
