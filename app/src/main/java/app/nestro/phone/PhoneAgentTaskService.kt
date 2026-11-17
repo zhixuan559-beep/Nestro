@@ -53,7 +53,7 @@ class PhoneAgentTaskService(
     suspend fun cancel(taskId: String, stopCurrent: Boolean) {
         PhoneAgentWorkScheduler.cancel(appContext, taskId, stopCurrent)
         PhoneAgentNotifications.cancel(appContext, taskId)
-        PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
-        coordinator.cancel(taskId)
+        val cancelled = PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
+        if (cancelled) coordinator.cancel(taskId)
     }
 }
