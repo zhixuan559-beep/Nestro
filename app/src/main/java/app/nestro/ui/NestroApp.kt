@@ -3529,22 +3529,6 @@ private fun saveProjects(prefs: android.content.SharedPreferences, projects: Lis
 
 private fun jsonStringList(array: JSONArray?): List<String> = array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
 
-private fun ConversationPreferencesStore.loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
-    val array = JSONArray(prefs.getString("messages", "[]"))
-    (0 until array.length()).map { i ->
-        val item = array.getJSONObject(i)
-        ChatMessage(item.getString("id"), item.getString("role"), item.getString("content"), jsonStringList(item.optJSONArray("versions")), item.optInt("active_version", 0))
-    }
-}.getOrDefault(emptyList())
-
-private fun ConversationPreferencesStore.saveMessages(prefs: android.content.SharedPreferences, messages: List<ChatMessage>) {
-    val array = JSONArray()
-    messages.takeLast(200).forEach { msg ->
-        array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content).put("versions", JSONArray(msg.versions.take(20))).put("active_version", msg.activeVersion.coerceAtLeast(0)))
-    }
-    prefs.edit().putString("messages", array.toString()).apply()
-}
-
 private fun loadExpertTeams(prefs: android.content.SharedPreferences): List<ExpertTeam> = runCatching {
     val array = JSONArray(prefs.getString("expert_teams_v1", "[]"))
     (0 until array.length()).mapNotNull { index ->
