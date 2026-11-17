@@ -59,7 +59,7 @@ data class ModelRegistry(
         val provider = ModelProvider(
             providerId,
             profile.baseUrl.trimEnd('/').substringAfter("://").substringBefore('/').ifBlank { "旧服务商" },
-            profile.baseUrl.trimEnd()
+            profile.baseUrl.trimEnd('/')
         )
         val nextProviders = (providers.filterNot { it.id == providerId } + provider)
         val nextKeys = if (keyAvailable) {
