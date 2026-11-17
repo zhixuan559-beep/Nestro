@@ -63,6 +63,8 @@ import android.net.Uri
 import android.content.Intent
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.security.keystore.KeyGenParameterSpec
@@ -138,33 +140,100 @@ fun NestroApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var ttsReady by remember { mutableStateOf(false) }
+    var speechLanguageAvailable by remember { mutableStateOf(false) }
+    var speechStatus by remember { mutableStateOf("正在初始化系统语音引擎…") }
     var speechRate by remember { mutableFloatStateOf(prefsRate(context)) }
+    var speechVoices by remember { mutableStateOf<List<Voice>>(emptyList()) }
+    var selectedSpeechVoiceName by remember {
+        mutableStateOf(context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getString("tts_voice_name", "") ?: "")
+    }
+    var speechQueueEnabled by remember {
+        mutableStateOf(context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getBoolean("tts_queue_enabled", false))
+    }
+    var showSpeechVoiceMenu by remember { mutableStateOf(false) }
     val speechEngine = remember(context) {
         TextToSpeech(context) { result ->
             if (result == TextToSpeech.SUCCESS) {
                 ttsReady = true
+                speechStatus = "语音引擎已启动，正在检查中文语音…"
+            } else {
+                speechStatus = "系统语音引擎初始化失败"
             }
         }
     }
     DisposableEffect(speechEngine) {
+        speechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                speechStatus = "正在朗读…"
+            }
+            override fun onDone(utteranceId: String?) {
+                speechStatus = "朗读完成"
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                speechStatus = "朗读失败，请检查系统语音引擎"
+            }
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                speechStatus = "朗读失败（错误码 $errorCode）"
+            }
+        })
         onDispose {
             speechEngine.stop()
+            speechEngine.setOnUtteranceProgressListener(null)
             speechEngine.shutdown()
             ttsReady = false
         }
     }
     LaunchedEffect(speechEngine, ttsReady, speechRate) {
         if (ttsReady) {
-            speechEngine.language = Locale.SIMPLIFIED_CHINESE
+            val languageResult = speechEngine.setLanguage(Locale.SIMPLIFIED_CHINESE)
+            speechLanguageAvailable = languageResult >= TextToSpeech.LANG_AVAILABLE
             speechEngine.setSpeechRate(speechRate)
+            val chineseVoices = speechEngine.voices.orEmpty()
+                .filter { it.locale.language == "zh" }
+                .sortedBy { it.isNetworkConnectionRequired }
+            speechVoices = chineseVoices
+            val savedVoice = chineseVoices.firstOrNull { it.name == selectedSpeechVoiceName }
+            val chosenVoice = savedVoice ?: chineseVoices.firstOrNull()
+            if (chosenVoice != null) {
+                speechEngine.voice = chosenVoice
+                if (selectedSpeechVoiceName != chosenVoice.name) {
+                    selectedSpeechVoiceName = chosenVoice.name
+                    context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                        .edit().putString("tts_voice_name", chosenVoice.name).apply()
+                }
+            }
+            speechStatus = when {
+                !speechLanguageAvailable -> "当前系统没有可用的中文语音数据，请在系统设置中安装中文语音"
+                chineseVoices.isEmpty() -> "系统未提供可选中文音色，将使用系统默认语音"
+                else -> "中文语音已就绪（${chineseVoices.size} 种音色）"
+            }
         }
     }
     val speakMessage: (String) -> Unit = { text ->
-        if (ttsReady && text.isNotBlank()) {
-            speechEngine.speak(text.take(4000), TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
+        if (ttsReady && speechLanguageAvailable && text.isNotBlank()) {
+            val queueMode = if (speechQueueEnabled) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
+            val result = speechEngine.speak(text.take(4000), queueMode, null, UUID.randomUUID().toString())
+            if (result == TextToSpeech.ERROR) speechStatus = "无法开始朗读，请检查系统语音引擎"
+        } else if (!speechLanguageAvailable) {
+            speechStatus = "中文语音不可用，请先检查系统语音数据"
         }
     }
-    val stopSpeaking: () -> Unit = { speechEngine.stop() }
+    val stopSpeaking: () -> Unit = {
+        speechEngine.stop()
+        speechStatus = "已停止朗读并清空队列"
+    }
+    val selectSpeechVoice: (Voice) -> Unit = { voice ->
+        val result = speechEngine.setVoice(voice)
+        if (result == TextToSpeech.SUCCESS) {
+            selectedSpeechVoiceName = voice.name
+            context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .edit().putString("tts_voice_name", voice.name).apply()
+            speechStatus = "已切换音色：${voice.name}"
+        } else {
+            speechStatus = "切换音色失败，已保留当前音色"
+        }
+    }
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
     var databaseReady by remember { mutableStateOf(false) }
@@ -1924,7 +1993,30 @@ fun NestroApp() {
                         "voice" -> {
                             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("语音设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text(if (ttsReady) "系统中文语音引擎已就绪" else "系统语音引擎正在初始化或不可用", color = if (ttsReady) Mint else Muted)
+                                Text(speechStatus, color = if (ttsReady && speechLanguageAvailable) Mint else Muted)
+                                Text("中文音色", color = Ink)
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { showSpeechVoiceMenu = true },
+                                        enabled = ttsReady && speechVoices.isNotEmpty()
+                                    ) {
+                                        Text(speechVoices.firstOrNull { it.name == selectedSpeechVoiceName }?.name ?: "系统默认音色")
+                                    }
+                                    DropdownMenu(
+                                        expanded = showSpeechVoiceMenu,
+                                        onDismissRequest = { showSpeechVoiceMenu = false }
+                                    ) {
+                                        speechVoices.forEach { voice ->
+                                            DropdownMenuItem(
+                                                text = { Text(voice.name + if (voice.isNetworkConnectionRequired) " · 在线" else " · 本地") },
+                                                onClick = {
+                                                    selectSpeechVoice(voice)
+                                                    showSpeechVoiceMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                                 Text("朗读速度：${"%.1f".format(speechRate)}×", color = Ink)
                                 Slider(
                                     value = speechRate,
@@ -1935,7 +2027,21 @@ fun NestroApp() {
                                     valueRange = 0.7f..1.3f,
                                     steps = 5
                                 )
-                                Text("朗读使用 Android 系统 TTS，不会把文字发送到额外的语音服务。可在系统设置中安装或切换中文语音引擎。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("连续排队朗读", color = Ink)
+                                    Switch(
+                                        checked = speechQueueEnabled,
+                                        onCheckedChange = {
+                                            speechQueueEnabled = it
+                                            prefs.edit().putBoolean("tts_queue_enabled", it).apply()
+                                        }
+                                    )
+                                }
+                                Text("关闭排队时，新朗读会打断当前内容；开启后会按提交顺序连续播放。朗读使用 Android 系统 TTS，文字不会发送到额外语音服务。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Button(
                                     onClick = { speakMessage("Nestro 语音朗读测试。你可以在这里调整朗读速度。") },
                                     enabled = ttsReady,
