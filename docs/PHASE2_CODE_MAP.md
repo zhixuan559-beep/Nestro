@@ -163,3 +163,5 @@
 - 对本轮待推送的完整 Git tree 重新统计：149 个文件；主源码 88 个 Kotlin 文件；JVM tests 33；Android tests 14。
 - `NestroApp.kt` 为 2,995 行，`remember` 11 处、`LaunchedEffect` 3 处、`scope.launch` 24 处。状态所有权拆分已明显减少根页面本地 `remember`，但协程/业务编排仍是后续重构重点。
 - 统计基于当前待推送 tree `4b9f207`，最终以推送后 head tree 为准。
+
+- 会话启动恢复进一步解耦：活动项目/会话选择提取为纯函数 `resolveActiveConversationSelection`，覆盖已归档项目回退、跨项目会话拒绝和缺失会话回退的单元测试。

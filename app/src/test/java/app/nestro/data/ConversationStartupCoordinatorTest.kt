@@ -27,4 +27,52 @@ class ConversationStartupCoordinatorTest {
             assertSame(cancelled, actual)
         }
     }
+
+    @Test
+    fun startupSelectionKeepsSavedConversationWithinActiveProject() {
+        val projects = listOf(
+            ProjectRecord("default", "Default", "", 1L),
+            ProjectRecord("work", "Work", "", 2L)
+        )
+        val conversations = listOf(
+            ConversationRecord("default-chat", "Default chat", 1L, emptyList(), "default"),
+            ConversationRecord("work-chat", "Work chat", 2L, emptyList(), "work")
+        )
+
+        val selected = resolveActiveConversationSelection(projects, conversations, "work", "work-chat")
+
+        assertEquals("work", selected.projectId)
+        assertEquals("work-chat", selected.conversationId)
+    }
+
+    @Test
+    fun startupSelectionFallsBackFromArchivedProjectAndForeignConversation() {
+        val projects = listOf(
+            ProjectRecord("default", "Default", "", 1L),
+            ProjectRecord("archived", "Archived", "", 2L, archivedAt = 3L)
+        )
+        val conversations = listOf(
+            ConversationRecord("default-chat", "Default chat", 1L, emptyList(), "default"),
+            ConversationRecord("archived-chat", "Archived chat", 2L, emptyList(), "archived")
+        )
+
+        val selected = resolveActiveConversationSelection(projects, conversations, "archived", "archived-chat")
+
+        assertEquals("default", selected.projectId)
+        assertEquals("default-chat", selected.conversationId)
+    }
+
+    @Test
+    fun startupSelectionUsesFirstConversationWhenSavedConversationIsMissing() {
+        val projects = listOf(ProjectRecord("work", "Work", "", 1L))
+        val conversations = listOf(
+            ConversationRecord("first", "First", 1L, emptyList(), "work"),
+            ConversationRecord("second", "Second", 2L, emptyList(), "work")
+        )
+
+        val selected = resolveActiveConversationSelection(projects, conversations, "work", "missing")
+
+        assertEquals("first", selected.conversationId)
+    }
+
 }

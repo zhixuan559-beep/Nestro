@@ -2,6 +2,26 @@ package app.nestro.data
 
 import android.content.SharedPreferences
 
+internal data class ActiveConversationSelection(
+    val projectId: String,
+    val conversationId: String
+)
+
+internal fun resolveActiveConversationSelection(
+    projects: List<ProjectRecord>,
+    conversations: List<ConversationRecord>,
+    savedProjectId: String?,
+    savedConversationId: String?
+): ActiveConversationSelection {
+    val activeProjectId = savedProjectId?.takeIf { id ->
+        projects.any { it.id == id && it.archivedAt == 0L }
+    } ?: "default"
+    val activeConversationId = conversations.firstOrNull {
+        it.id == savedConversationId && it.projectId == activeProjectId
+    }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
+    return ActiveConversationSelection(activeProjectId, activeConversationId)
+}
+
 /**
  * Restores the conversation/project snapshot and resolves the active chat
  * before Compose applies the result to screen state.
@@ -39,14 +59,14 @@ internal class ConversationStartupCoordinator(
             statusMessage = "本地数据库暂不可用，已回退到本机旧存储"
         }
 
-        val savedProjectId = preferences.getString("active_project_id", "default") ?: "default"
-        val activeProjectId = savedProjectId.takeIf { id ->
-            projects.any { it.id == id && it.archivedAt == 0L }
-        } ?: "default"
-        val savedConversationId = preferences.getString("active_conversation_id", "") ?: ""
-        val activeConversationId = conversations.firstOrNull {
-            it.id == savedConversationId && it.projectId == activeProjectId
-        }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
+        val selection = resolveActiveConversationSelection(
+            projects = projects,
+            conversations = conversations,
+            savedProjectId = preferences.getString("active_project_id", "default"),
+            savedConversationId = preferences.getString("active_conversation_id", "")
+        )
+        val activeProjectId = selection.projectId
+        val activeConversationId = selection.conversationId
 
         val activeMessages = if (databaseReady && activeConversationId.isNotBlank()) {
             persistence.loadMessages(activeConversationId).orEmpty()
