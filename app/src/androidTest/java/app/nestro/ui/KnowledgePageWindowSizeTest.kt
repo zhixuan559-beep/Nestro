@@ -58,7 +58,7 @@ class KnowledgePageWindowSizeTest {
             composeRule.waitForIdle()
             composeRule.onNodeWithText("本地知识库").assertIsDisplayed()
             composeRule.onNodeWithText("＋ 导入文档").performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText("检索测试").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("测试知识库检索").performScrollTo().assertIsDisplayed()
         }
     }
 }
