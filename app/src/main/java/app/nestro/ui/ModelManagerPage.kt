@@ -104,7 +104,13 @@ internal fun ModelManager(
         Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
         registry.providers.forEach { provider ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = selectedProviderId == provider.id, onClick = { selectedProviderId = provider.id })
+                RadioButton(selected = selectedProviderId == provider.id, onClick = {
+                    selectedProviderId = provider.id
+                    replacingApiKeyId = ""
+                    apiKeyLabelDraft = ""
+                    apiKeyDraft = ""
+                    selectedModelKeyIds = emptySet()
+                })
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, color = Ink)
                     Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
