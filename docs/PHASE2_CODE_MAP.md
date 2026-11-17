@@ -276,3 +276,9 @@
 - CI #820 failed because AndroidX `WorkInfo` does not expose the original `inputData` property; the active WorkManager query was therefore attempting to read a nonexistent member.
 - Reconciliation now derives active task tags from non-finished `WorkInfo.tags` and checks each task's existing unique tag. Query failures still exit without clearing any pending marker.
 - The same prepared batch extracts expert-team execution lifecycle from `NestroApp` into `ExpertTeamExecutionCoordinator`, with JVM coverage for member execution, status callbacks, and shared task completion.
+
+## 2026-11-18 — Chat request context assembly extracted
+
+- Added `ChatRequestContextAssembler` to own the recent-history recall query, project-scoped conversation retrieval, knowledge retrieval, user-memory retrieval, Phone Agent context, and bounded system-context assembly.
+- `NestroApplication` owns the assembler; `NestroApp` now applies its result to recall counters/sources and passes the assembled context to the existing team/stream execution path.
+- Added JVM coverage for the last-eight-message query window, project/conversation scoping, context composition, recall source propagation, and the 16k-character cap.
