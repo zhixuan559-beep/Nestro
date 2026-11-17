@@ -33,6 +33,16 @@ class PhoneAgentTaskService(
         }
     }
 
+    suspend fun createAndScheduleIfAuthorized(
+        projectId: String,
+        conversationId: String,
+        plan: PhoneAgentPlanner.Plan
+    ): PhoneAgentTaskEntity {
+        val task = PhoneAgentTaskStore.create(database.dao(), projectId, conversationId, plan)
+        if (PhoneAgentService.activeService?.hasValidGrant() == true) enqueue(task.id)
+        return task
+    }
+
     fun enqueue(
         taskId: String,
         afterUserHandoff: Boolean = false,

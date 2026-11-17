@@ -22,12 +22,9 @@ import app.nestro.data.ConversationMemoryStore
 import app.nestro.data.ConversationRecallSource
 import androidx.room.withTransaction
 
-import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
-import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentNotifications
-import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.UserMemoryStore
@@ -921,10 +918,11 @@ fun NestroApp() {
                 if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            val task = PhoneAgentTaskStore.create(database.dao(), requestProjectId, requestConversationId, phonePlan)
-                            if (PhoneAgentService.activeService?.hasValidGrant() == true) {
-                                PhoneAgentWorkScheduler.enqueue(context, task.id)
-                            }
+                            appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                requestProjectId,
+                                requestConversationId,
+                                phonePlan
+                            )
                         }
                     }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
                 }
