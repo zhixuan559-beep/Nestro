@@ -3252,4 +3252,3 @@ private fun SimplePage(title: String, description: String) {
 
 private fun jsonStringList(array: JSONArray?): List<String> = array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
 
-@Composable
