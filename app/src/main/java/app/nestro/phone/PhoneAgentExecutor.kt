@@ -31,7 +31,7 @@ object PhoneAgentExecutor {
         object Back : Action()
         data class ConfirmSensitive(val description: String) : Action()
     }
-    enum class Outcome { COMPLETED, PAUSED, WAITING_USER, FAILED }
+    enum class Outcome { COMPLETED, PAUSED, WAITING_USER, FAILED, CANCELLED }
     data class ActionResult(val index: Int, val action: String, val success: Boolean, val detail: String)
     data class ExecutionResult(val outcome: Outcome, val completedActions: Int, val results: List<ActionResult>, val handoffReason: String = "")
 
@@ -57,6 +57,9 @@ object PhoneAgentExecutor {
 
     private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
+        if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+            return ExecutionResult(Outcome.CANCELLED, 0, emptyList(), "任务已取消")
+        }
         val agentStates = RoomAgentTaskStateStore(dao)
         val service = PhoneAgentService.activeService
         if (service == null) {
@@ -150,6 +153,11 @@ object PhoneAgentExecutor {
             traces = RoomAgentTaskTraceStore(dao)
         )
         for (index in startIndex until actions.size) {
+            val latestTask = dao.phoneAgentTask(taskId)
+                ?: return ExecutionResult(Outcome.FAILED, results.size, results, "任务不存在")
+            if (latestTask.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+                return ExecutionResult(Outcome.CANCELLED, results.size, results, "任务已取消")
+            }
             if (service.isTaskStopped()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "用户已请求停止"))

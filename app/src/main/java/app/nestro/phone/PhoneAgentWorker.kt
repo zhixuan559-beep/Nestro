@@ -61,7 +61,7 @@ class PhoneAgentWorker(
             // duplicate a device action. The polling loop below waits for its persisted outcome.
             AgentTaskStatus.RUNNING -> Unit
             AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
-            AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, "任务已取消")
+            AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             null -> error("无法初始化 Phone Agent 任务状态")
         }
 
@@ -73,7 +73,7 @@ class PhoneAgentWorker(
                     AgentTaskStatus.PAUSED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, state.lastError)
                     AgentTaskStatus.WAITING_FOR_USER -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.WAITING_USER, state.lastError)
                     AgentTaskStatus.FAILED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.FAILED, state.lastError)
-                    AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, "任务已取消")
+                    AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
                     else -> delay(200)
                 }
             }
@@ -87,9 +87,23 @@ class PhoneAgentWorker(
         val dao = NestroDatabase.get(applicationContext).dao()
         val task = dao.phoneAgentTask(taskId) ?: return Result.success()
 
-        if (task.status in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) return Result.success()
-        applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().remove("phone_task_stop_requested").apply()
+        val preferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        if (task.status == PhoneAgentTaskStore.STATUS_COMPLETED) return Result.success()
+        if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED ||
+            preferences.getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+        ) {
+            val store = RoomAgentTaskStateStore(dao)
+            store.get(taskId)?.let { state ->
+                if (state.status != AgentTaskStatus.COMPLETED) store.put(state.copy(
+                    status = AgentTaskStatus.CANCELLED,
+                    lastError = "用户取消任务",
+                    updatedAt = System.currentTimeMillis()
+                ))
+            }
+            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
+            return Result.success()
+        }
+        preferences.edit().remove("phone_task_stop_requested").apply()
         setForeground(PhoneAgentNotifications.foregroundInfo(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100)))
         PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100), true)
         if (PhoneAgentService.activeService == null) {
@@ -104,10 +118,19 @@ class PhoneAgentWorker(
             val result = runWithSharedCoordinator(dao, taskId)
             val cancelRequested = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
                 .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
-            if (cancelRequested || dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+            if (cancelRequested || dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED ||
+                result.outcome == PhoneAgentExecutor.Outcome.CANCELLED
+            ) {
                 val latest = dao.phoneAgentTask(taskId)
                 if (latest != null && latest.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                     PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
+                }
+                RoomAgentTaskStateStore(dao).get(taskId)?.let { state ->
+                    if (state.status != AgentTaskStatus.COMPLETED) RoomAgentTaskStateStore(dao).put(state.copy(
+                        status = AgentTaskStatus.CANCELLED,
+                        lastError = "用户取消任务",
+                        updatedAt = System.currentTimeMillis()
+                    ))
                 }
                 PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
                 return Result.success()
@@ -127,6 +150,10 @@ class PhoneAgentWorker(
                 }
                 PhoneAgentExecutor.Outcome.FAILED -> {
                     PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 执行失败", result.message.take(160), false)
+                    Result.success()
+                }
+                PhoneAgentExecutor.Outcome.CANCELLED -> {
+                    PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
                     Result.success()
                 }
             }

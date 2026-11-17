@@ -43,6 +43,7 @@ class NestroApplication : Application() {
                     PhoneAgentExecutor.Outcome.PAUSED -> AgentTaskStatus.PAUSED
                     PhoneAgentExecutor.Outcome.WAITING_USER -> AgentTaskStatus.WAITING_FOR_USER
                     PhoneAgentExecutor.Outcome.FAILED -> AgentTaskStatus.FAILED
+                    PhoneAgentExecutor.Outcome.CANCELLED -> AgentTaskStatus.CANCELLED
                 }
                 if (current != null) {
                     store.put(current.copy(

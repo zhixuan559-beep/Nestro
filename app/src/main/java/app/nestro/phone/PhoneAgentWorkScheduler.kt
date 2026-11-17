@@ -44,8 +44,10 @@ object PhoneAgentWorkScheduler {
 
     fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        if (preferences.getBoolean(pendingKey(taskId), false)) {
-            preferences.edit().putBoolean(cancelKey(taskId), true).apply()
+        // Persist cancellation even before a worker starts, then remove this task's queued/running work.
+        preferences.edit().putBoolean(cancelKey(taskId), true).apply()
+        runCatching {
+            WorkManager.getInstance(context.applicationContext).cancelAllWorkByTag(uniqueName(taskId))
         }
         if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop()
     }
