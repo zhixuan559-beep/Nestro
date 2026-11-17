@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.MainActivity
 import app.nestro.data.NestroDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +38,16 @@ object PhoneAgentNotifications {
         }
         val cancelIntent = Intent(app, PhoneAgentNotificationReceiver::class.java).setAction(ACTION_CANCEL).putExtra(EXTRA_TASK_ID, taskId)
         val pending = PendingIntent.getBroadcast(app, taskId.hashCode(), cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val openAppIntent = Intent(app, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openAppPending = PendingIntent.getActivity(
+            app, taskId.hashCode() xor 0x4E535452, openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val builder = NotificationCompat.Builder(app, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentIntent(openAppPending)
             .setContentTitle(title).setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_LOW).setOnlyAlertOnce(true)
