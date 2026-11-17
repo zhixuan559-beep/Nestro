@@ -6,8 +6,8 @@ import app.nestro.data.NestroDatabase
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
@@ -65,7 +65,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    }
   }
  }
- Column(Modifier.fillMaxSize().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
   Text("本地知识库",color=KnowledgeInk,style=MaterialTheme.typography.headlineSmall)
   Text("当前空间：$projectId。资料只存入本机 Room 数据库，回答时检索当前项目的相关片段。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
@@ -112,8 +112,8 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    }
   }
   if(documents.isEmpty()) Text("这里还没有文档。导入资料后，Nestro 会在当前项目内检索，不会混入其他项目。",color=KnowledgeMuted)
-  else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-   items(documents,key={it.id}) { doc ->
+  else Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+   documents.forEach { doc ->
     Surface(color=KnowledgeCard,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()) {
      Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) {
       Column(Modifier.weight(1f)) {

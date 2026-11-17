@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -70,7 +70,7 @@ fun ArtifactLibraryPage(projectId: String) {
         records = withContext(Dispatchers.IO) { runCatching { ArtifactStore.list(context, projectId) }.getOrDefault(emptyList()) }
     }
 
-    Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("产物库", style = MaterialTheme.typography.headlineSmall)
         Text("助手回复可直接存入这里；也可以手动创建 Markdown 文稿。产物按项目隔离，保存在本机应用私有目录。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(value = title, onValueChange = { title = it.take(100) }, label = { Text("产物名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -95,8 +95,8 @@ fun ArtifactLibraryPage(projectId: String) {
         if (records.isEmpty()) {
             Text("这里还没有产物。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(records, key = { it.id }) { record ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                records.forEach { record ->
                     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(record.title, style = MaterialTheme.typography.titleSmall)

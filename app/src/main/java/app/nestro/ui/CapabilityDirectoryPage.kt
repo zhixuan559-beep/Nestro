@@ -2,8 +2,8 @@ package app.nestro.ui
 
 import android.content.Context
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +42,7 @@ fun CapabilityDirectoryPage() {
         val builtIns=listOf(
             CapabilityEntry("模型连接","连接用户自行配置的 OpenAI 兼容模型服务。","Nestro 内置","网络访问；API Key 由 Android Keystore 保护","已内置"),
             CapabilityEntry("语音输入","调用 Android 系统语音识别。","Android 系统服务","麦克风运行时权限","已内置"),
-            CapabilityEntry("语音输出","使用系统 TTS 朗读文本。","Android 系统 TTS","无额外敏感权限","已内置"),
+            CapabilityEntry("语音输出（预留）","当前版本不内置语音合成；未来可由用户自行配置第三方服务。","扩展接口预留","不申请额外权限","未接入"),
             CapabilityEntry("本地知识库","导入文档并进行项目内检索。","Nestro 本地模块","用户主动选择文件","已内置"),
             CapabilityEntry("专家与团队","使用本地专家配置和并行分析。","Nestro 本地模块","按模型配置发送请求","已内置"),
             CapabilityEntry("Skills","管理本地技能包；只解析提示词和元数据。","本地技能包","导入前预览；声明不自动授权","已内置"),
@@ -71,7 +71,7 @@ fun CapabilityDirectoryPage() {
     }
     val filtered=entries.filter { query.isBlank() || listOf(it.name,it.description,it.source,it.permission).any { value -> value.contains(query,true) } }
 
-    Column(Modifier.fillMaxSize().padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("能力目录",style=MaterialTheme.typography.headlineSmall)
         Text("社区目录必须由固定 RSA 公钥验签；技能包必须匹配签名目录中的 SHA-256。安装前展示权限声明，不会自动授予 Android 权限。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
@@ -126,8 +126,8 @@ fun CapabilityDirectoryPage() {
         if(installStatus.isNotBlank()) Text(installStatus,style=MaterialTheme.typography.bodySmall)
         Text("本地能力",style=MaterialTheme.typography.titleMedium)
         OutlinedTextField(value=query,onValueChange={query=it},label={Text("筛选能力")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            items(filtered,key={it.name}) { item ->
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            filtered.forEach { item ->
                 Card(shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant),modifier=Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
