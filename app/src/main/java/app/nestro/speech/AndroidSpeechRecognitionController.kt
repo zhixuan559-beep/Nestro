@@ -25,11 +25,18 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
     fun start(languageTag: String, listener: Listener) {
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
             listener.onStatus("当前设备没有可用的语音识别服务")
+            listener.onIdle()
             return
         }
         if (recognizer != null) return
 
-        val engine = SpeechRecognizer.createSpeechRecognizer(appContext)
+        val engine = try {
+            SpeechRecognizer.createSpeechRecognizer(appContext)
+        } catch (error: Throwable) {
+            listener.onStatus("无法创建语音识别服务：${error.message ?: "未知错误"}")
+            listener.onIdle()
+            return
+        }
         recognizer = engine
         activeListener = listener
         engine.setRecognitionListener(object : RecognitionListener {
