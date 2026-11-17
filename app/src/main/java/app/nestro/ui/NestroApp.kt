@@ -953,7 +953,7 @@ fun NestroApp() {
                          DrawerItem("⇢", "工作流") { page = "workflows"; showDrawer = false }
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
-                        DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
+                        DrawerItem("麦", "语音输入") { page = "voice"; showDrawer = false }
                         DrawerItem("▣", "产物库") { page = "artifacts"; showDrawer = false }
                         DrawerItem("⌘", "能力目录") { page = "capabilities"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
