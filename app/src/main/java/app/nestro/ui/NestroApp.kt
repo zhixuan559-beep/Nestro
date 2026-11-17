@@ -307,49 +307,7 @@ fun NestroApp() {
             }
             if (result.isSuccess) {
                 automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
-                modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-                modelRegistry = modelRepository.rebuildLegacyProfiles(modelProfiles)
-                activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
-                activeRegistryModelId = prefs.getString("active_model_registry_id", "") ?: ""
-                modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
-                modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
-                val restoredRegistryModel = modelRegistry.models.firstOrNull { it.id == activeRegistryModelId }
-                val restoredProvider = restoredRegistryModel?.let { item -> modelRegistry.providers.firstOrNull { it.id == item.providerId } }
-                val restoredRegistryKey = restoredRegistryModel?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
-                val registryModelUsable = restoredRegistryModel != null && restoredProvider?.enabled == true &&
-                    restoredRegistryModel in modelRegistry.selectableModels() && !restoredRegistryKey.isNullOrBlank()
-                if (registryModelUsable) {
-                    activeModelProfileId = ""
-                    config = ModelConfig(restoredProvider!!.baseUrl, restoredRegistryModel!!.modelCode, restoredRegistryKey!!)
-                    modelRepository.writeActiveConfig(config)
-                } else {
-                    if (activeRegistryModelId.isNotBlank()) {
-                        activeRegistryModelId = ""
-                        prefs.edit().remove("active_model_registry_id").apply()
-                    }
-                    val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-                    val restoredModelSelectable = restoredActiveProfile != null &&
-                        modelRegistry.selectableModels().any { it.id == "legacy-model-${restoredActiveProfile.id}" }
-                    if (restoredActiveProfile != null) {
-                        val restoredKey = modelRepository.readProfileKey(restoredActiveProfile.id)
-                        if (restoredKey.isNotBlank() && restoredModelSelectable) {
-                            activeRegistryModelId = "legacy-model-" + restoredActiveProfile.id
-                            prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
-                            config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
-                            modelRepository.writeActiveConfig(config)
-                        } else {
-                            activeModelProfileId = ""
-                            config = ModelConfig("", "", "")
-                            modelRepository.clearActiveConfig()
-                            prefs.edit().remove("active_model_profile_id").apply()
-                        }
-                    } else {
-                        activeModelProfileId = ""
-                        config = ModelConfig("", "", "")
-                        modelRepository.clearActiveConfig()
-                        prefs.edit().remove("active_model_profile_id").apply()
-                    }
-                }
+                modelUiState.initialize()
                 persistedConversationVersions.clear()
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
                 projects = ProjectPreferencesStore.loadProjects(prefs)
@@ -586,10 +544,7 @@ fun NestroApp() {
         if (recoveredChat.interrupted) {
             status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
         }
-        if (databaseReady) {
-            runCatching { agentTaskCoordinator.recoverAfterProcessRestart() }
-                .onFailure { status = "后台任务恢复失败：${it.message ?: "未知错误"}" }
-        }
+        // Process-level AgentTaskCoordinator recovery is owned by NestroApplication.onCreate().
         if (config.apiKey.isNotBlank() && config.model.isNotBlank() && status == "尚未配置模型") status = "模型已就绪"
     }
 
