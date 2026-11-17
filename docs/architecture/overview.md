@@ -77,7 +77,7 @@ The process composition root (`NestroApplication`) now owns the database, model 
 
 The model UI currently preserves the legacy profile workflow while the registry supports provider/key/model entities. Keep legacy data migration compatible while progressively routing all model operations through the repository boundary. Do not let the legacy UI become a second source of truth.
 
-Phone Agent currently combines a Room task record, shared agent state/trace, WorkManager scheduling and an accessibility executor. Treat these as one lifecycle: enqueue, run, checkpoint, wait-for-user, pause, resume, cancel, fail and process-restart recovery must agree across all stores. A WorkManager retry must not repeat a non-idempotent device action.
+Phone Agent currently combines a Room task record, shared agent state/trace, WorkManager scheduling and an accessibility executor. Its planning requests now use the same model registry, encrypted credential repository, active-model/failover selector and chat execution service as ordinary chat; it must not create a parallel HTTP client. Treat these as one lifecycle: enqueue, run, checkpoint, wait-for-user, pause, resume, cancel, fail and process-restart recovery must agree across all stores. A WorkManager retry must not repeat a non-idempotent device action.
 
 Speech provider interfaces are contracts, not proof that output speech or real-time voice is already implemented. The user-facing voice system is complete only when input, output, real-time session lifecycle, provider/key editing and failure handling are implemented and integrated.
 
