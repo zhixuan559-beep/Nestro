@@ -129,7 +129,7 @@ private fun ChatMessage.allVersions(): List<String> = when {
     activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
     else -> versions.distinct().takeLast(20)
 }
-private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
+private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default", val messagesLoaded: Boolean = true)
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long, val archivedAt: Long = 0L)
 private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
 internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
@@ -578,9 +578,9 @@ fun NestroApp() {
                         }
                     }
                     prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
-                    dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId) } to legacyProjects
+                    dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId, messagesLoaded = false) } to legacyProjects
                 } else {
-                    val restoredConversations = dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId) }
+                    val restoredConversations = dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId, messagesLoaded = false) }
                     val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
                     val restoredProjects = if (storedProjects.isEmpty()) loadProjects(prefs) else storedProjects
                     if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
@@ -621,7 +621,7 @@ fun NestroApp() {
         messages = activeConversationMessages
         if (activeConversationId.isNotBlank()) {
             conversations = conversations.map { record ->
-                if (record.id == activeConversationId) record.copy(messages = activeConversationMessages) else record
+                if (record.id == activeConversationId) record.copy(messages = activeConversationMessages, messagesLoaded = true) else record
             }
             if (databaseReady) {
                 conversations.firstOrNull { it.id == activeConversationId }?.let { record ->
@@ -684,11 +684,13 @@ fun NestroApp() {
                     if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
                     conversationSnapshot.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
                         dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
-                        dao.clearMessages(record.id)
-                        val rows = record.messages.mapIndexed { index, message ->
-                            MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
+                        if (record.messagesLoaded) {
+                            dao.clearMessages(record.id)
+                            val rows = record.messages.mapIndexed { index, message ->
+                                MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
+                            }
+                            if (rows.isNotEmpty()) dao.putMessages(rows)
                         }
-                        if (rows.isNotEmpty()) dao.putMessages(rows)
                     }
                     dao.putProjects(projectSnapshot.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
                     val currentProjectIds = projectSnapshot.map { it.id }
@@ -1687,6 +1689,10 @@ fun NestroApp() {
                                                         activeConversationId = record.id
                                                         activeProjectId = record.projectId
                                                         messages = loadedMessages
+                                                        conversations = conversations.map { item ->
+                                                            if (item.id == record.id) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+                                                        }
+                                                        conversations.firstOrNull { it.id == record.id }?.let { persistedConversationVersions[record.id] = it.hashCode() }
                                                         prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
                                                         page = "home"
                                                     }
@@ -1720,7 +1726,7 @@ fun NestroApp() {
                                                             } else next.messages
                                                             messages = nextMessages
                                                             conversations = conversations.map { item ->
-                                                                if (item.id == next.id) item.copy(messages = nextMessages) else item
+                                                                if (item.id == next.id) item.copy(messages = nextMessages, messagesLoaded = true) else item
                                                             }
                                                             if (remaining.any { it.id == next.id }) {
                                                                 conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
@@ -1833,7 +1839,7 @@ fun NestroApp() {
                                                                 activeConversationId = source.id
                                                                 messages = sourceMessages
                                                                 conversations = conversations.map { record ->
-                                                                    if (record.id == source.id) record.copy(messages = sourceMessages) else record
+                                                                    if (record.id == source.id) record.copy(messages = sourceMessages, messagesLoaded = true) else record
                                                                 }
                                                                 conversations.firstOrNull { it.id == source.id }?.let { persistedConversationVersions[source.id] = it.hashCode() }
                                                                 page = "home"
@@ -1918,7 +1924,7 @@ fun NestroApp() {
                                                                 } else target.messages
                                                                 messages = targetMessages
                                                                 conversations = conversations.map { item ->
-                                                                    if (item.id == target.id) item.copy(messages = targetMessages) else item
+                                                                    if (item.id == target.id) item.copy(messages = targetMessages, messagesLoaded = true) else item
                                                                 }
                                                                 conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
                                                             }
@@ -2334,7 +2340,7 @@ fun NestroApp() {
                                     activeProjectId = target.projectId
                                     messages = targetMessages
                                     conversations = conversations.map { record ->
-                                        if (record.id == target.id) record.copy(messages = targetMessages) else record
+                                        if (record.id == target.id) record.copy(messages = targetMessages, messagesLoaded = true) else record
                                     }
                                     conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
                                     prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
@@ -3554,7 +3560,7 @@ private fun saveConversationMessages(
         ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList(), projectId)
     val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
     val updated = record.copy(title = if (record.title == "新对话" || record.title == "旧对话") firstPrompt else record.title,
-        updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500))
+        updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500), messagesLoaded = true)
     val next = listOf(updated) + existing.filterNot { it.id == updated.id }
     saveConversationList(prefs, next)
     prefs.edit().putString("active_conversation_id", updated.id).apply()
