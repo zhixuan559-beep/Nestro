@@ -1267,7 +1267,8 @@ fun NestroApp() {
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
-                                                         val result = runCatching {
+                                                         try {
+                                                         val result = runCatchingCancellable {
                                                              agentTaskCoordinator.runInline(
                                                                  taskId = UUID.randomUUID().toString(),
                                                                  owner = "workflow",
@@ -1298,7 +1299,7 @@ fun NestroApp() {
                                                                          onUsage = recordModelUsage)
                                                                  }
                                                              }, onStep = { index, step ->
-                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
+                                                                 if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                  workflowPauseGate?.await()
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
                                                                  workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
@@ -1347,6 +1348,14 @@ fun NestroApp() {
                                                          stopRequested = false
                                                          workflowInputDraft = ""
                                                          page = "home"
+                                                         } finally {
+                                                             workflowPauseGate?.complete(Unit)
+                                                             workflowPauseGate = null
+                                                             workflowPaused = false
+                                                             runningWorkflowId = ""
+                                                             busy = false
+                                                             stopRequested = false
+                                                         }
                                                      }
                                                  }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (runningWorkflowId == workflow.id) "执行中…" else "运行") }
                                                  TextButton(onClick = {
