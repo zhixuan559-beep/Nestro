@@ -65,12 +65,17 @@ data class ModelRegistry(
         val nextKeys = if (keyAvailable) {
             apiKeys.filterNot { it.id == keyId } + ModelApiKey(keyId, providerId, profile.name)
         } else apiKeys.filterNot { it.id == keyId }
+        val previousModel = models.firstOrNull { it.id == modelId }
+        val retainedKeyIds = previousModel?.apiKeyIds.orEmpty().filterNot { it == keyId }
         val nextModels = models.filterNot { it.id == modelId } + ModelDefinition(
             id = modelId,
             providerId = providerId,
             name = profile.name,
             modelCode = profile.model,
-            apiKeyIds = if (keyAvailable) listOf(keyId) else emptyList()
+            apiKeyIds = (retainedKeyIds + if (keyAvailable) listOf(keyId) else emptyList()).distinct(),
+            inputPricePerMillion = previousModel?.inputPricePerMillion,
+            outputPricePerMillion = previousModel?.outputPricePerMillion,
+            currency = previousModel?.currency ?: "USD"
         )
         val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
         return copy(
