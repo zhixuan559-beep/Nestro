@@ -9,6 +9,43 @@ import org.junit.Test
 
 class ModelRegistryTest {
     @Test
+    fun providerEditKeepsStableIdentityAndExistingKeysAndModels() {
+        val original = ModelRegistry(
+            providers = listOf(ModelProvider("provider", "Before", "https://before.example.com")),
+            apiKeys = listOf(ModelApiKey("key", "provider", "Primary")),
+            models = listOf(ModelDefinition("model", "provider", "Model", "model-code", listOf("key")))
+        )
+
+        val edited = original.upsertProvider(
+            original.providers.single().copy(name = "After", baseUrl = "https://after.example.com")
+        )
+
+        assertEquals(listOf("provider"), edited.providers.map { it.id })
+        assertEquals("After", edited.providers.single().name)
+        assertEquals("https://after.example.com", edited.providers.single().baseUrl)
+        assertEquals(original.apiKeys, edited.apiKeys)
+        assertEquals(original.models, edited.models)
+        assertNull(edited.validate())
+    }
+
+    @Test
+    fun disabledProviderMakesItsModelsUnselectableWithoutDeletingMetadata() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            apiKeys = listOf(ModelApiKey("k", "p", "Primary")),
+            models = listOf(ModelDefinition("m", "p", "Model", "model-code", listOf("k")))
+        )
+
+        val disabled = registry.upsertProvider(registry.providers.single().copy(enabled = false))
+
+        assertTrue(disabled.selectableModels().isEmpty())
+        assertEquals(1, disabled.apiKeys.size)
+        assertEquals(1, disabled.models.size)
+        assertFalse(disabled.apiKeys.single().enabled.not())
+        assertNull(disabled.validate())
+    }
+
+    @Test
     fun legacyProfilesMigrateIntoIndependentProviderKeyAndModelEntities() {
         val legacy = listOf(
             ModelProfileMetadata("one", "主模型", "https://api.example.com/v1", "model-a"),
