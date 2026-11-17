@@ -22,8 +22,6 @@ import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentNotifications
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
-import app.nestro.data.UserMemoryStore
-import app.nestro.data.MemoryCandidate
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
@@ -825,19 +823,16 @@ fun NestroApp() {
                 }
                 busy = false
                 activeRequestId = ""
-                if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
-                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(prompt)
-                ) {
-                    val userFacts = listOf(prompt)
+                if (result.isSuccess && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
-                        val candidates = runCatchingCancellable { extractMemoryCandidates(appRuntime.chatExecutionService, requestModelConfigs, userFacts) }.getOrDefault(emptyList())
-                        if (candidates.isNotEmpty()) {
-                            runCatchingCancellable {
-                                appRuntime.userMemoryRepository.saveCandidates(
-                                    requestProjectId, requestConversationId, user.id, candidates
-                                )
-                            }
-                        }
+                        appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
+                            enabled = automaticMemoryEnabled,
+                            prompt = prompt,
+                            modelConfigs = requestModelConfigs,
+                            projectId = requestProjectId,
+                            conversationId = requestConversationId,
+                            userId = user.id
+                        )
                     }
                 }
                 stopRequested = false

@@ -23,6 +23,8 @@ import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.data.ChatRequestContextAssembler
+import app.nestro.data.AutomaticMemoryExtractionCoordinator
+import app.nestro.data.extractMemoryCandidates
 import app.nestro.data.WorkflowExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
@@ -79,6 +81,14 @@ class NestroApplication : Application() {
     }
     val workflowExecutionCoordinator: WorkflowExecutionCoordinator by lazy {
         WorkflowExecutionCoordinator(agentTaskCoordinator)
+    }
+    internal val automaticMemoryExtractionCoordinator: AutomaticMemoryExtractionCoordinator by lazy {
+        AutomaticMemoryExtractionCoordinator(
+            extractCandidates = { configs, messages -> extractMemoryCandidates(chatExecutionService, configs, messages) },
+            saveCandidates = { projectId, conversationId, userId, candidates ->
+                userMemoryRepository.saveCandidates(projectId, conversationId, userId, candidates)
+            }
+        )
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
         ChatRequestContextAssembler(

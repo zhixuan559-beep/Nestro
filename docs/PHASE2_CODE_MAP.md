@@ -303,3 +303,9 @@
 
 - `ensureBackupRestoreRecovered()` now checks for a journal even after one successful startup recovery. If a later restore attempt fails and its compensation journal remains, subsequent UI/Worker entry points retry recovery instead of trusting a stale in-memory completion flag.
 - `LocalBackupRepository.hasPendingRestoreJournal()` exposes only the app-private journal presence; it does not read or expose journal contents.
+
+## 2026-11-18 — Automatic memory extraction moved behind a coordinator
+
+- Moved long-term-memory signal filtering and JSON candidate extraction from `ConversationIntelligence.kt` into the data layer, then added `AutomaticMemoryExtractionCoordinator` to own enabled/safety gating, extraction, and repository persistence.
+- `NestroApp` now schedules one coordinator call after a successful non-stopped response; it no longer directly decides memory eligibility or coordinates candidate persistence.
+- Added JVM tests for eligible prompts, disabled memory, low-signal prompts, and persistence scoping.
