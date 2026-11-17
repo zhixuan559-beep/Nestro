@@ -66,7 +66,9 @@ data class ModelRegistry(
             apiKeys.filterNot { it.id == keyId } + ModelApiKey(keyId, providerId, profile.name)
         } else apiKeys.filterNot { it.id == keyId }
         val previousModel = models.firstOrNull { it.id == modelId }
-        val retainedKeyIds = previousModel?.apiKeyIds.orEmpty().filterNot { it == keyId }
+        val retainedKeyIds = previousModel?.apiKeyIds.orEmpty()
+            .filterNot { it == keyId }
+            .filter { existingKeyId -> apiKeys.any { it.id == existingKeyId && it.providerId == providerId } }
         val nextModels = models.filterNot { it.id == modelId } + ModelDefinition(
             id = modelId,
             providerId = providerId,
