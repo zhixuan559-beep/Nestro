@@ -1149,22 +1149,25 @@ fun NestroApp() {
                                 modelRepository.deleteProfileKey(id)
                                 modelRegistry = modelRegistry.deleteApiKey("legacy-key-$id")
                                 modelRepository.saveRegistry(modelRegistry)
-                                if (activeModelProfileId == id) {
+                                if (activeModelProfileId == id || activeRegistryModelId == "legacy-model-$id") {
                                     activeModelProfileId = ""
+                                    activeRegistryModelId = ""
                                     config = ModelConfig("", "", "")
                                     modelRepository.clearActiveConfig()
-                                    prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
+                                    prefs.edit().remove("active_model_profile_id").remove("active_model_registry_id")
+                                        .remove("base_url").remove("model").apply()
                                 }
                                 status = "API Key 已删除；对应模型已从可用模型中排除"
                             },
                             onDelete = { id ->
+                                val wasActive = activeModelProfileId == id || activeRegistryModelId == "legacy-model-$id"
                                 modelProfiles = modelProfiles.filterNot { it.id == id }
                                 val updatedRegistry = modelRegistry.deleteLegacyProfile(id)
                                 modelRegistry = updatedRegistry
                                 modelRepository.saveRegistry(updatedRegistry)
                                 modelRepository.deleteProfileKey(id)
                                 prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
-                                if (activeModelProfileId == id) {
+                                if (wasActive) {
                                     val availableIds = updatedRegistry.selectableModels()
                                         .mapNotNull { model -> model.id.removePrefix("legacy-model-").takeIf { model.id.startsWith("legacy-model-") } }
                                         .toSet()
@@ -1174,15 +1177,19 @@ fun NestroApp() {
                                     if (next != null) {
                                         val key = modelRepository.readProfileKey(next.id)
                                         activeModelProfileId = next.id
+                                        activeRegistryModelId = "legacy-model-" + next.id
                                         config = ModelConfig(next.baseUrl, next.model, key)
                                         modelRepository.writeActiveConfig(config)
-                                        prefs.edit().putString("active_model_profile_id", next.id).apply()
+                                        prefs.edit().putString("active_model_profile_id", next.id)
+                                            .putString("active_model_registry_id", activeRegistryModelId).apply()
                                         status = "已切换到：${next.name}"
                                     } else {
                                         activeModelProfileId = ""
+                                        activeRegistryModelId = ""
                                         config = ModelConfig("", "", "")
                                         modelRepository.clearActiveConfig()
-                                        prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
+                                        prefs.edit().remove("active_model_profile_id").remove("active_model_registry_id")
+                                            .remove("base_url").remove("model").apply()
                                         status = "尚未配置可用模型"
                                     }
                                 }
