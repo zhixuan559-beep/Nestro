@@ -82,7 +82,7 @@ object PhoneAgentTaskStore {
                 "open_url" -> {
                     val url = row.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("已保存的网址格式无效") }
-                    require(url.length <= 2048 && (uri.scheme == "https" || uri.scheme == "http") && !uri.host.isNullOrBlank() && uri.userInfo == null) { "已保存的网址不安全" }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "已保存的网址不安全" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
