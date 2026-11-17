@@ -20,6 +20,17 @@ class SkillCommunityClientTest {
     }
 
     @Test
+    fun comparesCommunitySkillVersionsWithoutLexicographicDowngrade() {
+        assertTrue(SkillCommunityClient.isNewerVersion("1.10.0", "1.9.9"))
+        assertTrue(SkillCommunityClient.isNewerVersion("2.0.0", "1.99.99"))
+        assertTrue(SkillCommunityClient.isNewerVersion("1.0.0", "1.0.0-rc.2"))
+        assertTrue(SkillCommunityClient.isNewerVersion("1.0.0-rc.10", "1.0.0-rc.2"))
+        assertEquals(false, SkillCommunityClient.isNewerVersion("1.0.0-rc.1", "1.0.0"))
+        assertEquals(false, SkillCommunityClient.isNewerVersion("1.9.9", "1.10.0"))
+        assertEquals(false, SkillCommunityClient.isNewerVersion("1.0.0", "1.0.0+build.2"))
+    }
+
+    @Test
     fun acceptsCatalogOnlyWhenSignatureMatchesPinnedKey() {
         val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val payload = JSONObject()
