@@ -163,6 +163,7 @@ class LocalBackupRoundTripTest {
             database.close()
             prefs.edit().clear().commit()
             vaultPrefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
             File(context.filesDir, "backup-restore").deleteRecursively()
             LocalVault.clearAllApiKeys(context)
             context.deleteDatabase(databaseName)
