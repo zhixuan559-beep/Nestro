@@ -111,6 +111,7 @@ class AgentTaskCoordinator(
         require(owner.isNotBlank() && owner.length <= 80)
         val queued = withTransitionLock {
             val existing = states.get(taskId)
+            if (existing != null) require(existing.owner == owner) { "任务 ID 已被其他模块占用" }
             if (existing != null && existing.status in setOf(
                     AgentTaskStatus.QUEUED,
                     AgentTaskStatus.RUNNING,
@@ -176,7 +177,8 @@ class AgentTaskCoordinator(
             }
         }
         try {
-            enqueue(taskId, handlerId, initialCheckpoint)
+            val queued = enqueue(taskId, handlerId, initialCheckpoint)
+            check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
             return completion.await()
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) { cancel(taskId) }
