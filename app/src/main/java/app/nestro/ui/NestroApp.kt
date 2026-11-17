@@ -1218,6 +1218,12 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertProvider(provider)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
+                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
+                                        activeRegistryModelId = ""
+                                        config = ModelConfig("", "", "")
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit().remove("active_model_registry_id").apply()
+                                    }
                                     status = "服务商已保存"
                                 }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
                             },
@@ -1227,6 +1233,12 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertApiKey(item)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
+                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
+                                        activeRegistryModelId = ""
+                                        config = ModelConfig("", "", "")
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit().remove("active_model_registry_id").apply()
+                                    }
                                     status = "API Key 已加密保存"
                                 }.onFailure {
                                     modelRepository.deleteApiKey(item.id)
@@ -1238,6 +1250,12 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertModel(item)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
+                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
+                                        activeRegistryModelId = ""
+                                        config = ModelConfig("", "", "")
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit().remove("active_model_registry_id").apply()
+                                    }
                                     status = "模型已保存：" + item.name
                                 }.onFailure { status = "模型保存失败：" + (it.message ?: "未知错误") }
                             },
