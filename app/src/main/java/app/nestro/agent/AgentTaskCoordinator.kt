@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -145,6 +146,33 @@ class AgentTaskCoordinator(
             trace(taskId, "resumed")
         }
         return queued
+    }
+
+    suspend fun <T> runInline(
+        taskId: String,
+        owner: String,
+        initialCheckpoint: String = "",
+        handler: suspend (AgentTaskExecutionContext) -> T
+    ): T {
+        val completion = CompletableDeferred<T>()
+        val handlerId = owner.take(24) + "-" + java.util.UUID.randomUUID().toString()
+        handlers.register(handlerId) { context ->
+            try {
+                completion.complete(handler(context))
+            } catch (error: Throwable) {
+                completion.completeExceptionally(error)
+                throw error
+            }
+        }
+        try {
+            enqueue(taskId, handlerId, initialCheckpoint)
+            return completion.await()
+        } catch (cancelled: CancellationException) {
+            cancel(taskId)
+            throw cancelled
+        } finally {
+            handlers.unregister(handlerId)
+        }
     }
 
     suspend fun pause(taskId: String) {
