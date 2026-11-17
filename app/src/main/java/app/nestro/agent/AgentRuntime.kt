@@ -194,10 +194,16 @@ class DefaultAgentRuntime(
             taskId = request.taskId,
             owner = "unspecified"
         )
-        val spec = catalog.find(request.toolId) ?: return AgentToolResult(
-            success = false,
-            error = "工具不存在或尚未注册：${request.toolId}"
-        )
+        val spec = catalog.find(request.toolId) ?: run {
+            val reason = "工具不存在或尚未注册：${request.toolId}"
+            trace(request.taskId, "tool_missing", request.toolId)
+            states.put(current.copy(
+                status = AgentTaskStatus.FAILED,
+                lastError = reason,
+                updatedAt = System.currentTimeMillis()
+            ))
+            return AgentToolResult(success = false, error = reason)
+        }
         trace(request.taskId, "tool_requested", request.toolId)
         val authorization = permissions.authorize(current, spec)
         when (authorization) {
