@@ -59,6 +59,10 @@ data class ModelRegistry(
 
     fun upsertApiKey(key: ModelApiKey): ModelRegistry {
         require(providers.any { it.id == key.providerId }) { "API Key 对应的服务商不存在" }
+        val existing = apiKeys.firstOrNull { it.id == key.id }
+        require(existing == null || existing.providerId == key.providerId) {
+            "API Key 不能直接转移到其他服务商"
+        }
         return copy(apiKeys = apiKeys.filterNot { it.id == key.id } + key)
     }
 
