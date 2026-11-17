@@ -37,8 +37,15 @@ class AgentTaskHandlerRegistry {
 
 class AgentTaskExecutionContext internal constructor(
     val taskId: String,
-    private val states: AgentTaskStateStore
+    private val states: AgentTaskStateStore,
+    private val traces: AgentTaskTraceStore? = null
 ) {
+    private suspend fun trace(event: String, detail: String = "") {
+        runCatching {
+            traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        }
+    }
+
     suspend fun checkpoint(value: String, currentStep: Int? = null) {
         require(value.length <= 64_000) { "任务检查点超过 64 KB" }
         val state = states.get(taskId) ?: return
@@ -47,6 +54,7 @@ class AgentTaskExecutionContext internal constructor(
             currentStep = currentStep ?: state.currentStep,
             updatedAt = System.currentTimeMillis()
         ))
+        trace("checkpoint_saved", "步骤 " + (currentStep ?: state.currentStep))
     }
 
     suspend fun waitForUser(reason: String) {
@@ -57,6 +65,7 @@ class AgentTaskExecutionContext internal constructor(
             lastError = reason,
             updatedAt = System.currentTimeMillis()
         ))
+        trace("waiting_for_user", reason)
     }
 }
 
@@ -68,12 +77,19 @@ class AgentTaskExecutionContext internal constructor(
 class AgentTaskCoordinator(
     private val states: AgentTaskStateStore,
     private val handlers: AgentTaskHandlerRegistry,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    private val traces: AgentTaskTraceStore? = null
 ) {
     private val queue = Channel<String>(Channel.UNLIMITED)
     private val transitionMutex = Mutex()
     private val activeJobs = ConcurrentHashMap<String, Deferred<Unit>>()
     private val requestedStops = ConcurrentHashMap<String, AgentTaskStatus>()
+
+    private suspend fun trace(taskId: String, event: String, detail: String = "") {
+        runCatching {
+            traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        }
+    }
 
     init {
         scope.launch {
@@ -101,7 +117,10 @@ class AgentTaskCoordinator(
             states.put(next)
             next
         }
-        if (queued.status == AgentTaskStatus.QUEUED) queue.send(taskId)
+        if (queued.status == AgentTaskStatus.QUEUED) {
+            queue.send(taskId)
+            trace(taskId, "queued", owner)
+        }
         return queued
     }
 
@@ -121,7 +140,10 @@ class AgentTaskCoordinator(
             states.put(next)
             next
         } ?: return null
-        if (queued.status == AgentTaskStatus.QUEUED) queue.send(taskId)
+        if (queued.status == AgentTaskStatus.QUEUED) {
+            queue.send(taskId)
+            trace(taskId, "resumed")
+        }
         return queued
     }
 
@@ -152,7 +174,13 @@ class AgentTaskCoordinator(
             }
             if (next != null) recovered += next
         }
-        queuedIds.forEach { queue.send(it) }
+        queuedIds.forEach {
+            queue.send(it)
+            trace(it, "requeued_after_restart")
+        }
+        recovered.filter { it.status == AgentTaskStatus.PAUSED }.forEach {
+            trace(it.taskId, "interrupted", it.lastError)
+        }
         return recovered
     }
 
@@ -168,6 +196,7 @@ class AgentTaskCoordinator(
                 job.cancel(CancellationException(if (status == AgentTaskStatus.PAUSED) "用户暂停任务" else "用户取消任务"))
             }
         }
+        trace(taskId, if (status == AgentTaskStatus.PAUSED) "pause_requested" else "cancel_requested")
     }
 
     private suspend fun executeQueued(taskId: String) {
@@ -180,16 +209,17 @@ class AgentTaskCoordinator(
                 if (latest.status == AgentTaskStatus.QUEUED) {
                     states.put(latest.copy(
                         status = AgentTaskStatus.FAILED,
-                        lastError = "没有注册任务处理器：${initial.owner}",
+                        lastError = "没有注册任务处理器：" + initial.owner,
                         updatedAt = System.currentTimeMillis()
                     ))
                 }
             }
+            trace(taskId, "failed", "没有注册任务处理器：" + initial.owner)
             return
         }
         supervisorScope {
             val job = async(start = CoroutineStart.LAZY) {
-                handler.execute(AgentTaskExecutionContext(taskId, states))
+                handler.execute(AgentTaskExecutionContext(taskId, states, traces))
             }
             val started = transitionMutex.withLock {
                 val latest = states.get(taskId)
@@ -210,6 +240,7 @@ class AgentTaskCoordinator(
                 job.cancel()
                 return@supervisorScope
             }
+            trace(taskId, "started", initial.owner)
             try {
                 job.await()
                 transitionMutex.withLock {
@@ -229,6 +260,9 @@ class AgentTaskCoordinator(
                         ))
                     }
                 }
+                val finalState = states.get(taskId)
+                if (finalState?.status == AgentTaskStatus.COMPLETED) trace(taskId, "completed")
+                if (finalState?.status == AgentTaskStatus.WAITING_FOR_USER) trace(taskId, "waiting_for_user", finalState.lastError)
             } catch (cancelled: CancellationException) {
                 val requested = transitionMutex.withLock { requestedStops.remove(taskId) }
                 if (requested != null) {
@@ -240,6 +274,7 @@ class AgentTaskCoordinator(
                             updatedAt = System.currentTimeMillis()
                         ))
                     }
+                    trace(taskId, if (requested == AgentTaskStatus.CANCELLED) "cancelled" else "paused")
                 } else if (!currentCoroutineContext().isActive) {
                     throw cancelled
                 } else {
@@ -251,15 +286,18 @@ class AgentTaskCoordinator(
                             updatedAt = System.currentTimeMillis()
                         ))
                     }
+                    trace(taskId, "paused", "任务执行被中断")
                 }
             } catch (error: Exception) {
                 withContext(NonCancellable) {
                     val latest = states.get(taskId) ?: initial
+                    val message = error.message?.take(2_000) ?: "任务执行失败"
                     states.put(latest.copy(
                         status = AgentTaskStatus.FAILED,
-                        lastError = error.message?.take(2_000) ?: "任务执行失败",
+                        lastError = message,
                         updatedAt = System.currentTimeMillis()
                     ))
+                    trace(taskId, "failed", message)
                 }
             } finally {
                 transitionMutex.withLock { activeJobs.remove(taskId, job) }
