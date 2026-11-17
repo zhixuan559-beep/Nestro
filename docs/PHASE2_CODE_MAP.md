@@ -77,3 +77,14 @@
 - 不修改十九模块名称、编号、顺序。
 - 不重做模块 16。
 - 不以文件数、代码行数下降作为重构完成标准；以单一状态所有者、稳定接口、数据兼容和测试通过为准。
+
+## 2026-11-18 批次 A 进展补充
+
+- 新增 `ui/NestroAppEffects.kt`，承接三个根页面副作用：
+  - `MemoryPageLoadEffect`：仅在记忆页激活时加载当前项目自动记忆，并重置编辑态。
+  - `ConversationPageLoadEffect`：统一会话历史分页的 loading、列表清空、滚动复位、250ms 防抖与首屏加载。
+  - `ConversationSnapshotPersistenceEffect`：数据库就绪后，随会话/项目状态变化持久化一致快照。
+- `NestroApp.kt` 已改为调用上述 effect composables；对应三个内联 `LaunchedEffect` 已移除，数据读取/持久化仍复用既有 Repository/Service，没有引入第二套数据通道。
+- 该改动属于页面副作用边界抽离，不代表 Batch A 完成；根页面仍保留启动恢复、模型初始化、发送编排、专家/工作流操作等较大业务流程，后续继续按业务域抽离。
+- 本批次 CI：等待当前 PR head 对应 Android CI 验证；不得把旧 SHA 的成功结果套用到新提交。
+- PR #3 保持 Draft / 未合并；未构建安装 APK，未进行真机验收。
