@@ -30,7 +30,7 @@ class ChatHttpTransportTest {
         server.start()
         try {
             val baseUrl = "http://127.0.0.1:${server.address.port}/v1"
-            val connection = ChatHttpTransport.open(baseUrl, "test-key", 1_000, 2_000, streaming = true)
+            val connection = ChatHttpTransport.open(baseUrl)
             ChatHttpTransport.configure(connection, "test-key", 1_000, 2_000, streaming = true)
             try {
                 val status = ChatHttpTransport.postJson(connection, """{"model":"test","stream":true}""")
@@ -62,9 +62,7 @@ class ChatHttpTransportTest {
         }
         server.start()
         try {
-            val connection = ChatHttpTransport.open(
-                "http://127.0.0.1:${server.address.port}/v1", "test-key", 10_000, 10_000, streaming = false
-            )
+            val connection = ChatHttpTransport.open("http://127.0.0.1:${server.address.port}/v1")
             ChatHttpTransport.configure(connection, "test-key", 10_000, 10_000, streaming = false)
             try {
                 val status = ChatHttpTransport.postJson(connection, """{"model":"test","stream":false}""")
