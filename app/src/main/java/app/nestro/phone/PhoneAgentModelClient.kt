@@ -24,13 +24,12 @@ internal object PhoneAgentModelClient {
         )
         val registry = repository.loadRegistry(profiles)
         val activeProfileId = preferences.getString("active_model_profile_id", "").orEmpty()
-        val configs = ModelRequestConfigurationSelector.buildRequestConfigs(
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
             registry = registry,
-            profiles = profiles,
-            activeProfileId = activeProfileId,
-            activeConfig = repository.readActiveConfig(),
+            activeModelId = activeProfileId.takeIf { it.isNotBlank() }
+                ?.let { "legacy-model-$it" }.orEmpty(),
             failoverEnabled = preferences.getBoolean("model_failover_enabled", false),
-            readKey = repository::readProfileKey
+            readKey = repository::readApiKey
         )
         require(configs.isNotEmpty()) {
             "请先在模型管理中配置可用的 HTTPS 模型与 API Key"
