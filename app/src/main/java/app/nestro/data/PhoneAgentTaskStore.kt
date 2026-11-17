@@ -5,6 +5,7 @@ import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import java.util.UUID
+import java.net.URI
 
 object PhoneAgentTaskStore {
     const val STATUS_PLANNED = "planned"
@@ -78,13 +79,47 @@ object PhoneAgentTaskStore {
         return (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             when (row.getString("type")) {
-                "open_url" -> PhoneAgentExecutor.Action.OpenUrl(row.getString("url"))
-                "launch_app" -> PhoneAgentExecutor.Action.LaunchApp(row.getString("package"))
-                "click" -> PhoneAgentExecutor.Action.ClickText(row.getString("text"), row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
-                "enter_text" -> PhoneAgentExecutor.Action.EnterText(row.getString("label"), row.getString("value"))
-                "scroll" -> PhoneAgentExecutor.Action.Scroll(row.getString("direction"))
-                "wait" -> PhoneAgentExecutor.Action.Wait(row.getLong("millis"))
-                "verify" -> PhoneAgentExecutor.Action.VerifyText(row.getString("text"))
+                "open_url" -> {
+                    val url = row.getString("url").trim()
+                    val uri = runCatching { URI(url) }.getOrElse { error("已保存的网址格式无效") }
+                    require(url.length <= 2048 && (uri.scheme == "https" || uri.scheme == "http") && !uri.host.isNullOrBlank() && uri.userInfo == null) { "已保存的网址不安全" }
+                    PhoneAgentExecutor.Action.OpenUrl(url)
+                }
+                "launch_app" -> {
+                    val packageName = row.getString("package").trim()
+                    require(packageName.matches(Regex("[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+"))) { "已保存的应用包名无效" }
+                    PhoneAgentExecutor.Action.LaunchApp(packageName)
+                }
+                "click" -> {
+                    val label = row.getString("text").trim()
+                    val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120)) { "已保存的点击目标无效" }
+                    require(listOf("付款", "支付", "转账", "购买", "预约", "确认", "提交", "下单", "删除账号").none { label.contains(it, true) }) { "已保存的高风险点击必须由用户重新确认" }
+                    PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
+                }
+                "enter_text" -> {
+                    val label = row.getString("label").trim()
+                    val value = row.getString("value")
+                    require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "已保存的输入动作无效" }
+                    require(listOf("密码", "验证码", "银行卡", "身份证", "安全码", "手机号", "电话", "邮箱", "地址", "姓名", "账号").none { label.contains(it, true) }) { "已保存的敏感输入必须由用户本人处理" }
+                    require(!Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}").containsMatchIn(value) && !Regex("[0-9]{6,19}").containsMatchIn(value)) { "已保存的敏感输入必须由用户本人处理" }
+                    PhoneAgentExecutor.Action.EnterText(label, value)
+                }
+                "scroll" -> {
+                    val direction = row.getString("direction")
+                    require(direction == "forward" || direction == "backward") { "已保存的滚动方向无效" }
+                    PhoneAgentExecutor.Action.Scroll(direction)
+                }
+                "wait" -> {
+                    val millis = row.getLong("millis")
+                    require(millis in 0..10_000) { "已保存的等待时间无效" }
+                    PhoneAgentExecutor.Action.Wait(millis)
+                }
+                "verify" -> {
+                    val expected = row.getString("text").trim()
+                    require(expected.isNotBlank() && expected.length <= 100) { "已保存的验证目标无效" }
+                    PhoneAgentExecutor.Action.VerifyText(expected)
+                }
                 "back" -> PhoneAgentExecutor.Action.Back
                 "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(row.getString("description"))
                 else -> error("任务包含未知动作类型")
