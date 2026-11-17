@@ -124,3 +124,10 @@
 - 会话中断请求恢复仍由 `ChatRequestRecoveryCoordinator` 负责；进程级 Agent 任务恢复仍由 `NestroApplication.onCreate()` 负责，三个恢复职责保持分离。
 - `NestroApp` 仍保留全局记忆/专家配置加载、聊天请求恢复结果应用、页面状态初始化及发送流程；Batch A 未完成。
 - 本次启动恢复拆分尚待最新 head 的 Android CI 核验；不构建 APK、不进行真机验收，PR #3 保持 Draft / 未合并。
+
+## 2026-11-18 批次 A 进展补充（恢复取消安全）
+
+- `ConversationStartupCoordinator.restore()` 对挂起恢复操作显式传播 `CancellationException`，避免 `runCatching` 将协程取消误判为 Room 故障并回退旧存储。
+- 当前 head `8d9bbf0` 的 Android CI #797 已通过；取消安全修复随后提交，必须等待新 head 对应 CI 才能视为验证通过。
+- 聊天发送编排仍集中在 `NestroApp`：Phone Agent 意图识别、上下文召回、知识/记忆注入、专家团执行、流式输出、部分回复持久化、会话保存及自动记忆提取仍在同一发送流程。下一步按执行阶段拆分，不把整个流程机械搬入单一巨型协调器。
+- 当前未发现 `ConversationStartupCoordinator` 与 `ChatRequestRecoveryCoordinator` 的专门单元测试；后续补充恢复边界测试。PR #3 保持 Draft / 未合并；不构建 APK、不做真机验收。
