@@ -41,8 +41,12 @@ class AgentTaskExecutionContext internal constructor(
     private val traces: AgentTaskTraceStore? = null
 ) {
     private suspend fun trace(event: String, detail: String = "") {
-        runCatching {
+        try {
             traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the task, but cancellation must remain observable.
         }
     }
 
@@ -86,8 +90,12 @@ class AgentTaskCoordinator(
     private val requestedStops = ConcurrentHashMap<String, AgentTaskStatus>()
 
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
-        runCatching {
+        try {
             traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the task, but cancellation must remain observable.
         }
     }
 
