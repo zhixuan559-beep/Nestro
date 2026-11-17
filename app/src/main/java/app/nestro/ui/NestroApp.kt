@@ -610,6 +610,7 @@ fun NestroApp() {
                 append("。名称必须与现有名称不同。")
             }
             scope.launch {
+                try {
                 val generated = runCatchingCancellable {
                     withContext(Dispatchers.IO) {
                         val raw = appRuntime.chatExecutionService.completeWithFallback(
@@ -646,6 +647,10 @@ fun NestroApp() {
                 }
                 busy = false
                 stopRequested = false
+                } finally {
+                    busy = false
+                    stopRequested = false
+                }
             }
             return@send
         }
@@ -818,9 +823,9 @@ fun NestroApp() {
                 ) {
                     val userFacts = listOf(prompt)
                     scope.launch(Dispatchers.IO) {
-                        val candidates = runCatching { extractMemoryCandidates(appRuntime.chatExecutionService, requestModelConfigs, userFacts) }.getOrDefault(emptyList())
+                        val candidates = runCatchingCancellable { extractMemoryCandidates(appRuntime.chatExecutionService, requestModelConfigs, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
-                            runCatching {
+                            runCatchingCancellable {
                                 appRuntime.userMemoryRepository.saveCandidates(
                                     requestProjectId, requestConversationId, user.id, candidates
                                 )

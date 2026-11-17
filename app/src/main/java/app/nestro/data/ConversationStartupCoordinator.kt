@@ -1,7 +1,6 @@
 package app.nestro.data
 
 import android.content.SharedPreferences
-import app.nestro.data.runCatchingCancellable
 
 /**
  * Restores the conversation/project snapshot and resolves the active chat
