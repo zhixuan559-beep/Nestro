@@ -12,7 +12,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -92,6 +91,15 @@ class AgentTaskCoordinator(
         }
     }
 
+    private suspend fun <T> withTransitionLock(block: suspend () -> T): T {
+        transitionMutex.lock()
+        try {
+            return block()
+        } finally {
+            transitionMutex.unlock()
+        }
+    }
+
     init {
         scope.launch {
             for (taskId in queue) executeQueued(taskId)
@@ -101,13 +109,13 @@ class AgentTaskCoordinator(
     suspend fun enqueue(taskId: String, owner: String, checkpoint: String? = null): AgentTaskState {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
-        val queued = transitionMutex.withLock {
+        val queued = withTransitionLock {
             val existing = states.get(taskId)
             if (existing != null && existing.status in setOf(
                     AgentTaskStatus.QUEUED,
                     AgentTaskStatus.RUNNING,
                     AgentTaskStatus.COMPLETED
-                )) return@withLock existing
+                )) return@withTransitionLock existing
             val next = (existing ?: AgentTaskState(taskId, owner)).copy(
                 owner = owner,
                 status = AgentTaskStatus.QUEUED,
