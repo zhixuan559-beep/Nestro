@@ -309,3 +309,9 @@
 - Moved long-term-memory signal filtering and JSON candidate extraction from `ConversationIntelligence.kt` into the data layer, then added `AutomaticMemoryExtractionCoordinator` to own enabled/safety gating, extraction, and repository persistence.
 - `NestroApp` now schedules one coordinator call after a successful non-stopped response; it no longer directly decides memory eligibility or coordinates candidate persistence.
 - Added JVM tests for eligible prompts, disabled memory, low-signal prompts, and persistence scoping.
+
+## 2026-11-18 — Chat response finalization extracted
+
+- Added `ChatResponseFinalizer` to centralize success/partial/stop/timeout precedence, assistant revision history retention (dedupe + last 20), and terminal response status.
+- NestroApp now applies the returned completed history/status and remains responsible only for local conversation persistence and Compose state updates.
+- Added JVM tests for successful output, partial output on failure, explicit stop, and timeout messaging.

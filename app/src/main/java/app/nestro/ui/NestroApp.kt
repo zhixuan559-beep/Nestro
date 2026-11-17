@@ -7,6 +7,8 @@ import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
+import app.nestro.data.ChatResponseFinalizer
+import app.nestro.data.ChatResponseStatus
 import app.nestro.data.ConversationRecord
 import app.nestro.data.ConversationPreferencesStore
 import app.nestro.data.ProjectRecord
@@ -803,23 +805,23 @@ fun NestroApp() {
                     streamResult.failure?.let { throw it }
                     streamResult.response.orEmpty()
                 }
-                val finalText = when {
-                    result.isSuccess -> result.getOrThrow()
-                    partialAnswer.isNotEmpty() -> partialAnswer.toString()
-                    stopRequested -> "已停止生成。"
-                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
-                    else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
-                }
-                val priorVersions = previousAssistant?.allVersions().orEmpty()
-                val nextVersions = (priorVersions + finalText).filter(String::isNotBlank).distinct().takeLast(20)
-                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, nextVersions, nextVersions.lastIndex)
+                val finalized = ChatResponseFinalizer.build(
+                    result = result,
+                    partialAnswer = partialAnswer.toString(),
+                    stopRequested = stopRequested,
+                    previousAssistant = previousAssistant,
+                    requestHistory = requestHistory,
+                    assistantId = assistantId
+                )
+                val finalText = finalized.finalText
+                val completedHistory = finalized.completedHistory
                 conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 prefs.edit().remove("chat_request_state_v1").apply()
                 if (activeConversationId == requestConversationId) messages = completedHistory
-                status = when {
-                    stopRequested -> "已停止生成"
-                    result.isSuccess -> if (recalledCount > 0) "已连接 · 参考历史 ${recalledCount} 条 · 本地保存" else "已连接 · 本地保存"
-                    else -> "连接失败"
+                status = when (finalized.status) {
+                    ChatResponseStatus.STOPPED -> "已停止生成"
+                    ChatResponseStatus.SUCCESS -> if (recalledCount > 0) "已连接 · 参考历史 ${recalledCount} 条 · 本地保存" else "已连接 · 本地保存"
+                    ChatResponseStatus.FAILURE -> "连接失败"
                 }
                 busy = false
                 activeRequestId = ""
