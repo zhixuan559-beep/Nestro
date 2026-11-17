@@ -1,7 +1,7 @@
 package app.nestro.data
 
 import android.content.SharedPreferences
-import kotlinx.coroutines.CancellationException
+import app.nestro.data.runCatchingCancellable
 
 /**
  * Restores the conversation/project snapshot and resolves the active chat
@@ -22,11 +22,7 @@ internal class ConversationStartupCoordinator(
     )
 
     suspend fun restore(preferences: SharedPreferences): StartupState {
-        val restored = try {
-            runCatching { persistence.restore(preferences) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        }
+        val restored = runCatchingCancellable { persistence.restore(preferences) }
         val databaseReady = restored.isSuccess
         var conversations: List<ConversationRecord>
         val projects: List<ProjectRecord>

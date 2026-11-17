@@ -3,6 +3,7 @@ package app.nestro.ui
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelRequestConfigurationSelector
+import app.nestro.data.runCatchingCancellable
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
 import app.nestro.data.ConversationRecord
@@ -609,8 +610,8 @@ fun NestroApp() {
                 append("。名称必须与现有名称不同。")
             }
             scope.launch {
-                val generated = withContext(Dispatchers.IO) {
-                    runCatching {
+                val generated = runCatchingCancellable {
+                    withContext(Dispatchers.IO) {
                         val raw = appRuntime.chatExecutionService.completeWithFallback(
                             requestModelConfigs,
                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
@@ -677,6 +678,7 @@ fun NestroApp() {
                 skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
+                try {
                 val phonePlan = PhoneAgentPlanner.plan(prompt)
                 if (stopRequested) {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
@@ -689,7 +691,7 @@ fun NestroApp() {
                     return@launch
                 }
                 if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
-                    runCatching {
+                    runCatchingCancellable {
                         withContext(Dispatchers.IO) {
                             appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
                                 requestProjectId,
@@ -701,7 +703,7 @@ fun NestroApp() {
                 }
                 val partialAnswer = StringBuilder()
                 var recalledCount = 0
-                val result = runCatching {
+                val result = runCatchingCancellable {
                     val recallQuery = requestHistory.takeLast(8)
                         .joinToString("\n") { it.content.take(500) }.take(2400)
                     val recall = appRuntime.conversationContextRepository.retrieveMemory(requestProjectId, requestConversationId, recallQuery)
@@ -776,7 +778,7 @@ fun NestroApp() {
                     } else ""
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
-                    if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
+                    if (stopRequested) throw IllegalStateException("用户停止生成")
                     appRuntime.chatExecutionService.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
                         partialAnswer.append(chunk)
                         prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
@@ -827,6 +829,13 @@ fun NestroApp() {
                     }
                 }
                 stopRequested = false
+                } finally {
+                    if (activeRequestId == assistantId) {
+                        busy = false
+                        activeRequestId = ""
+                        stopRequested = false
+                    }
+                }
             }
         }
     }
