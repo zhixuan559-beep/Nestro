@@ -4383,7 +4383,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
     if (hasArtifactBackup) app.nestro.data.ArtifactStore.restoreBackup(context, restoredArtifactRows, restoredProjectIds)
-    profileKeysToClear.forEach { key -> runCatching { LocalVault.deleteProfile(context, key) } }
+    profileKeysToClear.forEach { key -> runCatching { modelRepository.deleteProfileKey(key) } }
 }
 
 
