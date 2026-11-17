@@ -36,6 +36,9 @@ internal class ModelManagementUiState(
     val activeModelProfileId: MutableState<String> =
         mutableStateOf(preferences.getString("active_model_profile_id", "") ?: "")
 
+    val activeRegistryModelId: MutableState<String> =
+        mutableStateOf(preferences.getString("active_model_registry_id", "") ?: "")
+
     val modelFailoverEnabled: MutableState<Boolean> =
         mutableStateOf(preferences.getBoolean("model_failover_enabled", false))
 
