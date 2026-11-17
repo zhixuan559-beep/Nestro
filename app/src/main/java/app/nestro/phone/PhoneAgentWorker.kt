@@ -52,7 +52,7 @@ class PhoneAgentWorker(
             return executeTask(taskId)
         } finally {
             applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove("phone_task_stop_requested").apply()
+                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.pendingAtKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove("phone_task_stop_requested").apply()
         }
     }
 

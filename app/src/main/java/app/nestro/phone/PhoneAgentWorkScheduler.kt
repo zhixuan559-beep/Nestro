@@ -5,6 +5,9 @@ import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object PhoneAgentWorkScheduler {
     const val KEY_TASK_ID = "phone_agent_task_id"
@@ -19,6 +22,7 @@ object PhoneAgentWorkScheduler {
         if (preferences.getBoolean(pendingKey, false)) return
         preferences.edit()
             .putBoolean(pendingKey, true)
+            .putLong(pendingAtKey(taskId), System.currentTimeMillis())
             .putBoolean(afterHandoffKey(taskId), afterUserHandoff)
             .putBoolean(allowRetryKey(taskId), allowRetryCurrentAction)
             .apply()
@@ -42,6 +46,47 @@ object PhoneAgentWorkScheduler {
         }
     }
 
+    /**
+     * Reconciles pending markers against WorkManager's persisted unique queue.
+     * A stale marker with no live WorkRequest represents the crash window between
+     * writing SharedPreferences and enqueueing WorkManager.
+     */
+    suspend fun reconcilePending(context: Context, activeTaskIds: Set<String>) = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val preferences = appContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val workTaskIds = try {
+            WorkManager.getInstance(appContext)
+                .getWorkInfosForUniqueWork(QUEUE_NAME)
+                .get()
+                .filterNot { it.state.isFinished }
+                .mapNotNull { it.inputData.getString(KEY_TASK_ID) }
+                .toSet()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return@withContext
+        }
+
+        val markerPrefix = "phone_agent_work_pending_"
+        val pendingTaskIds = preferences.all.keys
+            .filter { it.startsWith(markerPrefix) && !it.startsWith("phone_agent_work_pending_at_") }
+            .map { it.removePrefix(markerPrefix) }
+        val now = System.currentTimeMillis()
+        pendingTaskIds.forEach { taskId ->
+            if (taskId in workTaskIds) return@forEach
+            val pendingAt = preferences.getLong(pendingAtKey(taskId), 1L)
+            if (!PhoneAgentPendingWorkPolicy.shouldReconcile(pendingAt, now, workExists = false)) return@forEach
+            val afterHandoff = preferences.getBoolean(afterHandoffKey(taskId), false)
+            val allowRetry = preferences.getBoolean(allowRetryKey(taskId), false)
+            preferences.edit().remove(pendingKey(taskId)).remove(pendingAtKey(taskId)).apply()
+            if (taskId in activeTaskIds) {
+                enqueue(appContext, taskId, afterHandoff, allowRetry)
+            } else {
+                preferences.edit().remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            }
+        }
+    }
+
     fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         // Persist cancellation even before this task reaches the head of the shared WorkManager chain.
@@ -56,5 +101,6 @@ object PhoneAgentWorkScheduler {
     internal fun afterHandoffKey(taskId: String) = "phone_agent_after_handoff_$taskId"
     internal fun allowRetryKey(taskId: String) = "phone_agent_allow_retry_$taskId"
     internal fun pendingKey(taskId: String) = "phone_agent_work_pending_$taskId"
+    internal fun pendingAtKey(taskId: String) = "phone_agent_work_pending_at_$taskId"
     private fun uniqueName(taskId: String) = "nestro-phone-agent-$taskId"
 }

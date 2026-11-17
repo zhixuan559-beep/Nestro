@@ -12,6 +12,7 @@ import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
+import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.ConversationPersistenceService
 import app.nestro.data.ChatRequestRecoveryCoordinator
 import app.nestro.data.ConversationStartupCoordinator
@@ -122,6 +123,11 @@ class NestroApplication : Application() {
         applicationScope.launch {
             ensureBackupRestoreRecovered()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+            val activePhoneTaskIds = database.dao().allPhoneAgentTasks()
+                .filter { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }
+                .map { it.id }
+                .toSet()
+            PhoneAgentWorkScheduler.reconcilePending(this@NestroApplication, activePhoneTaskIds)
         }
     }
 }

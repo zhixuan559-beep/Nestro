@@ -249,3 +249,12 @@
 - The restore is applied only after the journal is durably written. On any thrown failure, the old backup and preference snapshots are replayed as compensation. If compensation fails, the journal is retained and the error explicitly blocks startup rather than silently continuing with mixed state.
 - `NestroApplication.ensureBackupRestoreRecovered()` serializes recovery and is awaited before Compose startup and before Phone Agent Workers touch task state. A process death leaves the journal for the next process to replay idempotently.
 - Added an instrumentation regression test that simulates process death after partial Room/Preferences/Key mutation and verifies recovery of Room data, preferences, encrypted API keys, and journal cleanup. CI must validate; no APK/device acceptance is being performed.
+
+
+## 2026-11-18 — Phone Agent pending-marker crash recovery
+
+- PhoneAgentWorkScheduler now timestamps each pending marker. Application startup queries the persisted WorkManager unique queue and compares live task IDs with stale markers.
+- A marker older than 30 seconds with no live WorkRequest is reconciled: active Room tasks are re-enqueued with saved handoff/retry flags; terminal or missing tasks have stale scheduling metadata cleared. A failed WorkManager query does not clear markers or trigger duplicate work.
+- PhoneAgentWorker clears the timestamp together with the existing pending marker during normal completion.
+- Added JVM policy tests for live work, startup grace period, stale marker recovery, and clock rollback.
+- This addresses the crash window after marker persistence but before WorkManager enqueue; the Room/SharedPreferences/LocalVault/Artifact restore transaction remains unresolved and separate.
