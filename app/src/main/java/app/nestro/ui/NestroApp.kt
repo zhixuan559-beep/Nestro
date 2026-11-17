@@ -492,39 +492,43 @@ fun NestroApp() {
         }
     }
 
-    LaunchedEffect(page, activeProjectId) {
-        if (page == "memory") {
-            automaticMemories = withContext(Dispatchers.IO) {
-                runCatching { appRuntime.userMemoryRepository.list(activeProjectId) }.getOrDefault(emptyList())
+    MemoryPageLoadEffect(
+        page = page,
+        activeProjectId = activeProjectId,
+        loadMemories = { projectId ->
+            withContext(Dispatchers.IO) {
+                runCatching { appRuntime.userMemoryRepository.list(projectId) }.getOrDefault(emptyList())
             }
-            memoryEdits = emptyMap()
-        }
-    }
+        },
+        onMemoriesLoaded = { automaticMemories = it },
+        onResetEdits = { memoryEdits = emptyMap() }
+    )
 
     LaunchedEffect(activeConversationId) {
         recallSources = emptyList()
         draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
     }
 
-    LaunchedEffect(page, activeProjectId, conversationSearch, conversationPageRefreshKey) {
-        if (page != "conversations") return@LaunchedEffect
-        conversationPageLoading = true
-        conversationPageItems = emptyList()
-        conversationPageHasMore = false
-        conversationHistoryListState.scrollToItem(0)
-        delay(250)
-        val result = withContext(Dispatchers.IO) {
-            appRuntime.conversationPersistenceService.loadConversationPage(
-                projectId = activeProjectId,
-                query = conversationSearch.trim().take(120),
-                limit = 30,
-                offset = 0
-            )
+    ConversationPageLoadEffect(
+        page = page,
+        activeProjectId = activeProjectId,
+        query = conversationSearch,
+        refreshKey = conversationPageRefreshKey,
+        listState = conversationHistoryListState,
+        onLoadingChanged = { conversationPageLoading = it },
+        onItemsLoaded = { conversationPageItems = it },
+        onHasMoreChanged = { conversationPageHasMore = it },
+        loadPage = { projectId, query, limit, offset ->
+            withContext(Dispatchers.IO) {
+                appRuntime.conversationPersistenceService.loadConversationPage(
+                    projectId = projectId,
+                    query = query,
+                    limit = limit,
+                    offset = offset
+                )
+            }
         }
-        conversationPageItems = result
-        conversationPageHasMore = result.size == 30
-        conversationPageLoading = false
-    }
+    )
 
     LaunchedEffect(Unit) {
         config = modelRepository.readActiveConfig()
@@ -661,24 +665,21 @@ fun NestroApp() {
         if (config.apiKey.isNotBlank() && config.model.isNotBlank() && status == "尚未配置模型") status = "模型已就绪"
     }
 
-    LaunchedEffect(conversations, projects, databaseReady) {
-        if (!databaseReady) return@LaunchedEffect
-        val conversationSnapshot = conversations.toList()
-        val projectSnapshot = projects.toList()
-        val knownVersions = persistedConversationVersions.toMap()
-        val snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
-        runCatching {
+    ConversationSnapshotPersistenceEffect(
+        databaseReady = databaseReady,
+        conversations = conversations,
+        projects = projects,
+        persistSnapshot = { conversationSnapshot, projectSnapshot ->
             appRuntime.conversationPersistenceService.persist(
                 prefs = prefs,
                 conversations = conversationSnapshot,
                 projects = projectSnapshot,
-                knownVersions = knownVersions,
-                snapshotTimestamp = snapshotTimestamp
+                knownVersions = persistedConversationVersions.toMap(),
+                snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
             )
-        }.onFailure {
-            status = "本地数据保存失败：${it.message ?: "未知错误"}"
-        }
-    }
+        },
+        onFailure = { status = "本地数据保存失败：${it.message ?: "未知错误"}" }
+    )
 
 
     fun refreshActiveRegistryConfig(updatedRegistry: ModelRegistry) {
