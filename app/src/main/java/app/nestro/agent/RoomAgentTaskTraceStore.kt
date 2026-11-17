@@ -16,6 +16,7 @@ class RoomAgentTaskTraceStore(
                 createdAt = trace.createdAt
             )
         )
+        dao.pruneAgentTaskTraces(trace.taskId, 500)
     }
 
     override suspend fun recent(taskId: String, limit: Int): List<AgentTaskTrace> =
