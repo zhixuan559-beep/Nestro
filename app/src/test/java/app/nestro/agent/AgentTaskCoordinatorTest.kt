@@ -40,6 +40,27 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun taskIdCannotBeReusedByAnotherHandler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        registry.register("first") {
+            started.complete(Unit)
+            release.await()
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        coordinator.enqueue("owned-task", "first")
+        started.await()
+        val rejected = runCatching { coordinator.enqueue("owned-task", "second") }
+
+        assertTrue(rejected.isFailure)
+        assertEquals("first", states.get("owned-task")?.owner)
+        release.complete(Unit)
+    }
+
+    @Test
     fun pausedTaskCanResumeFromPersistedCheckpoint() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
