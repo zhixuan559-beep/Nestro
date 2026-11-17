@@ -185,3 +185,10 @@
 - Added JVM tests for nested timeout recovery and caller cancellation propagation.
 - This preserves the existing chat completion path so the timeout message and completed-history persistence branch can execute for request timeouts.
 - No APK build, device acceptance, PR merge, or Ready transition.
+
+
+### Model Registry provider lifecycle follow-up
+- Added provider metadata editing while retaining stable provider IDs.
+- Added explicit confirmation before provider deletion; deletion removes associated model/key metadata and then deletes each associated encrypted API Key through `ModelConfigurationRepository`.
+- Refreshes the active model after provider deletion so an active model owned by the removed provider is cleared rather than left configured.
+- Provider deletion is performed as one UI action; no provider ID is regenerated during edit.
