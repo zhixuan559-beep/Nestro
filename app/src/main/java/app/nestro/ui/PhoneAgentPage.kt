@@ -300,6 +300,9 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
+                                            (context.applicationContext as? NestroApplication)
+                                                ?.agentTaskCoordinator
+                                                ?.cancel(task.id)
                                         }
                                         refresh++
                                     }

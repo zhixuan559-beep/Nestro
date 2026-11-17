@@ -78,7 +78,11 @@ class PhoneAgentWorker(
                 }
             }
         } catch (cancelled: CancellationException) {
-            withContext(kotlinx.coroutines.NonCancellable) { coordinator.pause(taskId) }
+            val userCancelled = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+            withContext(kotlinx.coroutines.NonCancellable) {
+                if (userCancelled) coordinator.cancel(taskId) else coordinator.pause(taskId)
+            }
             throw cancelled
         }
     }
