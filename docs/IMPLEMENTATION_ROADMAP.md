@@ -61,8 +61,8 @@
 - [ ] 风险分类、敏感内容脱敏与真机应用适配（已有高风险动作拦截、敏感字段阻断和界面文本脱敏；完整风险策略与真机适配仍待实现）。
 
 ### 工程交付
-- [x] GitHub Actions debug APK 构建与 artifact 上传。
-- [x] GitHub Actions 自动运行单元测试、构建并上传 debug APK；当前覆盖 SSE 解码、Phone Agent 计划/动作校验、知识检索排序与文档分块。
+- [x] GitHub Actions PR 自动化测试；第一版 APK 构建与 artifact 上传延后至十九个模块全部完成后的统一交付阶段。
+- [x] GitHub Actions 自动运行 JVM 单元测试与 Android 模拟器测试；当前覆盖 SSE 解码、Phone Agent 计划/动作校验、知识检索排序与文档分块。APK 构建/上传不在模块开发阶段执行。
 - [ ] 数据库迁移、集成和 Compose UI 测试。
 - [ ] 实体设备安装、升级、数据迁移、权限和功耗验收。
 
