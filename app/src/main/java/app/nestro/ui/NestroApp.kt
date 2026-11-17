@@ -9,7 +9,6 @@ import app.nestro.data.ConversationRecord
 import app.nestro.data.ConversationPreferencesStore
 import app.nestro.data.ProjectRecord
 import app.nestro.data.ProjectPreferencesStore
-import app.nestro.data.OpenAiClient
 import app.nestro.data.ConversationEntity
 import app.nestro.data.ConversationListItem
 import app.nestro.data.MessageEntity
@@ -838,7 +837,7 @@ fun NestroApp() {
             scope.launch {
                 val generated = withContext(Dispatchers.IO) {
                     runCatching {
-                        val raw = OpenAiClient.completeWithFallback(
+                        val raw = appRuntime.chatExecutionService.completeWithFallback(
                             requestModelConfigs,
                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
                             generatorPrompt,
@@ -977,7 +976,7 @@ fun NestroApp() {
                             }
                         ) { member, memberPrompt ->
                             withContext(Dispatchers.IO) {
-                                OpenAiClient.completeWithFallback(
+                                appRuntime.chatExecutionService.completeWithFallback(
                                     requestModelConfigs,
                                     requestHistory,
                                     listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
@@ -1004,7 +1003,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
+                    appRuntime.chatExecutionService.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
                         partialAnswer.append(chunk)
                         prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
                             .put("request_id", assistantId).put("conversation_id", requestConversationId)
@@ -1226,7 +1225,7 @@ fun NestroApp() {
                                                 IconButton(onClick = {
                                                     stopRequested = true
                                                     status = "正在停止…"
-                                                    OpenAiClient.cancel(activeRequestId)
+                                                    appRuntime.chatExecutionService.cancel(activeRequestId)
                                                 }) {
                                                     Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
                                                 }
@@ -1378,7 +1377,7 @@ fun NestroApp() {
                                              stopRequested = true
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
-                                             OpenAiClient.cancel()
+                                             appRuntime.chatExecutionService.cancel()
                                              workflowRunStatus = "正在停止工作流…"
                                          }) { Text("停止", color = ColorStop) }
                                      }
@@ -1427,7 +1426,7 @@ fun NestroApp() {
                                                                      WorkflowStepKind.PROMPT -> ""
                                                                  }
                                                                  withContext(Dispatchers.IO) {
-                                                                     OpenAiClient.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                     appRuntime.chatExecutionService.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
                                                                          listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
                                                                          temperature = expertOptions?.temperature,
                                                                          maxTokens = expertOptions?.maxTokens,
