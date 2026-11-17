@@ -76,6 +76,26 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun inlineFeatureExecutionUsesSharedQueueStateAndTrace() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val traces = InMemoryAgentTaskTraceStore()
+        val coordinator = AgentTaskCoordinator(states, registry, this, traces)
+
+        val result = coordinator.runInline("inline-task", "workflow") { context ->
+            context.checkpoint("workflow-step-1", 1)
+            "workflow-output"
+        }
+
+        assertEquals("workflow-output", result)
+        withTimeout(2_000) {
+            while (states.get("inline-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals("workflow-step-1", states.get("inline-task")?.checkpoint)
+        assertTrue(traces.recent("inline-task").any { it.event == "completed" })
+    }
+
+    @Test
     fun interruptedRunningTaskIsMarkedPausedForManualRecovery() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         states.put(AgentTaskState("interrupted", "test", AgentTaskStatus.RUNNING, 3, "saved", ""))
