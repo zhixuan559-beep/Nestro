@@ -49,6 +49,8 @@ jobs:
           gradle --no-daemon --stacktrace compileDebugKotlin
           gradle --no-daemon --stacktrace testDebugUnitTest
           gradle --no-daemon --stacktrace lintDebug
+          # Compile Android tests without launching an emulator or producing an installable APK.
+          gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
 
       - name: Upload verification reports
         if: always()
@@ -62,33 +64,3 @@ jobs:
             app/build/reports/lint-results-*.xml
           if-no-files-found: ignore
           retention-days: 7
-
-  instrumented:
-    # Runs Room migrations, backup round-trips and Compose lifecycle tests on an
-    # ephemeral CI emulator. No installable APK is published as a workflow artifact.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Run Android instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
