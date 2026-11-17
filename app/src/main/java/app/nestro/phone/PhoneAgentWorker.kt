@@ -7,6 +7,7 @@ import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.NestroApplication
 import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentTaskState
 import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -38,7 +39,7 @@ class PhoneAgentWorker(
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val existing = stateStore.get(taskId)
         if (existing == null) {
-            stateStore.put(app.nestro.agent.AgentTaskState(
+            stateStore.put(AgentTaskState(
                 taskId = taskId,
                 owner = "phone_agent",
                 status = AgentTaskStatus.QUEUED,
@@ -50,6 +51,7 @@ class PhoneAgentWorker(
         }
 
         when (stateStore.get(taskId)?.status) {
+            AgentTaskStatus.CREATED,
             AgentTaskStatus.QUEUED -> coordinator.enqueue(taskId, "phone_agent", task.planJson.take(64_000))
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
