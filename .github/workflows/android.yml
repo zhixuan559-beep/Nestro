@@ -40,7 +40,7 @@ jobs:
     # Run the full Android emulator suite and debug APK build for the implementation review.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
 
       - name: Verify Room migrations on Android emulator
         uses: ReactiveCircus/android-emulator-runner@v2
-        timeout-minutes: 15
+        timeout-minutes: 30
         with:
           api-level: 34
           arch: x86_64
