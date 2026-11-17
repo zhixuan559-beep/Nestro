@@ -72,7 +72,18 @@ class ModelRegistryTest {
         assertEquals("新名称", changed.models.single().name)
         assertEquals("model-b", changed.models.single().modelCode)
         assertEquals(first.apiKeys.single().id, changed.apiKeys.single().id)
+        assertNull(changed.models.single().inputPricePerMillion)
         assertNull(changed.validate())
+    }
+
+    @Test
+    fun nullablePricesSurviveRegistryCodecRoundTrip() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            models = listOf(ModelDefinition("m", "p", "Model", "model-x", emptyList()))
+        )
+
+        assertEquals(registry, ModelRegistryCodec.decode(ModelRegistryCodec.encode(registry)))
     }
 
     @Test
