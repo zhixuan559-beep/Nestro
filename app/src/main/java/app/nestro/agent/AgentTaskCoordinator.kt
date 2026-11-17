@@ -214,7 +214,9 @@ class AgentTaskCoordinator(
                         queuedIds += latest.taskId
                         latest
                     }
-                    AgentTaskStatus.PAUSED -> latest
+                    AgentTaskStatus.PAUSED,
+                    AgentTaskStatus.WAITING_FOR_USER,
+                    AgentTaskStatus.FAILED -> latest
                     else -> null
                 }
             }
