@@ -145,13 +145,14 @@ fun NestroApp() {
     var modelUsage by modelUiState.modelUsage
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
-    var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
-    var activeProjectId by remember { mutableStateOf("default") }
-    var deletingProjectId by remember { mutableStateOf("") }
-    var showProjectDialog by remember { mutableStateOf(false) }
-    var projectDraftName by remember { mutableStateOf("") }
-    var projectDraftInstructions by remember { mutableStateOf("") }
-    var editingProjectId by remember { mutableStateOf("") }
+    val projectSpaceUiState = remember { ProjectSpaceUiState() }
+    var projects by projectSpaceUiState.projects
+    var activeProjectId by projectSpaceUiState.activeProjectId
+    var deletingProjectId by projectSpaceUiState.deletingProjectId
+    var showProjectDialog by projectSpaceUiState.showProjectDialog
+    var projectDraftName by projectSpaceUiState.projectDraftName
+    var projectDraftInstructions by projectSpaceUiState.projectDraftInstructions
+    var editingProjectId by projectSpaceUiState.editingProjectId
     var activeConversationId by remember { mutableStateOf("") }
     var conversationSearch by remember { mutableStateOf("") }
     var conversationPageItems by remember { mutableStateOf(emptyList<ConversationListItem>()) }
