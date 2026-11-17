@@ -257,7 +257,7 @@ class ModelRegistryTest {
 
         assertFalse(registry.validate().isNullOrBlank())
     }
-}
+
 
     @Test
     fun editingRegistryModelPreservesIndependentMetadataAndStableIdentity() {
@@ -294,3 +294,4 @@ class ModelRegistryTest {
         assertEquals("CNY", saved.currency)
         assertNull(edited.validate())
     }
+}
