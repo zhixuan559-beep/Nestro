@@ -920,7 +920,7 @@ fun NestroApp() {
                 ) {
                     val userFacts = listOf(prompt)
                     scope.launch(Dispatchers.IO) {
-                        val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
+                        val candidates = runCatching { extractMemoryCandidates(appRuntime.chatExecutionService, requestModelConfigs, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
                             runCatching {
                                 appRuntime.userMemoryRepository.saveCandidates(
