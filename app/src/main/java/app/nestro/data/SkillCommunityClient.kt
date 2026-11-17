@@ -81,7 +81,7 @@ object SkillCommunityClient {
 
     /** Returns true only when candidate has a strictly higher semantic version. */
     fun isNewerVersion(candidate: String, installed: String): Boolean {
-        fun parse(raw: String): Pair<List<Int>, String?> {
+        fun parse(raw: String): Pair<List<Long>, String?> {
             require(raw.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本格式无效" }
             val withoutBuild = raw.substringBefore("+")
             val coreParts = withoutBuild.substringBefore("-").split(".")
