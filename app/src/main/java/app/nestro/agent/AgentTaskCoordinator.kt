@@ -162,12 +162,19 @@ class AgentTaskCoordinator(
             val next = transitionMutex.withLock {
                 val latest = states.get(state.taskId) ?: return@withLock null
                 when (latest.status) {
-                    AgentTaskStatus.RUNNING -> latest.copy(
-                        status = AgentTaskStatus.PAUSED,
-                        lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
-                        updatedAt = System.currentTimeMillis()
-                    ).also { states.put(it) }
-                    AgentTaskStatus.QUEUED -> latest.also { queuedIds += it.taskId }
+                    AgentTaskStatus.RUNNING -> {
+                        val paused = latest.copy(
+                            status = AgentTaskStatus.PAUSED,
+                            lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        states.put(paused)
+                        paused
+                    }
+                    AgentTaskStatus.QUEUED -> {
+                        queuedIds += latest.taskId
+                        latest
+                    }
                     AgentTaskStatus.PAUSED -> latest
                     else -> null
                 }
