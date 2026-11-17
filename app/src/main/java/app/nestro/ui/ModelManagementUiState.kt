@@ -39,7 +39,7 @@ internal class ModelManagementUiState(
     val modelFailoverEnabled: MutableState<Boolean> =
         mutableStateOf(preferences.getBoolean("model_failover_enabled", false))
 
-    val modelUsage: MutableState<ModelUsageStats> =
+    val modelUsage: MutableState<Map<String, ModelUsageStats>> =
         mutableStateOf(
             ModelUsageStatsCodec.decode(
                 preferences.getString("model_usage_v1", "{}") ?: "{}"
