@@ -84,4 +84,74 @@ class ModelRequestConfigurationSelectorTest {
 
         assertEquals(2, configs.size)
     }
+
+    @Test
+    fun registrySelectionUsesActiveModelAndOrderedFailoverKeys() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(
+                ModelApiKey("active-key", "p", "Active"),
+                ModelApiKey("backup-key", "p", "Backup")
+            ),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "model-a", listOf("active-key")),
+                ModelDefinition("backup", "p", "Backup", "model-b", listOf("backup-key"))
+            )
+        )
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", true
+        ) { id -> if (id == "active-key") "secret-a" else "secret-b" }
+
+        assertEquals(listOf("model-a", "model-b"), configs.map { it.model })
+        assertEquals(listOf("secret-a", "secret-b"), configs.map { it.apiKey })
+    }
+
+    @Test
+    fun registrySelectionSkipsDisabledModelsKeysAndMissingSecrets() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(
+                ModelApiKey("missing", "p", "Missing"),
+                ModelApiKey("disabled", "p", "Disabled", enabled = false),
+                ModelApiKey("valid", "p", "Valid")
+            ),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "model-a", listOf("missing", "disabled")),
+                ModelDefinition("backup", "p", "Backup", "model-b", listOf("valid"))
+            )
+        )
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", true
+        ) { id -> if (id == "valid") "secret-b" else "" }
+
+        assertEquals(listOf("model-b"), configs.map { it.model })
+    }
+
+    @Test
+    fun registrySelectionDoesNotReadFallbackKeysWhenFailoverIsDisabled() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(
+                ModelApiKey("active-key", "p", "Active"),
+                ModelApiKey("backup-key", "p", "Backup")
+            ),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "model-a", listOf("active-key")),
+                ModelDefinition("backup", "p", "Backup", "model-b", listOf("backup-key"))
+            )
+        )
+        val reads = mutableListOf<String>()
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", false
+        ) { id -> reads += id; "secret" }
+
+        assertEquals(listOf("model-a"), configs.map { it.model })
+        assertEquals(listOf("active-key"), reads)
+    }
 }
