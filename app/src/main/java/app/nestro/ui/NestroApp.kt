@@ -4353,7 +4353,11 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             .putString("active_model_profile_id", restoredActiveProfileId)
             .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
             .putBoolean("model_failover_enabled", restoredFailoverEnabled)
-        restoredRegistry?.let { editor.putString("model_registry_v1", ModelRegistryCodec.encode(it)) }
+        if (restoredRegistry != null) {
+            editor.putString("model_registry_v1", ModelRegistryCodec.encode(restoredRegistry))
+        } else {
+            editor.remove("model_registry_v1")
+        }
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
