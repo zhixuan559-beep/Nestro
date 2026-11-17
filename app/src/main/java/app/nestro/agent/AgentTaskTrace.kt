@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import java.util.UUID
+import kotlinx.coroutines.sync.withLock
 
 data class AgentTaskTrace(
     val id: String = UUID.randomUUID().toString(),
