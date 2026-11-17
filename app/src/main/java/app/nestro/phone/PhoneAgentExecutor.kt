@@ -2,6 +2,19 @@ package app.nestro.phone
 
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.agent.AgentAuthorization
+import app.nestro.agent.AgentPermissionRouter
+import app.nestro.agent.AgentRuntime
+import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentTaskStore
+import app.nestro.agent.AgentToolPermission
+import app.nestro.agent.AgentToolRequest
+import app.nestro.agent.AgentToolResult
+import app.nestro.agent.AgentToolSpec
+import app.nestro.agent.DefaultAgentRuntime
+import app.nestro.agent.InMemoryAgentToolCatalog
+import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 
@@ -50,14 +63,26 @@ object PhoneAgentExecutor {
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
         }
         val results = mutableListOf<ActionResult>()
+        val agentStates = RoomAgentTaskStateStore(dao)
+        agentStates.put(
+            AgentTaskState(
+                taskId = taskId,
+                owner = "phone_agent",
+                status = AgentTaskStatus.RUNNING,
+                currentStep = startIndex,
+                checkpoint = task.planJson.take(64_000)
+            )
+        )
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         for (index in startIndex until actions.size) {
             if (service.isTaskStopped()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "用户已请求停止"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
             }
             if (!service.hasValidGrant()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "操作授权已失效"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
             }
             val action = actions[index]
@@ -66,51 +91,76 @@ object PhoneAgentExecutor {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
-            val attempt = runCatching {
-                when (action) {
-                    is Action.OpenUrl -> {
-                        val before = service.captureVisibleText()
-                        val opened = service.openUrl(action.url)
-                        delay(1200)
-                        opened && service.screenTextChanged(before)
+            val catalog = InMemoryAgentToolCatalog()
+            catalog.register(
+                AgentToolSpec(
+                    id = "phone.action",
+                    description = "执行一个经过类型校验的手机动作",
+                    permission = AgentToolPermission.DEVICE_ACTION
+                )
+            ) {
+                val attempt = runCatching {
+                    when (action) {
+                        is Action.OpenUrl -> {
+                            val before = service.captureVisibleText()
+                            val opened = service.openUrl(action.url)
+                            delay(1200)
+                            opened && service.screenTextChanged(before)
+                        }
+                        is Action.LaunchApp -> {
+                            val beforePackage = service.activePackageName()
+                            val beforeText = service.captureVisibleText()
+                            val launched = service.launchPackage(action.packageName)
+                            delay(1000)
+                            launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
+                        }
+                        is Action.ClickText -> {
+                            val before = service.captureVisibleText()
+                            val clicked = service.clickVisibleText(action.exactText)
+                            if (clicked) {
+                                delay(500)
+                                if (action.expectedAfter != null) service.verifyVisibleText(action.expectedAfter)
+                                else service.screenTextChanged(before)
+                            } else false
+                        }
+                        is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
+                        is Action.Scroll -> {
+                            val before = service.captureVisibleText()
+                            val scrolled = service.scroll(action.direction)
+                            if (scrolled) { delay(350); service.screenTextChanged(before) } else false
+                        }
+                        is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
+                        is Action.VerifyText -> service.verifyVisibleText(action.expected)
+                        Action.Back -> {
+                            val beforePackage = service.activePackageName()
+                            val beforeText = service.captureVisibleText()
+                            val backed = service.pressBack()
+                            if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
+                        }
+                        is Action.ConfirmSensitive -> false
                     }
-                    is Action.LaunchApp -> {
-                        val beforePackage = service.activePackageName()
-                        val beforeText = service.captureVisibleText()
-                        val launched = service.launchPackage(action.packageName)
-                        delay(1000)
-                        launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
-                    }
-                    is Action.ClickText -> {
-                        val before = service.captureVisibleText()
-                        val clicked = service.clickVisibleText(action.exactText)
-                        if (clicked) {
-                            delay(500)
-                            if (action.expectedAfter != null) service.verifyVisibleText(action.expectedAfter)
-                            else service.screenTextChanged(before)
-                        } else false
-                    }
-                    is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
-                    is Action.Scroll -> {
-                        val before = service.captureVisibleText()
-                        val scrolled = service.scroll(action.direction)
-                        if (scrolled) { delay(350); service.screenTextChanged(before) } else false
-                    }
-                    is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
-                    is Action.VerifyText -> service.verifyVisibleText(action.expected)
-                    Action.Back -> {
-                        val beforePackage = service.activePackageName()
-                        val beforeText = service.captureVisibleText()
-                        val backed = service.pressBack()
-                        if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
-                    }
-                    is Action.ConfirmSensitive -> false
                 }
+                val failure = attempt.exceptionOrNull()
+                if (failure is CancellationException) throw failure
+                val success = attempt.getOrDefault(false)
+                val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
+                AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
             }
-            val failure = attempt.exceptionOrNull()
-            if (failure is CancellationException) throw failure
-            val success = attempt.getOrDefault(false)
-            val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
+            val runtime: AgentRuntime = DefaultAgentRuntime(
+                catalog = catalog,
+                permissions = AgentPermissionRouter { _, _ ->
+                    when {
+                        service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
+                        !service.hasValidGrant() -> AgentAuthorization.Deny("操作授权已失效")
+                        else -> AgentAuthorization.Allow
+                    }
+                },
+                states = agentStates
+            )
+            val toolResult = runtime.execute(AgentToolRequest(taskId, "phone.action"))
+            val success = toolResult.success
+            val detail = if (success) toolResult.output.ifBlank { "动作已执行并核验" }
+                else toolResult.error.ifBlank { "目标未匹配或动作未成功" }
             val result = ActionResult(index, action.javaClass.simpleName, success, detail)
             results += result
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
@@ -125,6 +175,13 @@ object PhoneAgentExecutor {
             dao, taskId,
             if (markTaskCompleted) PhoneAgentTaskStore.STATUS_COMPLETED else PhoneAgentTaskStore.STATUS_RUNNING,
             actions.size
+        )
+        agentStates.put(
+            AgentTaskState(
+                taskId, "phone_agent",
+                if (markTaskCompleted) AgentTaskStatus.COMPLETED else AgentTaskStatus.RUNNING,
+                actions.size, task.planJson.take(64_000), ""
+            )
         )
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
