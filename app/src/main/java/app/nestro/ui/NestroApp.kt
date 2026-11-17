@@ -216,9 +216,7 @@ fun NestroApp() {
     var skillDraftName by expertAssetsUiState.skillDraftName
     var skillDraftPrompt by expertAssetsUiState.skillDraftPrompt
     var showSkillDialog by expertAssetsUiState.showSkillDialog
-    var selectedExpert by remember {
-        mutableStateOf(ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles))
-    }
+    var selectedExpert by expertCatalogUiState.selectedExpert
     val expertWorkspaceUiState = remember(prefs) { ExpertWorkspaceUiState(prefs) }
     var expertDraft by expertWorkspaceUiState.expertDraft
     var editingExpertName by expertWorkspaceUiState.editingExpertName
