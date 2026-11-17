@@ -101,6 +101,37 @@ data class ModelRegistry(
         models = models.filterNot { it.id == modelId }
     )
 
+    fun reconcileLegacyProfiles(
+        profiles: List<ModelProfileMetadata>,
+        hasSecret: (profileId: String) -> Boolean
+    ): ModelRegistry {
+        val migrated = ModelRegistryCodec.migrateLegacy(profiles)
+        val legacyKeys = migrated.apiKeys.mapNotNull { key ->
+            val profileId = key.id.removePrefix("legacy-key-")
+            val old = apiKeys.firstOrNull { it.id == key.id }
+            if (hasSecret(profileId)) key.copy(enabled = old?.enabled ?: true) else null
+        }
+        val legacyProviders = migrated.providers.map { provider ->
+            provider.copy(enabled = providers.firstOrNull { it.id == provider.id }?.enabled ?: provider.enabled)
+        }
+        val legacyModels = migrated.models.map { model ->
+            val profileId = model.id.removePrefix("legacy-model-")
+            val old = models.firstOrNull { it.id == model.id }
+            model.copy(
+                apiKeyIds = if (hasSecret(profileId)) listOf("legacy-key-" + profileId) else emptyList(),
+                enabled = old?.enabled ?: model.enabled,
+                inputPricePerMillion = old?.inputPricePerMillion,
+                outputPricePerMillion = old?.outputPricePerMillion,
+                currency = old?.currency ?: model.currency
+            )
+        }
+        return ModelRegistry(
+            providers = providers.filterNot { it.id.startsWith("legacy-provider-") } + legacyProviders,
+            apiKeys = apiKeys.filterNot { it.id.startsWith("legacy-key-") } + legacyKeys,
+            models = models.filterNot { it.id.startsWith("legacy-model-") } + legacyModels
+        ).also { require(it.validate() == null) { it.validate() ?: "模型目录无效" } }
+    }
+
     fun validate(): String? {
         if (providers.map { it.id }.any(String::isBlank) ||
             providers.map { it.id }.toSet().size != providers.size) return "服务商标识为空或重复"
