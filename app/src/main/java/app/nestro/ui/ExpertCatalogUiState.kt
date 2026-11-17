@@ -4,15 +4,15 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
+import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
 import app.nestro.data.ExpertProfileCodec
 import app.nestro.data.ExpertRevision
 import app.nestro.data.ExpertRevisionCodec
 import app.nestro.data.ExpertTemplate
 import app.nestro.data.ExpertTemplateCodec
-import app.nestro.data.ExpertCatalogRules
 
-/** Owns persisted expert catalog, profile revisions and user templates. */
+/** Owns persisted expert catalog, selection, profile revisions and user templates. */
 @Stable
 internal class ExpertCatalogUiState(private val preferences: SharedPreferences) {
     val experts: MutableState<List<String>> =
@@ -25,17 +25,11 @@ internal class ExpertCatalogUiState(private val preferences: SharedPreferences) 
         mutableStateOf(ExpertRevisionCodec.decode(preferences.getString("expert_versions_v1", "{}") ?: "{}"))
     val expertTemplates: MutableState<List<ExpertTemplate>> =
         mutableStateOf(ExpertTemplateCodec.decode(preferences.getString("expert_templates_v1", "[]") ?: "[]"))
-    
-    private fun decodeExpertPrompts(preferences: SharedPreferences): Map<String, String> =
-        runCatching {
-            val raw = preferences.getString("expert_prompts", "{}") ?: "{}"
-            val json = JSONObject(raw)
-            buildMap {
-                val keys = json.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    put(key, json.optString(key))
-                }
-            }
-        }.getOrDefault(emptyMap())
+    val selectedExpert: MutableState<String> = mutableStateOf(
+        ExpertCatalogRules.resolveSelection(
+            preferences.getString("selected_expert", "通用助手") ?: "通用助手",
+            experts.value,
+            expertProfiles.value
+        )
+    )
 }
