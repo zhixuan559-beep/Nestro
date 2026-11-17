@@ -2,14 +2,14 @@ package app.nestro.data
 
 import app.nestro.phone.PhoneAgentPlanner
 
-data class ChatRequestContextAssembly(
+internal data class ChatRequestContextAssembly(
     val recalledCount: Int,
     val recallSources: List<ConversationRecallSource>,
     val systemContext: String
 )
 
 /** Builds the bounded, project-scoped context used by a single chat request. */
-class ChatRequestContextAssembler(
+internal class ChatRequestContextAssembler(
     private val retrieveMemory: suspend (String, String, String) -> ConversationRecallResult,
     private val retrieveKnowledge: suspend (String, String) -> String,
     private val retrieveUserMemory: suspend (String, String) -> String

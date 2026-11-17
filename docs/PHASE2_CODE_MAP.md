@@ -282,3 +282,5 @@
 - Added `ChatRequestContextAssembler` to own the recent-history recall query, project-scoped conversation retrieval, knowledge retrieval, user-memory retrieval, Phone Agent context, and bounded system-context assembly.
 - `NestroApplication` owns the assembler; `NestroApp` now applies its result to recall counters/sources and passes the assembled context to the existing team/stream execution path.
 - Added JVM coverage for the last-eight-message query window, project/conversation scoping, context composition, recall source propagation, and the 16k-character cap.
+
+- CI #822 identified one Kotlin API visibility error in the newly extracted chat context assembler: its public method exposed internal `ChatMessage`. The assembler/result and the application composition-root property are now internal, matching their app-internal use and avoiding accidental public API leakage.

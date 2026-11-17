@@ -61,7 +61,7 @@ class NestroApplication : Application() {
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
-    val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
+    internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
         ChatRequestContextAssembler(
             retrieveMemory = conversationContextRepository::retrieveMemory,
             retrieveKnowledge = conversationContextRepository::retrieveKnowledge,
