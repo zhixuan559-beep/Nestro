@@ -218,3 +218,10 @@
 - Model Registry UI no longer displays local success messages immediately after callbacks that may fail inside the application boundary. Persistence errors are reported by the owning app status; the page keeps local messages for validation and non-persistence feedback only.
 - Legacy provider IDs are derived from their endpoint. The Registry provider editor now prevents changing the URL of a legacy provider and directs users to the legacy Profile editor, which performs the supported migration path; the application callback also enforces this guard. This prevents startup reconciliation from recreating a second provider or orphaning model references.
 - Legacy provider metadata is entirely migration-derived (both label and endpoint), so the Registry editor now hides its edit action and the application boundary rejects changes to either field. Legacy Profile editing remains the supported path; non-legacy providers retain full edit capability.
+
+## 2026-11-18 — Phone Agent fatal-error boundary
+
+- `PhoneAgentWorker.executeTask()` previously caught `Throwable`, which also includes JVM fatal `Error` subclasses (for example `OutOfMemoryError` and linkage failures), then converted them into a successful WorkManager result after marking the task paused.
+- The handler now catches ordinary `Exception` only. `CancellationException` remains handled by its dedicated branch; fatal JVM errors are allowed to propagate to WorkManager/runtime instead of being disguised as recoverable task failures.
+- This does not automatically retry an ambiguous device action. The existing interruption policy remains conservative: the task is paused for manual state verification before resuming.
+- CI must validate the current PR head; no APK build, device acceptance, PR merge, or Ready transition.

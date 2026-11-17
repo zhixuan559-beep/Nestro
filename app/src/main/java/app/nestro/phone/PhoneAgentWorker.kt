@@ -209,7 +209,7 @@ class PhoneAgentWorker(
                 false
             )
             if (userCancelled) Result.success() else throw cancelled
-        } catch (_: Throwable) {
+        } catch (error: Exception) {
             val latest = dao.phoneAgentTask(taskId)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, latest.currentStep, "任务失败", false, "后台执行发生未处理异常")
