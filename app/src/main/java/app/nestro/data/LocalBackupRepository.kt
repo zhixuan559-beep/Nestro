@@ -523,7 +523,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val restoredRegistryRaw = root.optString("model_registry_v1", "")
         val restoredRegistry = if (restoredRegistryRaw.isBlank()) null else {
             require(restoredRegistryRaw.length <= 100_000) { "模型目录备份过大" }
-            ModelRegistryCodec.decode(restoredRegistryRaw).also { registry ->
+            (ModelRegistryCodec.decodeOrNull(restoredRegistryRaw)
+                ?: error("模型目录备份格式无效")).also { registry ->
                 require(registry.validate() == null && (registry.providers.isNotEmpty() || restoredProfiles.isEmpty())) { "模型目录备份无效" }
             }
         }
