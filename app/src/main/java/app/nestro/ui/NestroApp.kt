@@ -578,9 +578,10 @@ fun NestroApp() {
             LocalVault.readProfile(context, profileId).isNotBlank()
         }
         val activeMetadata = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+        val activeModelSelectable = modelRegistry.selectableModels().any { it.id == "legacy-model-$activeModelProfileId" }
         if (activeMetadata != null) {
             val activeKey = LocalVault.readProfile(context, activeMetadata.id)
-            if (activeKey.isNotBlank()) {
+            if (activeKey.isNotBlank() && activeModelSelectable) {
                 config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
                 LocalVault.write(context, config)
             } else {
@@ -811,9 +812,14 @@ fun NestroApp() {
     }
 
 
+    val selectableModelProfileIds = modelRegistry.selectableModels()
+        .mapNotNull { model -> model.id.removePrefix("legacy-model-").takeIf { model.id.startsWith("legacy-model-") } }
+        .toSet()
     val requestModelConfigs = buildList {
-        if (config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
-        if (modelFailoverEnabled) modelProfiles.filterNot { it.id == activeModelProfileId }.forEach { profile ->
+        if (activeModelProfileId in selectableModelProfileIds && config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
+        if (modelFailoverEnabled) modelProfiles.filter {
+            it.id != activeModelProfileId && it.id in selectableModelProfileIds
+        }.forEach { profile ->
             val key = LocalVault.readProfile(context, profile.id)
             if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
         }
@@ -1276,9 +1282,7 @@ fun NestroApp() {
                         "models" -> ModelManager(
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
-                            selectableProfileIds = modelRegistry.selectableModels()
-                                .mapNotNull { model -> model.id.takeIf { it.startsWith("legacy-model-") }?.removePrefix("legacy-model-") }
-                                .toSet(),
+                            selectableProfileIds = selectableModelProfileIds,
                             activeConfig = config,
                             usage = modelUsage,
                             failoverEnabled = modelFailoverEnabled,
