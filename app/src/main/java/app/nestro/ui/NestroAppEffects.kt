@@ -7,7 +7,10 @@ import app.nestro.data.ConversationListItem
 import app.nestro.data.ConversationRecord
 import app.nestro.data.ProjectRecord
 import app.nestro.data.UserMemoryEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -39,6 +42,7 @@ internal fun ConversationPageLoadEffect(
     onLoadingChanged: (Boolean) -> Unit,
     onItemsLoaded: (List<ConversationListItem>) -> Unit,
     onHasMoreChanged: (Boolean) -> Unit,
+    onLoadFailure: (Throwable) -> Unit,
     loadPage: suspend (projectId: String, query: String, limit: Int, offset: Int) -> List<ConversationListItem>
 ) {
     LaunchedEffect(page, activeProjectId, query, refreshKey) {
@@ -47,11 +51,18 @@ internal fun ConversationPageLoadEffect(
         onItemsLoaded(emptyList())
         onHasMoreChanged(false)
         listState.scrollToItem(0)
-        delay(250)
-        val result = loadPage(activeProjectId, query.trim().take(120), 30, 0)
-        onItemsLoaded(result)
-        onHasMoreChanged(result.size == 30)
-        onLoadingChanged(false)
+        try {
+            delay(250)
+            val result = loadPage(activeProjectId, query.trim().take(120), 30, 0)
+            onItemsLoaded(result)
+            onHasMoreChanged(result.size == 30)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            onLoadFailure(failure)
+        } finally {
+            if (currentCoroutineContext().isActive) onLoadingChanged(false)
+        }
     }
 }
 
