@@ -24,6 +24,8 @@ import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.data.ChatRequestContextAssembler
 import app.nestro.data.AutomaticMemoryExtractionCoordinator
+import app.nestro.data.CapabilityDraftCoordinator
+import app.nestro.data.CapabilityDraftTransport
 import app.nestro.data.extractMemoryCandidates
 import app.nestro.data.WorkflowExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
@@ -64,6 +66,13 @@ class NestroApplication : Application() {
     }
     val modelConnectionService: ModelConnectionService by lazy { ModelConnectionService() }
     val chatExecutionService: ChatExecutionService by lazy { ChatExecutionService() }
+    internal val capabilityDraftCoordinator: CapabilityDraftCoordinator by lazy {
+        CapabilityDraftCoordinator(
+            CapabilityDraftTransport { configs, history, systemPrompt, onUsage ->
+                chatExecutionService.completeWithFallback(configs, history, systemPrompt, onUsage = onUsage)
+            }
+        )
+    }
     internal val chatStreamingCoordinator: ChatStreamingCoordinator by lazy {
         ChatStreamingCoordinator(
             transport = ChatStreamingTransport { configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop, onChunk ->

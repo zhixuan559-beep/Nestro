@@ -315,3 +315,9 @@
 - Added `ChatResponseFinalizer` to centralize success/partial/stop/timeout precedence, assistant revision history retention (dedupe + last 20), and terminal response status.
 - NestroApp now applies the returned completed history/status and remains responsible only for local conversation persistence and Compose state updates.
 - Added JVM tests for successful output, partial output on failure, explicit stop, and timeout messaging.
+
+## 2026-11-18 — Capability draft generation extracted
+
+- Added `CapabilityDraftCoordinator` for expert/skill draft prompt construction, model invocation, and strict JSON/name/prompt validation. `isCreationIntent` moved into the data layer with the coordinator.
+- `NestroApp` now handles the resulting draft preview/confirmation UI only; model request and definition parsing are delegated to the coordinator.
+- Added JVM tests for expert draft prompt context, existing-name constraints, strict definition parsing, and negated creation intent.

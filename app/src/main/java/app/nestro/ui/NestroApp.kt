@@ -9,6 +9,7 @@ import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
 import app.nestro.data.ChatResponseFinalizer
 import app.nestro.data.ChatResponseStatus
+import app.nestro.data.isCreationIntent
 import app.nestro.data.ConversationRecord
 import app.nestro.data.ConversationPreferencesStore
 import app.nestro.data.ProjectRecord
@@ -608,24 +609,17 @@ fun NestroApp() {
             val requestProjectId = activeProjectId
             val requestHistory = messages.toList()
             val existingNames = if (creationKind == "expert") experts.joinToString("、") else skills.keys.joinToString("、")
-            val generatorPrompt = buildString {
-                append("你是 Nestro 的能力设计器。根据用户需求设计一个可直接使用的")
-                append(if (creationKind == "expert") "AI 专家" else "工作技能")
-                append("。只返回一个 JSON 对象，不要 Markdown 代码围栏或解释。字段必须是 name 和 prompt。name 是简短中文名称，prompt 是完整、具体、可执行的角色指令。不要要求扩大手机权限，不要包含可执行代码，不要虚构外部工具。现有名称：")
-                append(existingNames.ifBlank { "无" })
-                append("。名称必须与现有名称不同。")
-            }
             scope.launch {
                 try {
                 val generated = runCatchingCancellable {
                     withContext(Dispatchers.IO) {
-                        val raw = appRuntime.chatExecutionService.completeWithFallback(
-                            requestModelConfigs,
-                            listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
-                            generatorPrompt,
+                        appRuntime.capabilityDraftCoordinator.generate(
+                            kind = creationKind,
+                            prompt = prompt,
+                            existingNames = existingNames,
+                            modelConfigs = requestModelConfigs,
                             onUsage = recordModelUsage
                         )
-                        parseGeneratedDefinition(raw)
                     }
                 }
                 val assistantText = when {
