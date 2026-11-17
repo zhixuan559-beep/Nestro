@@ -130,12 +130,14 @@ internal fun ModelManager(
                     Text(provider.name, color = Ink)
                     Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = {
-                    selectedProviderId = provider.id
-                    editingProviderId = provider.id
-                    providerNameDraft = provider.name
-                    providerUrlDraft = provider.baseUrl
-                }) { Text("编辑", color = Mint) }
+                if (!provider.id.startsWith("legacy-provider-")) {
+                    TextButton(onClick = {
+                        selectedProviderId = provider.id
+                        editingProviderId = provider.id
+                        providerNameDraft = provider.name
+                        providerUrlDraft = provider.baseUrl
+                    }) { Text("编辑", color = Mint) }
+                }
                 TextButton(onClick = { onSaveProvider(provider.copy(enabled = !provider.enabled)) }) {
                     Text(if (provider.enabled) "停用" else "启用", color = if (provider.enabled) Mint else ColorStop)
                 }
