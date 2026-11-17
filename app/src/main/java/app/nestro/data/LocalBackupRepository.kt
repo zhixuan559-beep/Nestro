@@ -262,7 +262,7 @@ private fun encodeSharedPreferencesSnapshot(prefs: SharedPreferences): JSONObjec
             is Float -> entry.put("type", "float").put("value", value.toDouble())
             is Set<*> -> {
                 require(value.all { it is String }) { "本机设置包含无法安全快照的数据类型" }
-                entry.put("type", "string_set").put("value", JSONArray(value.sorted()))
+                entry.put("type", "string_set").put("value", JSONArray(value.map { it as String }.sorted()))
             }
             else -> error("本机设置包含无法安全快照的数据类型：" + key)
         }

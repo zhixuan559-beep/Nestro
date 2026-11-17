@@ -11,6 +11,7 @@ import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.LocalBackupRepository
+import app.nestro.data.persistLocalBackupRestoreJournal
 import app.nestro.data.LocalVault
 import app.nestro.data.ModelConfig
 import app.nestro.data.MessageEntity
