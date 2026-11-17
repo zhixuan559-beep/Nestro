@@ -225,3 +225,10 @@
 - The handler now catches ordinary `Exception` only. `CancellationException` remains handled by its dedicated branch; fatal JVM errors are allowed to propagate to WorkManager/runtime instead of being disguised as recoverable task failures.
 - This does not automatically retry an ambiguous device action. The existing interruption policy remains conservative: the task is paused for manual state verification before resuming.
 - CI must validate the current PR head; no APK build, device acceptance, PR merge, or Ready transition.
+
+## 2026-11-18 — Agent recovery respects WorkManager ownership
+
+- Recovery review found that `AgentTaskCoordinator.recoverAfterProcessRestart()` could requeue every persisted `QUEUED` task directly into its application-scope consumer, including `phone_agent` tasks whose durable dispatch owner is WorkManager.
+- That created a second dispatch path outside the WorkManager worker/foreground lifecycle. Recovery now accepts an explicit set of externally scheduled owners; `NestroApplication` marks `phone_agent` as WorkManager-owned, leaving those tasks queued for the persisted WorkManager request to dispatch.
+- Added a JVM regression test proving a queued `phone_agent` task remains queued and its handler is not invoked by coordinator recovery. Other registered task owners retain existing recovery behavior.
+- This change does not authorize automatic replay of an ambiguous device action; running Phone Agent tasks continue to require manual verification before resume.

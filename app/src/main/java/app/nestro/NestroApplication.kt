@@ -107,7 +107,7 @@ class NestroApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch {
-            agentTaskCoordinator.recoverAfterProcessRestart()
+            agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
         }
     }
 }

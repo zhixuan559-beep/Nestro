@@ -218,7 +218,7 @@ class AgentTaskCoordinator(
         stop(taskId, AgentTaskStatus.CANCELLED)
     }
 
-    suspend fun recoverAfterProcessRestart(): List<AgentTaskState> {
+    suspend fun recoverAfterProcessRestart(externallyScheduledOwners: Set<String> = emptySet()): List<AgentTaskState> {
         val recovered = mutableListOf<AgentTaskState>()
         val queuedIds = mutableListOf<String>()
         states.recoverable().forEach { state ->
@@ -235,7 +235,12 @@ class AgentTaskCoordinator(
                         paused
                     }
                     AgentTaskStatus.QUEUED -> {
-                        if (handlers.find(latest.owner) != null) {
+                        if (latest.owner in externallyScheduledOwners) {
+                            // Durable schedulers (for example WorkManager) own dispatch.
+                            // Keep the task queued for that scheduler instead of executing
+                            // it directly from the application-scope recovery worker.
+                            latest
+                        } else if (handlers.find(latest.owner) != null) {
                             queuedIds += latest.taskId
                             latest
                         } else {

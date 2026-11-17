@@ -215,4 +215,23 @@ class AgentTaskCoordinatorTest {
         assertEquals("saved", states.get("interrupted")?.checkpoint)
         coordinator.close()
     }
+
+    @Test
+    fun recoveryLeavesWorkManagerOwnedPhoneTasksQueuedForTheirDurableScheduler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("phone_agent") { calls.incrementAndGet() }
+        states.put(AgentTaskState("workmanager-owned", "phone_agent", AgentTaskStatus.QUEUED))
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val recovered = coordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+
+        assertEquals(AgentTaskStatus.QUEUED, recovered.single().status)
+        assertEquals(AgentTaskStatus.QUEUED, states.get("workmanager-owned")?.status)
+        delay(50)
+        assertEquals(0, calls.get())
+        coordinator.close()
+    }
+
 }
