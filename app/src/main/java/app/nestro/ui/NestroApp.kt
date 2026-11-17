@@ -1701,21 +1701,36 @@ fun NestroApp() {
                                                     showRenameConversation = true
                                                 }) { Text("重命名", color = Mint) }
                                                 TextButton(onClick = {
-                                                    val remaining = conversations.filterNot { it.id == record.id }
-                                                    if (activeConversationId == record.id) {
-                                                        val next = remaining.firstOrNull { it.projectId == record.projectId }
-                                                            ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
-                                                        conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
-                                                        activeConversationId = next.id
-                                                        activeProjectId = record.projectId
-                                                        messages = next.messages
-                                                        prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
-                                                    } else {
-                                                        conversations = remaining
+                                                    scope.launch {
+                                                        val remaining = conversations.filterNot { it.id == record.id }
+                                                        if (activeConversationId == record.id) {
+                                                            val next = remaining.firstOrNull { it.projectId == record.projectId }
+                                                                ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
+                                                            conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
+                                                            activeConversationId = next.id
+                                                            activeProjectId = record.projectId
+                                                            val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                                                                withContext(Dispatchers.IO) {
+                                                                    database.dao().conversationWithMessages(next.id)?.messages.orEmpty()
+                                                                        .sortedBy { it.position }
+                                                                        .map { message ->
+                                                                            ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                                                                        }
+                                                                }
+                                                            } else next.messages
+                                                            messages = nextMessages
+                                                            conversations = conversations.map { item ->
+                                                                if (item.id == next.id) item.copy(messages = nextMessages) else item
+                                                            }
+                                                            conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
+                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
+                                                        } else {
+                                                            conversations = remaining
+                                                        }
+                                                        saveConversationList(prefs, conversations)
+                                                        conversationPageItems = conversationPageItems.filterNot { it.id == record.id }
+                                                        conversationPageRefreshKey++
                                                     }
-                                                    saveConversationList(prefs, conversations)
-                                                    conversationPageItems = conversationPageItems.filterNot { it.id == record.id }
-                                                    conversationPageRefreshKey++
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
@@ -1878,21 +1893,36 @@ fun NestroApp() {
                                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
-                                                        activeProjectId = project.id
-                                                        prefs.edit().putString("active_project_id", project.id).apply()
-                                                        val target = conversations.firstOrNull { it.projectId == project.id }
-                                                        if (target == null) {
-                                                            val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
-                                                            conversations = listOf(created) + conversations
-                                                            saveConversationList(prefs, conversations)
-                                                            activeConversationId = created.id
-                                                            messages = emptyList()
-                                                        } else {
-                                                            activeConversationId = target.id
-                                                            messages = target.messages
+                                                        scope.launch {
+                                                            activeProjectId = project.id
+                                                            prefs.edit().putString("active_project_id", project.id).apply()
+                                                            val target = conversations.firstOrNull { it.projectId == project.id }
+                                                            if (target == null) {
+                                                                val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
+                                                                conversations = listOf(created) + conversations
+                                                                saveConversationList(prefs, conversations)
+                                                                activeConversationId = created.id
+                                                                messages = emptyList()
+                                                            } else {
+                                                                activeConversationId = target.id
+                                                                val targetMessages = if (databaseReady) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        database.dao().conversationWithMessages(target.id)?.messages.orEmpty()
+                                                                            .sortedBy { it.position }
+                                                                            .map { message ->
+                                                                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                                                                            }
+                                                                    }
+                                                                } else target.messages
+                                                                messages = targetMessages
+                                                                conversations = conversations.map { item ->
+                                                                    if (item.id == target.id) item.copy(messages = targetMessages) else item
+                                                                }
+                                                                conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
+                                                            }
+                                                            prefs.edit().putString("active_conversation_id", activeConversationId).apply()
+                                                            page = "home"
                                                         }
-                                                        prefs.edit().putString("active_conversation_id", activeConversationId).apply()
-                                                        page = "home"
                                                     }) {
                                                         Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                         Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
