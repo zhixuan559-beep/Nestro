@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistryCodec
+import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelProvider
 import app.nestro.model.ModelApiKey
 import app.nestro.model.ModelDefinition
@@ -680,6 +681,23 @@ fun NestroApp() {
     }
 
 
+    fun refreshActiveRegistryConfig(updatedRegistry: ModelRegistry) {
+        if (activeRegistryModelId.isBlank()) return
+        val active = updatedRegistry.models.firstOrNull { it.id == activeRegistryModelId }
+        val provider = active?.let { model -> updatedRegistry.providers.firstOrNull { it.id == model.providerId } }
+        val secret = active?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
+        if (active != null && provider?.enabled == true && active in updatedRegistry.selectableModels() && !secret.isNullOrBlank()) {
+            config = ModelConfig(provider.baseUrl, active.modelCode, secret)
+            modelRepository.writeActiveConfig(config)
+        } else {
+            activeRegistryModelId = ""
+            activeModelProfileId = ""
+            config = ModelConfig("", "", "")
+            modelRepository.clearActiveConfig()
+            prefs.edit().remove("active_model_registry_id").remove("active_model_profile_id").remove("base_url").remove("model").apply()
+        }
+    }
+
     val selectableModelProfileIds =
         ModelRequestConfigurationSelector.selectableLegacyProfileIds(modelRegistry)
     val requestModelConfigs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
@@ -1218,12 +1236,7 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertProvider(provider)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
-                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
-                                        activeRegistryModelId = ""
-                                        config = ModelConfig("", "", "")
-                                        modelRepository.clearActiveConfig()
-                                        prefs.edit().remove("active_model_registry_id").apply()
-                                    }
+                                    refreshActiveRegistryConfig(updated)
                                     status = "服务商已保存"
                                 }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
                             },
@@ -1234,12 +1247,7 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertApiKey(item)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
-                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
-                                        activeRegistryModelId = ""
-                                        config = ModelConfig("", "", "")
-                                        modelRepository.clearActiveConfig()
-                                        prefs.edit().remove("active_model_registry_id").apply()
-                                    }
+                                    refreshActiveRegistryConfig(updated)
                                     status = "API Key 已加密保存"
                                 }.onFailure {
                                     if (!keyAlreadyExists) modelRepository.deleteApiKey(item.id)
@@ -1251,12 +1259,7 @@ fun NestroApp() {
                                     val updated = modelRegistry.upsertModel(item)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
-                                    if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
-                                        activeRegistryModelId = ""
-                                        config = ModelConfig("", "", "")
-                                        modelRepository.clearActiveConfig()
-                                        prefs.edit().remove("active_model_registry_id").apply()
-                                    }
+                                    refreshActiveRegistryConfig(updated)
                                     status = "模型已保存：" + item.name
                                 }.onFailure { status = "模型保存失败：" + (it.message ?: "未知错误") }
                             },
@@ -1265,20 +1268,14 @@ fun NestroApp() {
                                 val updated = modelRegistry.deleteApiKey(id)
                                 modelRepository.saveRegistry(updated)
                                 modelRegistry = updated
-                                if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
-                                    activeRegistryModelId = ""
-                                    prefs.edit().remove("active_model_registry_id").apply()
-                                }
+                                refreshActiveRegistryConfig(updated)
                                 status = "API Key 已删除，关联模型已重新计算可用性"
                             },
                             onDeleteRegistryModel = { id ->
                                 val updated = modelRegistry.deleteModel(id)
                                 modelRepository.saveRegistry(updated)
                                 modelRegistry = updated
-                                if (activeRegistryModelId == id) {
-                                    activeRegistryModelId = ""
-                                    prefs.edit().remove("active_model_registry_id").apply()
-                                }
+                                refreshActiveRegistryConfig(updated)
                                 status = "模型已删除"
                             },
                             onActivateRegistryModel = { id ->
