@@ -34,8 +34,7 @@ object ExpertRevisionCodec {
                 revisions.takeLast(20).forEach { revision ->
                     val p = revision.profile
                     put(JSONObject().put("version", revision.version).put("prompt", revision.prompt).put("savedAt", revision.savedAt)
-                        .put("category", template.category).put("builtIn", template.builtIn)
-                .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
+                        .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
                             .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
                             .put("description", p.description).put("version", p.version).put("source", p.source)))
                 }
@@ -106,6 +105,7 @@ object ExpertTemplateCodec {
         templates.take(100).forEach { template ->
             val p = template.profile
             put(JSONObject().put("id", template.id).put("name", template.name).put("description", template.description).put("prompt", template.prompt)
+                .put("category", template.category).put("builtIn", template.builtIn)
                 .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
                     .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
                     .put("description", p.description).put("version", p.version).put("source", p.source)))
