@@ -15,7 +15,8 @@ class AgentRuntimeTest {
             }
         }
         val states = InMemoryAgentTaskStateStore()
-        val runtime = DefaultAgentRuntime(catalog, DefaultAgentPermissionRouter(), states)
+        val traces = InMemoryAgentTaskTraceStore()
+        val runtime = DefaultAgentRuntime(catalog, DefaultAgentPermissionRouter(), states, traces)
 
         val result = runtime.execute(AgentToolRequest("task-1", "screen.read"))
 
@@ -23,6 +24,7 @@ class AgentRuntimeTest {
         assertEquals("页面内容", result.output)
         assertEquals(1, states.get("task-1")?.currentStep)
         assertEquals(AgentTaskStatus.RUNNING, states.get("task-1")?.status)
+        assertTrue(traces.recent("task-1").any { it.event == "tool_succeeded" })
     }
 
     @Test
