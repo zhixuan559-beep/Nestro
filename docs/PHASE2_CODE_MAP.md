@@ -192,3 +192,7 @@
 - Added explicit confirmation before provider deletion; deletion removes associated model/key metadata and then deletes each associated encrypted API Key through `ModelConfigurationRepository`.
 - Refreshes the active model after provider deletion so an active model owned by the removed provider is cleared rather than left configured.
 - Provider deletion is performed as one UI action; no provider ID is regenerated during edit.
+
+- Added provider edit/delete controls with stable IDs and explicit deletion confirmation; provider deletion also clears associated encrypted API Key material and refreshes active model state.
+- Added model editing for display name, model code, ordered API Key associations, input/output per-million-token prices, and currency; existing enabled state and other metadata are retained when editing.
+- Added a JVM regression test proving model identity, enabled state, key associations, prices, and currency survive a metadata edit.
