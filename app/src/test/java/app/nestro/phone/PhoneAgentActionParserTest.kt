@@ -136,6 +136,30 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun webSearchActionIsParsedAndPersistedSafely() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"成都天气预报"}]}"""
+        )
+        assertEquals(PhoneAgentExecutor.Action.SearchWeb("成都天气预报"), plan.actions.single())
+        val persisted = """{"format":"phone_agent_actions_v1","actions":[{"type":"search_web","query":"成都天气预报"}]}"""
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(persisted))
+        assertEquals(PhoneAgentExecutor.Action.SearchWeb("成都天气预报"), PhoneAgentTaskStore.decodeActions(persisted).single())
+    }
+
+    @Test
+    fun webSearchRejectsSensitiveOrOversizedQueries() {
+        listOf("13812345678", "x".repeat(301)).forEach { query ->
+            try {
+                PhoneAgentActionParser.parse(
+                    """{"done":false,"actions":[{"type":"search_web","query":"$query"}]}"""
+                )
+                fail("unsafe or oversized search query must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test
     fun onlyHttpAndHttpsUrlsAreAccepted() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"open_url","url":"https://example.com/search"}]}"""
