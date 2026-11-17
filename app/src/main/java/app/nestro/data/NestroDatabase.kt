@@ -321,6 +321,9 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_traces WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :limit")
     suspend fun recentAgentTaskTraces(taskId: String, limit: Int = 100): List<AgentTaskTraceEntity>
 
+    @Query("DELETE FROM agent_task_traces WHERE taskId = :taskId AND id NOT IN (SELECT id FROM agent_task_traces WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :keep)")
+    suspend fun pruneAgentTaskTraces(taskId: String, keep: Int = 500)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putPhoneAgentTask(task: PhoneAgentTaskEntity)
 
