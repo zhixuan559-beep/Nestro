@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelRegistryStore
+import app.nestro.model.ModelRegistryCodec
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.RoomAgentTaskStateStore
@@ -3856,6 +3857,7 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
     root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
+    root.put("model_registry_v1", prefs.getString("model_registry_v1", "") ?: "")
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
@@ -4308,6 +4310,13 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
         val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
         require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
+        val restoredRegistryRaw = root.optString("model_registry_v1", "")
+        val restoredRegistry = if (restoredRegistryRaw.isBlank()) null else {
+            require(restoredRegistryRaw.length <= 100_000) { "模型目录备份过大" }
+            ModelRegistryCodec.decode(restoredRegistryRaw).also { registry ->
+                require(registry.validate() == null && (registry.providers.isNotEmpty() || restoredProfiles.isEmpty())) { "模型目录备份无效" }
+            }
+        }
         val restoredFailoverEnabled = root.optBoolean("model_failover_enabled", false)
         val previousBaseUrl = prefs.getString("base_url", "") ?: ""
         val previousModel = prefs.getString("model", "") ?: ""
@@ -4316,6 +4325,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             .putString("active_model_profile_id", restoredActiveProfileId)
             .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
             .putBoolean("model_failover_enabled", restoredFailoverEnabled)
+        restoredRegistry?.let { editor.putString("model_registry_v1", ModelRegistryCodec.encode(it)) }
         if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
             editor.remove("api_key_enc")
         }
