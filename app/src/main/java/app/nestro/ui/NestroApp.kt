@@ -572,34 +572,20 @@ fun NestroApp() {
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
         expertPrompts = loadExpertPrompts(prefs)
-        val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
-        if (pendingRequest?.optString("status") == "running") {
-            val requestId = pendingRequest.optString("request_id")
-            val conversationId = pendingRequest.optString("conversation_id")
-            val projectId = pendingRequest.optString("project_id", "default")
-            val restoredPrompt = pendingRequest.optString("prompt")
-            val partial = pendingRequest.optString("partial_answer")
-            val record = conversations.firstOrNull { it.id == conversationId }
-            if (record != null) {
-                val existingMessages = if (databaseReady) {
-                    withContext(Dispatchers.IO) {
-                        appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
-                    }
-                } else record.messages
-                if (existingMessages.none { it.id == requestId }) {
-                    val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
-                    val recovered = existingMessages + ChatMessage(requestId, "assistant", content)
-                    conversations = ConversationPreferencesStore.saveConversationMessages(prefs, conversationId, recovered, projectId, conversations)
-                    if (activeConversationId == conversationId) messages = recovered
-                }
-            }
-            if (restoredPrompt.isNotBlank() && activeConversationId == conversationId) {
-                draft = restoredPrompt
-                prefs.edit().putString("draft_$conversationId", restoredPrompt).apply()
-            }
+        val recoveredChat = withContext(Dispatchers.IO) {
+            appRuntime.chatRequestRecoveryCoordinator.recover(
+                preferences = prefs,
+                conversations = conversations,
+                databaseReady = databaseReady,
+                activeConversationId = activeConversationId
+            )
+        }
+        conversations = recoveredChat.conversations
+        recoveredChat.activeMessages?.let { messages = it }
+        recoveredChat.restoredPrompt?.let { draft = it }
+        if (recoveredChat.interrupted) {
             status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
         }
-        prefs.edit().remove("chat_request_state_v1").apply()
         if (databaseReady) {
             runCatching { agentTaskCoordinator.recoverAfterProcessRestart() }
                 .onFailure { status = "后台任务恢复失败：${it.message ?: "未知错误"}" }
