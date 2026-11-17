@@ -211,3 +211,4 @@
 - Phone Agent task log loading now uses the shared cancellation-safe result wrapper: ordinary log-store errors still degrade to an empty log list, but page/worker coroutine cancellation propagates instead of being swallowed.
 
 - Backup restore now uses `ModelRegistryCodec.decodeOrNull()` for a non-empty model registry payload and rejects malformed/incompatible registry JSON instead of silently accepting the legacy decoder's empty-registry fallback. This protects user-defined provider/model metadata during restore; valid empty registries remain distinct from invalid payloads.
+- Phone Agent cancellation now completes WorkManager cancellation, notification cleanup, and shared coordinator cancellation in a `NonCancellable` section after the durable Room terminal-state write. This prevents caller/screen coroutine cancellation from leaving an already-cancelled task executing in the shared coordinator.
