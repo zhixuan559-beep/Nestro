@@ -130,4 +130,18 @@ class ConversationPaginationTest {
         assertTrue(dao.allConversationSummaries().isEmpty())
     }
 
+    @Test
+    fun metadataOnlyUpdatePreservesMessagesForUnloadedConversation() = runBlocking {
+        dao.putConversation(ConversationEntity("metadata-only", "旧标题", 1L, "project-a"))
+        dao.putMessages(listOf(
+            MessageEntity("preserved-message", "metadata-only", 0, "user", "必须保留的历史内容")
+        ))
+
+        dao.putConversation(ConversationEntity("metadata-only", "新标题", 2L, "project-a"))
+
+        val updated = dao.conversationWithMessages("metadata-only")
+        assertEquals("新标题", updated?.conversation?.title)
+        assertEquals("必须保留的历史内容", updated?.messages?.single()?.content)
+    }
+
 }
