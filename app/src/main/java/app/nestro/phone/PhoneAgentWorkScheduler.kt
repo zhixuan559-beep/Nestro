@@ -15,17 +15,23 @@ object PhoneAgentWorkScheduler {
     const val KEY_ALLOW_RETRY = "phone_agent_allow_retry"
     private const val QUEUE_NAME = "nestro-phone-agent-queue"
 
+    @Synchronized
     fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false) {
         require(taskId.isNotBlank())
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val pendingKey = pendingKey(taskId)
         if (preferences.getBoolean(pendingKey, false)) return
-        preferences.edit()
+        val markerSaved = preferences.edit()
             .putBoolean(pendingKey, true)
             .putLong(pendingAtKey(taskId), System.currentTimeMillis())
             .putBoolean(afterHandoffKey(taskId), afterUserHandoff)
             .putBoolean(allowRetryKey(taskId), allowRetryCurrentAction)
-            .apply()
+            .commit()
+        if (!markerSaved) {
+            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
+                .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            error("Phone Agent 调度标记无法持久化，已取消本次入队")
+        }
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
             .setInputData(
                 Data.Builder()
@@ -41,7 +47,7 @@ object PhoneAgentWorkScheduler {
                 .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
                 .enqueue()
         } catch (error: Throwable) {
-            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId)).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
+            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId)).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).commit()
             throw error
         }
     }

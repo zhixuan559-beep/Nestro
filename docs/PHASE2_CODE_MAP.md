@@ -260,3 +260,8 @@
 - This addresses the crash window after marker persistence but before WorkManager enqueue; the Room/SharedPreferences/LocalVault/Artifact restore transaction remains unresolved and separate.
 
 - The interrupted-restore instrumentation test now also deletes a pre-existing Artifact after journaling and verifies the old Artifact content is restored, covering the file/index store in the compensation path.
+
+## 2026-11-18 — Durable WorkManager marker persistence
+
+- Pending marker, enqueue timestamp, and handoff/retry flags are now synchronously committed before submitting the WorkRequest. If SharedPreferences cannot persist the marker, scheduling aborts before WorkManager enqueue rather than creating an untracked request.
+- `enqueue()` is synchronized within the process so concurrent calls cannot both pass the pending-marker guard and append duplicate WorkRequests.
