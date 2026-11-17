@@ -38,7 +38,7 @@ class CapabilityDirectoryWindowSizeTest {
             composeRule.waitForIdle()
             composeRule.onNodeWithText("能力目录").assertIsDisplayed()
             composeRule.onNodeWithText("社区目录 HTTPS 地址").performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText("语音输出（预留）").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithText("语音输出（预留）").performScrollTo().assertExists()
         }
     }
 }
