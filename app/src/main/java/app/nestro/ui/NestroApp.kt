@@ -33,6 +33,7 @@ import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.ChatEndpointPolicy
 import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
@@ -3322,7 +3323,7 @@ private object OpenAiClient {
     }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
-        val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
+        val url = ChatEndpointPolicy.completionUrl(config.baseUrl)
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMillis.coerceIn(5000,60000)
@@ -3350,8 +3351,7 @@ private object OpenAiClient {
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             if (code !in 200..299) {
-                val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP " + code)
+                throw IllegalStateException(ChatEndpointPolicy.errorMessage(code, response))
             }
             return JSONObject(response).getJSONArray("choices").getJSONObject(0)
                 .getJSONObject("message").getString("content")
@@ -3362,7 +3362,7 @@ private object OpenAiClient {
     }
 
     suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
-        val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
+        val url = ChatEndpointPolicy.completionUrl(config.baseUrl)
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20000
