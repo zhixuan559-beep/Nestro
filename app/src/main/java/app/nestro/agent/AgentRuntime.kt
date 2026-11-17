@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * This kernel owns tool discovery, authorization, execution state and checkpoints.
  */
 enum class AgentTaskStatus {
-    CREATED, RUNNING, WAITING_FOR_USER, PAUSED, COMPLETED, FAILED, CANCELLED
+    CREATED, QUEUED, RUNNING, WAITING_FOR_USER, PAUSED, COMPLETED, FAILED, CANCELLED
 }
 
 enum class AgentToolPermission {
@@ -152,6 +152,7 @@ class DefaultAgentPermissionRouter(
 interface AgentTaskStateStore {
     suspend fun get(taskId: String): AgentTaskState?
     suspend fun put(state: AgentTaskState)
+    suspend fun recoverable(): List<AgentTaskState>
 }
 
 class InMemoryAgentTaskStateStore : AgentTaskStateStore {
@@ -162,6 +163,10 @@ class InMemoryAgentTaskStateStore : AgentTaskStateStore {
 
     override suspend fun put(state: AgentTaskState) {
         mutex.withLock { states[state.taskId] = state }
+    }
+
+    override suspend fun recoverable(): List<AgentTaskState> = mutex.withLock {
+        states.values.filter { it.status in setOf(AgentTaskStatus.QUEUED, AgentTaskStatus.RUNNING, AgentTaskStatus.PAUSED) }
     }
 }
 
