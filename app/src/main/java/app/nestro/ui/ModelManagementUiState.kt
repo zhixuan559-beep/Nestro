@@ -18,8 +18,8 @@ import app.nestro.model.ModelConfigurationRepository
  */
 @Stable
 internal class ModelManagementUiState(
-    preferences: SharedPreferences,
-    repository: ModelConfigurationRepository
+    private val preferences: SharedPreferences,
+    private val repository: ModelConfigurationRepository
 ) {
     val config: MutableState<ModelConfig> =
         mutableStateOf(ModelConfig("", "", ""))
@@ -41,6 +41,81 @@ internal class ModelManagementUiState(
 
     val modelFailoverEnabled: MutableState<Boolean> =
         mutableStateOf(preferences.getBoolean("model_failover_enabled", false))
+
+
+    /** Restores the active model selection and migrates the legacy single-profile config. */
+    fun initialize() {
+        var loadedConfig = repository.readActiveConfig()
+        var profiles = ModelProfileCatalogCodec.decode(
+            preferences.getString("model_profiles_v1", "[]") ?: "[]"
+        )
+        var activeProfileId = preferences.getString("active_model_profile_id", "") ?: ""
+        var activeRegistryId = preferences.getString("active_model_registry_id", "") ?: ""
+
+        if (profiles.isEmpty() && loadedConfig.baseUrl.isNotBlank() && loadedConfig.model.isNotBlank()) {
+            val migrated = ModelProfileMetadata("legacy-default", "默认模型", loadedConfig.baseUrl, loadedConfig.model)
+            profiles = listOf(migrated)
+            if (loadedConfig.apiKey.isNotBlank()) {
+                activeProfileId = migrated.id
+                repository.writeProfileKey(migrated.id, loadedConfig.apiKey)
+                preferences.edit().putString("active_model_profile_id", activeProfileId).apply()
+            } else {
+                activeProfileId = ""
+                preferences.edit().remove("active_model_profile_id").apply()
+            }
+            preferences.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(profiles)).apply()
+        }
+
+        val registry = repository.rebuildLegacyProfiles(profiles)
+        val activeRegistryModel = registry.models.firstOrNull { it.id == activeRegistryId }
+        val activeRegistryProvider = activeRegistryModel?.let { model ->
+            registry.providers.firstOrNull { it.id == model.providerId }
+        }
+        val activeRegistrySecret = activeRegistryModel?.apiKeyIds.orEmpty()
+            .asSequence()
+            .map(repository::readApiKey)
+            .firstOrNull { it.isNotBlank() }
+        val activeRegistryIsUsable = activeRegistryModel != null && activeRegistryProvider?.enabled == true &&
+            activeRegistryModel in registry.selectableModels() && !activeRegistrySecret.isNullOrBlank()
+
+        if (activeRegistryIsUsable) {
+            activeProfileId = ""
+            loadedConfig = ModelConfig(activeRegistryProvider!!.baseUrl, activeRegistryModel!!.modelCode, activeRegistrySecret!!)
+            repository.writeActiveConfig(loadedConfig)
+        } else {
+            if (activeRegistryId.isNotBlank()) {
+                activeRegistryId = ""
+                preferences.edit().remove("active_model_registry_id").apply()
+            }
+            val activeMetadata = profiles.firstOrNull { it.id == activeProfileId }
+            val activeModelSelectable = registry.selectableModels().any { it.id == "legacy-model-$activeProfileId" }
+            if (activeMetadata != null) {
+                val activeKey = repository.readProfileKey(activeMetadata.id)
+                if (activeKey.isNotBlank() && activeModelSelectable) {
+                    activeRegistryId = "legacy-model-" + activeMetadata.id
+                    preferences.edit().putString("active_model_registry_id", activeRegistryId).apply()
+                    loadedConfig = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
+                    repository.writeActiveConfig(loadedConfig)
+                } else {
+                    activeProfileId = ""
+                    loadedConfig = ModelConfig("", "", "")
+                    repository.clearActiveConfig()
+                    preferences.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
+                }
+            } else {
+                activeProfileId = ""
+                loadedConfig = ModelConfig("", "", "")
+                repository.clearActiveConfig()
+                preferences.edit().remove("active_model_profile_id").apply()
+            }
+        }
+
+        config.value = loadedConfig
+        modelProfiles.value = profiles
+        modelRegistry.value = registry
+        activeModelProfileId.value = activeProfileId
+        activeRegistryModelId.value = activeRegistryId
+    }
 
     val modelUsage: MutableState<Map<String, ModelUsageStats>> =
         mutableStateOf(
