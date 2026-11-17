@@ -4,6 +4,10 @@ import app.nestro.data.ModelConfig
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
+import app.nestro.model.ModelRegistry
+import app.nestro.model.ModelProvider
+import app.nestro.model.ModelApiKey
+import app.nestro.model.ModelDefinition
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -34,6 +38,15 @@ internal fun ModelManager(
     onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onDeleteKey: (String) -> Unit,
+    registry: ModelRegistry,
+    activeRegistryModelId: String,
+    loadApiKey: (String) -> String,
+    onSaveProvider: (ModelProvider) -> Unit,
+    onSaveApiKey: (ModelApiKey, String) -> Unit,
+    onSaveRegistryModel: (ModelDefinition) -> Unit,
+    onDeleteRegistryApiKey: (String) -> Unit,
+    onDeleteRegistryModel: (String) -> Unit,
+    onActivateRegistryModel: (String) -> Unit,
     onTestConnection: suspend (ModelConfig) -> String
 ) {
     val scope = rememberCoroutineScope()
@@ -47,6 +60,17 @@ internal fun ModelManager(
     var testing by remember { mutableStateOf(false) }
     var testStatus by remember { mutableStateOf("") }
     var formError by remember { mutableStateOf("") }
+    var providerNameDraft by remember { mutableStateOf("") }
+    var providerUrlDraft by remember { mutableStateOf("https://") }
+    var selectedProviderId by remember(registry.providers) {
+        mutableStateOf(registry.providers.firstOrNull()?.id.orEmpty())
+    }
+    var apiKeyLabelDraft by remember { mutableStateOf("") }
+    var apiKeyDraft by remember { mutableStateOf("") }
+    var modelNameDraft by remember { mutableStateOf("") }
+    var modelCodeDraft by remember { mutableStateOf("") }
+    var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
+    var registryMessage by remember { mutableStateOf("") }
 
     fun beginNew() {
         editingId = java.util.UUID.randomUUID().toString()
@@ -73,6 +97,118 @@ internal fun ModelManager(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
+        Text("新版模型目录 · 服务商 / API Key / 模型独立管理", color = Ink, style = MaterialTheme.typography.titleMedium)
+        Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        if (registryMessage.isNotBlank()) Text(registryMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
+
+        Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
+        registry.providers.forEach { provider ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = selectedProviderId == provider.id, onClick = { selectedProviderId = provider.id })
+                Column(Modifier.weight(1f)) {
+                    Text(provider.name, color = Ink)
+                    Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(if (provider.enabled) "启用" else "停用", color = if (provider.enabled) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
+        OutlinedTextField(providerUrlDraft, { providerUrlDraft = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("服务商 API 根地址") }, singleLine = true)
+        OutlinedButton(
+            onClick = {
+                val url = providerUrlDraft.trim().trimEnd('/')
+                if (providerNameDraft.isBlank() || !url.startsWith("https://", true)) {
+                    registryMessage = "请填写服务商名称和 HTTPS 地址"
+                } else {
+                    val provider = ModelProvider(UUID.randomUUID().toString(), providerNameDraft.trim(), url)
+                    onSaveProvider(provider)
+                    selectedProviderId = provider.id
+                    providerNameDraft = ""
+                    providerUrlDraft = "https://"
+                    registryMessage = "服务商已保存"
+                }
+            },
+            enabled = providerNameDraft.isNotBlank() && providerUrlDraft.startsWith("https://"),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("添加服务商") }
+
+        if (selectedProviderId.isNotBlank()) {
+            Text("API Key", color = Ink, style = MaterialTheme.typography.titleSmall)
+            registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.label, color = Ink)
+                        Text(if (loadApiKey(item.id).isNotBlank()) "已加密保存 · 可用" else "密钥缺失", color = if (loadApiKey(item.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                    }
+                    TextButton(onClick = { onDeleteRegistryApiKey(item.id); selectedModelKeyIds = selectedModelKeyIds - item.id }) {
+                        Text("删除", color = ColorStop)
+                    }
+                }
+            }
+            OutlinedTextField(apiKeyLabelDraft, { apiKeyLabelDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("Key 名称") }, singleLine = true)
+            OutlinedTextField(apiKeyDraft, { apiKeyDraft = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key 密钥") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+            OutlinedButton(
+                onClick = {
+                    val item = ModelApiKey(UUID.randomUUID().toString(), selectedProviderId, apiKeyLabelDraft.trim())
+                    onSaveApiKey(item, apiKeyDraft.trim())
+                    apiKeyLabelDraft = ""
+                    apiKeyDraft = ""
+                    registryMessage = "API Key 已加密保存"
+                },
+                enabled = apiKeyLabelDraft.isNotBlank() && apiKeyDraft.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("添加 API Key") }
+
+            Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
+            registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
+                val available = item in registry.selectableModels()
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(item.name, color = if (item.id == activeRegistryModelId) Mint else Ink)
+                            Text(item.modelCode, color = Muted, style = MaterialTheme.typography.bodySmall)
+                            Text(if (available) "可用" else "缺少可用 Key 或已停用", color = if (available) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (item.id == activeRegistryModelId) Text("当前", color = Mint)
+                    }
+                    Row {
+                        TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("启用", color = Mint) }
+                        TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
+                    }
+                }
+            }
+            OutlinedTextField(modelNameDraft, { modelNameDraft = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型显示名称") }, singleLine = true)
+            OutlinedTextField(modelCodeDraft, { modelCodeDraft = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型 ID / model code") }, singleLine = true)
+            Text("关联 API Key（可多选，按顺序故障切换）", color = Muted, style = MaterialTheme.typography.bodySmall)
+            registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = item.id in selectedModelKeyIds, onCheckedChange = { checked ->
+                        selectedModelKeyIds = if (checked) selectedModelKeyIds + item.id else selectedModelKeyIds - item.id
+                    })
+                    Text(item.label, color = Ink)
+                }
+            }
+            OutlinedButton(
+                onClick = {
+                    val model = ModelDefinition(
+                        id = UUID.randomUUID().toString(),
+                        providerId = selectedProviderId,
+                        name = modelNameDraft.trim(),
+                        modelCode = modelCodeDraft.trim(),
+                        apiKeyIds = registry.apiKeys.filter { it.providerId == selectedProviderId && it.id in selectedModelKeyIds }.map { it.id }
+                    )
+                    onSaveRegistryModel(model)
+                    modelNameDraft = ""
+                    modelCodeDraft = ""
+                    selectedModelKeyIds = emptySet()
+                    registryMessage = "模型已保存"
+                },
+                enabled = modelNameDraft.isNotBlank() && modelCodeDraft.isNotBlank() &&
+                    registry.apiKeys.any { it.providerId == selectedProviderId && it.id in selectedModelKeyIds && loadApiKey(it.id).isNotBlank() },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("添加模型") }
+        }
+        HorizontalDivider(color = Line)
         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
