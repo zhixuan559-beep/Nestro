@@ -45,12 +45,53 @@ data class ModelRegistry(
         }
     }
 
+    fun upsertProvider(provider: ModelProvider): ModelRegistry =
+        copy(providers = providers.filterNot { it.id == provider.id } + provider)
+
+    fun deleteProvider(providerId: String): ModelRegistry {
+        val removedKeyIds = apiKeys.filter { it.providerId == providerId }.mapTo(mutableSetOf()) { it.id }
+        return copy(
+            providers = providers.filterNot { it.id == providerId },
+            apiKeys = apiKeys.filterNot { it.providerId == providerId },
+            models = models.filterNot { it.providerId == providerId || it.apiKeyIds.any { keyId -> keyId in removedKeyIds } }
+        )
+    }
+
+    fun upsertApiKey(key: ModelApiKey): ModelRegistry {
+        require(providers.any { it.id == key.providerId }) { "API Key 对应的服务商不存在" }
+        return copy(apiKeys = apiKeys.filterNot { it.id == key.id } + key)
+    }
+
     fun deleteApiKey(keyId: String): ModelRegistry = copy(
         apiKeys = apiKeys.filterNot { it.id == keyId },
         models = models.map { model ->
             model.copy(apiKeyIds = model.apiKeyIds.filterNot { it == keyId })
         }
     )
+
+    fun upsertModel(model: ModelDefinition): ModelRegistry {
+        require(providers.any { it.id == model.providerId }) { "模型对应的服务商不存在" }
+        require(model.apiKeyIds.all { keyId -> apiKeys.any { it.id == keyId && it.providerId == model.providerId } }) {
+            "模型只能关联同一服务商下已存在的 API Key"
+        }
+        return copy(models = models.filterNot { it.id == model.id } + model)
+    }
+
+    fun attachApiKey(modelId: String, keyId: String): ModelRegistry {
+        val model = models.firstOrNull { it.id == modelId } ?: error("模型不存在")
+        val key = apiKeys.firstOrNull { it.id == keyId } ?: error("API Key 不存在")
+        require(model.providerId == key.providerId) { "模型与 API Key 必须属于同一服务商" }
+        return copy(models = models.map {
+            if (it.id == modelId) it.copy(apiKeyIds = (it.apiKeyIds + keyId).distinct()) else it
+        })
+    }
+
+    fun detachApiKey(modelId: String, keyId: String): ModelRegistry {
+        require(models.any { it.id == modelId }) { "模型不存在" }
+        return copy(models = models.map {
+            if (it.id == modelId) it.copy(apiKeyIds = it.apiKeyIds.filterNot { id -> id == keyId }) else it
+        })
+    }
 
     fun upsertLegacyProfile(profile: ModelProfileMetadata, keyAvailable: Boolean): ModelRegistry {
         val providerId = ModelRegistryCodec.legacyProviderId(profile.baseUrl)
