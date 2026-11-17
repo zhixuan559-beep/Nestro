@@ -101,14 +101,19 @@ data class ModelRegistry(
         val providerId = ModelRegistryCodec.legacyProviderId(profile.baseUrl)
         val keyId = "legacy-key-${profile.id}"
         val modelId = "legacy-model-${profile.id}"
+        val previousProvider = providers.firstOrNull { it.id == providerId }
         val provider = ModelProvider(
             providerId,
             profile.baseUrl.trimEnd('/').substringAfter("://").substringBefore('/').ifBlank { "旧服务商" },
-            profile.baseUrl.trimEnd('/')
+            profile.baseUrl.trimEnd('/'),
+            enabled = previousProvider?.enabled ?: true
         )
         val nextProviders = (providers.filterNot { it.id == providerId } + provider)
+        val previousKey = apiKeys.firstOrNull { it.id == keyId }
         val nextKeys = if (keyAvailable) {
-            apiKeys.filterNot { it.id == keyId } + ModelApiKey(keyId, providerId, profile.name)
+            apiKeys.filterNot { it.id == keyId } + ModelApiKey(
+                keyId, providerId, profile.name, enabled = previousKey?.enabled ?: true
+            )
         } else apiKeys.filterNot { it.id == keyId }
         val previousModel = models.firstOrNull { it.id == modelId }
         val retainedKeyIds = previousModel?.apiKeyIds.orEmpty()
@@ -120,6 +125,7 @@ data class ModelRegistry(
             name = profile.name,
             modelCode = profile.model,
             apiKeyIds = (retainedKeyIds + if (keyAvailable) listOf(keyId) else emptyList()).distinct(),
+            enabled = previousModel?.enabled ?: true,
             inputPricePerMillion = previousModel?.inputPricePerMillion,
             outputPricePerMillion = previousModel?.outputPricePerMillion,
             currency = previousModel?.currency ?: "USD"
