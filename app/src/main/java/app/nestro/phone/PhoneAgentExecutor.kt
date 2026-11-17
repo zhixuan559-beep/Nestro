@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 object PhoneAgentExecutor {
     sealed class Action {
         data class OpenUrl(val url: String) : Action()
+        data class SearchWeb(val query: String) : Action()
         data class LaunchApp(val packageName: String) : Action()
         data class ClickText(val exactText: String, val expectedAfter: String? = null) : Action()
         data class EnterText(val fieldLabel: String, val value: String) : Action()
@@ -76,6 +77,12 @@ object PhoneAgentExecutor {
                         val before = service.captureVisibleText()
                         val opened = service.openUrl(task.projectId, action.url)
                         delay(1200)
+                        opened && service.screenTextChanged(before)
+                    }
+                    is Action.SearchWeb -> {
+                        val before = service.captureVisibleText()
+                        val opened = service.searchWeb(task.projectId, action.query)
+                        delay(1400)
                         opened && service.screenTextChanged(before)
                     }
                     is Action.LaunchApp -> {
