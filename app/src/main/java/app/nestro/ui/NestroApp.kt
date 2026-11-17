@@ -9,17 +9,13 @@ import app.nestro.data.ConversationRecord
 import app.nestro.data.ConversationPreferencesStore
 import app.nestro.data.ProjectRecord
 import app.nestro.data.ProjectPreferencesStore
-import app.nestro.data.ConversationEntity
 import app.nestro.data.ConversationListItem
-import app.nestro.data.MessageEntity
-import app.nestro.data.ProjectEntity
 import app.nestro.data.ProjectSpaceRules
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.ConversationMemoryStore
 import app.nestro.data.ConversationRecallSource
-import androidx.room.withTransaction
 
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
@@ -565,93 +561,7 @@ fun NestroApp() {
             prefs.edit().remove("active_model_profile_id").apply()
         }
         val loaded = runCatching {
-            withContext(Dispatchers.IO) {
-                val dao = database.dao()
-                val pendingProjectDeleteId = prefs.getString("pending_project_delete_id", "").orEmpty()
-                if (pendingProjectDeleteId.isNotBlank()) {
-                    val localRecords = ConversationPreferencesStore.loadConversations(prefs)
-                    val roomConversationIds = dao.projectConversationIds(pendingProjectDeleteId)
-                    val activeId = prefs.getString("active_project_id", "default") ?: "default"
-                    val pendingRequest = runCatching {
-                        JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}")
-                    }.getOrNull()
-                    val hasRunningRequest = pendingRequest?.optString("status") == "running" &&
-                        pendingRequest?.optString("project_id") == pendingProjectDeleteId
-                    val pendingConversationIds = (
-                        roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id }
-                    ).toSet()
-                    val hasDraft = pendingConversationIds.any { id ->
-                        (prefs.getString("draft_$id", "") ?: "").isNotBlank()
-                    }
-                    val hasLocalConversationData = localRecords.any {
-                        it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
-                    }
-                    val projectExists = dao.projectExists(pendingProjectDeleteId)
-                    val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-                    val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
-                        projectId = pendingProjectDeleteId,
-                        activeProjectId = activeId,
-                        hasRunningRequest = hasRunningRequest,
-                        hasDraft = hasDraft,
-                        hasLocalConversationData = hasLocalConversationData,
-                        hasLinkedData = hasLinkedData
-                    )
-                    val deleted = canRecover &&
-                        dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
-                    if (deleted) {
-                        ConversationPreferencesStore.saveConversationList(
-                            prefs,
-                            localRecords.filterNot { it.projectId == pendingProjectDeleteId },
-                            markDirty = false
-                        )
-                        ProjectPreferencesStore.saveProjects(
-                            prefs,
-                            ProjectPreferencesStore.loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
-                            markDirty = false
-                        )
-                        val editor = prefs.edit()
-                        (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
-                            .distinct().forEach { editor.remove("draft_$it") }
-                        editor.remove("pending_project_delete_id").commit()
-                    } else {
-                        prefs.edit().remove("pending_project_delete_id").commit()
-                    }
-                }
-                val storedConversationCount = dao.conversationCount()
-                val hasPendingLocalSnapshot = prefs.getLong("local_snapshot_saved_at", 0L) >
-                    prefs.getLong("room_synced_at", 0L)
-                if (storedConversationCount == 0 || hasPendingLocalSnapshot) {
-                    val legacyConversations = ConversationPreferencesStore.loadConversations(prefs)
-                    val legacyProjects = ProjectPreferencesStore.loadProjects(prefs)
-                    database.withTransaction {
-                        val conversationIds = legacyConversations.map { it.id }
-                        val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
-                        if (staleConversationIds.isNotEmpty()) dao.deleteConversations(staleConversationIds)
-                        legacyConversations.forEach { record ->
-                            dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
-                            dao.clearMessages(record.id)
-                            val rows = record.messages.mapIndexed { index, message ->
-                                MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
-                            }
-                            if (rows.isNotEmpty()) dao.putMessages(rows)
-                        }
-                        dao.putProjects(legacyProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                        val projectIds = legacyProjects.map { it.id }
-                        val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
-                        if (staleProjectIds.isNotEmpty()) {
-                            staleProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
-                        }
-                    }
-                    prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
-                    dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId, messagesLoaded = false) } to legacyProjects
-                } else {
-                    val restoredConversations = dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId, messagesLoaded = false) }
-                    val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-                    val restoredProjects = if (storedProjects.isEmpty()) ProjectPreferencesStore.loadProjects(prefs) else storedProjects
-                    if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                    restoredConversations to restoredProjects
-                }
-            }
+            appRuntime.conversationPersistenceService.restore(prefs)
         }
         if (loaded.isSuccess) {
             val data = loaded.getOrThrow()
@@ -745,35 +655,13 @@ fun NestroApp() {
         val knownVersions = persistedConversationVersions.toMap()
         val snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
         runCatching {
-            withContext(Dispatchers.IO) {
-                val dao = database.dao()
-                database.withTransaction {
-                    val currentIds = conversationSnapshot.map { it.id }
-                    val removedIds = dao.conversationIds().filterNot { it in currentIds }
-                    if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
-                    conversationSnapshot.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
-                        dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
-                        if (record.messagesLoaded) {
-                            dao.clearMessages(record.id)
-                            val rows = record.messages.mapIndexed { index, message ->
-                                MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
-                            }
-                            if (rows.isNotEmpty()) dao.putMessages(rows)
-                        }
-                    }
-                    dao.putProjects(projectSnapshot.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                    val currentProjectIds = projectSnapshot.map { it.id }
-                    val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
-                    if (removedProjectIds.isNotEmpty()) {
-                        removedProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
-                    }
-                }
-            }
-            persistedConversationVersions.clear()
-            conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.hashCode() }
-            ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot, markDirty = false)
-            ProjectPreferencesStore.saveProjects(prefs, projectSnapshot, markDirty = false)
-            prefs.edit().putLong("room_synced_at", snapshotTimestamp).apply()
+            appRuntime.conversationPersistenceService.persist(
+                prefs = prefs,
+                conversations = conversationSnapshot,
+                projects = projectSnapshot,
+                knownVersions = knownVersions,
+                snapshotTimestamp = snapshotTimestamp
+            )
         }.onFailure {
             status = "本地数据保存失败：${it.message ?: "未知错误"}"
         }
