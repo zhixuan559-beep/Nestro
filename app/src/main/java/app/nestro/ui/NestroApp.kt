@@ -2161,7 +2161,7 @@ fun NestroApp() {
                                 }
                             }
                         }
-                        "phone" -> PhoneAgentPage(context, database, activeProjectId)
+                        "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "capabilities" -> CapabilityDirectoryPage()
                         "voice" -> {

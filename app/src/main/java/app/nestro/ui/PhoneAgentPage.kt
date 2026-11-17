@@ -1,7 +1,6 @@
 package app.nestro.ui
 
 import app.nestro.NestroApplication
-import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentService
@@ -22,7 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId: String) {
+internal fun PhoneAgentPage(context: Context, projectId: String) {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val taskService = remember {
