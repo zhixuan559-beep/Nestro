@@ -42,6 +42,8 @@ import app.nestro.data.ExpertProfileCodec
 import app.nestro.data.ExpertRevision
 import app.nestro.data.ExpertRevisionCodec
 import app.nestro.data.ExpertTemplate
+import app.nestro.data.ExpertTemplateCatalog
+import app.nestro.data.ExpertTemplateBundleCodec
 import app.nestro.data.ExpertTemplateCodec
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
