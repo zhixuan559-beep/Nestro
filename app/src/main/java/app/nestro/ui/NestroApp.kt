@@ -143,8 +143,9 @@ fun NestroApp() {
     var activeModelProfileId by modelUiState.activeModelProfileId
     var modelFailoverEnabled by modelUiState.modelFailoverEnabled
     var modelUsage by modelUiState.modelUsage
-    var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
-    var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
+    val conversationUiState = remember { ConversationUiState() }
+    var messages by conversationUiState.messages
+    var conversations by conversationUiState.conversations
     val projectSpaceUiState = remember { ProjectSpaceUiState() }
     var projects by projectSpaceUiState.projects
     var activeProjectId by projectSpaceUiState.activeProjectId
@@ -153,18 +154,18 @@ fun NestroApp() {
     var projectDraftName by projectSpaceUiState.projectDraftName
     var projectDraftInstructions by projectSpaceUiState.projectDraftInstructions
     var editingProjectId by projectSpaceUiState.editingProjectId
-    var activeConversationId by remember { mutableStateOf("") }
-    var conversationSearch by remember { mutableStateOf("") }
-    var conversationPageItems by remember { mutableStateOf(emptyList<ConversationListItem>()) }
-    var conversationPageLoading by remember { mutableStateOf(false) }
-    var conversationPageHasMore by remember { mutableStateOf(false) }
-    var conversationPageRefreshKey by remember { mutableIntStateOf(0) }
-    var showRenameConversation by remember { mutableStateOf(false) }
-    var showEditMessageDialog by remember { mutableStateOf(false) }
-    var editMessageId by remember { mutableStateOf("") }
-    var editMessageDraft by remember { mutableStateOf("") }
-    var renameConversationId by remember { mutableStateOf("") }
-    var renameConversationDraft by remember { mutableStateOf("") }
+    var activeConversationId by conversationUiState.activeConversationId
+    var conversationSearch by conversationUiState.conversationSearch
+    var conversationPageItems by conversationUiState.conversationPageItems
+    var conversationPageLoading by conversationUiState.conversationPageLoading
+    var conversationPageHasMore by conversationUiState.conversationPageHasMore
+    var conversationPageRefreshKey by conversationUiState.conversationPageRefreshKey
+    var showRenameConversation by conversationUiState.showRenameConversation
+    var showEditMessageDialog by conversationUiState.showEditMessageDialog
+    var editMessageId by conversationUiState.editMessageId
+    var editMessageDraft by conversationUiState.editMessageDraft
+    var renameConversationId by conversationUiState.renameConversationId
+    var renameConversationDraft by conversationUiState.renameConversationDraft
     var globalMemory by remember { mutableStateOf("") }
     var memoryDraft by remember { mutableStateOf("") }
     var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
