@@ -39,8 +39,10 @@ object PhoneAgentWorkScheduler {
     }
 
     fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
-        context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().putBoolean(cancelKey(taskId), true).apply()
+        val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        if (preferences.getBoolean(pendingKey(taskId), false)) {
+            preferences.edit().putBoolean(cancelKey(taskId), true).apply()
+        }
         if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop()
     }
 

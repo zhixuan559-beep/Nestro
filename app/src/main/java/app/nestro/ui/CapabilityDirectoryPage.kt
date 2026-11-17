@@ -52,7 +52,10 @@ fun CapabilityDirectoryPage() {
             CapabilityEntry("Skills", "管理本地技能包；导入内容只解析文本与声明，不执行任意代码。", "本地技能包", "导入前预览；权限声明不自动授权", "已内置"),
             CapabilityEntry("工作流", "按顺序执行提示词、专家和技能节点。", "Nestro 本地模块", "按节点实际调用能力", "已内置"),
             CapabilityEntry("Phone Agent", "在用户授权下读取可见界面并执行受限动作。", "Android Accessibility", "无障碍授权；高风险动作由用户接手", "已内置"),
-            CapabilityEntry("产物库", "按项目保存 Markdown 成果，支持版本、预览、分享和导出。", "Nestro 本地存储", "文件保存在应用私有目录", "已内置")
+            CapabilityEntry("产物库", "按项目保存 Markdown 成果，支持版本、预览、分享和导出。", "Nestro 本地存储", "文件保存在应用私有目录", "已内置"),
+            CapabilityEntry("MCP 工具", "本版本尚未接入 MCP 服务发现与工具调用。", "未接入", "未授予 MCP 工具权限", "未接入"),
+            CapabilityEntry("远程社区目录", "尚未配置可信社区目录，当前不会从远程来源下载或安装能力包。", "未配置可信来源", "未授予任何权限", "未接入"),
+            CapabilityEntry("来源签名校验", "社区包签名、公钥信任和发布者身份校验尚未接入。", "未配置受信任公钥", "无", "未接入")
         )
         runCatching {
             val skills = JSONObject(rawSkills)
@@ -84,7 +87,8 @@ fun CapabilityDirectoryPage() {
                     (if (dependencyNames.isEmpty()) "" else "；依赖：" + dependencyNames.joinToString("、"))
                 CapabilityEntry(
                     name = name,
-                    description = detail.optString("description", "本地安装的自定义技能").ifBlank { "本地安装的自定义技能" },
+                    description = detail.optString("description", "本地安装的自定义技能").ifBlank { "本地安装的自定义技能" } +
+                        " · v" + detail.optString("version", "1.0.0"),
                     source = "包内来源声明：" + detail.optString("source", "未声明").ifBlank { "未声明" },
                     permission = permissionSummary,
                     state = if (name in disabled) "已停用" else "已启用"
