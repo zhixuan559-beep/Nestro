@@ -74,7 +74,6 @@ fun CapabilityDirectoryPage() {
     Column(Modifier.fillMaxSize().padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("能力目录",style=MaterialTheme.typography.headlineSmall)
         Text("社区目录必须由固定 RSA 公钥验签；技能包必须匹配签名目录中的 SHA-256。安装前展示权限声明，不会自动授予 Android 权限。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(query,{query=it},label={Text("搜索本地能力")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedTextField(trustedKey,{trustedKey=it},label={Text("受信任 RSA 公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
         Button(enabled=!loading && catalogUrl.startsWith("https://") && trustedKey.isNotBlank(),onClick={
