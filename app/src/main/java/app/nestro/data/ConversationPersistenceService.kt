@@ -6,16 +6,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import app.nestro.data.ChatMessage
 
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
 class ConversationPersistenceService(private val database: NestroDatabase) {
-    data class RestoreResult(
+    internal data class RestoreResult(
         val conversations: List<ConversationRecord>,
         val projects: List<ProjectRecord>
     )
 
-    suspend fun restore(prefs: SharedPreferences): RestoreResult = withContext(Dispatchers.IO) {
+    internal suspend fun restore(prefs: SharedPreferences): RestoreResult = withContext(Dispatchers.IO) {
         val dao = database.dao()
         val pendingProjectDeleteId = prefs.getString("pending_project_delete_id", "").orEmpty()
         if (pendingProjectDeleteId.isNotBlank()) {
@@ -118,7 +117,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         restored
     }
 
-    suspend fun loadConversationPage(
+    internal suspend fun loadConversationPage(
         projectId: String,
         query: String,
         limit: Int,
@@ -127,7 +126,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         database.dao().conversationListPage(projectId, query, limit, offset)
     }
 
-    suspend fun loadMessages(conversationId: String): List<ChatMessage>? = withContext(Dispatchers.IO) {
+    internal suspend fun loadMessages(conversationId: String): List<ChatMessage>? = withContext(Dispatchers.IO) {
         val entity = database.dao().conversationWithMessages(conversationId) ?: return@withContext null
         entity.messages.sortedBy { it.position }.map { message ->
             ChatMessage(
@@ -142,7 +141,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         (0 until values.length()).map { values.optString(it) }
     }.getOrDefault(emptyList())
 
-    suspend fun persist(
+    internal suspend fun persist(
         prefs: SharedPreferences,
         conversations: List<ConversationRecord>,
         projects: List<ProjectRecord>,

@@ -6,7 +6,7 @@ class ConversationContextRepository(private val database: NestroDatabase) {
         projectId: String,
         conversationId: String,
         query: String
-    ): ConversationRecallSource =
+    ): ConversationRecallResult =
         ConversationMemoryStore.retrieve(database.dao(), projectId, conversationId, query)
 
     suspend fun retrieveKnowledge(projectId: String, query: String): String =

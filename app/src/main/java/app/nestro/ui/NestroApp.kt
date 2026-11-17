@@ -296,7 +296,7 @@ fun NestroApp() {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val json = buildLocalBackup(context, prefs, database)
+                        val json = buildLocalBackup(context, prefs, appRuntime.database)
                         context.contentResolver.openOutputStream(uri)?.use {
                             it.write(json.toByteArray(Charsets.UTF_8))
                         } ?: error("无法创建备份文件")
@@ -320,7 +320,7 @@ fun NestroApp() {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val raw = readBackupText(context, uri)
-                    restoreLocalBackup(context, prefs, raw, database)
+                    restoreLocalBackup(context, prefs, raw, appRuntime.database)
                 }
             }
             if (result.isSuccess) {
