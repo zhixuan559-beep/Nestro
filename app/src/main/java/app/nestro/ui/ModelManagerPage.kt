@@ -189,6 +189,13 @@ internal fun ModelManager(
                         providerToDeleteId = ""
                         if (selectedProviderId == deletingId) {
                             selectedProviderId = registry.providers.firstOrNull { it.id != deletingId }?.id.orEmpty()
+                            editingRegistryModelId = ""
+                            modelNameDraft = ""
+                            modelCodeDraft = ""
+                            selectedModelKeyIds = emptySet()
+                            modelInputPriceDraft = ""
+                            modelOutputPriceDraft = ""
+                            modelCurrencyDraft = "USD"
                         }
                         if (editingProviderId == deletingId) {
                             editingProviderId = ""
