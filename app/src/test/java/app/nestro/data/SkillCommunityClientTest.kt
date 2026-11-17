@@ -68,4 +68,25 @@ class SkillCommunityClientTest {
         } catch (_: IllegalArgumentException) {
         }
     }
+    @Test
+    fun rejectsBundleWhenSignedSha256DoesNotMatch() {
+        val bytes = """{"name":"研究助手","version":"1.0.0","prompt":"请核对来源。"}""".toByteArray()
+        val release = SignedSkillRelease("研究助手", "1.0.0", "", "https://example.org/skill.json", "0".repeat(64))
+        try {
+            SkillCommunityClient.verifyBundleBytes(release, bytes)
+            throw AssertionError("bundle with wrong digest must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun acceptsBundleOnlyWhenDigestNameAndVersionMatch() {
+        val bytes = """{"name":"研究助手","version":"1.0.0","prompt":"请核对来源。"}""".toByteArray()
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val release = SignedSkillRelease("研究助手", "1.0.0", "签名目录说明", "https://example.org/skill.json", digest)
+        val bundle = SkillCommunityClient.verifyBundleBytes(release, bytes)
+        assertEquals("研究助手", bundle.name)
+        assertEquals("已验证签名社区目录", bundle.source)
+    }
+
 }
