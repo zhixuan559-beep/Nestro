@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main", "feature/voice-system" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   unit-tests:
     # Pull requests run JVM unit tests only; no APK or emulator build before feature completion.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/voice-system'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
