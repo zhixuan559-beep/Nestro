@@ -108,3 +108,10 @@
 - 移除 `NestroApp` 中重复调用 `AgentTaskCoordinator.recoverAfterProcessRestart()` 的 UI 启动分支。进程级任务恢复由 `NestroApplication.onCreate()` 统一拥有，避免应用层和页面层并发执行恢复扫描。
 - `NestroApp` 仍负责 Room/旧存储会话与项目的首轮恢复、活动项目/会话选择和页面状态应用；Batch A 未完成，下一步继续拆分会话启动恢复与发送编排。
 - 前一提交 `d0968acd667edc0aca95a7f69f46a44018194e47` 的 Android CI 已通过。上述本轮新改动尚待对应最新 head 的 CI 验证；未构建 APK、未进行真机验收，PR #3 仍保持 Draft / 未合并。
+
+
+## 2026-11-18 批次 A 编译反馈与修复
+
+- 最新 head `a8bc5d5b4115818acc293caca322ce5788925977` 的 CI 在 Kotlin 编译阶段失败，唯一报告错误为 `NestroApplication` 的 public 属性暴露 internal 类型 `ChatRequestRecoveryCoordinator`。这是可见性边界问题，不是恢复逻辑或测试失败。
+- 已将 `NestroApplication.chatRequestRecoveryCoordinator` 收紧为 `internal`，保持协调器和其内部 Result 类型不泄漏到应用公开 API。
+- 修复提交 `4e631ca4045f819a00e1e25a1f677828d0347310`；等待该修复及本次代码地图更新后的最新 head CI。PR #3 保持 Draft / 未合并。
