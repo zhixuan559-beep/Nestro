@@ -42,6 +42,28 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun coordinatorPreservesFailureReportedByFeatureHandler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        registry.register("feature") { context ->
+            val current = states.get(context.taskId)!!
+            states.put(current.copy(
+                status = AgentTaskStatus.FAILED,
+                lastError = "feature execution failed"
+            ))
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        coordinator.enqueue("feature-failure", "feature")
+        withTimeout(2_000) {
+            while (states.get("feature-failure")?.status != AgentTaskStatus.FAILED) delay(10)
+        }
+
+        assertEquals("feature execution failed", states.get("feature-failure")?.lastError)
+        coordinator.close()
+    }
+
+    @Test
     fun taskIdCannotBeReusedByAnotherHandler() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
