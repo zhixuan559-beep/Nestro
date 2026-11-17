@@ -34,6 +34,7 @@ import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
 import app.nestro.data.ChatEndpointPolicy
+import app.nestro.data.ChatHttpTransport
 import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
@@ -3323,14 +3324,10 @@ private object OpenAiClient {
     }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
-        val url = ChatEndpointPolicy.completionUrl(config.baseUrl)
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = connectTimeoutMillis.coerceIn(5000,60000)
-            readTimeout = readTimeoutMillis.coerceIn(5000,120000)
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer " + config.apiKey)
+        val connection = ChatHttpTransport.open(
+            config.baseUrl, config.apiKey, connectTimeoutMillis, readTimeoutMillis, streaming = false
+        ).also {
+            ChatHttpTransport.configure(it, config.apiKey, connectTimeoutMillis, readTimeoutMillis, streaming = false)
         }
         activeConnections.add(connection)
         try {
@@ -3346,10 +3343,8 @@ private object OpenAiClient {
                 })
                 put("stream", false)
             }
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val code = ChatHttpTransport.postJson(connection, body.toString())
+            val response = ChatHttpTransport.readBody(connection, code)
             if (code !in 200..299) {
                 throw IllegalStateException(ChatEndpointPolicy.errorMessage(code, response))
             }
@@ -3362,15 +3357,10 @@ private object OpenAiClient {
     }
 
     suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
-        val url = ChatEndpointPolicy.completionUrl(config.baseUrl)
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 90000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer " + config.apiKey)
-            setRequestProperty("Accept", "text/event-stream")
+        val connection = ChatHttpTransport.open(
+            config.baseUrl, config.apiKey, 20_000, 90_000, streaming = true
+        ).also {
+            ChatHttpTransport.configure(it, config.apiKey, 20_000, 90_000, streaming = true)
         }
         activeConnections.add(connection)
         requestConnections[requestId] = connection
@@ -3387,10 +3377,9 @@ private object OpenAiClient {
                 })
                 put("stream", true)
             }
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
+            val code = ChatHttpTransport.postJson(connection, body.toString())
             if (code !in 200..299) {
-                val response = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val response = ChatHttpTransport.readBody(connection, code)
                 val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
                 throw IllegalStateException("HTTP $code: " + (detail?.takeIf { it.isNotBlank() } ?: response.take(300)))
             }
