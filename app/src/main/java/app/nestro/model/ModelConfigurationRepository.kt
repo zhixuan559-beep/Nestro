@@ -30,7 +30,7 @@ class ModelConfigurationRepository(context: Context) {
         return reconciled
     }
 
-    fun saveRegistry(registry: ModelRegistry) = registryStore.save(registry)
+    fun saveRegistry(registry: ModelRegistry) = registryStore.save(withAvailableSecrets(registry))
 
     fun readProfileKey(profileId: String): String =
         LocalVault.readProfile(vaultContext, profileId)
