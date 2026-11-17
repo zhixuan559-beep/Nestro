@@ -70,6 +70,7 @@ internal fun ModelManager(
     var modelNameDraft by remember { mutableStateOf("") }
     var modelCodeDraft by remember { mutableStateOf("") }
     var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
+    var replacingApiKeyId by remember { mutableStateOf("") }
     var registryMessage by remember { mutableStateOf("") }
 
     fun beginNew() {
