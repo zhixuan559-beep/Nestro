@@ -12,6 +12,7 @@ import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
+import app.nestro.data.ConversationPersistenceService
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
@@ -26,6 +27,9 @@ import kotlinx.coroutines.launch
  */
 class NestroApplication : Application() {
     val database: NestroDatabase by lazy { NestroDatabase.get(this) }
+    val conversationPersistenceService: ConversationPersistenceService by lazy {
+        ConversationPersistenceService(database)
+    }
     val modelConfigurationRepository: ModelConfigurationRepository by lazy {
         ModelConfigurationRepository(this)
     }
