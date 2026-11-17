@@ -34,6 +34,28 @@ class LocalVaultApiKeyTest {
     }
 
     @Test
+    fun oldProfileSecretIsMigratedIntoTheIndependentKeyStore() {
+        val profileId = "old-localvault-test"
+        val keyId = "legacy-key-$profileId"
+        val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        try {
+            LocalVault.writeApiKey(context, keyId, "old-secret")
+            val packed = preferences.getString("model_api_key_v1_$keyId", null)
+            require(!packed.isNullOrBlank())
+            preferences.edit()
+                .putString("model_api_key_enc_$profileId", packed)
+                .remove("model_api_key_v1_$keyId")
+                .commit()
+
+            assertEquals("old-secret", LocalVault.readProfile(context, profileId))
+            assertEquals("old-secret", LocalVault.readApiKey(context, keyId))
+            assertTrue(preferences.getString("model_api_key_enc_$profileId", null).isNullOrBlank())
+        } finally {
+            LocalVault.deleteProfile(context, profileId)
+        }
+    }
+
+    @Test
     fun legacyProfileCredentialsUseTheIndependentKeyStore() {
         val profileId = "legacy-localvault-test"
         val keyId = "legacy-key-$profileId"
