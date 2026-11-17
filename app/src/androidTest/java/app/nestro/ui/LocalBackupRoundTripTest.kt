@@ -14,6 +14,7 @@ import app.nestro.data.MessageEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ProjectEntity
 import app.nestro.data.UserMemoryEntity
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,6 +27,9 @@ import org.junit.runner.RunWith
 class LocalBackupRoundTripTest {
     @Test fun restoresRoomDataAndUserPreferencesFromVerifiedBackup() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        // ArtifactStore uses app-private files shared by instrumentation tests. Start from a
+        // clean store so deliberately corrupted fixtures from other tests cannot leak in.
+        File(context.filesDir, "artifacts").deleteRecursively()
         val databaseName = "nestro_backup_round_trip.db"
         context.deleteDatabase(databaseName)
         val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
@@ -95,7 +99,7 @@ class LocalBackupRoundTripTest {
             }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
-            ArtifactStore.list(context, "p1").filter { it.title.startsWith("备份往返测试-") }.forEach { runCatching { ArtifactStore.delete(context, it) } }
+            File(context.filesDir, "artifacts").deleteRecursively()
             database.close()
             prefs.edit().clear().commit()
             context.deleteDatabase(databaseName)
