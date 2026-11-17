@@ -106,6 +106,10 @@ class AgentTaskCoordinator(
         }
     }
 
+    fun close() {
+        queue.close()
+    }
+
     suspend fun enqueue(taskId: String, owner: String, checkpoint: String? = null): AgentTaskState {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
