@@ -52,11 +52,11 @@ class ModelConfigurationRepository(context: Context) {
         LocalVault.deleteApiKey(vaultContext, keyId)
 
     /** Keeps the legacy active-model preference format behind the model boundary. */
-    fun readActiveConfig(): ModelConfig = LocalVault.read(vaultContext)
+    internal fun readActiveConfig(): ModelConfig = LocalVault.read(vaultContext)
 
-    fun writeActiveConfig(config: ModelConfig) =
+    internal fun writeActiveConfig(config: ModelConfig) =
         LocalVault.write(vaultContext, config)
 
-    fun clearActiveConfig() =
+    internal fun clearActiveConfig() =
         LocalVault.clearActive(vaultContext)
 }
