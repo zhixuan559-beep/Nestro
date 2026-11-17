@@ -44,7 +44,7 @@ Dependency rules:
 | Local persistence | `NestroDatabase`, Room stores, preference stores | Durable app data and migrations |
 | Backup | `LocalBackupRepository`, `LocalBackupCompatibility` | Versioned export/import, integrity and compatibility; secrets excluded |
 | Knowledge and memory | `KnowledgeStore`, `KnowledgeSearchEngine`, `ConversationMemoryStore`, `UserMemoryStore` | Project-scoped retrieval and memory lifecycle |
-| Speech | `SpeechProviders`, `VoiceInputButton` and Android speech adapter | Input, output and real-time voice provider contracts; UI must not own provider credentials |
+| Speech | `SpeechProviders`, `VoiceInputButton`, `AndroidSpeechRecognitionController` and Android speech adapter | Input, output and real-time voice provider contracts; UI must not own provider credentials |
 | Artifact and community | `ArtifactStore`, `SkillCommunityClient`, parsers and catalog rules | Versioned artifacts, trust validation, permission preview and install policy |
 
 ## Product module ownership (fixed order)
