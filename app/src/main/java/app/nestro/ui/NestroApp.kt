@@ -1301,7 +1301,7 @@ fun NestroApp() {
                                                              }, onStep = { index, step ->
                                                                  if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                  workflowPauseGate?.await()
-                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
+                                                                 if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                  workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
                                                                  taskContext.checkpoint("workflow:" + workflow.id + ":finished", runResult.completedSteps)
