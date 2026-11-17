@@ -34,4 +34,18 @@ class RoomAgentTaskStateStore(
             )
         )
     }
+
+    override suspend fun recoverable(): List<AgentTaskState> =
+        dao.recoverableAgentTaskStates().map { row ->
+            AgentTaskState(
+                taskId = row.taskId,
+                owner = row.owner,
+                status = runCatching { AgentTaskStatus.valueOf(row.status) }
+                    .getOrDefault(AgentTaskStatus.PAUSED),
+                currentStep = row.currentStep.coerceAtLeast(0),
+                checkpoint = row.checkpoint,
+                lastError = row.lastError,
+                updatedAt = row.updatedAt
+            )
+        }
 }
