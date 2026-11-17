@@ -286,3 +286,15 @@
 - CI #822 identified one Kotlin API visibility error in the newly extracted chat context assembler: its public method exposed internal `ChatMessage`. The assembler/result and the application composition-root property are now internal, matching their app-internal use and avoiding accidental public API leakage.
 
 - Backup repository operations are now serialized with a repository-scoped Mutex. Export first replays any interrupted restore journal before snapshotting Room/Preferences/Vault/Artifacts, preventing a backup of partially restored state; restore and explicit recovery share the same lock. Added instrumentation coverage for export-triggered recovery.
+
+## 2026-11-18 — Workflow lifecycle boundary (restored code-map entry)
+
+- `WorkflowExecutionCoordinator` owns workflow task registration, queued/running/finished checkpoints, and shared AgentTaskCoordinator lifecycle.
+- `NestroApplication` owns the process-scoped coordinator. `NestroApp` supplies workflow definition/input, model invocation, and pause/stop/UI progress callbacks; existing WorkflowEngine retry, timeout, repeat, skip, and continue-on-error semantics remain unchanged.
+- JVM coverage validates step execution, progress callback, output, and terminal shared-task state.
+
+## 2026-11-18 — Chat streaming and partial-response persistence extracted
+
+- Added `ChatStreamingCoordinator` as the boundary for model stream transport, incremental partial-response persistence, and cancellation-safe result handling.
+- Partial answers continue to be written to `chat_request_state_v1` with the same request/conversation/project metadata and 24k cap; Compose root only applies partial text to the active conversation.
+- Added JVM tests for incremental persistence, preserving partial output on transport failure, caller cancellation propagation, and partial-state JSON metadata/size bounds.

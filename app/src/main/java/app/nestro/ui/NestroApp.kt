@@ -48,7 +48,6 @@ import app.nestro.data.ExpertTemplateCodec
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
-import app.nestro.data.ExpertTeamEngine
 import app.nestro.data.ExpertTeamDefaults
 import app.nestro.data.ExpertTeamMemberTask
 import app.nestro.data.ExpertTeamRunResult
@@ -782,19 +781,29 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw IllegalStateException("用户停止生成")
-                    appRuntime.chatExecutionService.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId, shouldStop = { stopRequested }) { chunk ->
-                        partialAnswer.append(chunk)
-                        prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
-                            .put("request_id", assistantId).put("conversation_id", requestConversationId)
-                            .put("project_id", requestProjectId).put("prompt", prompt)
-                            .put("partial_answer", partialAnswer.toString().take(24000))
-                            .put("started_at", System.currentTimeMillis()).toString()).apply()
-                        withContext(Dispatchers.Main) {
-                            if (activeConversationId == requestConversationId) {
-                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString(), previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
+                    val streamResult = appRuntime.chatStreamingCoordinator.execute(
+                        configs = requestModelConfigs,
+                        history = requestHistory,
+                        systemPrompt = finalSystemContext,
+                        temperature = requestExpertProfile?.temperature,
+                        maxTokens = requestExpertProfile?.maxTokens,
+                        onUsage = recordModelUsage,
+                        requestId = assistantId,
+                        conversationId = requestConversationId,
+                        projectId = requestProjectId,
+                        prompt = prompt,
+                        shouldStop = { stopRequested },
+                        onPartialAnswer = { partial ->
+                            withContext(Dispatchers.Main) {
+                                if (activeConversationId == requestConversationId) {
+                                    messages = requestHistory + ChatMessage(assistantId, "assistant", partial, previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
+                                }
                             }
                         }
-                    }
+                    )
+                    partialAnswer.append(streamResult.partialAnswer)
+                    streamResult.failure?.let { throw it }
+                    streamResult.response.orEmpty()
                 }
                 val finalText = when {
                     result.isSuccess -> result.getOrThrow()

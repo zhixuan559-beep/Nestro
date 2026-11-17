@@ -27,6 +27,9 @@ import app.nestro.data.WorkflowExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
+import app.nestro.model.ChatStreamingCoordinator
+import app.nestro.model.ChatStreamingTransport
+import app.nestro.model.SharedPreferencesChatPartialStateStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +62,18 @@ class NestroApplication : Application() {
     }
     val modelConnectionService: ModelConnectionService by lazy { ModelConnectionService() }
     val chatExecutionService: ChatExecutionService by lazy { ChatExecutionService() }
+    internal val chatStreamingCoordinator: ChatStreamingCoordinator by lazy {
+        ChatStreamingCoordinator(
+            transport = ChatStreamingTransport { configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop, onChunk ->
+                chatExecutionService.streamWithFallback(
+                    configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop, onChunk
+                )
+            },
+            partialStateStore = SharedPreferencesChatPartialStateStore(
+                getSharedPreferences("nestro_local", MODE_PRIVATE)
+            )
+        )
+    }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
