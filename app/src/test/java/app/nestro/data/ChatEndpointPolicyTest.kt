@@ -15,6 +15,10 @@ class ChatEndpointPolicyTest {
             "http://127.0.0.1:8080/v1/chat/completions",
             ChatEndpointPolicy.completionUrl("http://127.0.0.1:8080/v1").toString()
         )
+        assertEquals(
+            "https://api.example.com/v1/chat/completions",
+            ChatEndpointPolicy.completionUrl("HTTPS://api.example.com/v1").toString()
+        )
     }
 
     @Test
