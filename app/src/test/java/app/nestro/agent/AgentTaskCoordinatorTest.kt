@@ -10,6 +10,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -21,12 +22,13 @@ class AgentTaskCoordinatorTest {
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val calls = AtomicInteger()
+        val traces = InMemoryAgentTaskTraceStore()
         registry.register("test") {
             calls.incrementAndGet()
             started.complete(Unit)
             release.await()
         }
-        val coordinator = AgentTaskCoordinator(states, registry, this)
+        val coordinator = AgentTaskCoordinator(states, registry, this, traces)
 
         coordinator.enqueue("same-task", "test")
         started.await()
@@ -37,6 +39,7 @@ class AgentTaskCoordinatorTest {
             while (states.get("same-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
         }
         assertEquals(1, calls.get())
+        assertTrue(traces.recent("same-task").any { it.event == "completed" })
     }
 
     @Test
