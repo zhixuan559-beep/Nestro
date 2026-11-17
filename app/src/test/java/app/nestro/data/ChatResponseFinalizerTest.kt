@@ -1,6 +1,8 @@
 package app.nestro.data
 
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -39,8 +41,8 @@ class ChatResponseFinalizerTest {
     }
 
     @Test
-    fun timeoutWithoutPartialUsesSpecificRetryMessage() {
-        val timeout = TimeoutCancellationException("timeout")
+    fun timeoutWithoutPartialUsesSpecificRetryMessage() = runBlocking {
+        val timeout = runCatching { withTimeout(1) { delay(10); "never" } }.exceptionOrNull()!!
         val result = ChatResponseFinalizer.build(
             result = Result.failure(timeout), partialAnswer = "", stopRequested = false,
             previousAssistant = null, requestHistory = emptyList(), assistantId = "a4"
