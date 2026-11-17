@@ -231,3 +231,9 @@
 - `PhoneAgentWorkScheduler` appends tasks to one unique WorkManager chain. Cancelling a tagged WorkRequest inside that chain risks cancelling dependent queued requests, while their per-task pending markers would remain set.
 - Scheduler cancellation now persists the per-task cancel flag and optionally requests the active Accessibility service to stop, but does not cancel the WorkRequest by tag. `PhoneAgentTaskService` first persists the Room terminal state and then cancels the shared coordinator; the worker observes the terminal state/cancel flag and exits successfully, allowing later queued work to proceed.
 - This preserves the global queue order and avoids cancelling unrelated tasks. It complements the recovery fix that keeps WorkManager-owned `phone_agent` tasks out of direct application-scope dispatch.
+
+## 2026-11-18 — WorkManager reattachment for interrupted running tasks
+
+- Follow-up race audit found that process recovery could mark a Phone Agent task PAUSED while its newly restarted Worker had already reattached it, or leave a persisted RUNNING task waiting forever if recovery intentionally avoided direct execution.
+- Externally scheduled owners now retain RUNNING during generic process recovery. When the WorkManager Worker starts, it calls `requeueRunningTaskIfIdle()`: the coordinator atomically requeues a stale RUNNING task only when no in-memory handler is active; an already-running task is left untouched.
+- Added JVM tests for both reattachment after process recreation and no duplicate execution when the handler is already active. Non-WorkManager task owners retain the existing interrupted-task-to-PAUSED behavior.

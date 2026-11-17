@@ -234,4 +234,57 @@ class AgentTaskCoordinatorTest {
         coordinator.close()
     }
 
+
+    @Test
+    fun externallyScheduledRunningTaskIsReattachedByWorkerInsteadOfPausedDuringRecovery() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        registry.register("phone_agent") {
+            started.complete(Unit)
+            release.await()
+        }
+        states.put(AgentTaskState("workmanager-running", "phone_agent", AgentTaskStatus.RUNNING, checkpoint = "saved"))
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val recovered = coordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+        assertEquals(AgentTaskStatus.RUNNING, recovered.single().status)
+        assertEquals(AgentTaskStatus.RUNNING, states.get("workmanager-running")?.status)
+
+        coordinator.requeueRunningTaskIfIdle("workmanager-running")
+        started.await()
+        assertEquals(AgentTaskStatus.RUNNING, states.get("workmanager-running")?.status)
+        release.complete(Unit)
+        withTimeout(2_000) {
+            while (states.get("workmanager-running")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        coordinator.close()
+    }
+
+    @Test
+    fun reattachingAlreadyActiveRunningTaskDoesNotDuplicateItsHandler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        registry.register("phone_agent") {
+            calls.incrementAndGet()
+            started.complete(Unit)
+            release.await()
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        coordinator.enqueue("already-active", "phone_agent")
+        started.await()
+
+        coordinator.requeueRunningTaskIfIdle("already-active")
+        release.complete(Unit)
+        withTimeout(2_000) {
+            while (states.get("already-active")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals(1, calls.get())
+        coordinator.close()
+    }
+
 }

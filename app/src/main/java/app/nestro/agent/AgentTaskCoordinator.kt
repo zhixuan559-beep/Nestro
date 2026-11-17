@@ -169,6 +169,31 @@ class AgentTaskCoordinator(
         return queued
     }
 
+    /**
+     * Reattaches a persisted RUNNING task to the in-memory consumer when its durable
+     * scheduler (for example WorkManager) starts after process recreation.
+     * An already-active task is left untouched to prevent duplicate execution.
+     */
+    suspend fun requeueRunningTaskIfIdle(taskId: String): AgentTaskState? {
+        val shouldQueue = withTransitionLock {
+            val state = states.get(taskId) ?: return@withTransitionLock false
+            if (state.status != AgentTaskStatus.RUNNING || activeJobs.containsKey(taskId)) {
+                return@withTransitionLock false
+            }
+            states.put(state.copy(
+                status = AgentTaskStatus.QUEUED,
+                lastError = "",
+                updatedAt = System.currentTimeMillis()
+            ))
+            true
+        }
+        if (shouldQueue) {
+            queue.send(taskId)
+            trace(taskId, "reattached_by_external_scheduler")
+        }
+        return states.get(taskId)
+    }
+
     suspend fun <T> runInline(
         taskId: String,
         owner: String,
@@ -226,13 +251,18 @@ class AgentTaskCoordinator(
                 val latest = states.get(state.taskId) ?: return@withTransitionLock null
                 when (latest.status) {
                     AgentTaskStatus.RUNNING -> {
-                        val paused = latest.copy(
-                            status = AgentTaskStatus.PAUSED,
-                            lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        states.put(paused)
-                        paused
+                        if (latest.owner in externallyScheduledOwners) {
+                            // Let the durable scheduler reattach execution after process restart.
+                            latest
+                        } else {
+                            val paused = latest.copy(
+                                status = AgentTaskStatus.PAUSED,
+                                lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            states.put(paused)
+                            paused
+                        }
                     }
                     AgentTaskStatus.QUEUED -> {
                         if (latest.owner in externallyScheduledOwners) {

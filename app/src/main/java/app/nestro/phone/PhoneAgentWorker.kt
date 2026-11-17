@@ -78,7 +78,7 @@ class PhoneAgentWorker(
             // Another WorkManager invocation may observe an already-running coordinator task.
             // Never pause/resume it here: that creates a cancellation/resume race and can
             // duplicate a device action. The polling loop below waits for its persisted outcome.
-            AgentTaskStatus.RUNNING -> Unit
+            AgentTaskStatus.RUNNING -> coordinator.requeueRunningTaskIfIdle(taskId)
             AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
             AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             null -> error("无法初始化 Phone Agent 任务状态")
