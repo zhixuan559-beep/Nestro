@@ -255,7 +255,7 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
                                 scope.launch {
                                     val clarification = taskClarifications[task.id].orEmpty()
                                     val result = withContext(Dispatchers.IO) {
-                                        runCatching { PhoneAgentTaskStore.appendClarification(database.dao(), task.id, clarification) }
+                                        runCatching { taskService.appendClarification(task.id, clarification) }
                                     }
                                     taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
                                     if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
