@@ -72,7 +72,7 @@ class LocalBackupRoundTripTest {
                 dao.deleteAllPhoneAgentTasks()
                 dao.deleteAllProjects()
             }
-            prefs.edit().putBoolean("automatic_memory_enabled", false).putFloat("tts_speech_rate", 1.0f).putString("phone_audit", "[]").commit()
+            prefs.edit().putBoolean("automatic_memory_enabled", false).putString("phone_audit", "[]").commit()
 
             restoreLocalBackup(context, prefs, backup, database)
 
