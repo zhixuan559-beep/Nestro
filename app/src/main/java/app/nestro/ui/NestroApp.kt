@@ -141,6 +141,7 @@ fun NestroApp() {
     var modelProfiles by modelUiState.modelProfiles
     var modelRegistry by modelUiState.modelRegistry
     var activeModelProfileId by modelUiState.activeModelProfileId
+    var activeRegistryModelId by modelUiState.activeRegistryModelId
     var modelFailoverEnabled by modelUiState.modelFailoverEnabled
     var modelUsage by modelUiState.modelUsage
     val conversationUiState = remember { ConversationUiState() }
@@ -644,8 +645,9 @@ fun NestroApp() {
         ModelRequestConfigurationSelector.selectableLegacyProfileIds(modelRegistry)
     val requestModelConfigs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
         registry = modelRegistry,
-        activeModelId = activeModelProfileId.takeIf { it.isNotBlank() }
-            ?.let { "legacy-model-$it" }.orEmpty(),
+        activeModelId = activeRegistryModelId.ifBlank {
+            activeModelProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
+        },
         failoverEnabled = modelFailoverEnabled,
         readKey = modelRepository::readApiKey
     )
