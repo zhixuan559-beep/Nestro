@@ -60,18 +60,18 @@ object PhoneAgentWorkScheduler {
     suspend fun reconcilePending(context: Context, activeTaskIds: Set<String>) = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val preferences = appContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val workTaskIds = try {
+        val workInfos: List<androidx.work.WorkInfo> = try {
             WorkManager.getInstance(appContext)
                 .getWorkInfosForUniqueWork(QUEUE_NAME)
                 .get()
-                .filterNot { it.state.isFinished }
-                .mapNotNull { it.inputData.getString(KEY_TASK_ID) }
-                .toSet()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             return@withContext
         }
+        val workTaskIds = workInfos.filterNot { it.state.isFinished }
+            .mapNotNull { it.inputData.getString(KEY_TASK_ID) }
+            .toSet()
 
         val markerPrefix = "phone_agent_work_pending_"
         val pendingTaskIds = preferences.all.keys

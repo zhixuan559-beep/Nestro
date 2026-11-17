@@ -265,3 +265,8 @@
 
 - Pending marker, enqueue timestamp, and handoff/retry flags are now synchronously committed before submitting the WorkRequest. If SharedPreferences cannot persist the marker, scheduling aborts before WorkManager enqueue rather than creating an untracked request.
 - `enqueue()` is synchronized within the process so concurrent calls cannot both pass the pending-marker guard and append duplicate WorkRequests.
+
+## 2026-11-18 — CI #819 compiler inference fix
+
+- CI #819 failed in `PhoneAgentWorkScheduler.reconcilePending()` because Kotlin inferred the WorkManager query's `try/catch` expression as `Nothing`/`Unit`, leaving `WorkInfo.inputData` unresolved.
+- The query result is now explicitly typed as `List<WorkInfo>` before mapping active task IDs; WorkManager query failure still exits reconciliation without clearing markers.
