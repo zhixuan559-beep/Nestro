@@ -85,4 +85,27 @@ class ConversationPaginationTest {
         assertEquals("消息 79", selected?.messages?.maxByOrNull { it.position }?.content)
         assertEquals(null, missing)
     }
+    @Test
+    fun boundsConversationPreviewWithoutTruncatingStoredMessage() = runBlocking {
+        val longContent = "x".repeat(2_000)
+        dao.putConversation(ConversationEntity("long-preview", "长消息", 1L, "project-a"))
+        dao.putMessages(listOf(MessageEntity("long-message", "long-preview", 0, "assistant", longContent)))
+
+        val summary = dao.conversationListPage("project-a", "", 30, 0).single()
+
+        assertEquals(240, summary.lastMessagePreview.length)
+        assertEquals(longContent, dao.conversationWithMessages("long-preview")?.messages?.single()?.content)
+    }
+
+    @Test
+    fun usesStableIdTieBreakerWhenConversationTimestampsMatch() = runBlocking {
+        dao.putConversation(ConversationEntity("conversation-a", "A", 100L, "project-a"))
+        dao.putConversation(ConversationEntity("conversation-c", "C", 100L, "project-a"))
+        dao.putConversation(ConversationEntity("conversation-b", "B", 100L, "project-a"))
+
+        val page = dao.conversationListPage("project-a", "", 30, 0)
+
+        assertEquals(listOf("conversation-c", "conversation-b", "conversation-a"), page.map { it.id })
+    }
+
 }

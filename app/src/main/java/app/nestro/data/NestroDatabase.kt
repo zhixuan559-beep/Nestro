@@ -147,7 +147,7 @@ interface NestroDao {
 
     @Query("""
         SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,
-               COALESCE((SELECT m.content FROM messages AS m WHERE m.conversationId = c.id
+               COALESCE((SELECT SUBSTR(m.content, 1, 240) FROM messages AS m WHERE m.conversationId = c.id
                          ORDER BY m.position DESC LIMIT 1), '') AS lastMessagePreview,
                (SELECT COUNT(*) FROM messages AS countMessage WHERE countMessage.conversationId = c.id) AS messageCount
         FROM conversations AS c
