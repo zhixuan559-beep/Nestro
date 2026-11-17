@@ -2,12 +2,9 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.data.NestroDatabase
-import app.nestro.data.PhoneAgentTaskEntity
-import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentService
-import app.nestro.phone.PhoneAgentTaskService
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
