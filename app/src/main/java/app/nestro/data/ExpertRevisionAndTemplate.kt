@@ -34,7 +34,8 @@ object ExpertRevisionCodec {
                 revisions.takeLast(20).forEach { revision ->
                     val p = revision.profile
                     put(JSONObject().put("version", revision.version).put("prompt", revision.prompt).put("savedAt", revision.savedAt)
-                        .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
+                        .put("category", template.category).put("builtIn", template.builtIn)
+                .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
                             .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
                             .put("description", p.description).put("version", p.version).put("source", p.source)))
                 }
@@ -72,7 +73,9 @@ data class ExpertTemplate(
     val name: String,
     val description: String,
     val prompt: String,
-    val profile: ExpertProfile
+    val profile: ExpertProfile,
+    val category: String = profile.group.ifBlank { "自定义" },
+    val builtIn: Boolean = false
 )
 
 object ExpertTemplateCodec {
@@ -86,7 +89,15 @@ object ExpertTemplateCodec {
             else {
                 val profileJson = item.optJSONObject("profile") ?: JSONObject()
                 val profile = ExpertProfileCodec.decode(JSONObject().put("profile", profileJson).toString())["profile"] ?: ExpertProfile()
-                ExpertTemplate(item.optString("id").ifBlank { UUID.randomUUID().toString() }, name, item.optString("description").take(300), prompt, profile)
+                ExpertTemplate(
+                    item.optString("id").ifBlank { UUID.randomUUID().toString() },
+                    name,
+                    item.optString("description").take(300),
+                    prompt,
+                    profile,
+                    item.optString("category", profile.group.ifBlank { "自定义" }).take(30),
+                    item.optBoolean("builtIn", false)
+                )
             }
         }.take(100)
     }.getOrDefault(emptyList())
