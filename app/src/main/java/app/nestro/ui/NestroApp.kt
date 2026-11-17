@@ -4,7 +4,6 @@ import app.nestro.NestroApplication
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.data.ModelConfig
-import app.nestro.data.LocalVault
 import app.nestro.data.ConversationEntity
 import app.nestro.data.ConversationListItem
 import app.nestro.data.MessageEntity
@@ -362,17 +361,17 @@ fun NestroApp() {
                     val restoredKey = modelRepository.readProfileKey(restoredActiveProfile.id)
                     if (restoredKey.isNotBlank() && restoredModelSelectable) {
                         config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
-                        LocalVault.write(context, config)
+                        modelRepository.writeActiveConfig(config)
                     } else {
                         activeModelProfileId = ""
                         config = ModelConfig("", "", "")
-                        LocalVault.clearActive(context)
+                        modelRepository.clearActiveConfig()
                         prefs.edit().remove("active_model_profile_id").apply()
                     }
                 } else {
                     activeModelProfileId = ""
                     config = ModelConfig("", "", "")
-                    LocalVault.clearActive(context)
+                    modelRepository.clearActiveConfig()
                     prefs.edit().remove("active_model_profile_id").apply()
                 }
                 persistedConversationVersions.clear()
@@ -546,7 +545,7 @@ fun NestroApp() {
     }
 
     LaunchedEffect(Unit) {
-        config = LocalVault.read(context)
+        config = modelRepository.readActiveConfig()
         modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
         activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
         if (modelProfiles.isEmpty() && config.baseUrl.isNotBlank() && config.model.isNotBlank()) {
@@ -569,17 +568,17 @@ fun NestroApp() {
             val activeKey = modelRepository.readProfileKey(activeMetadata.id)
             if (activeKey.isNotBlank() && activeModelSelectable) {
                 config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
-                LocalVault.write(context, config)
+                modelRepository.writeActiveConfig(config)
             } else {
                 activeModelProfileId = ""
                 config = ModelConfig("", "", "")
-                LocalVault.clearActive(context)
+                modelRepository.clearActiveConfig()
                 prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
             }
         } else {
             activeModelProfileId = ""
             config = ModelConfig("", "", "")
-            LocalVault.clearActive(context)
+            modelRepository.clearActiveConfig()
             prefs.edit().remove("active_model_profile_id").apply()
         }
         val loaded = runCatching {
@@ -1286,7 +1285,7 @@ fun NestroApp() {
                                         config = ModelConfig(metadata.baseUrl, metadata.model, key)
                                         prefs.edit().putString("active_model_profile_id", id)
                                             .putString("base_url", metadata.baseUrl).putString("model", metadata.model).apply()
-                                        LocalVault.write(context, config)
+                                        modelRepository.writeActiveConfig(config)
                                         status = "已切换模型：${metadata.name}"
                                     } else status = "该配置尚未填写 API Key"
                                 }
@@ -1308,14 +1307,14 @@ fun NestroApp() {
                                     if ((activate || metadata.id == activeModelProfileId) && effectiveKey.isNotBlank()) {
                                         activeModelProfileId = metadata.id
                                         config = ModelConfig(metadata.baseUrl, metadata.model, effectiveKey)
-                                        LocalVault.write(context, config)
+                                        modelRepository.writeActiveConfig(config)
                                         prefs.edit().putString("active_model_profile_id", metadata.id).apply()
                                         status = "模型配置已保存并启用：${metadata.name}"
                                     } else {
                                         if (metadata.id == activeModelProfileId && effectiveKey.isBlank()) {
                                             activeModelProfileId = ""
                                             config = ModelConfig("", "", "")
-                                            LocalVault.clearActive(context)
+                                            modelRepository.clearActiveConfig()
                                         }
                                         status = if (effectiveKey.isBlank()) "模型配置已保存；请填写 API Key 后再启用" else "模型配置已保存：${metadata.name}"
                                     }
@@ -1328,7 +1327,7 @@ fun NestroApp() {
                                 if (activeModelProfileId == id) {
                                     activeModelProfileId = ""
                                     config = ModelConfig("", "", "")
-                                    LocalVault.clearActive(context)
+                                    modelRepository.clearActiveConfig()
                                     prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
                                 }
                                 status = "API Key 已删除；对应模型已从可用模型中排除"
@@ -1351,13 +1350,13 @@ fun NestroApp() {
                                         val key = modelRepository.readProfileKey(next.id)
                                         activeModelProfileId = next.id
                                         config = ModelConfig(next.baseUrl, next.model, key)
-                                        LocalVault.write(context, config)
+                                        modelRepository.writeActiveConfig(config)
                                         prefs.edit().putString("active_model_profile_id", next.id).apply()
                                         status = "已切换到：${next.name}"
                                     } else {
                                         activeModelProfileId = ""
                                         config = ModelConfig("", "", "")
-                                        LocalVault.clearActive(context)
+                                        modelRepository.clearActiveConfig()
                                         prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
                                         status = "尚未配置可用模型"
                                     }
