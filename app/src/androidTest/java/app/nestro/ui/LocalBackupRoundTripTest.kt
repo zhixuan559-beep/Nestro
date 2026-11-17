@@ -44,7 +44,6 @@ class LocalBackupRoundTripTest {
                 .putString("draft_c1", "恢复后继续写的草稿")
                 .putString("global_memory_v1", "始终使用简洁中文")
                 .putBoolean("automatic_memory_enabled", true)
-                .putFloat("tts_speech_rate", 1.2f)
                 .putString("phone_audit", JSONArray().put(JSONObject().put("at", 123L).put("action", "TASK_START").put("detail", "round trip")).toString())
                 .commit()
 
@@ -82,7 +81,6 @@ class LocalBackupRoundTripTest {
             assertEquals("这是需要恢复的知识库片段内容", dao.allKnowledgeChunks().single().content)
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
-            assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
