@@ -33,3 +33,15 @@ internal class ExpertCatalogUiState(private val preferences: SharedPreferences) 
         )
     )
 }
+
+private fun loadExpertPrompts(preferences: SharedPreferences): Map<String, String> = runCatching {
+    val raw = preferences.getString("expert_prompts", "{}") ?: "{}"
+    val json = org.json.JSONObject(raw)
+    buildMap {
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            put(key, json.optString(key))
+        }
+    }
+}.getOrDefault(emptyMap())
