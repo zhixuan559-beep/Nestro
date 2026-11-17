@@ -87,6 +87,49 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun oneProviderCanOwnMultipleKeysAndModelsIndependently() {
+        val provider = ModelProvider("provider", "Provider", "https://api.example.com")
+        val registry = ModelRegistry().upsertProvider(provider)
+            .upsertApiKey(ModelApiKey("key-a", "provider", "Primary"))
+            .upsertApiKey(ModelApiKey("key-b", "provider", "Backup"))
+            .upsertModel(ModelDefinition("model-a", "provider", "Model A", "a", listOf("key-a")))
+            .upsertModel(ModelDefinition("model-b", "provider", "Model B", "b", listOf("key-b")))
+
+        val attached = registry.attachApiKey("model-a", "key-b")
+        assertEquals(setOf("key-a", "key-b"), attached.models.first { it.id == "model-a" }.apiKeyIds.toSet())
+        val afterDelete = attached.deleteApiKey("key-a")
+
+        assertEquals(setOf("model-a", "model-b"), afterDelete.selectableModels().map { it.id }.toSet())
+        assertTrue(afterDelete.models.first { it.id == "model-a" }.apiKeyIds.contains("key-b"))
+        assertNull(afterDelete.validate())
+    }
+
+    @Test
+    fun deletingProviderRemovesItsModelsAndKeysOnly() {
+        val registry = ModelRegistry(
+            providers = listOf(
+                ModelProvider("one", "One", "https://one.example.com"),
+                ModelProvider("two", "Two", "https://two.example.com")
+            ),
+            apiKeys = listOf(
+                ModelApiKey("one-key", "one", "One"),
+                ModelApiKey("two-key", "two", "Two")
+            ),
+            models = listOf(
+                ModelDefinition("one-model", "one", "One", "one", listOf("one-key")),
+                ModelDefinition("two-model", "two", "Two", "two", listOf("two-key"))
+            )
+        )
+
+        val updated = registry.deleteProvider("one")
+
+        assertEquals(listOf("two"), updated.providers.map { it.id })
+        assertEquals(listOf("two-key"), updated.apiKeys.map { it.id })
+        assertEquals(listOf("two-model"), updated.models.map { it.id })
+        assertNull(updated.validate())
+    }
+
+    @Test
     fun legacyReconciliationPreservesIndependentlyManagedModels() {
         val legacyProfile = ModelProfileMetadata("legacy", "Legacy", "https://legacy.example.com/v1", "legacy-model")
         val custom = ModelRegistry(
