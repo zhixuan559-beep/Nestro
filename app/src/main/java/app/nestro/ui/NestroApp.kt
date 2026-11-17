@@ -88,6 +88,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -999,35 +1000,15 @@ fun NestroApp() {
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
-            Row(Modifier.fillMaxSize()) {
-                if (showDrawer) {
-                    Column(
-                        Modifier.width(adaptiveDrawerWidth).fillMaxHeight().background(Card).padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
-                        Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(12.dp))
-                        DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
-                        DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
-                        DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
-                        DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
-                         DrawerItem("⇢", "工作流") { page = "workflows"; showDrawer = false }
-                        DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
-                        DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
-                        DrawerItem("麦", "语音输入") { page = "voice"; showDrawer = false }
-                        DrawerItem("▣", "产物库") { page = "artifacts"; showDrawer = false }
-                        DrawerItem("⌘", "能力目录") { page = "capabilities"; showDrawer = false }
-                        DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
-                        DrawerItem("♧", "专家团队") { page = "teams"; showDrawer = false }
-                        DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
-                        DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
-                        DrawerItem("▤", "数据与设置") { page = "settings"; showDrawer = false }
-                        Spacer(Modifier.weight(1f))
-                        Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
+            Box(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxSize()) {
+                    if (showDrawer && screenWidthDp >= 600) {
+                        NavigationDrawerContent(
+                            modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                            onNavigate = { destination -> page = destination; showDrawer = false }
+                        )
                     }
-                }
-                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2151,6 +2132,18 @@ fun NestroApp() {
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
                     }
                 }
+                if (showDrawer && screenWidthDp < 600) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.48f))
+                            .clickable { showDrawer = false }
+                            .zIndex(1f)
+                    )
+                    NavigationDrawerContent(
+                        modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight().zIndex(2f),
+                        onNavigate = { destination -> page = destination; showDrawer = false }
+                    )
+                }
             }
         }
     }
@@ -3147,6 +3140,39 @@ private fun ModelManager(
         if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) ColorStop else Muted, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = { beginNew() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建另一组配置", color = Mint) }
         Text("当前实际调用的模型：${activeConfig.model.ifBlank { "未配置" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+
+@Composable
+private fun NavigationDrawerContent(
+    modifier: Modifier = Modifier,
+    onNavigate: (String) -> Unit
+) {
+    Column(
+        modifier.background(Card).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
+        Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(12.dp))
+        DrawerItem("⌂", "工作台") { onNavigate("home") }
+        DrawerItem("☷", "对话历史") { onNavigate("conversations") }
+        DrawerItem("✧", "全局记忆") { onNavigate("memory") }
+        DrawerItem("▧", "本地知识库") { onNavigate("knowledge") }
+        DrawerItem("⇢", "工作流") { onNavigate("workflows") }
+        DrawerItem("▦", "项目空间") { onNavigate("spaces") }
+        DrawerItem("⌁", "手机自动化") { onNavigate("phone") }
+        DrawerItem("麦", "语音输入") { onNavigate("voice") }
+        DrawerItem("▣", "产物库") { onNavigate("artifacts") }
+        DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
+        DrawerItem("✦", "我的专家") { onNavigate("experts") }
+        DrawerItem("♧", "专家团队") { onNavigate("teams") }
+        DrawerItem("◇", "能力中心") { onNavigate("skills") }
+        DrawerItem("⚙", "模型管理") { onNavigate("models") }
+        DrawerItem("▤", "数据与设置") { onNavigate("settings") }
+        Spacer(Modifier.weight(1f))
+        Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
     }
 }
 
