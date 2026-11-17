@@ -1,4 +1,27 @@
-package app.nestro.ui
+package app.nestro.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import androidx.room.withTransaction
+import app.nestro.model.ModelConfigurationRepository
+import app.nestro.model.ModelRegistryCodec
+import app.nestro.phone.PhoneAgentPlanner
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Application-facing backup boundary; UI never owns Room access. */
+class LocalBackupRepository(context: Context, private val database: NestroDatabase) {
+    private val appContext = context.applicationContext
+
+    fun readText(uri: Uri): String = readBackupText(appContext, uri)
+
+    suspend fun createBackup(prefs: SharedPreferences): String =
+        buildLocalBackup(appContext, prefs, database)
+
+    suspend fun restoreBackup(prefs: SharedPreferences, raw: String) =
+        restoreLocalBackup(appContext, prefs, raw, database)
+}
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelConfigurationRepository

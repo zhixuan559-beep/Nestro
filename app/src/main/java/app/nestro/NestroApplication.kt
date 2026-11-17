@@ -17,6 +17,7 @@ import app.nestro.data.UserMemoryRepository
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
 import app.nestro.data.KnowledgeRepository
+import app.nestro.data.LocalBackupRepository
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
@@ -38,6 +39,7 @@ class NestroApplication : Application() {
     val conversationContextRepository: ConversationContextRepository by lazy { ConversationContextRepository(database) }
     val projectSpaceRepository: ProjectSpaceRepository by lazy { ProjectSpaceRepository(database) }
     val knowledgeRepository: KnowledgeRepository by lazy { KnowledgeRepository(database) }
+    val localBackupRepository: LocalBackupRepository by lazy { LocalBackupRepository(this, database) }
     val modelConfigurationRepository: ModelConfigurationRepository by lazy {
         ModelConfigurationRepository(this)
     }

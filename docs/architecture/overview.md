@@ -38,6 +38,9 @@ Dependency rules:
 
 | Foundation | Current implementation to reuse | Ownership boundary |
 |---|---|---|
+| Conversation and project persistence | `ConversationPersistenceService`, `ProjectSpaceRepository`, `ConversationContextRepository` | Room restore/migration, transactional snapshots, message paging, project deletion checks and project-scoped recall |
+| Project memory and knowledge | `UserMemoryRepository`, `KnowledgeRepository` | Project-scoped memory CRUD/recall and knowledge import/search/delete |
+| Local backup | `LocalBackupRepository` | Backup export/import owns Room transaction and local file handling |
 | Model catalog and credentials | `ModelRegistry`, `ModelRegistryStore`, `ModelConfigurationRepository`, `ModelConnectionService`, `ModelRequestConfigurationSelector`, `LocalVault` | Provider/model/key metadata, encrypted secrets, model connectivity checks, active model, selectable-model and failover policy |
 | Chat execution and transport | `ChatExecutionService`, `OpenAiClient`, `ChatHttpTransport`, `ChatEndpointPolicy`, `ChatRequestPolicy`, `OpenAiSseDecoder` | Application service owns request execution/cancellation; transport and policy own HTTP, streaming decode, retry and context limits |
 | Agent task lifecycle | `AgentTaskCoordinator`, `PhoneAgentTaskService`, state/trace stores, `AgentTaskHandlerRegistry` | Idempotency, queueing, pause/resume/cancel, checkpoints, recovery and trace |

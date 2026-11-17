@@ -138,7 +138,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
 
     private fun decodeVersions(raw: String): List<String> = runCatching {
         val values = JSONArray(raw)
-        (0 until values.length()).map { values.optString(it) }
+        (0 until values.length()).mapNotNull { values.optString(it).takeIf(String::isNotBlank) }.take(20)
     }.getOrDefault(emptyList())
 
     internal suspend fun persist(

@@ -105,7 +105,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import java.text.SimpleDateFormat
@@ -296,7 +295,7 @@ fun NestroApp() {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val json = buildLocalBackup(context, prefs, appRuntime.database)
+                        val json = appRuntime.localBackupRepository.createBackup(prefs)
                         context.contentResolver.openOutputStream(uri)?.use {
                             it.write(json.toByteArray(Charsets.UTF_8))
                         } ?: error("无法创建备份文件")
@@ -319,8 +318,8 @@ fun NestroApp() {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val raw = readBackupText(context, uri)
-                    restoreLocalBackup(context, prefs, raw, appRuntime.database)
+                    val raw = appRuntime.localBackupRepository.readText(uri)
+                    appRuntime.localBackupRepository.restoreBackup(prefs, raw)
                 }
             }
             if (result.isSuccess) {
