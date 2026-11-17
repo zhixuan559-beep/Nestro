@@ -38,6 +38,7 @@ class AgentTaskCoordinatorTest {
         }
         assertEquals(1, calls.get())
         assertTrue(traces.recent("same-task").any { it.event == "completed" })
+        coordinator.close()
     }
 
     @Test
@@ -62,6 +63,7 @@ class AgentTaskCoordinatorTest {
         withTimeout(2_000) {
             while (states.get("owned-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
         }
+        coordinator.close()
     }
 
     @Test
@@ -95,6 +97,7 @@ class AgentTaskCoordinatorTest {
         }
         assertEquals(2, calls.get())
         assertEquals("step-2", states.get("resume-task")?.checkpoint)
+        coordinator.close()
     }
 
     @Test
@@ -115,6 +118,7 @@ class AgentTaskCoordinatorTest {
         }
         assertEquals("workflow-step-1", states.get("inline-task")?.checkpoint)
         assertTrue(traces.recent("inline-task").any { it.event == "completed" })
+        coordinator.close()
     }
 
     @Test
@@ -131,6 +135,7 @@ class AgentTaskCoordinatorTest {
         assertEquals(AgentTaskStatus.PAUSED, states.get("orphan")?.status)
         assertTrue(states.get("orphan")?.lastError?.contains("处理器尚未恢复") == true)
         assertEquals(AgentTaskStatus.FAILED, recovered.first { it.taskId == "failed" }.status)
+        coordinator.close()
     }
 
     @Test
@@ -153,6 +158,7 @@ class AgentTaskCoordinatorTest {
         caller.join()
 
         assertEquals(AgentTaskStatus.PAUSED, states.get("inline-pause")?.status)
+        coordinator.close()
     }
 
     @Test
@@ -166,5 +172,6 @@ class AgentTaskCoordinatorTest {
         assertNotNull(recovered.firstOrNull())
         assertEquals(AgentTaskStatus.PAUSED, states.get("interrupted")?.status)
         assertEquals("saved", states.get("interrupted")?.checkpoint)
+        coordinator.close()
     }
 }
