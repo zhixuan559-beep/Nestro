@@ -24,6 +24,8 @@ class PhoneAgentWorker(
         val app = applicationContext as NestroApplication
         try {
             app.ensureBackupRestoreRecovered()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             return Result.retry()
         }

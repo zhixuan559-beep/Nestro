@@ -488,6 +488,8 @@ fun NestroApp() {
     LaunchedEffect(Unit) {
         try {
             appRuntime.ensureBackupRestoreRecovered()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             status = "检测到未完成的备份恢复，自动回滚失败：" + (error.message ?: "未知错误")
             return@LaunchedEffect

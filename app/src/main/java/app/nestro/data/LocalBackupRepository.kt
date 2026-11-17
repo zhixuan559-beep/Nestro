@@ -12,6 +12,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 
 /** Application-facing backup boundary; UI never owns Room access. */
@@ -186,7 +188,9 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferenc
         deleteLocalBackupRestoreJournal(context)
     } catch (failure: Throwable) {
         try {
-            recoverInterruptedLocalBackupRestore(context, prefs, database)
+            withContext(NonCancellable) {
+                recoverInterruptedLocalBackupRestore(context, prefs, database)
+            }
         } catch (rollbackFailure: Throwable) {
             rollbackFailure.addSuppressed(failure)
             throw IllegalStateException(

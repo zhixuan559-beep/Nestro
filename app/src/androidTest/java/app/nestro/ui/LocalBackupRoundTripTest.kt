@@ -111,6 +111,7 @@ class LocalBackupRoundTripTest {
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
             File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
             LocalVault.clearAllApiKeys(context)
             database.close()
             prefs.edit().clear().commit()
@@ -158,6 +159,7 @@ class LocalBackupRoundTripTest {
             database.close()
             prefs.edit().clear().commit()
             vaultPrefs.edit().clear().commit()
+            File(context.filesDir, "backup-restore").deleteRecursively()
             LocalVault.clearAllApiKeys(context)
             context.deleteDatabase(databaseName)
         }
