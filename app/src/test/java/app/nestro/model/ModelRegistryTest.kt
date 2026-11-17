@@ -39,6 +39,8 @@ class ModelRegistryTest {
 
         assertEquals(listOf("m2"), updated.selectableModels().map { it.id })
         assertEquals(2, updated.models.size)
+        assertTrue(updated.models.first { it.id == "m1" }.apiKeyIds.isEmpty())
+        assertNull(updated.validate())
     }
 
     @Test
@@ -57,6 +59,20 @@ class ModelRegistryTest {
 
         assertEquals(registry, decoded)
         assertTrue(decoded.selectableModels().isNotEmpty())
+    }
+
+    @Test
+    fun profileKeyCanBeReplacedWithoutChangingProviderOrModelIdentity() {
+        val original = ModelProfileMetadata("profile", "主模型", "https://api.example.com/v1", "model-a")
+        val first = ModelRegistry().upsertLegacyProfile(original, keyAvailable = true)
+        val changed = first.upsertLegacyProfile(original.copy(name = "新名称", model = "model-b"), keyAvailable = true)
+
+        assertEquals(1, changed.providers.size)
+        assertEquals(1, changed.apiKeys.size)
+        assertEquals("新名称", changed.models.single().name)
+        assertEquals("model-b", changed.models.single().modelCode)
+        assertEquals(first.apiKeys.single().id, changed.apiKeys.single().id)
+        assertNull(changed.validate())
     }
 
     @Test
