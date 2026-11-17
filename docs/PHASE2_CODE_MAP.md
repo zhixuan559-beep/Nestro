@@ -270,3 +270,9 @@
 
 - CI #819 failed in `PhoneAgentWorkScheduler.reconcilePending()` because Kotlin inferred the WorkManager query's `try/catch` expression as `Nothing`/`Unit`, leaving `WorkInfo.inputData` unresolved.
 - The query result is now explicitly typed as `List<WorkInfo>` before mapping active task IDs; WorkManager query failure still exits reconciliation without clearing markers.
+
+## 2026-11-18 — Expert-team execution extracted from Compose root
+
+- Added `ExpertTeamExecutionCoordinator` as the shared AgentTaskCoordinator boundary for expert-team runs. It owns task ID/owner registration, queued/running/finished checkpoints, parallel member execution, retries, timeouts, and cancellation propagation.
+- `NestroApplication` owns the coordinator; `NestroApp` now supplies request context/model invocation and UI callbacks, then persists the returned run history. This keeps Compose state and presentation in the root while moving the task lifecycle and team execution boundary into a testable service.
+- Added JVM coverage for successful member execution, status callbacks, and completed task lifecycle.

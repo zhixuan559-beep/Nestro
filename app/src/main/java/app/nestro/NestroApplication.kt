@@ -21,6 +21,7 @@ import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
 import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
+import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
@@ -56,6 +57,9 @@ class NestroApplication : Application() {
     }
     val modelConnectionService: ModelConnectionService by lazy { ModelConnectionService() }
     val chatExecutionService: ChatExecutionService by lazy { ChatExecutionService() }
+    val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
+        ExpertTeamExecutionCoordinator(agentTaskCoordinator)
+    }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val restoreRecoveryMutex = Mutex()
