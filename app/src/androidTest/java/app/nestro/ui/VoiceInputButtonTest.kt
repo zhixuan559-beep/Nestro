@@ -34,7 +34,8 @@ class VoiceInputButtonTest {
         }
 
         composeRule.onNode(
-            hasContentDescription("按住说话") and hasRole(Role.Button)
+            hasContentDescription("按住说话") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
         ).assertIsEnabled()
     }
 }
