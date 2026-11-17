@@ -77,7 +77,7 @@ class AgentTaskCoordinator(
         }
     }
 
-    suspend fun enqueue(taskId: String, owner: String, checkpoint: String = ""): AgentTaskState {
+    suspend fun enqueue(taskId: String, owner: String, checkpoint: String? = null): AgentTaskState {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
         val existing = states.get(taskId)
@@ -89,7 +89,7 @@ class AgentTaskCoordinator(
         val queued = (existing ?: AgentTaskState(taskId, owner)).copy(
             owner = owner,
             status = AgentTaskStatus.QUEUED,
-            checkpoint = checkpoint.take(64_000),
+            checkpoint = checkpoint?.take(64_000) ?: existing?.checkpoint.orEmpty(),
             lastError = "",
             updatedAt = System.currentTimeMillis()
         )
