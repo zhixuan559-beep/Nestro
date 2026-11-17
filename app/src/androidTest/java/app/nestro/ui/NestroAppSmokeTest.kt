@@ -128,4 +128,15 @@ class NestroAppSmokeTest {
         }
     }
 
+
+    @Test
+    fun phoneAgentShowsSafeDisabledStateWhenAccessibilityPermissionIsMissing() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("手机自动化", substring = true).performScrollTo().performClick()
+
+        composeRule.onNodeWithText("尚未开启无障碍服务").assertIsDisplayed()
+        composeRule.onNodeWithText("前往系统无障碍设置").assertIsDisplayed()
+        composeRule.onNodeWithText("读取当前界面（仅本次主动触发）").assertIsNotEnabled()
+    }
+
 }
