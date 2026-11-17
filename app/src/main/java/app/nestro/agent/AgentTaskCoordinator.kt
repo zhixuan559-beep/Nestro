@@ -162,6 +162,9 @@ class AgentTaskCoordinator(
         initialCheckpoint: String = "",
         handler: suspend (AgentTaskExecutionContext) -> T
     ): T {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(owner.isNotBlank() && owner.length <= 80)
+        require(states.get(taskId) == null) { "runInline 任务 ID 必须唯一" }
         val completion = CompletableDeferred<T>()
         val handlerId = owner.take(24) + "-" + java.util.UUID.randomUUID().toString()
         handlers.register(handlerId) { context ->
