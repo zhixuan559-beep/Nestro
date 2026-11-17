@@ -366,9 +366,11 @@ fun NestroApp() {
                 modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
                 modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
                 val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+                val restoredModelSelectable = restoredActiveProfile != null &&
+                    modelRegistry.selectableModels().any { it.id == "legacy-model-${restoredActiveProfile.id}" }
                 if (restoredActiveProfile != null) {
                     val restoredKey = modelRepository.readProfileKey(restoredActiveProfile.id)
-                    if (restoredKey.isNotBlank()) {
+                    if (restoredKey.isNotBlank() && restoredModelSelectable) {
                         config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
                         LocalVault.write(context, config)
                     } else {
@@ -1343,12 +1345,18 @@ fun NestroApp() {
                             },
                             onDelete = { id ->
                                 modelProfiles = modelProfiles.filterNot { it.id == id }
-                                modelRegistry = modelRegistry.deleteLegacyProfile(id)
-                                modelRepository.saveRegistry(modelRegistry)
+                                val updatedRegistry = modelRegistry.deleteLegacyProfile(id)
+                                modelRegistry = updatedRegistry
+                                modelRepository.saveRegistry(updatedRegistry)
                                 modelRepository.deleteProfileKey(id)
                                 prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
                                 if (activeModelProfileId == id) {
-                                    val next = modelProfiles.firstOrNull { modelRepository.readProfileKey(it.id).isNotBlank() }
+                                    val availableIds = updatedRegistry.selectableModels()
+                                        .mapNotNull { model -> model.id.removePrefix("legacy-model-").takeIf { model.id.startsWith("legacy-model-") } }
+                                        .toSet()
+                                    val next = modelProfiles.firstOrNull {
+                                        it.id in availableIds && modelRepository.readProfileKey(it.id).isNotBlank()
+                                    }
                                     if (next != null) {
                                         val key = modelRepository.readProfileKey(next.id)
                                         activeModelProfileId = next.id
