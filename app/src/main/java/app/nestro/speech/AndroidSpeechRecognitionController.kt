@@ -12,6 +12,7 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
     interface Listener {
         fun onListening()
         fun onProcessing()
+        fun onIdle()
         fun onPartialResult(text: String)
         fun onResult(text: String)
         fun onStatus(message: String)
@@ -19,6 +20,7 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
 
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
+    private var activeListener: Listener? = null
 
     fun start(languageTag: String, listener: Listener) {
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
@@ -29,6 +31,7 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
 
         val engine = SpeechRecognizer.createSpeechRecognizer(appContext)
         recognizer = engine
+        activeListener = listener
         engine.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = listener.onListening()
             override fun onBeginningOfSpeech() = listener.onListening()
@@ -95,7 +98,11 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
     private fun release(engine: SpeechRecognizer, cancel: Boolean = true) {
         if (cancel) runCatching { engine.cancel() }
         runCatching { engine.destroy() }
-        if (recognizer === engine) recognizer = null
+        if (recognizer === engine) {
+            recognizer = null
+            activeListener?.onIdle()
+            activeListener = null
+        }
     }
 
     override fun close() {
