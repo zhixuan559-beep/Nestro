@@ -3324,9 +3324,7 @@ private object OpenAiClient {
     }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
-        val connection = ChatHttpTransport.open(
-            config.baseUrl, config.apiKey, connectTimeoutMillis, readTimeoutMillis, streaming = false
-        ).also {
+        val connection = ChatHttpTransport.open(config.baseUrl).also {
             ChatHttpTransport.configure(it, config.apiKey, connectTimeoutMillis, readTimeoutMillis, streaming = false)
         }
         activeConnections.add(connection)
@@ -3357,9 +3355,7 @@ private object OpenAiClient {
     }
 
     suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
-        val connection = ChatHttpTransport.open(
-            config.baseUrl, config.apiKey, 20_000, 90_000, streaming = true
-        ).also {
+        val connection = ChatHttpTransport.open(config.baseUrl).also {
             ChatHttpTransport.configure(it, config.apiKey, 20_000, 90_000, streaming = true)
         }
         activeConnections.add(connection)
