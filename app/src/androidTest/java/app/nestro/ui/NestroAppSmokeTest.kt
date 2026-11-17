@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -128,6 +129,19 @@ class NestroAppSmokeTest {
         }
     }
 
+
+    @Test
+    fun expertTemplateLibraryShowsBuiltInsAndFiltersBySearch() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("我的专家", substring = true).performClick()
+        composeRule.onNodeWithText("模板库").performClick()
+
+        composeRule.onNodeWithText("深度研究员").assertIsDisplayed()
+        composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
+        composeRule.onNodeWithText("搜索模板名称、说明或指令").performTextInput("风险")
+        composeRule.onNodeWithText("风险审查员").assertIsDisplayed()
+        composeRule.onNodeWithText("深度研究员").assertDoesNotExist()
+    }
 
     @Test
     fun phoneAgentShowsSafeDisabledStateWhenAccessibilityPermissionIsMissing() {
