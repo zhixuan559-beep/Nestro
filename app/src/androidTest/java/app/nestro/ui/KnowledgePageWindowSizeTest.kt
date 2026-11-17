@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.nestro.data.NestroDatabase
+import app.nestro.data.KnowledgeRepository
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -43,7 +44,7 @@ class KnowledgePageWindowSizeTest {
         val windowSize = mutableStateOf(DpSize(320.dp, 640.dp))
         composeRule.setContent {
             DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(windowSize.value)) {
-                KnowledgePage(database, "window-test-project")
+                KnowledgePage(KnowledgeRepository(database), "window-test-project")
             }
         }
 
