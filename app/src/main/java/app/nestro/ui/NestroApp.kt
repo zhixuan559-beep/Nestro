@@ -88,6 +88,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -137,6 +138,12 @@ internal data class ModelConfig(val baseUrl: String, val model: String, val apiK
 @Composable
 fun NestroApp() {
     val context = LocalContext.current
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val adaptiveDrawerWidth = when {
+        screenWidthDp < 360 -> 252.dp
+        screenWidthDp >= 840 -> 320.dp
+        else -> 286.dp
+    }
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
@@ -991,7 +998,7 @@ fun NestroApp() {
             Row(Modifier.fillMaxSize()) {
                 if (showDrawer) {
                     Column(
-                        Modifier.width(286.dp).fillMaxHeight().background(Card).padding(18.dp),
+                        Modifier.width(adaptiveDrawerWidth).fillMaxHeight().background(Card).padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
