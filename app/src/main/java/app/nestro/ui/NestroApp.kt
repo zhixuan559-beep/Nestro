@@ -1228,6 +1228,7 @@ fun NestroApp() {
                                 }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
                             },
                             onSaveApiKey = { item, secret ->
+                                val keyAlreadyExists = modelRegistry.apiKeys.any { it.id == item.id }
                                 runCatching {
                                     modelRepository.writeApiKey(item.id, secret)
                                     val updated = modelRegistry.upsertApiKey(item)
@@ -1241,7 +1242,7 @@ fun NestroApp() {
                                     }
                                     status = "API Key 已加密保存"
                                 }.onFailure {
-                                    modelRepository.deleteApiKey(item.id)
+                                    if (!keyAlreadyExists) modelRepository.deleteApiKey(item.id)
                                     status = "API Key 保存失败：" + (it.message ?: "未知错误")
                                 }
                             },
