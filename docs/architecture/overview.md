@@ -38,9 +38,9 @@ Dependency rules:
 
 | Foundation | Current implementation to reuse | Ownership boundary |
 |---|---|---|
-| Model catalog and credentials | `ModelRegistry`, `ModelRegistryStore`, `ModelConfigurationRepository`, `LocalVault` | Provider/model/key metadata, encrypted secrets, active model, selectable-model and failover policy |
+| Model catalog and credentials | `ModelRegistry`, `ModelRegistryStore`, `ModelConfigurationRepository`, `ModelRequestConfigurationSelector`, `LocalVault` | Provider/model/key metadata, encrypted secrets, active model, selectable-model and failover policy |
 | Chat transport | `OpenAiClient`, `ChatHttpTransport`, `ChatEndpointPolicy`, `ChatRequestPolicy`, `OpenAiSseDecoder` | Request policy, transport, streaming decode, retry and context limits |
-| Agent task lifecycle | `AgentTaskCoordinator`, state/trace stores, `AgentTaskHandlerRegistry` | Idempotency, queueing, pause/resume/cancel, checkpoints, recovery and trace |
+| Agent task lifecycle | `AgentTaskCoordinator`, `PhoneAgentTaskService`, state/trace stores, `AgentTaskHandlerRegistry` | Idempotency, queueing, pause/resume/cancel, checkpoints, recovery and trace |
 | Local persistence | `NestroDatabase`, Room stores, preference stores | Durable app data and migrations |
 | Backup | `LocalBackupRepository`, `LocalBackupCompatibility` | Versioned export/import, integrity and compatibility; secrets excluded |
 | Knowledge and memory | `KnowledgeStore`, `KnowledgeSearchEngine`, `ConversationMemoryStore`, `UserMemoryStore` | Project-scoped retrieval and memory lifecycle |
@@ -73,7 +73,7 @@ Dependency rules:
 
 The repository already contains reusable domain/data components for model registry, chat policy/transport, Room persistence, project rules, knowledge, memory, agent coordination, speech contracts, artifacts, expert templates and community catalog validation.
 
-The current Compose root (`NestroApp.kt`) still owns too much cross-feature state and orchestration. The target is not to split it mechanically into many files: move cohesive responsibilities behind application/domain boundaries, then wire the feature screens to those boundaries. Shared state must have one owner; duplicate registries, preference keys, retry loops and task queues are not acceptable.
+The process composition root (`NestroApplication`) now owns the database, model repository, shared agent coordinator and Phone Agent task service. Model request selection/failover is a pure model-layer policy; Phone Agent persistence, scheduling and cancellation are routed through its task service. The Compose root (`NestroApp.kt`) still owns too much cross-feature state and orchestration. The target is not to split it mechanically into many files: move cohesive responsibilities behind application/domain boundaries, then wire the feature screens to those boundaries. Shared state must have one owner; duplicate registries, preference keys, retry loops and task queues are not acceptable.
 
 The model UI currently preserves the legacy profile workflow while the registry supports provider/key/model entities. Keep legacy data migration compatible while progressively routing all model operations through the repository boundary. Do not let the legacy UI become a second source of truth.
 
