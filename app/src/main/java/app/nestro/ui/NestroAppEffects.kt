@@ -77,7 +77,12 @@ internal fun ConversationSnapshotPersistenceEffect(
 ) {
     LaunchedEffect(conversations, projects, databaseReady) {
         if (!databaseReady) return@LaunchedEffect
-        runCatching { persistSnapshot(conversations.toList(), projects.toList()) }
-            .onFailure(onFailure)
+        try {
+            persistSnapshot(conversations.toList(), projects.toList())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            onFailure(failure)
+        }
     }
 }
