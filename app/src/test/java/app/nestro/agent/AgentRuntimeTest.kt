@@ -62,4 +62,25 @@ class AgentRuntimeTest {
         assertEquals(AgentTaskStatus.FAILED, states.get("task-3")?.status)
         assertTrue(traces.recent("task-3").any { it.event == "tool_missing" })
     }
+
+    @Test
+    fun tracePersistenceCancellationPropagatesBeforeToolExecution() = runBlocking {
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("screen.read", "读取当前页面", AgentToolPermission.READ_ONLY)) {
+                AgentToolResult(success = true, output = "页面内容")
+            }
+        }
+        val traces = object : AgentTaskTraceStore {
+            override suspend fun append(trace: AgentTaskTrace) {
+                throw kotlinx.coroutines.CancellationException("trace cancelled")
+            }
+            override suspend fun recent(taskId: String, limit: Int): List<AgentTaskTrace> = emptyList()
+        }
+        val runtime = DefaultAgentRuntime(catalog, DefaultAgentPermissionRouter(), InMemoryAgentTaskStateStore(), traces)
+
+        val result = runCatching { runtime.execute(AgentToolRequest("task-trace-cancel", "screen.read")) }
+
+        assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
+    }
+
 }

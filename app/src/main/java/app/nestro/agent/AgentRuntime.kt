@@ -187,7 +187,13 @@ class DefaultAgentRuntime(
     private val traces: AgentTaskTraceStore? = null
 ) : AgentRuntime {
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
-        runCatching { traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000))) }
+        try {
+            traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the tool call, but cancellation must remain observable.
+        }
     }
     override suspend fun execute(request: AgentToolRequest): AgentToolResult {
         val current = states.get(request.taskId) ?: AgentTaskState(

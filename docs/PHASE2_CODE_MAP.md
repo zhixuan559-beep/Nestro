@@ -238,3 +238,8 @@
 - Phone Agent planning and typed-action execution now use `Exception`/cancellation-safe handling. The suspend action wrapper propagates coroutine cancellation and no longer turns fatal runtime errors into an ordinary failed device action.
 - `PhoneAgentAgent.pause()` now uses the cancellation-safe result helper for best-effort audit/state writes; cancellation is not swallowed.
 - `PhoneAgentWorker` cancellation cleanup now runs Room/state-store reconciliation in `NonCancellable`, then rethrows the original worker cancellation unless the persisted user-cancel request requires a successful terminal result. This avoids losing cleanup immediately because the worker coroutine is already cancelled.
+
+## 2026-11-18 — WorkManager reattachment and shared trace cancellation
+
+- The first reattachment draft exposed a missed call site: `PhoneAgentWorker` still treated persisted `RUNNING` as a passive wait. It now calls `requeueRunningTaskIfIdle()` so a WorkManager worker can reattach the task after process recreation; an already-active coordinator handler remains untouched.
+- `DefaultAgentRuntime.trace()` no longer uses `runCatching` around a suspending trace write. Ordinary trace-storage exceptions remain non-fatal, but `CancellationException` propagates; a JVM regression test verifies that cancellation during the first trace prevents tool execution.
