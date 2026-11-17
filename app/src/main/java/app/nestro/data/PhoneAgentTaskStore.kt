@@ -172,6 +172,9 @@ object PhoneAgentTaskStore {
         dao.updatePhoneAgentTaskPlan(taskId, "[]", now)
     }
 
+    suspend fun cancelIfActive(dao: NestroDao, taskId: String): Boolean =
+        dao.cancelPhoneAgentTaskIfActive(taskId, System.currentTimeMillis()) > 0
+
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
         require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")

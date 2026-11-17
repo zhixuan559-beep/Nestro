@@ -25,8 +25,6 @@ import androidx.room.withTransaction
 import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
-import app.nestro.phone.PhoneAgentWorkScheduler
-import app.nestro.phone.PhoneAgentNotifications
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
@@ -125,6 +123,13 @@ import java.util.Locale
 internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId: String) {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
+    val taskService = remember {
+        PhoneAgentTaskService(
+            context,
+            database,
+            (context.applicationContext as NestroApplication).agentTaskCoordinator
+        )
+    }
     var refresh by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
     var tasks by remember { mutableStateOf(emptyList<app.nestro.data.PhoneAgentTaskEntity>()) }
@@ -144,12 +149,10 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
 
     LaunchedEffect(refresh, projectId) {
         tasks = withContext(Dispatchers.IO) {
-            runCatching { database.dao().phoneAgentTasks(projectId, 30) }.getOrDefault(emptyList())
+            runCatching { taskService.loadTasks(projectId) }.getOrDefault(emptyList())
         }
         taskLogs = withContext(Dispatchers.IO) {
-            tasks.associate { task ->
-                task.id to runCatching { PhoneAgentTaskStore.recentLogs(database.dao(), task.id, 12) }.getOrDefault(emptyList())
-            }
+            taskService.loadLogs(tasks)
         }
     }
 
@@ -256,7 +259,7 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
                                     }
                                     taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
                                     if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
-                                        PhoneAgentWorkScheduler.enqueue(context, task.id)
+                                        taskService.enqueue(task.id)
                                     }
                                     if (result.isSuccess) taskClarifications = taskClarifications - task.id
                                     refresh++
@@ -281,8 +284,7 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
                             ) {
                                 Button(
                                     onClick = {
-                                        PhoneAgentWorkScheduler.enqueue(
-                                            context,
+                                        taskService.enqueue(
                                             task.id,
                                             afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
                                             allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
@@ -295,14 +297,12 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
-                                    PhoneAgentWorkScheduler.cancel(context, task.id, stopCurrent = task.status == PhoneAgentTaskStore.STATUS_RUNNING)
-                                    PhoneAgentNotifications.cancel(context, task.id)
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
-                                            PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
-                                            (context.applicationContext as? NestroApplication)
-                                                ?.agentTaskCoordinator
-                                                ?.cancel(task.id)
+                                            taskService.cancel(
+                                                task.id,
+                                                stopCurrent = task.status == PhoneAgentTaskStore.STATUS_RUNNING
+                                            )
                                         }
                                         refresh++
                                     }
