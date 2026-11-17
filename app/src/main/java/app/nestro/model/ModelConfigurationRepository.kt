@@ -13,14 +13,22 @@ class ModelConfigurationRepository(context: Context) {
     private val registryStore = ModelRegistryStore(vaultContext)
 
     fun loadRegistry(profiles: List<ModelProfileMetadata>): ModelRegistry =
-        registryStore.load(profiles) { profileId ->
+        withAvailableSecrets(registryStore.load(profiles) { profileId ->
             readProfileKey(profileId).isNotBlank()
-        }
+        })
 
     fun rebuildLegacyProfiles(profiles: List<ModelProfileMetadata>): ModelRegistry =
-        registryStore.rebuildFromLegacy(profiles) { profileId ->
+        withAvailableSecrets(registryStore.rebuildFromLegacy(profiles) { profileId ->
             readProfileKey(profileId).isNotBlank()
-        }
+        })
+
+    private fun withAvailableSecrets(registry: ModelRegistry): ModelRegistry {
+        val reconciled = registry.copy(apiKeys = registry.apiKeys.map { key ->
+            if (key.enabled && readApiKey(key.id).isBlank()) key.copy(enabled = false) else key
+        })
+        if (reconciled != registry) registryStore.save(reconciled)
+        return reconciled
+    }
 
     fun saveRegistry(registry: ModelRegistry) = registryStore.save(registry)
 
