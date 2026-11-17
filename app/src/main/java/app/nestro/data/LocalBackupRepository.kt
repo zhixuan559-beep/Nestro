@@ -14,22 +14,30 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 
 /** Application-facing backup boundary; UI never owns Room access. */
 class LocalBackupRepository(context: Context, private val database: NestroDatabase) {
     private val appContext = context.applicationContext
+    private val operationMutex = Mutex()
 
     fun readText(uri: Uri): String = readBackupText(appContext, uri)
 
-    suspend fun createBackup(prefs: SharedPreferences): String =
-        buildLocalBackup(appContext, prefs, database)
-
-    suspend fun restoreBackup(prefs: SharedPreferences, raw: String) =
-        restoreLocalBackup(appContext, prefs, raw, database)
-
-    suspend fun recoverInterruptedRestore(prefs: SharedPreferences) =
+    suspend fun createBackup(prefs: SharedPreferences): String = operationMutex.withLock {
+        // Never export a partially applied restore if the process previously died mid-restore.
         recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        buildLocalBackup(appContext, prefs, database)
+    }
+
+    suspend fun restoreBackup(prefs: SharedPreferences, raw: String) = operationMutex.withLock {
+        restoreLocalBackup(appContext, prefs, raw, database)
+    }
+
+    suspend fun recoverInterruptedRestore(prefs: SharedPreferences) = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+    }
 }
 
 

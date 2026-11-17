@@ -169,4 +169,42 @@ class LocalBackupRoundTripTest {
             context.deleteDatabase(databaseName)
         }
     }
+
+    @Test fun backupExportRecoversInterruptedRestoreBeforeTakingSnapshot() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "nestro_backup_export_recovery.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_export_recovery", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]")
+                .putString("global_memory_v1", "导出前应保留的原始记忆").commit()
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("export-c1", "导出恢复测试", 1L, "default"))
+            dao.putMessages(listOf(MessageEntity("export-m1", "export-c1", 0, "user", "原始消息", "[]", 0)))
+            val repository = LocalBackupRepository(context, database)
+            persistLocalBackupRestoreJournal(context, prefs, database)
+            database.withTransaction {
+                dao.deleteAllConversations()
+                dao.deleteAllProjects()
+            }
+            prefs.edit().putString("global_memory_v1", "错误的部分恢复状态").commit()
+
+            val exported = repository.createBackup(prefs)
+
+            assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(exported)))
+            assertEquals("原始消息", dao.loadConversations().single().messages.single().content)
+            assertEquals("导出前应保留的原始记忆", prefs.getString("global_memory_v1", ""))
+            assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
 }
