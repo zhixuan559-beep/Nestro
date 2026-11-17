@@ -169,3 +169,11 @@
 - 补齐 Chat 用户停止的重试边界：`OpenAiClient.streamWithFallback` 接收请求级 `shouldStop`，停止请求在候选模型切换/重试前都会终止，不会因断开当前连接后又自动重试备用请求；父协程 `CancellationException` 仍独立传播。
 
 - 记忆页按需加载也改为取消安全包装：切换页面/项目时，旧记忆查询不再把协程取消吞成空列表并回写过期状态。
+
+
+## 2026-11-18 模型目录损坏恢复保护
+
+- `ModelRegistryCodec.decodeOrNull()` 新增严格解码入口，将“合法空目录”与“损坏/不兼容目录”区分；原 `decode()` 保留宽容兼容行为，避免破坏既有调用方。
+- `ModelRegistryStore` 在 Registry 无法解码、需要从旧 Profile 重建前，先将原始 JSON 原样隔离保存到 `model_registry_v1_unreadable_backup`，并记录隔离时间；只保留首份隔离副本，避免后续错误覆盖。该保护不声称已恢复自定义目录，只确保原始数据不会被静默覆盖丢失。
+- 新增严格解码回归测试，覆盖 malformed JSON 与合法空 Registry 的区别。
+- 修复提交 `c12f8350cd4127b6bafc64d674beb2e383cafc03` 已推送；CI 触发状态待核验。
