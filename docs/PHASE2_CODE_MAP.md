@@ -167,3 +167,5 @@
 - 会话启动恢复进一步解耦：活动项目/会话选择提取为纯函数 `resolveActiveConversationSelection`，覆盖已归档项目回退、跨项目会话拒绝和缺失会话回退的单元测试。
 
 - 补齐 Chat 用户停止的重试边界：`OpenAiClient.streamWithFallback` 接收请求级 `shouldStop`，停止请求在候选模型切换/重试前都会终止，不会因断开当前连接后又自动重试备用请求；父协程 `CancellationException` 仍独立传播。
+
+- 记忆页按需加载也改为取消安全包装：切换页面/项目时，旧记忆查询不再把协程取消吞成空列表并回写过期状态。

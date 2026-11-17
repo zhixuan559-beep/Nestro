@@ -450,7 +450,7 @@ fun NestroApp() {
         activeProjectId = activeProjectId,
         loadMemories = { projectId ->
             withContext(Dispatchers.IO) {
-                runCatching { appRuntime.userMemoryRepository.list(projectId) }.getOrDefault(emptyList())
+                runCatchingCancellable { appRuntime.userMemoryRepository.list(projectId) }.getOrDefault(emptyList())
             }
         },
         onMemoriesLoaded = { automaticMemories = it },
