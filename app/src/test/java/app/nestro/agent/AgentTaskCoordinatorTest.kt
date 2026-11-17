@@ -93,6 +93,22 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun recoveryPreservesUserHandoffAndPausesQueuedTasksWithoutHandlers() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        states.put(AgentTaskState("handoff", "workflow", AgentTaskStatus.WAITING_FOR_USER, 2, "step-2", "需要用户确认"))
+        states.put(AgentTaskState("orphan", "temporary-handler", AgentTaskStatus.QUEUED, 0, "queued", ""))
+        states.put(AgentTaskState("failed", "workflow", AgentTaskStatus.FAILED, 1, "step-1", "模型请求失败"))
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+
+        val recovered = coordinator.recoverAfterProcessRestart()
+
+        assertEquals(AgentTaskStatus.WAITING_FOR_USER, recovered.first { it.taskId == "handoff" }.status)
+        assertEquals(AgentTaskStatus.PAUSED, states.get("orphan")?.status)
+        assertTrue(states.get("orphan")?.lastError?.contains("处理器尚未恢复") == true)
+        assertEquals(AgentTaskStatus.FAILED, recovered.first { it.taskId == "failed" }.status)
+    }
+
+    @Test
     fun interruptedRunningTaskIsMarkedPausedForManualRecovery() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         states.put(AgentTaskState("interrupted", "test", AgentTaskStatus.RUNNING, 3, "saved", ""))
