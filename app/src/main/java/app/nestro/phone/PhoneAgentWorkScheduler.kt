@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.BackoffPolicy
+import java.util.concurrent.TimeUnit
 import androidx.work.WorkManager
 
 object PhoneAgentWorkScheduler {
@@ -16,6 +18,7 @@ object PhoneAgentWorkScheduler {
         context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
             .edit().remove("phone_task_stop_requested").apply()
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(
                 Data.Builder()
                     .putString(KEY_TASK_ID, taskId)

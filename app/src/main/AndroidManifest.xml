@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -12,6 +13,7 @@
         android:label="Nestro"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <receiver android:name=".phone.PhoneAgentNotificationReceiver" android:exported="false" />
         <service
             android:name=".phone.PhoneAgentService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

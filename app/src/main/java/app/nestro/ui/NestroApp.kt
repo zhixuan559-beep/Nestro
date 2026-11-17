@@ -16,6 +16,7 @@ import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
+import app.nestro.phone.PhoneAgentNotifications
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
@@ -1051,6 +1052,8 @@ fun NestroApp() {
                         DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
                         DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
                         DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
+                        DrawerItem("▣", "产物库") { page = "artifacts"; showDrawer = false }
+                        DrawerItem("⌘", "能力目录") { page = "capabilities"; showDrawer = false }
                         DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
                         DrawerItem("♧", "专家团队") { page = "teams"; showDrawer = false }
                         DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
@@ -1124,6 +1127,15 @@ fun NestroApp() {
                     msg,
                     onSpeak = speakMessage,
                     onStopSpeak = stopSpeaking,
+                    onSaveArtifact = { text ->
+                        scope.launch {
+                            val title = text.lineSequence().firstOrNull()?.trim()?.take(60).orEmpty().ifBlank { "对话产物" }
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { app.nestro.data.ArtifactStore.save(context, activeProjectId, title, text) }
+                            }
+                            status = result.fold({ "已保存到产物库：${it.title} v${it.version}" }, { "产物保存失败：${it.message ?: "未知错误"}" })
+                        }
+                    },
                     onEdit = if (msg.role == "user") ({
                         editMessageId = msg.id
                         editMessageDraft = msg.content
@@ -1990,6 +2002,8 @@ fun NestroApp() {
                             }
                         }
                         "phone" -> PhoneAgentPage(context, database, activeProjectId)
+                        "artifacts" -> ArtifactLibraryPage(activeProjectId)
+                        "capabilities" -> CapabilityDirectoryPage()
                         "voice" -> {
                             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("语音设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -2935,7 +2949,7 @@ private fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null) {
+private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null) {
     val user = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
@@ -2945,6 +2959,13 @@ private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = n
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
                 Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!user && message.content.isNotBlank() && onSaveArtifact != null) {
+                TextButton(onClick = { onSaveArtifact.invoke(message.content) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                    Icon(Icons.Outlined.Bookmark, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("存入产物库", color = Mint, style = MaterialTheme.typography.labelMedium)
+                }
             }
             if (!user && message.content.isNotBlank() && onSpeak != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4246,6 +4267,16 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
     ) {
         Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text("Phone Agent 会先建立任务计划，再在授权范围内执行可验证的低风险动作。支付、验证码和最终提交始终由你接手。", color = Muted)
+        val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) { granted -> taskMessage = if (granted) "任务通知已开启" else "未授予通知权限，任务仍可运行但不会显示系统通知" }
+        val notificationsAllowed = android.os.Build.VERSION.SDK_INT < 33 ||
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!notificationsAllowed) {
+            OutlinedButton(onClick = { notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }, modifier = Modifier.fillMaxWidth()) {
+                Text("开启后台任务通知")
+            }
+        }
         Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (serviceEnabled) "无障碍服务已开启" else "尚未开启无障碍服务", color = if (serviceEnabled) Mint else Ink)
@@ -4374,6 +4405,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
                                     PhoneAgentWorkScheduler.cancel(context, task.id)
+                                    PhoneAgentNotifications.cancel(context, task.id)
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
