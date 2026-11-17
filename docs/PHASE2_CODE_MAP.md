@@ -98,3 +98,13 @@
 
 - 会话历史加载 effect 增加取消安全与异常收口：新查询/切页取消旧加载时不会由旧协程覆盖新 loading 状态；真实加载异常会回传根页面状态提示，并确保当前协程结束时关闭 loading。
 - 上述错误处理属于本批次副作用边界的一部分，避免页面因 DAO/存储异常永久停留在加载态。
+
+
+## 2026-11-18 批次 A 进展补充（三）
+
+- `ModelManagementUiState.initialize()` 在 Registry 活跃模型有效时同步清除旧 `active_model_profile_id`，避免旧 Profile ID 残留并在后续模型失效时触发错误回退。
+- 新增 `data/ChatRequestRecoveryCoordinator.kt`，集中处理进程重建后的聊天请求恢复：读取中断标记、恢复部分回复、避免重复插入同一 requestId、恢复当前会话草稿并清理已处理标记。`NestroApp` 只负责把恢复结果应用到 Compose 状态。
+- `NestroApplication` 注册聊天恢复协调器；备份恢复路径改为复用 `ModelManagementUiState.initialize()`，不再维护第二份 Registry/旧 Profile 恢复逻辑。
+- 移除 `NestroApp` 中重复调用 `AgentTaskCoordinator.recoverAfterProcessRestart()` 的 UI 启动分支。进程级任务恢复由 `NestroApplication.onCreate()` 统一拥有，避免应用层和页面层并发执行恢复扫描。
+- `NestroApp` 仍负责 Room/旧存储会话与项目的首轮恢复、活动项目/会话选择和页面状态应用；Batch A 未完成，下一步继续拆分会话启动恢复与发送编排。
+- 前一提交 `d0968acd667edc0aca95a7f69f46a44018194e47` 的 Android CI 已通过。上述本轮新改动尚待对应最新 head 的 CI 验证；未构建 APK、未进行真机验收，PR #3 仍保持 Draft / 未合并。
