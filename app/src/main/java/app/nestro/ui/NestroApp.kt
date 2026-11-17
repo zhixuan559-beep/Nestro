@@ -1105,8 +1105,8 @@ fun NestroApp() {
                                 runCatching {
                                     if (provider.id.startsWith("legacy-provider-")) {
                                         val existing = modelRegistry.providers.firstOrNull { it.id == provider.id }
-                                        require(existing?.baseUrl == provider.baseUrl) {
-                                            "旧版服务商地址请在下方旧模型配置中修改，避免破坏 Profile 迁移关联"
+                                        require(existing?.baseUrl == provider.baseUrl && existing.name == provider.name) {
+                                            "旧版服务商信息由 Profile 迁移生成，请在下方旧模型配置中管理"
                                         }
                                     }
                                     val updated = modelRegistry.upsertProvider(provider)
