@@ -146,7 +146,14 @@ internal fun ModelManager(
             }
         }
         OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
-        OutlinedTextField(providerUrlDraft, { providerUrlDraft = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("服务商 API 根地址") }, singleLine = true)
+        OutlinedTextField(
+            providerUrlDraft,
+            { providerUrlDraft = it.take(2048) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (editingProviderId.startsWith("legacy-provider-")) "旧配置服务商地址请在下方旧模型配置中修改" else "服务商 API 根地址") },
+            enabled = !editingProviderId.startsWith("legacy-provider-"),
+            singleLine = true
+        )
         OutlinedButton(
             onClick = {
                 val url = providerUrlDraft.trim().trimEnd('/')
