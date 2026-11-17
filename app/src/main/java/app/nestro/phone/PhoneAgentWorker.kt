@@ -5,6 +5,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
 
 class PhoneAgentWorker(
@@ -78,6 +80,18 @@ class PhoneAgentWorker(
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
                 if (userCancelled) PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
                 else PhoneAgentTaskStore.markInterrupted(dao, taskId)
+            }
+            runCatching {
+                val stateStore = RoomAgentTaskStateStore(dao)
+                stateStore.get(taskId)?.let { state ->
+                    if (state.status !in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.FAILED, AgentTaskStatus.WAITING_FOR_USER)) {
+                        stateStore.put(state.copy(
+                            status = if (userCancelled) AgentTaskStatus.CANCELLED else AgentTaskStatus.PAUSED,
+                            lastError = if (userCancelled) "用户取消任务" else "后台任务被中断，可核对当前页面后继续",
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                    }
+                }
             }
             PhoneAgentNotifications.show(
                 applicationContext, taskId,
