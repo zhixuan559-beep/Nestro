@@ -2,7 +2,6 @@ package app.nestro.ui
 
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
-import app.nestro.data.OpenAiClient
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
@@ -19,9 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @Composable
@@ -37,7 +34,8 @@ internal fun ModelManager(
     onActivate: (String) -> Unit,
     onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
-    onDeleteKey: (String) -> Unit
+    onDeleteKey: (String) -> Unit,
+    onTestConnection: suspend (ModelConfig) -> String
 ) {
     val scope = rememberCoroutineScope()
     var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
@@ -139,15 +137,8 @@ internal fun ModelManager(
                 testing = true
                 testStatus = "正在测试连接…"
                 scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            require(candidate.baseUrl.startsWith("https://") && candidate.model.isNotBlank() && candidate.apiKey.isNotBlank()) { "请填写 HTTPS 地址、模型名称和 API Key" }
-                            OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "")
-                        }
-                    }
-                    testStatus = result.fold({ response ->
-                        if (response.isBlank()) "连接成功，但模型返回了空内容。" else "连接成功：模型已返回内容。"
-                    }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
+                    testStatus = runCatching { onTestConnection(candidate) }
+                        .fold({ it }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
                     testing = false
                 }
             },
