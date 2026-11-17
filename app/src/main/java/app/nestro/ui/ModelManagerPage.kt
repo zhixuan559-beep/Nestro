@@ -65,6 +65,7 @@ internal fun ModelManager(
     var providerUrlDraft by remember { mutableStateOf("https://") }
     var editingProviderId by remember { mutableStateOf("") }
     var confirmDeleteProvider by remember { mutableStateOf(false) }
+    var providerToDeleteId by remember { mutableStateOf("") }
     var selectedProviderId by remember {
         mutableStateOf(registry.providers.firstOrNull()?.id.orEmpty())
     }
@@ -118,6 +119,12 @@ internal fun ModelManager(
                     apiKeyLabelDraft = ""
                     apiKeyDraft = ""
                     selectedModelKeyIds = emptySet()
+                    editingRegistryModelId = ""
+                    modelNameDraft = ""
+                    modelCodeDraft = ""
+                    modelInputPriceDraft = ""
+                    modelOutputPriceDraft = ""
+                    modelCurrencyDraft = "USD"
                 })
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, color = Ink)
@@ -132,7 +139,10 @@ internal fun ModelManager(
                 TextButton(onClick = { onSaveProvider(provider.copy(enabled = !provider.enabled)) }) {
                     Text(if (provider.enabled) "停用" else "启用", color = if (provider.enabled) Mint else ColorStop)
                 }
-                TextButton(onClick = { confirmDeleteProvider = true }) { Text("删除", color = ColorStop) }
+                TextButton(onClick = {
+                    providerToDeleteId = provider.id
+                    confirmDeleteProvider = true
+                }) { Text("删除", color = ColorStop) }
             }
         }
         OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
@@ -173,12 +183,18 @@ internal fun ModelManager(
                 text = { Text("将同时删除该服务商下的模型和 API Key。此操作不可撤销。") },
                 confirmButton = {
                     TextButton(onClick = {
-                        onDeleteProvider(selectedProviderId)
+                        val deletingId = providerToDeleteId
+                        if (deletingId.isNotBlank()) onDeleteProvider(deletingId)
                         confirmDeleteProvider = false
-                        selectedProviderId = registry.providers.firstOrNull { it.id != selectedProviderId }?.id.orEmpty()
-                        editingProviderId = ""
-                        providerNameDraft = ""
-                        providerUrlDraft = "https://"
+                        providerToDeleteId = ""
+                        if (selectedProviderId == deletingId) {
+                            selectedProviderId = registry.providers.firstOrNull { it.id != deletingId }?.id.orEmpty()
+                        }
+                        if (editingProviderId == deletingId) {
+                            editingProviderId = ""
+                            providerNameDraft = ""
+                            providerUrlDraft = "https://"
+                        }
                         registryMessage = "服务商及其关联配置已删除"
                     }) { Text("确认删除") }
                 },
