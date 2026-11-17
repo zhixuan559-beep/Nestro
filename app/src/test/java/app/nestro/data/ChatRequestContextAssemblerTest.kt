@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,7 +40,7 @@ class ChatRequestContextAssemblerTest {
 
         assertTrue(observedQuery.contains("历史消息3"))
         assertTrue(observedQuery.contains("历史消息10"))
-        assertTrue(!observedQuery.contains("历史消息1"))
+        assertFalse(observedQuery.lines().contains("历史消息1"))
         assertEquals(1, result.recalledCount)
         assertEquals(listOf(source), result.recallSources)
         assertTrue(result.systemContext.indexOf("基础上下文") < result.systemContext.indexOf("历史召回上下文"))
