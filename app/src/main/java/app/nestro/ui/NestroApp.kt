@@ -594,6 +594,7 @@ fun NestroApp() {
             projects = data.second
             persistedConversationVersions.clear()
             data.first.forEach { persistedConversationVersions[it.id] = it.hashCode() }
+            prefs.edit().putBoolean("room_storage_initialized", true).apply()
             databaseReady = true
         } else {
             conversations = loadConversations(prefs)
@@ -654,7 +655,7 @@ fun NestroApp() {
                 if (existingMessages.none { it.id == requestId }) {
                     val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
                     val recovered = existingMessages + ChatMessage(requestId, "assistant", content)
-                    conversations = saveConversationMessages(prefs, conversationId, recovered, projectId)
+                    conversations = saveConversationMessages(prefs, conversationId, recovered, projectId, conversations)
                     if (activeConversationId == conversationId) messages = recovered
                 }
             }
@@ -738,7 +739,7 @@ fun NestroApp() {
         val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         reuseLastUserOnSend = false
         if (messages.lastOrNull()?.id != user.id) messages = messages + user
-        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
         val creationKind = when {
             isCreationIntent(prompt, "专家") -> "expert"
             isCreationIntent(prompt, "技能") -> "skill"
@@ -777,7 +778,7 @@ fun NestroApp() {
                     else -> "生成失败：${generated.exceptionOrNull()?.message ?: "请检查模型是否支持正常文本回复"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 if (!stopRequested && generated.isSuccess) {
                     val definition = generated.getOrThrow()
@@ -802,7 +803,7 @@ fun NestroApp() {
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
-            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
         } else {
             busy = true
             stopRequested = false
@@ -831,7 +832,7 @@ fun NestroApp() {
                 val phonePlan = PhoneAgentPlanner.plan(prompt)
                 if (stopRequested) {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
-                    conversations = saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId)
+                    conversations = saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId, conversations)
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
                     status = "已停止生成"
                     busy = false
@@ -943,7 +944,7 @@ fun NestroApp() {
                 val priorVersions = previousAssistant?.allVersions().orEmpty()
                 val nextVersions = (priorVersions + finalText).filter(String::isNotBlank).distinct().takeLast(20)
                 val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, nextVersions, nextVersions.lastIndex)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 prefs.edit().remove("chat_request_state_v1").apply()
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when {
@@ -1097,7 +1098,7 @@ fun NestroApp() {
                             pendingAssistantRevision = msg
                             reuseLastUserOnSend = true
                             messages = messages.take(userIndex + 1)
-                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                             sendPrompt(retryPrompt)
                         }
                     }) else null,
@@ -1107,7 +1108,7 @@ fun NestroApp() {
                             val allVersions = msg.allVersions()
                             val chosen = version.coerceIn(0, allVersions.lastIndex)
                             messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions, activeVersion = chosen) }
-                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                         }
                     },
                     onRetry = {
@@ -1117,7 +1118,7 @@ fun NestroApp() {
                                                     val retryPrompt = messages[lastUserIndex].content
                                                     messages = messages.take(lastUserIndex)
                                                     conversations = saveConversationMessages(
-                                                        prefs, activeConversationId, messages, activeProjectId
+                                                        prefs, activeConversationId, messages, activeProjectId, conversations
                                                     )
                                                     sendPrompt(retryPrompt)
                                                 }
@@ -1359,7 +1360,7 @@ fun NestroApp() {
                                                          workflowHistory = (listOf(runRecord) + workflowHistory).take(50)
                                                          prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
-                                                         conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
+                                                         conversations = saveConversationMessages(prefs, conversationId, completed, projectId, conversations)
                                                          if (activeConversationId == conversationId) messages = completed
                                                          workflowRunStatus = if (stopRequested) "工作流已停止。" else if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
                                                          workflowPauseGate?.complete(Unit)
@@ -2184,7 +2185,7 @@ fun NestroApp() {
                     val index = messages.indexOfFirst { it.id == editMessageId }
                     if (edited.isNotBlank() && index >= 0) {
                         messages = messages.take(index)
-                        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                         sendPrompt(edited)
                     }
                     showEditMessageDialog = false
@@ -3487,6 +3488,9 @@ private fun loadConversations(prefs: android.content.SharedPreferences): List<Co
 }
 
 private fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>, markDirty: Boolean = true) {
+    // Room is authoritative after the one-time migration. Do not overwrite the complete
+    // legacy fallback snapshot with the in-memory summary cache.
+    if (prefs.getBoolean("room_storage_initialized", false)) return
     val array = JSONArray()
     conversations.take(100).forEach { conversation ->
         val messages = JSONArray()
@@ -3502,8 +3506,18 @@ private fun saveConversationList(prefs: android.content.SharedPreferences, conve
     editor.apply()
 }
 
-private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>, projectId: String = "default"): List<ConversationRecord> {
-    val existing = loadConversations(prefs)
+private fun saveConversationMessages(
+    prefs: android.content.SharedPreferences,
+    activeId: String,
+    messages: List<ChatMessage>,
+    projectId: String = "default",
+    currentConversations: List<ConversationRecord> = emptyList()
+): List<ConversationRecord> {
+    val existing = if (prefs.getBoolean("room_storage_initialized", false)) {
+        currentConversations
+    } else {
+        loadConversations(prefs)
+    }
     val record = existing.firstOrNull { it.id == activeId }
         ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList(), projectId)
     val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
