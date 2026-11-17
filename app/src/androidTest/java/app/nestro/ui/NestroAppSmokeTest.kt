@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.MainActivity
+import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -71,6 +72,21 @@ class NestroAppSmokeTest {
     fun modelSettingsCanBeOpenedFromTheTopBar() {
         composeRule.onNodeWithContentDescription("模型设置").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+    }
+
+
+    @Test
+    fun remainsNavigableAfterLandscapeWindowChange() {
+        try {
+            composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithContentDescription("菜单").performClick()
+            composeRule.onNodeWithText("项目空间", substring = true).performClick()
+            composeRule.onNodeWithText("项目空间").assertIsDisplayed()
+        } finally {
+            composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
     }
 
 }
