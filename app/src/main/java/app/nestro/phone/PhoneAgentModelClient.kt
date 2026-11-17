@@ -24,10 +24,12 @@ internal object PhoneAgentModelClient {
         )
         val registry = repository.loadRegistry(profiles)
         val activeProfileId = preferences.getString("active_model_profile_id", "").orEmpty()
+        val activeRegistryModelId = preferences.getString("active_model_registry_id", "").orEmpty()
         val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
             registry = registry,
-            activeModelId = activeProfileId.takeIf { it.isNotBlank() }
-                ?.let { "legacy-model-$it" }.orEmpty(),
+            activeModelId = activeRegistryModelId.ifBlank {
+                activeProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
+            },
             failoverEnabled = preferences.getBoolean("model_failover_enabled", false),
             readKey = repository::readApiKey
         )
