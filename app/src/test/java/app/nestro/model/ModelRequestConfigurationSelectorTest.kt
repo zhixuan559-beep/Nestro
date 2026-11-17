@@ -154,4 +154,26 @@ class ModelRequestConfigurationSelectorTest {
         assertEquals(listOf("model-a"), configs.map { it.model })
         assertEquals(listOf("active-key"), reads)
     }
+
+    @Test
+    fun registrySelectionKeepsMultipleKeysForTheSameModelAsFallbackCandidates() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(
+                ModelApiKey("primary-key", "p", "Primary"),
+                ModelApiKey("backup-key", "p", "Backup")
+            ),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "model-a", listOf("primary-key", "backup-key"))
+            )
+        )
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", false
+        ) { id -> if (id == "primary-key") "secret-a" else "secret-b" }
+
+        assertEquals(listOf("secret-a", "secret-b"), configs.map { it.apiKey })
+        assertEquals(listOf("model-a", "model-a"), configs.map { it.model })
+    }
 }
