@@ -40,15 +40,15 @@ class ModelRegistryStore(context: Context) {
             ?.let(ModelRegistryCodec::decode)
             ?: ModelRegistry()
         val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
-        val keys = migrated.apiKeys.mapNotNull { key ->
+        val legacyKeys = migrated.apiKeys.mapNotNull { key ->
             val profileId = key.id.removePrefix("legacy-key-")
             val old = previous.apiKeys.firstOrNull { it.id == key.id }
             if (hasSecret(profileId)) key.copy(enabled = old?.enabled ?: true) else null
         }
-        val providers = migrated.providers.map { provider ->
+        val legacyProviders = migrated.providers.map { provider ->
             provider.copy(enabled = previous.providers.firstOrNull { it.id == provider.id }?.enabled ?: provider.enabled)
         }
-        val models = migrated.models.map { model ->
+        val legacyModels = migrated.models.map { model ->
             val profileId = model.id.removePrefix("legacy-model-")
             val old = previous.models.firstOrNull { it.id == model.id }
             model.copy(
@@ -59,7 +59,10 @@ class ModelRegistryStore(context: Context) {
                 currency = old?.currency ?: model.currency
             )
         }
-        return migrated.copy(providers = providers, apiKeys = keys, models = models).also(::save)
+        val providers = previous.providers.filterNot { it.id.startsWith("legacy-provider-") } + legacyProviders
+        val keys = previous.apiKeys.filterNot { it.id.startsWith("legacy-key-") } + legacyKeys
+        val models = previous.models.filterNot { it.id.startsWith("legacy-model-") } + legacyModels
+        return ModelRegistry(providers, keys, models).also(::save)
     }
 
     fun save(registry: ModelRegistry) {
