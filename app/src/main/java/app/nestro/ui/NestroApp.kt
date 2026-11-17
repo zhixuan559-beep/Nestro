@@ -315,27 +315,45 @@ fun NestroApp() {
                 modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
                 modelRegistry = modelRepository.rebuildLegacyProfiles(modelProfiles)
                 activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
+                activeRegistryModelId = prefs.getString("active_model_registry_id", "") ?: ""
                 modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
                 modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
-                val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-                val restoredModelSelectable = restoredActiveProfile != null &&
-                    modelRegistry.selectableModels().any { it.id == "legacy-model-${restoredActiveProfile.id}" }
-                if (restoredActiveProfile != null) {
-                    val restoredKey = modelRepository.readProfileKey(restoredActiveProfile.id)
-                    if (restoredKey.isNotBlank() && restoredModelSelectable) {
-                        config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
-                        modelRepository.writeActiveConfig(config)
+                val restoredRegistryModel = modelRegistry.models.firstOrNull { it.id == activeRegistryModelId }
+                val restoredProvider = restoredRegistryModel?.let { item -> modelRegistry.providers.firstOrNull { it.id == item.providerId } }
+                val restoredRegistryKey = restoredRegistryModel?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
+                val registryModelUsable = restoredRegistryModel != null && restoredProvider?.enabled == true &&
+                    restoredRegistryModel in modelRegistry.selectableModels() && !restoredRegistryKey.isNullOrBlank()
+                if (registryModelUsable) {
+                    activeModelProfileId = ""
+                    config = ModelConfig(restoredProvider!!.baseUrl, restoredRegistryModel!!.modelCode, restoredRegistryKey!!)
+                    modelRepository.writeActiveConfig(config)
+                } else {
+                    if (activeRegistryModelId.isNotBlank()) {
+                        activeRegistryModelId = ""
+                        prefs.edit().remove("active_model_registry_id").apply()
+                    }
+                    val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
+                    val restoredModelSelectable = restoredActiveProfile != null &&
+                        modelRegistry.selectableModels().any { it.id == "legacy-model-${restoredActiveProfile.id}" }
+                    if (restoredActiveProfile != null) {
+                        val restoredKey = modelRepository.readProfileKey(restoredActiveProfile.id)
+                        if (restoredKey.isNotBlank() && restoredModelSelectable) {
+                            activeRegistryModelId = "legacy-model-" + restoredActiveProfile.id
+                            prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
+                            config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
+                            modelRepository.writeActiveConfig(config)
+                        } else {
+                            activeModelProfileId = ""
+                            config = ModelConfig("", "", "")
+                            modelRepository.clearActiveConfig()
+                            prefs.edit().remove("active_model_profile_id").apply()
+                        }
                     } else {
                         activeModelProfileId = ""
                         config = ModelConfig("", "", "")
                         modelRepository.clearActiveConfig()
                         prefs.edit().remove("active_model_profile_id").apply()
                     }
-                } else {
-                    activeModelProfileId = ""
-                    config = ModelConfig("", "", "")
-                    modelRepository.clearActiveConfig()
-                    prefs.edit().remove("active_model_profile_id").apply()
                 }
                 persistedConversationVersions.clear()
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
