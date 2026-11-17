@@ -62,8 +62,8 @@ object ExpertTemplateBundleCodec {
         require(prompt.isNotBlank() && prompt.length <= 8_000) { "模板指令必须为 1 到 8000 个字符" }
         require(template.description.length <= 300) { "模板描述不能超过 300 个字符" }
         require(template.category.isNotBlank() && template.category.length <= 30) { "模板分类无效" }
-        require(template.profile.temperature == null || (template.profile.temperature.isFinite() && template.profile.temperature in 0.0..2.0)) { "Temperature 配置无效" }
-        require(template.profile.maxTokens == null || template.profile.maxTokens in 1..32768) { "Max tokens 配置无效" }
+        val profileError = ExpertProfileCodec.validate(template.profile, template.profile.skillNames.toSet())
+        require(profileError == null) { "模板专家配置无效：" + profileError }
         return template.copy(name = name, prompt = prompt, builtIn = false)
     }
 }
