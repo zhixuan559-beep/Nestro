@@ -37,9 +37,8 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest
 
   build:
-    # Defer the full build-and-test gate until the implementation phase is complete.
-    # Run it manually with workflow_dispatch, or automatically after changes reach main.
-    if: github.event_name != 'pull_request'
+    # Run the full Android emulator suite and debug APK build for the implementation review.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
