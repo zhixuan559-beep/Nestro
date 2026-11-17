@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
+private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String,val communityManaged:Boolean=false)
 
 @Composable
 fun CapabilityDirectoryPage() {
@@ -65,7 +65,8 @@ fun CapabilityDirectoryPage() {
                     "包内声明："+meta.optString("source","未声明"),
                     "权限声明（不代表已授权）："+permissionText.ifEmpty { listOf("无") }.joinToString("、")+
                         if(dependencyText.isEmpty()) "" else "；依赖："+dependencyText.joinToString("、"),
-                    if(name in off) "已停用" else "已启用")
+                    if(name in off) "已停用" else "已启用",
+                    meta.optString("source") == "已验证签名社区目录")
             }.toList()
         }.getOrDefault(builtIns)
     }
@@ -91,19 +92,34 @@ fun CapabilityDirectoryPage() {
         if(releases.isNotEmpty()) {
             Text("已验签社区技能",style=MaterialTheme.typography.titleMedium)
             releases.forEach { release ->
+                val installedSkills = runCatching { JSONObject(rawSkills) }.getOrDefault(JSONObject())
+                val installedMetadata = runCatching { JSONObject(JSONObject(rawMetadata).optString(release.name, "{}")) }.getOrDefault(JSONObject())
+                val installedVersion = installedMetadata.optString("version", "")
+                val isInstalled = installedSkills.has(release.name)
+                val sameOrOlder = isInstalled && installedVersion.isNotBlank() &&
+                    !SkillCommunityClient.isNewerVersion(release.version, installedVersion)
+                val updateAvailable = isInstalled && installedVersion.isNotBlank() &&
+                    SkillCommunityClient.isNewerVersion(release.version, installedVersion)
                 Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         Text(release.name+" · v"+release.version,style=MaterialTheme.typography.titleSmall)
                         Text(release.description,style=MaterialTheme.typography.bodySmall)
+                        if (isInstalled) {
+                            Text(
+                                if (updateAvailable) "本机已安装 v$installedVersion，可更新" else "本机已安装 v$installedVersion，不提供降级",
+                                style=MaterialTheme.typography.labelSmall,
+                                color=MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text("SHA-256："+release.sha256.take(20)+"…",style=MaterialTheme.typography.labelSmall)
-                        OutlinedButton(enabled=!loading,onClick={
+                        OutlinedButton(enabled=!loading && !sameOrOlder,onClick={
                             loading=true
                             scope.launch {
                                 val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.downloadVerifiedBundle(release) } }
                                 result.fold({ pendingBundle=it },{ installStatus="下载拒绝："+(it.message ?: "校验失败") })
                                 loading=false
                             }
-                        }) { Text("下载并校验") }
+                        }) { Text(if (updateAvailable) "下载并更新" else if (sameOrOlder) "已安装 / 阻止降级" else "下载并校验") }
                     }
                 }
             }
@@ -136,7 +152,9 @@ fun CapabilityDirectoryPage() {
                 Text(bundle.description)
                 Text("权限声明："+bundle.permissions.ifEmpty { listOf("无") }.joinToString("、"))
                 Text("依赖："+bundle.dependencies.map { it.name+"@"+it.version }.ifEmpty { listOf("无") }.joinToString("、"))
-                Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。确认后写入本地技能库。")
+                val existing = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject()).has(bundle.name)
+                if (existing) Text("本地技能库已存在同名技能。确认后将替换该技能的提示词和元数据；不会自动授予任何系统权限。", color=MaterialTheme.colorScheme.error)
+                Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。")
             }},
             confirmButton={TextButton(onClick={
                 val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
