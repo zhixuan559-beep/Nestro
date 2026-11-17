@@ -10,6 +10,7 @@ import app.nestro.agent.AgentTaskStatus
 import app.nestro.phone.PhoneAgentAgent
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
+import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
 import app.nestro.model.ModelConfigurationRepository
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +72,10 @@ class NestroApplication : Application() {
             scope = applicationScope,
             traces = RoomAgentTaskTraceStore(dao)
         )
+    }
+
+    val phoneAgentTaskService: PhoneAgentTaskService by lazy {
+        PhoneAgentTaskService(this, database, agentTaskCoordinator)
     }
 
     override fun onCreate() {

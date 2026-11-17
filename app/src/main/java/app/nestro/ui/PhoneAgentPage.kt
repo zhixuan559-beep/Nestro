@@ -30,11 +30,7 @@ internal fun PhoneAgentPage(context: Context, database: NestroDatabase, projectI
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val taskService = remember {
-        PhoneAgentTaskService(
-            context,
-            database,
-            (context.applicationContext as NestroApplication).agentTaskCoordinator
-        )
+        (context.applicationContext as NestroApplication).phoneAgentTaskService
     }
     var refresh by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
