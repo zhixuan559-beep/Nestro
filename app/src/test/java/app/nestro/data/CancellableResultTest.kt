@@ -4,9 +4,9 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,7 +18,7 @@ class CancellableResultTest {
         }
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException)
-        assertFalse(!coroutineContext[ kotlinx.coroutines.Job ]!!.isActive)
+        assertTrue(coroutineContext[Job]!!.isActive)
     }
 
     @Test
