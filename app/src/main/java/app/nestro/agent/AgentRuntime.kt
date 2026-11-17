@@ -166,7 +166,13 @@ class InMemoryAgentTaskStateStore : AgentTaskStateStore {
     }
 
     override suspend fun recoverable(): List<AgentTaskState> = mutex.withLock {
-        states.values.filter { it.status in setOf(AgentTaskStatus.QUEUED, AgentTaskStatus.RUNNING, AgentTaskStatus.PAUSED) }
+        states.values.filter { it.status in setOf(
+            AgentTaskStatus.QUEUED,
+            AgentTaskStatus.RUNNING,
+            AgentTaskStatus.WAITING_FOR_USER,
+            AgentTaskStatus.PAUSED,
+            AgentTaskStatus.FAILED
+        ) }
     }
 }
 
