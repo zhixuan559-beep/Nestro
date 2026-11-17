@@ -187,7 +187,7 @@ class AgentTaskCoordinator(
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 val latest = states.get(taskId)
-                if (latest?.status !in setOf(
+                if (!requestedStops.containsKey(taskId) && latest?.status !in setOf(
                         AgentTaskStatus.PAUSED,
                         AgentTaskStatus.CANCELLED,
                         AgentTaskStatus.COMPLETED,
@@ -267,11 +267,6 @@ class AgentTaskCoordinator(
                 states.put(state.copy(status = status, updatedAt = System.currentTimeMillis()))
             } else {
                 requestedStops[taskId] = status
-                states.put(state.copy(
-                    status = status,
-                    lastError = if (status == AgentTaskStatus.PAUSED) "正在暂停任务" else "正在取消任务",
-                    updatedAt = System.currentTimeMillis()
-                ))
                 job.cancel(CancellationException(if (status == AgentTaskStatus.PAUSED) "用户暂停任务" else "用户取消任务"))
             }
         }
@@ -343,16 +338,21 @@ class AgentTaskCoordinator(
                 if (finalState?.status == AgentTaskStatus.COMPLETED) trace(taskId, "completed")
                 if (finalState?.status == AgentTaskStatus.WAITING_FOR_USER) trace(taskId, "waiting_for_user", finalState.lastError)
             } catch (cancelled: CancellationException) {
-                val requested = withTransitionLock { requestedStops.remove(taskId) }
-                if (requested != null) {
-                    withContext(NonCancellable) {
-                        val latest = states.get(taskId) ?: initial
-                        states.put(latest.copy(
-                            status = requested,
-                            lastError = if (requested == AgentTaskStatus.PAUSED) "任务已暂停，可从检查点恢复" else "任务已取消",
-                            updatedAt = System.currentTimeMillis()
-                        ))
+                val requested = withContext(NonCancellable) {
+                    withTransitionLock {
+                        val stopStatus = requestedStops.remove(taskId)
+                        if (stopStatus != null) {
+                            val latest = states.get(taskId) ?: initial
+                            states.put(latest.copy(
+                                status = stopStatus,
+                                lastError = if (stopStatus == AgentTaskStatus.PAUSED) "任务已暂停，可从检查点恢复" else "任务已取消",
+                                updatedAt = System.currentTimeMillis()
+                            ))
+                        }
+                        stopStatus
                     }
+                }
+                if (requested != null) {
                     trace(taskId, if (requested == AgentTaskStatus.CANCELLED) "cancelled" else "paused")
                 } else if (!currentCoroutineContext().isActive) {
                     throw cancelled
