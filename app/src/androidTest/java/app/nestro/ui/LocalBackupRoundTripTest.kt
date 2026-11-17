@@ -10,6 +10,7 @@ import app.nestro.data.ConversationEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.LocalBackupCompatibility
+import app.nestro.data.LocalBackupRepository
 import app.nestro.data.LocalVault
 import app.nestro.data.ModelConfig
 import app.nestro.data.MessageEntity
@@ -68,7 +69,8 @@ class LocalBackupRoundTripTest {
 
             val artifactTitle = "备份往返测试-" + System.currentTimeMillis()
             val savedArtifact = ArtifactStore.save(context, "p1", artifactTitle, "# 产物备份内容")
-            val backup = buildLocalBackup(context, prefs, database)
+            val backupRepository = LocalBackupRepository(context, database)
+            val backup = backupRepository.createBackup(prefs)
             assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(backup)))
             ArtifactStore.delete(context, savedArtifact)
 
@@ -81,7 +83,7 @@ class LocalBackupRoundTripTest {
             }
             prefs.edit().putBoolean("automatic_memory_enabled", false).putString("phone_audit", "[]").commit()
 
-            restoreLocalBackup(context, prefs, backup, database)
+            backupRepository.restoreBackup(prefs, backup)
 
             assertEquals("保留这条消息", dao.loadConversations().single().messages.single().content)
             assertTrue("恢复必须保留非默认项目", dao.loadProjects().any { it.id == "p1" })
@@ -99,11 +101,11 @@ class LocalBackupRoundTripTest {
 
             val tamperedBackup = backup.replace("保留这条消息", "被篡改的消息")
             assertTrue("篡改后的备份必须被拒绝", runCatching {
-                restoreLocalBackup(context, prefs, tamperedBackup, database)
+                backupRepository.restoreBackup(prefs, tamperedBackup)
             }.isFailure)
             val checksumMissingBackup = JSONObject(backup).apply { remove("checksum_sha256") }.toString()
             assertTrue("当前版本缺少校验和的备份必须被拒绝", runCatching {
-                restoreLocalBackup(context, prefs, checksumMissingBackup, database)
+                backupRepository.restoreBackup(prefs, checksumMissingBackup)
             }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
