@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.nestro.data.NestroDatabase
+import app.nestro.data.KnowledgeRepository
 import org.junit.Rule
 import org.junit.Test
 
@@ -24,7 +25,8 @@ class ContentPageInteractionTest {
             NestroDatabase::class.java
         ).allowMainThreadQueries().build()
         try {
-            composeRule.setContent { KnowledgePage(database, "interaction-test-project") }
+            val repository = KnowledgeRepository(database)
+            composeRule.setContent { KnowledgePage(repository, "interaction-test-project") }
             composeRule.onNodeWithText("测试知识库检索").assertIsNotEnabled()
             composeRule.onNodeWithText("输入问题，查看实际命中的文档片段").performTextInput("项目隔离")
             composeRule.onNodeWithText("测试知识库检索").assertIsNotEnabled()
