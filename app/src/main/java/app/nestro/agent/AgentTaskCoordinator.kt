@@ -176,7 +176,7 @@ class AgentTaskCoordinator(
             enqueue(taskId, handlerId, initialCheckpoint)
             return completion.await()
         } catch (cancelled: CancellationException) {
-            cancel(taskId)
+            withContext(NonCancellable) { cancel(taskId) }
             throw cancelled
         } finally {
             handlers.unregister(handlerId)
