@@ -1,6 +1,5 @@
 package app.nestro.data
 
-import app.nestro.model.ChatExecutionService
 import java.util.UUID
 
 internal fun isCreationIntent(prompt: String, target: String): Boolean {
