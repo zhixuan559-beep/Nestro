@@ -1722,7 +1722,9 @@ fun NestroApp() {
                                                             conversations = conversations.map { item ->
                                                                 if (item.id == next.id) item.copy(messages = nextMessages) else item
                                                             }
-                                                            conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
+                                                            if (remaining.any { it.id == next.id }) {
+                                                                conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
+                                                            }
                                                             prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
                                                         } else {
                                                             conversations = remaining
