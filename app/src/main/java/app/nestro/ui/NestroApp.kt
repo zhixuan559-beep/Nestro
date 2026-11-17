@@ -2965,8 +2965,8 @@ fun NestroApp() {
                         ) { Text("导出自定义模板") }
                     }
                     OutlinedTextField(value = templateSearchDraft, onValueChange = { templateSearchDraft = it }, label = { Text("搜索模板名称、说明或指令") }, singleLine = true)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        templateCategories.take(5).forEach { category ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        templateCategories.forEach { category ->
                             FilterChip(selected = templateCategoryFilter == category, onClick = { templateCategoryFilter = category }, label = { Text(category) })
                         }
                     }
