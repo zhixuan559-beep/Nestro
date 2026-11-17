@@ -32,13 +32,7 @@ internal object ChatEndpointPolicy {
  * Kept separate from Compose so transport behavior can be exercised with a local test server.
  */
 internal object ChatHttpTransport {
-    fun open(
-        baseUrl: String,
-        apiKey: String,
-        connectTimeoutMillis: Int,
-        readTimeoutMillis: Int,
-        streaming: Boolean
-    ): java.net.HttpURLConnection {
+    fun open(baseUrl: String): java.net.HttpURLConnection {
         return ChatEndpointPolicy.completionUrl(baseUrl).openConnection()
             as java.net.HttpURLConnection
     }
