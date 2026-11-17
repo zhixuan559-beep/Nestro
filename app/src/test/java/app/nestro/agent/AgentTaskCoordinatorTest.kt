@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
@@ -13,6 +14,24 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class AgentTaskCoordinatorTest {
+    @Test
+    fun checkpointTracePropagatesCoroutineCancellation() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        states.put(AgentTaskState("trace-cancel", "test"))
+        val traces = object : AgentTaskTraceStore {
+            override suspend fun append(trace: AgentTaskTrace) {
+                throw CancellationException("trace write cancelled")
+            }
+            override suspend fun recent(taskId: String, limit: Int): List<AgentTaskTrace> = emptyList()
+        }
+        val context = AgentTaskExecutionContext("trace-cancel", states, traces)
+
+        val result = runCatching { context.checkpoint("persisted-checkpoint") }
+
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertEquals("persisted-checkpoint", states.get("trace-cancel")?.checkpoint)
+    }
+
     @Test
     fun duplicateTaskIdDoesNotStartASecondExecution() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
