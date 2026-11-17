@@ -183,11 +183,12 @@ fun NestroApp() {
     var status by chatExecutionUiState.status
     var recallSources by chatExecutionUiState.recallSources
     var showRecallDialog by chatExecutionUiState.showRecallDialog
-    var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
-    var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
-    var expertProfiles by remember { mutableStateOf(ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")) }
-    var expertRevisions by remember { mutableStateOf(ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")) }
-    var expertTemplates by remember { mutableStateOf(ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")) }
+    val expertCatalogUiState = remember(prefs) { ExpertCatalogUiState(prefs) }
+    var experts by expertCatalogUiState.experts
+    var expertPrompts by expertCatalogUiState.expertPrompts
+    var expertProfiles by expertCatalogUiState.expertProfiles
+    var expertRevisions by expertCatalogUiState.expertRevisions
+    var expertTemplates by expertCatalogUiState.expertTemplates
     var showExpertTemplatesDialog by remember { mutableStateOf(false) }
     var templateNameDraft by remember { mutableStateOf("") }
     var templateSearchDraft by remember { mutableStateOf("") }
