@@ -133,6 +133,7 @@ class LocalBackupRoundTripTest {
             prefs.edit().clear().putString("messages", "[]").putString("global_memory_v1", "恢复前的记忆")
                 .putBoolean("automatic_memory_enabled", true).putString("draft_old", "旧草稿").commit()
             LocalVault.writeApiKey(context, "journal-key", "encrypted-old-secret")
+            val oldArtifact = ArtifactStore.save(context, "default", "journal-old-artifact", "# 恢复前的作品")
             val dao = database.dao()
             dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
             dao.putConversation(ConversationEntity("journal-c1", "恢复日志测试", 1L, "default"))
@@ -148,12 +149,15 @@ class LocalBackupRoundTripTest {
             }
             prefs.edit().clear().putString("global_memory_v1", "错误的新状态").commit()
             LocalVault.clearAllApiKeys(context)
+            ArtifactStore.delete(context, oldArtifact)
             repository.recoverInterruptedRestore(prefs)
             assertEquals("恢复前消息", dao.loadConversations().single().messages.single().content)
             assertEquals("恢复前的记忆", prefs.getString("global_memory_v1", ""))
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals("旧草稿", prefs.getString("draft_old", ""))
             assertEquals("encrypted-old-secret", LocalVault.readApiKey(context, "journal-key"))
+            val recoveredArtifact = ArtifactStore.list(context, "default").single { it.title == "journal-old-artifact" }
+            assertEquals("# 恢复前的作品", ArtifactStore.read(context, recoveredArtifact))
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
             database.close()

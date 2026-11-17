@@ -258,3 +258,5 @@
 - PhoneAgentWorker clears the timestamp together with the existing pending marker during normal completion.
 - Added JVM policy tests for live work, startup grace period, stale marker recovery, and clock rollback.
 - This addresses the crash window after marker persistence but before WorkManager enqueue; the Room/SharedPreferences/LocalVault/Artifact restore transaction remains unresolved and separate.
+
+- The interrupted-restore instrumentation test now also deletes a pre-existing Artifact after journaling and verifies the old Artifact content is restored, covering the file/index store in the compensation path.

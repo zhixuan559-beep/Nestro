@@ -82,7 +82,7 @@ object PhoneAgentWorkScheduler {
             if (taskId in activeTaskIds) {
                 enqueue(appContext, taskId, afterHandoff, allowRetry)
             } else {
-                preferences.edit().remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+                preferences.edit().remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
             }
         }
     }
