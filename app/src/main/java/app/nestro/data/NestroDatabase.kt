@@ -91,6 +91,17 @@ data class UserMemoryEntity(
     val updatedAt: Long
 )
 
+@Entity(tableName = "agent_task_states")
+data class AgentTaskStateEntity(
+    @PrimaryKey val taskId: String,
+    val owner: String,
+    val status: String,
+    val currentStep: Int,
+    val checkpoint: String,
+    val lastError: String,
+    val updatedAt: Long
+)
+
 @Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
 data class PhoneAgentTaskEntity(
     @PrimaryKey val id: String,
@@ -280,6 +291,15 @@ interface NestroDao {
     @Query("DELETE FROM user_memories WHERE projectId = :projectId AND id NOT IN (SELECT id FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :keep)")
     suspend fun trimUserMemories(projectId: String, keep: Int = 200)
 
+    @Query("SELECT * FROM agent_task_states WHERE taskId = :taskId LIMIT 1")
+    suspend fun agentTaskState(taskId: String): AgentTaskStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAgentTaskState(state: AgentTaskStateEntity)
+
+    @Query("DELETE FROM agent_task_states WHERE taskId = :taskId")
+    suspend fun deleteAgentTaskState(taskId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putPhoneAgentTask(task: PhoneAgentTaskEntity)
 
@@ -460,14 +480,20 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
-    version = 8,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class],
+    version = 9,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS agent_task_states (taskId TEXT NOT NULL, owner TEXT NOT NULL, status TEXT NOT NULL, currentStep INTEGER NOT NULL, checkpoint TEXT NOT NULL, lastError TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(taskId))")
+            }
+        }
+
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE projects ADD COLUMN archivedAt INTEGER NOT NULL DEFAULT 0")
@@ -523,7 +549,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
