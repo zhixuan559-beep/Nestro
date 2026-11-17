@@ -126,6 +126,26 @@ class PhoneAgentService : AccessibilityService() {
         return true
     }
 
+    /** Prefer Android's public web-search intent; fall back to a normal HTTPS search page. */
+    fun searchWeb(projectId: String, rawQuery: String): Boolean {
+        val query = rawQuery.trim()
+        require(query.length in 2..300 && !PhoneAgentTaskStore.containsSensitiveText(query)) { "网页搜索词无效或包含敏感信息" }
+        require(hasValidGrant(projectId)) { "设备授权已失效，或当前项目已撤销 Phone Agent 权限" }
+        val searchIntent = Intent(Intent.ACTION_WEB_SEARCH)
+            .putExtra(android.app.SearchManager.QUERY, query)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(searchIntent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            val fallback = android.net.Uri.parse(
+                "https://www.google.com/search?q=" + android.net.Uri.encode(query)
+            )
+            startActivity(Intent(Intent.ACTION_VIEW, fallback).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        audit("WEB_SEARCH", "网页搜索：" + query.take(80))
+        return true
+    }
+
     fun launchPackage(projectId: String, packageName: String): Boolean {
         require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
         require(hasValidGrant(projectId)) { "设备授权已失效，或当前项目已撤销 Phone Agent 权限" }
