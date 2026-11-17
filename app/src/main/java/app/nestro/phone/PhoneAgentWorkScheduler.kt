@@ -41,7 +41,7 @@ object PhoneAgentWorkScheduler {
                 .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
                 .enqueue()
         } catch (error: Throwable) {
-            preferences.edit().remove(pendingKey).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId)).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
             throw error
         }
     }
