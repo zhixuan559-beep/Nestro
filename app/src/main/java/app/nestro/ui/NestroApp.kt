@@ -1385,7 +1385,13 @@ fun NestroApp() {
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
                                                          val result = runCatching {
-                                                             WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
+                                                             agentTaskCoordinator.runInline(
+                                                                 taskId = UUID.randomUUID().toString(),
+                                                                 owner = "workflow",
+                                                                 initialCheckpoint = "workflow:" + workflow.id + ":queued"
+                                                             ) { taskContext ->
+                                                                 taskContext.checkpoint("workflow:" + workflow.id + ":running", 0)
+                                                                 val runResult = WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
                                                                  val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
                                                                  val roleContext = when (step.kind) {
                                                                      WorkflowStepKind.EXPERT -> {
@@ -1414,6 +1420,9 @@ fun NestroApp() {
                                                                  if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
                                                                  workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                              })
+                                                                 taskContext.checkpoint("workflow:" + workflow.id + ":finished", runResult.completedSteps)
+                                                                 runResult
+                                                             }
                                                          }
                                                          val assistantText = when {
                                                              stopRequested -> "工作流已停止。"
