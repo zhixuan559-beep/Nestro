@@ -95,9 +95,10 @@ fun CapabilityDirectoryPage() {
                 val installedMetadata = runCatching { JSONObject(JSONObject(rawMetadata).optString(release.name, "{}")) }.getOrDefault(JSONObject())
                 val installedVersion = installedMetadata.optString("version", "")
                 val isInstalled = installedSkills.has(release.name)
-                val updateAvailable = isInstalled && installedVersion.isNotBlank() &&
+                val isCommunityInstalled = isInstalled && installedMetadata.optString("source") == "已验证签名社区目录"
+                val updateAvailable = isCommunityInstalled && installedVersion.isNotBlank() &&
                     runCatching { SkillCommunityClient.isNewerVersion(release.version, installedVersion) }.getOrDefault(false)
-                val sameOrOlder = isInstalled && !updateAvailable
+                val sameOrOlder = isCommunityInstalled && !updateAvailable
                 Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         Text(release.name+" · v"+release.version,style=MaterialTheme.typography.titleSmall)
