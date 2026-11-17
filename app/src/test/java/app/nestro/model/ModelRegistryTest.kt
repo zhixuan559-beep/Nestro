@@ -87,6 +87,42 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun legacyReconciliationPreservesIndependentlyManagedModels() {
+        val legacyProfile = ModelProfileMetadata("legacy", "Legacy", "https://legacy.example.com/v1", "legacy-model")
+        val custom = ModelRegistry(
+            providers = listOf(ModelProvider("custom-provider", "Custom", "https://custom.example.com")),
+            apiKeys = listOf(ModelApiKey("custom-key", "custom-provider", "Custom key")),
+            models = listOf(ModelDefinition(
+                "custom-model", "custom-provider", "Custom model", "custom-model-code", listOf("custom-key"),
+                inputPricePerMillion = 2.0,
+                outputPricePerMillion = 4.0
+            ))
+        )
+
+        val reconciled = custom.reconcileLegacyProfiles(listOf(legacyProfile)) { true }
+
+        assertTrue(reconciled.providers.any { it.id == "custom-provider" })
+        assertTrue(reconciled.apiKeys.any { it.id == "custom-key" })
+        assertTrue(reconciled.models.any { it.id == "custom-model" })
+        assertEquals(2.0, reconciled.models.first { it.id == "custom-model" }.inputPricePerMillion!!, 0.0)
+        assertEquals(listOf("legacy-model-legacy", "custom-model").toSet(), reconciled.models.map { it.id }.toSet())
+        assertNull(reconciled.validate())
+    }
+
+    @Test
+    fun legacyReconciliationRemovesMissingSecretsWithoutDeletingModelMetadata() {
+        val profile = ModelProfileMetadata("missing", "Missing key", "https://api.example.com/v1", "model-x")
+        val initial = ModelRegistry().upsertLegacyProfile(profile, keyAvailable = true)
+
+        val reconciled = initial.reconcileLegacyProfiles(listOf(profile)) { false }
+
+        assertTrue(reconciled.apiKeys.none { it.id == "legacy-key-missing" })
+        assertTrue(reconciled.models.any { it.id == "legacy-model-missing" && it.apiKeyIds.isEmpty() })
+        assertTrue(reconciled.selectableModels().isEmpty())
+        assertNull(reconciled.validate())
+    }
+
+    @Test
     fun invalidCrossProviderKeyReferenceIsRejected() {
         val registry = ModelRegistry(
             providers = listOf(
