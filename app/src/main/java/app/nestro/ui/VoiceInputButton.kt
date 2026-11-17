@@ -188,11 +188,7 @@ fun VoiceInputButton(
     ) {
         Icon(
             if (phase == VoicePhase.LISTENING) Icons.Outlined.MicOff else Icons.Outlined.Mic,
-            contentDescription = when (phase) {
-                VoicePhase.LISTENING -> "正在录音，松开结束"
-                VoicePhase.PROCESSING -> "正在识别语音"
-                VoicePhase.IDLE -> "按住说话"
-            },
+            contentDescription = null,
             tint = if (phase == VoicePhase.IDLE) Color(0xFF73E2B4) else Color.White
         )
     }
