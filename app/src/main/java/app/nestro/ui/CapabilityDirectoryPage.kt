@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String,val communityManaged:Boolean=false)
+private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
 
 @Composable
 fun CapabilityDirectoryPage() {
@@ -65,8 +65,7 @@ fun CapabilityDirectoryPage() {
                     "包内声明："+meta.optString("source","未声明"),
                     "权限声明（不代表已授权）："+permissionText.ifEmpty { listOf("无") }.joinToString("、")+
                         if(dependencyText.isEmpty()) "" else "；依赖："+dependencyText.joinToString("、"),
-                    if(name in off) "已停用" else "已启用",
-                    meta.optString("source") == "已验证签名社区目录")
+                    if(name in off) "已停用" else "已启用")
             }.toList()
         }.getOrDefault(builtIns)
     }
@@ -96,10 +95,9 @@ fun CapabilityDirectoryPage() {
                 val installedMetadata = runCatching { JSONObject(JSONObject(rawMetadata).optString(release.name, "{}")) }.getOrDefault(JSONObject())
                 val installedVersion = installedMetadata.optString("version", "")
                 val isInstalled = installedSkills.has(release.name)
-                val sameOrOlder = isInstalled && installedVersion.isNotBlank() &&
-                    !SkillCommunityClient.isNewerVersion(release.version, installedVersion)
                 val updateAvailable = isInstalled && installedVersion.isNotBlank() &&
-                    SkillCommunityClient.isNewerVersion(release.version, installedVersion)
+                    runCatching { SkillCommunityClient.isNewerVersion(release.version, installedVersion) }.getOrDefault(false)
+                val sameOrOlder = isInstalled && !updateAvailable
                 Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         Text(release.name+" · v"+release.version,style=MaterialTheme.typography.titleSmall)
