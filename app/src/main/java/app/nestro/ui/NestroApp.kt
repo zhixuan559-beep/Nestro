@@ -1218,6 +1218,9 @@ fun NestroApp() {
                         "models" -> ModelManager(
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
+                            selectableProfileIds = modelRegistry.selectableModels()
+                                .mapNotNull { it.id.removePrefix("legacy-model-").takeIf { id -> id != it.id } }
+                                .toSet(),
                             activeConfig = config,
                             usage = modelUsage,
                             failoverEnabled = modelFailoverEnabled,
@@ -1230,7 +1233,7 @@ fun NestroApp() {
                                 val metadata = modelProfiles.firstOrNull { it.id == id }
                                 if (metadata != null) {
                                     val key = LocalVault.readProfile(context, id)
-                                    if (key.isNotBlank()) {
+                                    if (key.isNotBlank() && modelRegistry.selectableModels().any { it.id == "legacy-model-$id" }) {
                                         activeModelProfileId = id
                                         config = ModelConfig(metadata.baseUrl, metadata.model, key)
                                         prefs.edit().putString("active_model_profile_id", id)
@@ -3155,6 +3158,7 @@ private fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Uni
 private fun ModelManager(
     profiles: List<ModelProfileMetadata>,
     activeProfileId: String,
+    selectableProfileIds: Set<String>,
     activeConfig: ModelConfig,
     usage: Map<String, ModelUsageStats>,
     failoverEnabled: Boolean,
@@ -3230,7 +3234,7 @@ private fun ModelManager(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { edit(profile) }) { Text("编辑", color = Mint) }
-                            TextButton(onClick = { onActivate(profile.id) }, enabled = !active && loadKey(profile.id).isNotBlank()) { Text("启用", color = Mint) }
+                            TextButton(onClick = { onActivate(profile.id) }, enabled = !active && profile.id in selectableProfileIds && loadKey(profile.id).isNotBlank()) { Text("启用", color = Mint) }
                             TextButton(onClick = { onDeleteKey(profile.id); if (editingId == profile.id) { key = ""; revealKey = false } }, enabled = loadKey(profile.id).isNotBlank()) { Text("删除 Key", color = ColorStop) }
                             TextButton(onClick = { onDelete(profile.id); if (editingId == profile.id) beginNew() }) { Text("删除模型", color = ColorStop) }
                         }
