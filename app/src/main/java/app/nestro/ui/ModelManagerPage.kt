@@ -120,6 +120,7 @@ internal fun ModelManager(
                     Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = {
+                    selectedProviderId = provider.id
                     editingProviderId = provider.id
                     providerNameDraft = provider.name
                     providerUrlDraft = provider.baseUrl
