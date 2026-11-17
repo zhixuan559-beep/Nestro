@@ -9,6 +9,32 @@ import org.json.JSONObject
  * This boundary owns the persisted request marker and conversation snapshot
  * update; Compose only applies the returned state to the visible screen.
  */
+internal data class PendingChatRequest(
+    val requestId: String,
+    val conversationId: String,
+    val projectId: String,
+    val prompt: String,
+    val partialAnswer: String
+) {
+    fun restoredPromptFor(activeConversationId: String): String? =
+        prompt.takeIf { it.isNotBlank() && activeConversationId == conversationId }
+}
+
+internal fun parsePendingChatRequest(raw: String?): PendingChatRequest? {
+    val pending = runCatching { JSONObject(raw ?: "{}") }.getOrNull() ?: return null
+    if (pending.optString("status") != "running") return null
+    val requestId = pending.optString("request_id")
+    val conversationId = pending.optString("conversation_id")
+    if (requestId.isBlank() || conversationId.isBlank()) return null
+    return PendingChatRequest(
+        requestId = requestId,
+        conversationId = conversationId,
+        projectId = pending.optString("project_id", "default"),
+        prompt = pending.optString("prompt"),
+        partialAnswer = pending.optString("partial_answer")
+    )
+}
+
 internal class ChatRequestRecoveryCoordinator(
     private val persistence: ConversationPersistenceService
 ) {
@@ -25,19 +51,19 @@ internal class ChatRequestRecoveryCoordinator(
         databaseReady: Boolean,
         activeConversationId: String
     ): Result {
-        val pending = runCatching {
-            JSONObject(preferences.getString("chat_request_state_v1", "{}") ?: "{}")
-        }.getOrNull()
-        if (pending?.optString("status") != "running") {
+        val pending = parsePendingChatRequest(
+            preferences.getString("chat_request_state_v1", "{}")
+        )
+        if (pending == null) {
             preferences.edit().remove("chat_request_state_v1").apply()
             return Result(conversations, null, null, false)
         }
 
-        val requestId = pending.optString("request_id")
-        val conversationId = pending.optString("conversation_id")
-        val projectId = pending.optString("project_id", "default")
-        val restoredPrompt = pending.optString("prompt")
-        val partial = pending.optString("partial_answer")
+        val requestId = pending.requestId
+        val conversationId = pending.conversationId
+        val projectId = pending.projectId
+        val restoredPrompt = pending.prompt
+        val partial = pending.partialAnswer
         var updatedConversations = conversations
         var activeMessages: List<ChatMessage>? = null
 
@@ -62,9 +88,7 @@ internal class ChatRequestRecoveryCoordinator(
             }
         }
 
-        val prompt = restoredPrompt.takeIf {
-            it.isNotBlank() && activeConversationId == conversationId
-        }
+        val prompt = pending.restoredPromptFor(activeConversationId)
         if (prompt != null) {
             preferences.edit().putString("draft_$conversationId", prompt).apply()
         }
