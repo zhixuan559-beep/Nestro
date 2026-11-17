@@ -34,4 +34,13 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("每个空间拥有独立会话与项目指令。", substring = true).assertIsDisplayed()
     }
 
+    @Test
+    fun exposesVoiceInputStateToAccessibilityServices() {
+        composeRule.setContent {
+            VoiceInputButton(enabled = false, onResult = {})
+        }
+
+        composeRule.onNodeWithContentDescription("按住说话").assertIsDisplayed()
+    }
+
 }

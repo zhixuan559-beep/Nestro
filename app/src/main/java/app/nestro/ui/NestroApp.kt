@@ -131,6 +131,12 @@ private fun ChatMessage.allVersions(): List<String> = when {
     else -> versions.distinct().takeLast(20)
 }
 private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default", val messagesLoaded: Boolean = true)
+
+internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
+    screenWidthDp < 360 -> 252
+    screenWidthDp >= 840 -> 320
+    else -> 286
+}
 private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long, val archivedAt: Long = 0L)
 private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
 internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
@@ -139,11 +145,7 @@ internal data class ModelConfig(val baseUrl: String, val model: String, val apiK
 fun NestroApp() {
     val context = LocalContext.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val adaptiveDrawerWidth = when {
-        screenWidthDp < 360 -> 252.dp
-        screenWidthDp >= 840 -> 320.dp
-        else -> 286.dp
-    }
+    val adaptiveDrawerWidth = adaptiveDrawerWidthDp(screenWidthDp).dp
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
