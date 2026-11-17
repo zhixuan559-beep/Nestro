@@ -3,6 +3,8 @@ package app.nestro.phone
 import android.content.Context
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
@@ -83,6 +85,15 @@ object PhoneAgentAgent {
                     PhoneAgentTaskStore.updateProgress(
                         dao, taskId, PhoneAgentTaskStore.STATUS_COMPLETED, count
                     )
+                    val sharedStateStore = RoomAgentTaskStateStore(dao)
+                    sharedStateStore.get(taskId)?.let { state ->
+                        sharedStateStore.put(state.copy(
+                            status = AgentTaskStatus.COMPLETED,
+                            currentStep = count,
+                            lastError = "",
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                    }
                     return Result(PhoneAgentExecutor.Outcome.COMPLETED, plan.summary.ifBlank { "任务已根据页面证据核验完成" })
                 }
                 return pause(dao, taskId, "当前页面没有足够证据证明目标已完成。")
@@ -128,6 +139,22 @@ object PhoneAgentAgent {
         if (task != null) {
             runCatching {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "任务状态", false, message)
+            }
+        }
+        runCatching {
+            val stateStore = RoomAgentTaskStateStore(dao)
+            val state = stateStore.get(taskId)
+            if (state != null && state.status !in setOf(
+                    AgentTaskStatus.COMPLETED,
+                    AgentTaskStatus.CANCELLED,
+                    AgentTaskStatus.FAILED,
+                    AgentTaskStatus.WAITING_FOR_USER
+                )) {
+                stateStore.put(state.copy(
+                    status = AgentTaskStatus.PAUSED,
+                    lastError = message.take(2_000),
+                    updatedAt = System.currentTimeMillis()
+                ))
             }
         }
         return Result(PhoneAgentExecutor.Outcome.PAUSED, message)
