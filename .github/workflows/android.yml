@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  unit-tests:
+    # Run JVM unit tests on pull requests without building or uploading an APK.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run JVM unit tests only
+        run: gradle --no-daemon testDebugUnitTest
+
   build:
     # Defer the full build-and-test gate until the implementation phase is complete.
     # Run it manually with workflow_dispatch, or automatically after changes reach main.
