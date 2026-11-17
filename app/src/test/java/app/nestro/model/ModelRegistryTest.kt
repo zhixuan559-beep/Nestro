@@ -9,6 +9,24 @@ import org.junit.Test
 
 class ModelRegistryTest {
     @Test
+    fun providerValidationRejectsInvalidHttpsEndpoints() {
+        val invalidUrls = listOf(
+            "http://api.example.com",
+            "https://",
+            "https:///missing-host",
+            "https://user:password@api.example.com/v1",
+            "https://api.example.com/v1?token=secret",
+            "https://api.example.com/v1#fragment"
+        )
+        invalidUrls.forEachIndexed { index, url ->
+            val registry = ModelRegistry(
+                providers = listOf(ModelProvider("provider-$index", "Provider", url))
+            )
+            assertFalse("should reject $url", registry.validate().isNullOrBlank())
+        }
+    }
+
+    @Test
     fun providerEditKeepsStableIdentityAndExistingKeysAndModels() {
         val original = ModelRegistry(
             providers = listOf(ModelProvider("provider", "Before", "https://before.example.com")),
