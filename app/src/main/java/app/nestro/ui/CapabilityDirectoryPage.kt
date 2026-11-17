@@ -1,129 +1,153 @@
 package app.nestro.ui
 
 import android.content.Context
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.nestro.data.SkillBundle
+import app.nestro.data.SkillBundleParser
+import app.nestro.data.SkillCommunityClient
+import app.nestro.data.SignedSkillRelease
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class CapabilityEntry(
-    val name: String,
-    val description: String,
-    val source: String,
-    val permission: String,
-    val state: String
-)
+private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
 
 @Composable
 fun CapabilityDirectoryPage() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
+    val context=LocalContext.current
+    val prefs=remember { context.getSharedPreferences("nestro_local",Context.MODE_PRIVATE) }
+    val scope=rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    val rawSkills = prefs.getString("skills", "{}") ?: "{}"
-    val rawMetadata = prefs.getString("skill_metadata_v1", "{}") ?: "{}"
-    val rawDisabled = prefs.getString("disabled_skills_v1", "[]") ?: "[]"
-    val entries = remember(rawSkills, rawMetadata, rawDisabled) {
-        val builtIns = listOf(
-            CapabilityEntry("模型连接", "连接用户自行配置的 OpenAI 兼容模型服务。", "Nestro 内置", "网络访问；API Key 由 Android Keystore 保护", "已内置"),
-            CapabilityEntry("语音输入", "调用 Android 系统语音识别，将识别结果回填输入框。", "Android 系统服务", "麦克风运行时权限", "已内置"),
-            CapabilityEntry("语音输出", "使用系统 TTS 朗读文本，支持中文音色与语速设置。", "Android 系统 TTS", "无额外敏感权限", "已内置"),
-            CapabilityEntry("本地知识库", "导入文本与 Office 文档，进行项目内检索。", "Nestro 本地模块", "用户主动选择文件", "已内置"),
-            CapabilityEntry("专家与团队", "使用本地专家配置和并行团队分析任务。", "Nestro 本地模块", "按模型配置发送请求", "已内置"),
-            CapabilityEntry("Skills", "管理本地技能包；导入内容只解析文本与声明，不执行任意代码。", "本地技能包", "导入前预览；权限声明不自动授权", "已内置"),
-            CapabilityEntry("工作流", "按顺序执行提示词、专家和技能节点。", "Nestro 本地模块", "按节点实际调用能力", "已内置"),
-            CapabilityEntry("Phone Agent", "在用户授权下读取可见界面并执行受限动作。", "Android Accessibility", "无障碍授权；高风险动作由用户接手", "已内置"),
-            CapabilityEntry("产物库", "按项目保存 Markdown 成果，支持版本、预览、分享和导出。", "Nestro 本地存储", "文件保存在应用私有目录", "已内置"),
-            CapabilityEntry("MCP 工具", "本版本尚未接入 MCP 服务发现与工具调用。", "未接入", "未授予 MCP 工具权限", "未接入"),
-            CapabilityEntry("远程社区目录", "尚未配置可信社区目录，当前不会从远程来源下载或安装能力包。", "未配置可信来源", "未授予任何权限", "未接入"),
-            CapabilityEntry("来源签名校验", "社区包签名、公钥信任和发布者身份校验尚未接入。", "未配置受信任公钥", "无", "未接入")
+    var catalogUrl by remember { mutableStateOf(prefs.getString("skill_catalog_url_v1","") ?: "") }
+    var trustedKey by remember { mutableStateOf(prefs.getString("skill_catalog_key_v1","") ?: "") }
+    var releases by remember { mutableStateOf(emptyList<SignedSkillRelease>()) }
+    var status by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var pendingBundle by remember { mutableStateOf<SkillBundle?>(null) }
+    var installStatus by remember { mutableStateOf("") }
+    val rawSkills=prefs.getString("skills","{}") ?: "{}"
+    val rawMetadata=prefs.getString("skill_metadata_v1","{}") ?: "{}"
+    val rawDisabled=prefs.getString("disabled_skills_v1","[]") ?: "[]"
+    val entries=remember(rawSkills,rawMetadata,rawDisabled) {
+        val builtIns=listOf(
+            CapabilityEntry("模型连接","连接用户自行配置的 OpenAI 兼容模型服务。","Nestro 内置","网络访问；API Key 由 Android Keystore 保护","已内置"),
+            CapabilityEntry("语音输入","调用 Android 系统语音识别。","Android 系统服务","麦克风运行时权限","已内置"),
+            CapabilityEntry("语音输出","使用系统 TTS 朗读文本。","Android 系统 TTS","无额外敏感权限","已内置"),
+            CapabilityEntry("本地知识库","导入文档并进行项目内检索。","Nestro 本地模块","用户主动选择文件","已内置"),
+            CapabilityEntry("专家与团队","使用本地专家配置和并行分析。","Nestro 本地模块","按模型配置发送请求","已内置"),
+            CapabilityEntry("Skills","管理本地技能包；只解析提示词和元数据。","本地技能包","导入前预览；声明不自动授权","已内置"),
+            CapabilityEntry("工作流","按顺序执行提示词、专家和技能节点。","Nestro 本地模块","按节点实际调用能力","已内置"),
+            CapabilityEntry("Phone Agent","用户授权下读取可见界面并执行受限动作。","Android Accessibility","无障碍授权；高风险动作交还用户","已内置"),
+            CapabilityEntry("产物库","按项目保存 Markdown 成果、版本、分享和导出。","Nestro 本地存储","应用私有目录","已内置"),
+            CapabilityEntry("MCP 工具","当前版本尚未接入 MCP 服务发现与工具调用。","未接入","未授予权限","未接入")
         )
         runCatching {
-            val skills = JSONObject(rawSkills)
-            val metadata = JSONObject(rawMetadata)
-            val disabledArray = JSONArray(rawDisabled)
-            val disabled = (0 until disabledArray.length()).map { disabledArray.optString(it) }.toSet()
-            val permissionNames = mapOf(
-                "network_read" to "网络读取",
-                "phone_accessibility" to "手机无障碍",
-                "file_read" to "文件读取",
-                "file_write" to "文件写入",
-                "mcp_call" to "MCP 工具调用"
-            )
-            val builtInNames = builtIns.map { it.name }.toSet()
-            val skillEntries = skills.keys().asSequence().filterNot { it in builtInNames }.map { name ->
-                val detail = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
-                val declaredPermissions = detail.optJSONArray("permissions") ?: JSONArray()
-                val permissions = (0 until declaredPermissions.length()).map { index ->
-                    val key = declaredPermissions.optString(index)
-                    permissionNames[key] ?: key
-                }
-                val dependencies = detail.optJSONArray("dependencies") ?: JSONArray()
-                val dependencyNames = (0 until dependencies.length()).map { index ->
-                    val dependency = dependencies.optJSONObject(index) ?: JSONObject()
-                    dependency.optString("name") + "@" + dependency.optString("version", "*")
-                }
-                val permissionSummary = "权限声明（不代表已授权）：" +
-                    permissions.ifEmpty { listOf("无") }.joinToString("、") +
-                    (if (dependencyNames.isEmpty()) "" else "；依赖：" + dependencyNames.joinToString("、"))
-                CapabilityEntry(
-                    name = name,
-                    description = detail.optString("description", "本地安装的自定义技能").ifBlank { "本地安装的自定义技能" } +
-                        " · v" + detail.optString("version", "1.0.0"),
-                    source = "包内来源声明：" + detail.optString("source", "未声明").ifBlank { "未声明" },
-                    permission = permissionSummary,
-                    state = if (name in disabled) "已停用" else "已启用"
-                )
+            val skills=JSONObject(rawSkills); val metadata=JSONObject(rawMetadata); val disabled=JSONArray(rawDisabled)
+            val off=(0 until disabled.length()).map { disabled.optString(it) }.toSet()
+            val permissionNames=mapOf("network_read" to "网络读取","phone_accessibility" to "手机无障碍","file_read" to "文件读取","file_write" to "文件写入","mcp_call" to "MCP 工具调用")
+            builtIns + skills.keys().asSequence().filterNot { name -> builtIns.any { it.name==name } }.map { name ->
+                val meta=runCatching { JSONObject(metadata.optString(name,"{}")) }.getOrDefault(JSONObject())
+                val perms=meta.optJSONArray("permissions") ?: JSONArray()
+                val deps=meta.optJSONArray("dependencies") ?: JSONArray()
+                val permissionText=(0 until perms.length()).map { permissionNames[perms.optString(it)] ?: perms.optString(it) }
+                val dependencyText=(0 until deps.length()).map { deps.optJSONObject(it)?.let { d -> d.optString("name")+"@"+d.optString("version","*") } ?: "" }
+                CapabilityEntry(name,meta.optString("description","本地自定义技能")+" · v"+meta.optString("version","1.0.0"),
+                    "包内声明："+meta.optString("source","未声明"),
+                    "权限声明（不代表已授权）："+permissionText.ifEmpty { listOf("无") }.joinToString("、")+
+                        if(dependencyText.isEmpty()) "" else "；依赖："+dependencyText.joinToString("、"),
+                    if(name in off) "已停用" else "已启用")
             }.toList()
-            builtIns + skillEntries
         }.getOrDefault(builtIns)
     }
-    val filtered = entries.filter { entry ->
-        query.isBlank() || listOf(entry.name, entry.description, entry.source, entry.permission).any { it.contains(query, true) }
-    }
+    val filtered=entries.filter { query.isBlank() || listOf(it.name,it.description,it.source,it.permission).any { value -> value.contains(query,true) } }
 
-    Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("能力目录", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "展示当前内置能力与已安装本地技能的来源、状态和权限声明。技能包里的来源是文件自述，不代表已完成签名验证；声明权限不会自动授予系统权限。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
-        )
-        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("搜索能力") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(filtered, key = { it.name }) { item ->
-                Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(item.name, style = MaterialTheme.typography.titleMedium)
-                            Text(item.state, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Text(item.description, style = MaterialTheme.typography.bodySmall)
-                        Text("来源：${item.source}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(item.permission, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(Modifier.fillMaxSize().padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Text("能力目录",style=MaterialTheme.typography.headlineSmall)
+        Text("社区目录必须由固定 RSA 公钥验签；技能包必须匹配签名目录中的 SHA-256。安装前展示权限声明，不会自动授予 Android 权限。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(query,{query=it},label={Text("搜索本地能力")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        OutlinedTextField(trustedKey,{trustedKey=it},label={Text("受信任 RSA 公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
+        Button(enabled=!loading && catalogUrl.startsWith("https://") && trustedKey.isNotBlank(),onClick={
+            loading=true
+            prefs.edit().putString("skill_catalog_url_v1",catalogUrl.trim()).putString("skill_catalog_key_v1",trustedKey.trim()).apply()
+            scope.launch {
+                val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.fetchCatalog(catalogUrl.trim(),trustedKey.trim()) } }
+                result.fold({ releases=it; status="签名验证通过，共 "+it.size+" 个版本。公钥指纹："+runCatching { SkillCommunityClient.fingerprint(trustedKey.trim()).take(23) }.getOrDefault("不可用") },
+                    { releases=emptyList(); status="目录拒绝加载："+(it.message ?: "验证失败") })
+                loading=false
+            }
+        },modifier=Modifier.fillMaxWidth()) { Text(if(loading) "验证中…" else "验证并刷新社区目录") }
+        if(status.isNotBlank()) Text(status,style=MaterialTheme.typography.bodySmall)
+        if(loading) CircularProgressIndicator()
+        if(releases.isNotEmpty()) {
+            Text("已验签社区技能",style=MaterialTheme.typography.titleMedium)
+            releases.forEach { release ->
+                Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)) {
+                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                        Text(release.name+" · v"+release.version,style=MaterialTheme.typography.titleSmall)
+                        Text(release.description,style=MaterialTheme.typography.bodySmall)
+                        Text("SHA-256："+release.sha256.take(20)+"…",style=MaterialTheme.typography.labelSmall)
+                        OutlinedButton(enabled=!loading,onClick={
+                            loading=true
+                            scope.launch {
+                                val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.downloadVerifiedBundle(release) } }
+                                result.fold({ pendingBundle=it },{ installStatus="下载拒绝："+(it.message ?: "校验失败") })
+                                loading=false
+                            }
+                        }) { Text("下载并校验") }
                     }
                 }
             }
         }
-        Text("远程社区目录、来源签名校验、版本更新和第三方安装授权尚未接入。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        if(installStatus.isNotBlank()) Text(installStatus,style=MaterialTheme.typography.bodySmall)
+        Text("本地能力",style=MaterialTheme.typography.titleMedium)
+        OutlinedTextField(value=query,onValueChange={query=it},label={Text("筛选能力")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            items(filtered,key={it.name}) { item ->
+                Card(shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant),modifier=Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text(item.name,style=MaterialTheme.typography.titleMedium)
+                            Text(item.state,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+                        }
+                        Text(item.description,style=MaterialTheme.typography.bodySmall)
+                        Text("来源："+item.source,style=MaterialTheme.typography.labelSmall)
+                        Text(item.permission,style=MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+    pendingBundle?.let { bundle ->
+        AlertDialog(
+            onDismissRequest={pendingBundle=null},
+            title={Text("安装社区技能？")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text(bundle.name+" · v"+bundle.version)
+                Text(bundle.description)
+                Text("权限声明："+bundle.permissions.ifEmpty { listOf("无") }.joinToString("、"))
+                Text("依赖："+bundle.dependencies.map { it.name+"@"+it.version }.ifEmpty { listOf("无") }.joinToString("、"))
+                Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。确认后写入本地技能库。")
+            }},
+            confirmButton={TextButton(onClick={
+                val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
+                val metadata=runCatching { JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}") }.getOrDefault(JSONObject())
+                skills.put(bundle.name,bundle.prompt); metadata.put(bundle.name,SkillBundleParser.metadataJson(bundle))
+                prefs.edit().putString("skills",skills.toString()).putString("skill_metadata_v1",metadata.toString()).apply()
+                installStatus="已安装 "+bundle.name+"。请在本地技能库中手动选择启用。"
+                pendingBundle=null
+            }) { Text("确认安装") }},
+            dismissButton={TextButton(onClick={pendingBundle=null}) { Text("取消") }}
+        )
     }
 }
