@@ -48,7 +48,6 @@ import app.nestro.data.ExpertTemplateCodec
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
-import app.nestro.data.ExpertTeamEngine
 import app.nestro.data.ExpertTeamDefaults
 import app.nestro.data.ExpertTeamMemberTask
 import app.nestro.data.ExpertTeamRunResult
@@ -737,17 +736,25 @@ fun NestroApp() {
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
                         check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
-                        val teamRun = appRuntime.expertTeamExecutionCoordinator.execute(
-                            teamId = selectedTeam.id,
+                        val teamRun = agentTaskCoordinator.runInline(
+                            taskId = UUID.randomUUID().toString(),
+                            owner = "expert_team",
+                            initialCheckpoint = "team:" + selectedTeam.id + ":queued"
+                        ) { taskContext ->
+                            taskContext.checkpoint("team:" + selectedTeam.id + ":running", 0)
+                            val result = ExpertTeamEngine.run(
                             teamName = selectedTeam.name,
                             teamDescription = selectedTeam.description,
                             task = prompt,
                             members = memberTasks,
+                            maxRetries = 1,
+                            timeoutMillis = 45_000,
+                            maxParallel = 4,
                             shouldStop = { stopRequested },
                             onMember = { member, state ->
                                 withContext(Dispatchers.Main) {
                                     teamMemberStatuses = teamMemberStatuses + (member to state)
-                                    teamRunStatus = when (state) {
+                                    teamRunStatus = when(state) {
                                         "running" -> "专家团执行中：$member 正在分析"
                                         "retrying" -> "专家团执行中：$member 正在重试"
                                         "success" -> "专家团执行中：$member 已完成"
@@ -755,23 +762,25 @@ fun NestroApp() {
                                         else -> teamRunStatus
                                     }
                                 }
-                            },
-                            invokeMember = { member, memberPrompt ->
-                                withContext(Dispatchers.IO) {
-                                    appRuntime.chatExecutionService.completeWithFallback(
-                                        requestModelConfigs,
-                                        requestHistory,
-                                        listOf(requestSystemContext, memberPrompt).filter { it.isNotBlank() }
-                                            .joinToString("\n\n").take(18000),
-                                        connectTimeoutMillis = 15_000,
-                                        readTimeoutMillis = 25_000,
-                                        temperature = expertProfiles[member.name]?.temperature,
-                                        maxTokens = expertProfiles[member.name]?.maxTokens,
-                                        onUsage = recordModelUsage
-                                    ).take(2200)
-                                }
                             }
-                        )
+                        ) { member, memberPrompt ->
+                            withContext(Dispatchers.IO) {
+                                appRuntime.chatExecutionService.completeWithFallback(
+                                    requestModelConfigs,
+                                    requestHistory,
+                                    listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
+                                        .joinToString("\n\n").take(18000),
+                                    connectTimeoutMillis = 15_000,
+                                    readTimeoutMillis = 25_000,
+                                    temperature = expertProfiles[member.name]?.temperature,
+                                    maxTokens = expertProfiles[member.name]?.maxTokens,
+                                    onUsage = recordModelUsage
+                                ).take(2200)
+                            }
+                        }
+                            taskContext.checkpoint("team:" + selectedTeam.id + ":finished", result.members.size)
+                            result
+                        }
                         expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
                         prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
                         teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"

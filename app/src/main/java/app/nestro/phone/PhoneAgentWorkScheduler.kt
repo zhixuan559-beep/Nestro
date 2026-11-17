@@ -69,8 +69,8 @@ object PhoneAgentWorkScheduler {
         } catch (_: Exception) {
             return@withContext
         }
-        val workTaskIds = workInfos.filterNot { it.state.isFinished }
-            .mapNotNull { it.inputData.getString(KEY_TASK_ID) }
+        val activeWorkTags = workInfos.filterNot { it.state.isFinished }
+            .flatMap { it.tags }
             .toSet()
 
         val markerPrefix = "phone_agent_work_pending_"
@@ -79,7 +79,7 @@ object PhoneAgentWorkScheduler {
             .map { it.removePrefix(markerPrefix) }
         val now = System.currentTimeMillis()
         pendingTaskIds.forEach { taskId ->
-            if (taskId in workTaskIds) return@forEach
+            if (uniqueName(taskId) in activeWorkTags) return@forEach
             val pendingAt = preferences.getLong(pendingAtKey(taskId), 1L)
             if (!PhoneAgentPendingWorkPolicy.shouldReconcile(pendingAt, now, workExists = false)) return@forEach
             val afterHandoff = preferences.getBoolean(afterHandoffKey(taskId), false)
