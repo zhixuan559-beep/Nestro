@@ -177,3 +177,11 @@
 - `ModelRegistryStore` 在 Registry 无法解码、需要从旧 Profile 重建前，先将原始 JSON 原样隔离保存到 `model_registry_v1_unreadable_backup`，并记录隔离时间；只保留首份隔离副本，避免后续错误覆盖。该保护不声称已恢复自定义目录，只确保原始数据不会被静默覆盖丢失。
 - 新增严格解码回归测试，覆盖 malformed JSON 与合法空 Registry 的区别。
 - 修复提交 `c12f8350cd4127b6bafc64d674beb2e383cafc03` 已推送；CI 触发状态待核验。
+
+## 2026-11-18 — Chat timeout cancellation boundary
+
+- `OpenAiClient.streamWithFallback` owns a bounded `withTimeout` around the streaming request and propagates coroutine cancellation after disconnecting the request connection.
+- `runCatchingCancellable` now converts a nested `TimeoutCancellationException` into a recoverable failed `Result` only when the caller coroutine remains active; parent/user cancellation still propagates.
+- Added JVM tests for nested timeout recovery and caller cancellation propagation.
+- This preserves the existing chat completion path so the timeout message and completed-history persistence branch can execute for request timeouts.
+- No APK build, device acceptance, PR merge, or Ready transition.
