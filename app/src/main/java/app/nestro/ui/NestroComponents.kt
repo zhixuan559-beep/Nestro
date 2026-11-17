@@ -15,6 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+internal fun ChatMessage.allVersions(): List<String> = when {
+    versions.isEmpty() -> listOf(content)
+    activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
+    else -> versions.distinct().takeLast(20)
+}
+
 @Composable
 internal fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
     Surface(color = Card2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
