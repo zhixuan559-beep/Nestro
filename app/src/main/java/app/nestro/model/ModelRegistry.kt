@@ -2,6 +2,7 @@ package app.nestro.model
 
 import app.nestro.data.ModelProfileMetadata
 import org.json.JSONArray
+import java.net.URI
 import org.json.JSONObject
 
 data class ModelProvider(
@@ -195,7 +196,16 @@ data class ModelRegistry(
             apiKeys.map { it.id }.toSet().size != apiKeys.size) return "API Key 标识为空或重复"
         if (models.map { it.id }.any(String::isBlank) ||
             models.map { it.id }.toSet().size != models.size) return "模型标识为空或重复"
-        if (providers.any { it.name.isBlank() || !it.baseUrl.startsWith("https://", true) }) return "服务商名称或 HTTPS 地址无效"
+        if (providers.any { provider ->
+                provider.name.isBlank() || runCatching {
+                    val uri = URI(provider.baseUrl)
+                    !uri.scheme.equals("https", ignoreCase = true) ||
+                        uri.host.isNullOrBlank() ||
+                        uri.userInfo != null ||
+                        uri.query != null ||
+                        uri.fragment != null
+                }.getOrDefault(true)
+            }) return "服务商名称或 HTTPS 地址无效"
         if (apiKeys.any { key -> providers.none { it.id == key.providerId } }) return "API Key 关联的服务商不存在"
         if (models.any { model -> providers.none { it.id == model.providerId } }) return "模型关联的服务商不存在"
         if (models.any { model -> model.apiKeyIds.any { keyId -> apiKeys.none { it.id == keyId && it.providerId == model.providerId } } }) {
