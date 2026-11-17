@@ -550,14 +550,33 @@ fun NestroApp() {
         if (modelProfiles.isEmpty() && config.baseUrl.isNotBlank() && config.model.isNotBlank()) {
             val migrated = ModelProfileMetadata("legacy-default", "默认模型", config.baseUrl, config.model)
             modelProfiles = listOf(migrated)
-            activeModelProfileId = migrated.id
-            LocalVault.writeProfile(context, migrated.id, config.apiKey)
-            prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles))
-                .putString("active_model_profile_id", activeModelProfileId).apply()
+            if (config.apiKey.isNotBlank()) {
+                activeModelProfileId = migrated.id
+                LocalVault.writeProfile(context, migrated.id, config.apiKey)
+                prefs.edit().putString("active_model_profile_id", activeModelProfileId).apply()
+            } else {
+                activeModelProfileId = ""
+                prefs.edit().remove("active_model_profile_id").apply()
+            }
+            prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
+        }
+        modelRegistry = modelRegistryStore.rebuildFromLegacy(modelProfiles) { profileId ->
+            LocalVault.readProfile(context, profileId).isNotBlank()
         }
         val activeMetadata = modelProfiles.firstOrNull { it.id == activeModelProfileId }
         if (activeMetadata != null) {
-            config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, LocalVault.readProfile(context, activeMetadata.id))
+            val activeKey = LocalVault.readProfile(context, activeMetadata.id)
+            if (activeKey.isNotBlank()) {
+                config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
+            } else {
+                activeModelProfileId = ""
+                config = ModelConfig("", "", "")
+                LocalVault.clearActive(context)
+                prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
+            }
+        } else if (activeModelProfileId.isBlank()) {
+            config = ModelConfig("", "", "")
+            LocalVault.clearActive(context)
         }
         val loaded = runCatching {
             withContext(Dispatchers.IO) {
