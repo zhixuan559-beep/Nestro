@@ -131,3 +131,13 @@
 - 当前 head `8d9bbf0` 的 Android CI #797 已通过；取消安全修复随后提交，必须等待新 head 对应 CI 才能视为验证通过。
 - 聊天发送编排仍集中在 `NestroApp`：Phone Agent 意图识别、上下文召回、知识/记忆注入、专家团执行、流式输出、部分回复持久化、会话保存及自动记忆提取仍在同一发送流程。下一步按执行阶段拆分，不把整个流程机械搬入单一巨型协调器。
 - 当前未发现 `ConversationStartupCoordinator` 与 `ChatRequestRecoveryCoordinator` 的专门单元测试；后续补充恢复边界测试。PR #3 保持 Draft / 未合并；不构建 APK、不做真机验收。
+
+
+## 2026-11-17 第一轮审查后的集中修复
+
+- `ModelRequestConfigurationSelector.buildRegistryRequestConfigs()` 现在要求存在有效的显式 active model ID；ID 为空或已失效时返回空候选，不再因 failover 开启而静默选择 Registry 中任意模型。
+- 删除当前 legacy Profile 时，先识别活动选择是否来自 `active_model_profile_id` 或 `active_model_registry_id`；切换备用 Profile 时同时更新两个活动 ID，找不到备用项时同时清理，避免 Chat 与 Phone Agent 仍指向已删除模型。
+- 删除当前 legacy API Key 时，同时清理对应 Registry 活动 ID 和旧 Profile ID，防止保留失效选择。
+- `ConversationSnapshotPersistenceEffect` 显式传播 `CancellationException`，仅将真实持久化故障交给 UI 错误回调。
+- `ModelRequestConfigurationSelectorTest` 增加 active ID 为空和 active ID 已失效时不隐式选择模型的回归测试。
+- 上述为源码修复与测试补充；必须以最新 head 的 Android CI 结果确认编译与测试通过。未构建 APK、未做真机验收；PR #3 保持 Draft / 未合并。
