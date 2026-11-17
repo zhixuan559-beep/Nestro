@@ -72,6 +72,10 @@ internal fun ModelManager(
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelNameDraft by remember { mutableStateOf("") }
     var modelCodeDraft by remember { mutableStateOf("") }
+    var editingRegistryModelId by remember { mutableStateOf("") }
+    var modelInputPriceDraft by remember { mutableStateOf("") }
+    var modelOutputPriceDraft by remember { mutableStateOf("") }
+    var modelCurrencyDraft by remember { mutableStateOf("USD") }
     var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
     var replacingApiKeyId by remember { mutableStateOf("") }
     var registryMessage by remember { mutableStateOf("") }
@@ -243,6 +247,15 @@ internal fun ModelManager(
                         TextButton(onClick = { onSaveRegistryModel(item.copy(enabled = !item.enabled)) }) {
                             Text(if (item.enabled) "停用" else "启用", color = if (item.enabled) Mint else ColorStop)
                         }
+                        TextButton(onClick = {
+                            editingRegistryModelId = item.id
+                            modelNameDraft = item.name
+                            modelCodeDraft = item.modelCode
+                            selectedModelKeyIds = item.apiKeyIds.toSet()
+                            modelInputPriceDraft = item.inputPricePerMillion?.toString().orEmpty()
+                            modelOutputPriceDraft = item.outputPricePerMillion?.toString().orEmpty()
+                            modelCurrencyDraft = item.currency
+                        }) { Text("编辑", color = Mint) }
                         TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("设为当前", color = Mint) }
                         TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
                     }
@@ -250,6 +263,10 @@ internal fun ModelManager(
             }
             OutlinedTextField(modelNameDraft, { modelNameDraft = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型显示名称") }, singleLine = true)
             OutlinedTextField(modelCodeDraft, { modelCodeDraft = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型 ID / model code") }, singleLine = true)
+            OutlinedTextField(modelInputPriceDraft, { modelInputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输入价格 / 百万 Token（可留空）") }, singleLine = true)
+            OutlinedTextField(modelOutputPriceDraft, { modelOutputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输出价格 / 百万 Token（可留空）") }, singleLine = true)
+            OutlinedTextField(modelCurrencyDraft, { modelCurrencyDraft = it.take(3).uppercase() }, modifier = Modifier.fillMaxWidth(), label = { Text("价格币种（3 位代码）") }, singleLine = true)
+            Text("编辑时会保留模型启停状态及原有价格等目录元数据；API Key 关联按当前勾选保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
             Text("关联 API Key（可多选，按顺序故障切换）", color = Muted, style = MaterialTheme.typography.bodySmall)
             registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -261,20 +278,34 @@ internal fun ModelManager(
             }
             OutlinedButton(
                 onClick = {
+                    val inputPrice = modelInputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val outputPrice = modelOutputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val existing = registry.models.firstOrNull { it.id == editingRegistryModelId }
                     val model = ModelDefinition(
-                        id = UUID.randomUUID().toString(),
+                        id = editingRegistryModelId.ifBlank { UUID.randomUUID().toString() },
                         providerId = selectedProviderId,
                         name = modelNameDraft.trim(),
                         modelCode = modelCodeDraft.trim(),
-                        apiKeyIds = registry.apiKeys.filter { it.providerId == selectedProviderId && it.id in selectedModelKeyIds }.map { it.id }
+                        apiKeyIds = registry.apiKeys.filter { it.providerId == selectedProviderId && it.id in selectedModelKeyIds }.map { it.id },
+                        enabled = existing?.enabled ?: true,
+                        inputPricePerMillion = inputPrice,
+                        outputPricePerMillion = outputPrice,
+                        currency = modelCurrencyDraft.trim().uppercase()
                     )
                     onSaveRegistryModel(model)
+                    editingRegistryModelId = ""
                     modelNameDraft = ""
                     modelCodeDraft = ""
                     selectedModelKeyIds = emptySet()
+                    modelInputPriceDraft = ""
+                    modelOutputPriceDraft = ""
+                    modelCurrencyDraft = "USD"
                     registryMessage = "模型已保存"
                 },
                 enabled = modelNameDraft.isNotBlank() && modelCodeDraft.isNotBlank() &&
+                    (modelInputPriceDraft.isBlank() || modelInputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
+                    (modelOutputPriceDraft.isBlank() || modelOutputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
+                    modelCurrencyDraft.trim().length == 3 &&
                     registry.apiKeys.any { it.providerId == selectedProviderId && it.id in selectedModelKeyIds && loadApiKey(it.id).isNotBlank() },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("添加模型") }
