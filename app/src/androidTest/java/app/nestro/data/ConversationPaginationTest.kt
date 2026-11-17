@@ -108,4 +108,26 @@ class ConversationPaginationTest {
         assertEquals(listOf("conversation-c", "conversation-b", "conversation-a"), page.map { it.id })
     }
 
+    @Test
+    fun loadsLightweightSummariesAcrossProjectsWithoutLoadingMessageBodies() = runBlocking {
+        val longContent = "large-message-body".repeat(500)
+        dao.putConversation(ConversationEntity("project-a-new", "A", 200L, "project-a"))
+        dao.putMessages(listOf(MessageEntity("a-message", "project-a-new", 0, "user", longContent)))
+        dao.putConversation(ConversationEntity("project-b-old", "B", 100L, "project-b"))
+        dao.putMessages(listOf(MessageEntity("b-message", "project-b-old", 0, "assistant", "摘要")))
+
+        val summaries = dao.allConversationSummaries()
+
+        assertEquals(2, dao.conversationCount())
+        assertEquals(listOf("project-a-new", "project-b-old"), summaries.map { it.id })
+        assertEquals(240, summaries.first().lastMessagePreview.length)
+        assertEquals(longContent, dao.conversationWithMessages("project-a-new")?.messages?.single()?.content)
+    }
+
+    @Test
+    fun returnsZeroConversationCountForAnEmptyDatabase() = runBlocking {
+        assertEquals(0, dao.conversationCount())
+        assertTrue(dao.allConversationSummaries().isEmpty())
+    }
+
 }

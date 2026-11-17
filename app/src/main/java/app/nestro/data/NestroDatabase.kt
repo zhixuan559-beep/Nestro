@@ -138,12 +138,36 @@ data class ConversationListItem(
     val messageCount: Int
 )
 
+data class ConversationRecordSummary(
+    val id: String,
+    val title: String,
+    val updatedAt: Long,
+    val projectId: String,
+    val lastMessagePreview: String,
+    val messageCount: Int
+) {
+    fun toConversationRecord(): ConversationRecordSummary = this
+}
+
 
 @Dao
 interface NestroDao {
     @Transaction
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
     suspend fun loadConversations(): List<ConversationWithMessages>
+
+    @Query("SELECT COUNT(*) FROM conversations")
+    suspend fun conversationCount(): Int
+
+    @Query("""
+        SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,
+               COALESCE((SELECT SUBSTR(m.content, 1, 240) FROM messages AS m WHERE m.conversationId = c.id
+                         ORDER BY m.position DESC LIMIT 1), '') AS lastMessagePreview,
+               (SELECT COUNT(*) FROM messages AS countMessage WHERE countMessage.conversationId = c.id) AS messageCount
+        FROM conversations AS c
+        ORDER BY c.updatedAt DESC, c.id DESC
+    """)
+    suspend fun allConversationSummaries(): List<ConversationListItem>
 
     @Query("""
         SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,

@@ -552,10 +552,10 @@ fun NestroApp() {
                         prefs.edit().remove("pending_project_delete_id").commit()
                     }
                 }
-                val stored = dao.loadConversations()
+                val storedConversationCount = dao.conversationCount()
                 val hasPendingLocalSnapshot = prefs.getLong("local_snapshot_saved_at", 0L) >
                     prefs.getLong("room_synced_at", 0L)
-                if (stored.isEmpty() || hasPendingLocalSnapshot) {
+                if (storedConversationCount == 0 || hasPendingLocalSnapshot) {
                     val legacyConversations = loadConversations(prefs)
                     val legacyProjects = loadProjects(prefs)
                     database.withTransaction {
@@ -578,18 +578,9 @@ fun NestroApp() {
                         }
                     }
                     prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
-                    legacyConversations to legacyProjects
+                    dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId) } to legacyProjects
                 } else {
-                    val restoredConversations = stored.map { row ->
-                        val entity = row.conversation
-                        ConversationRecord(
-                            entity.id, entity.title, entity.updatedAt,
-                            row.messages.sortedBy { it.position }.map { message ->
-                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                            },
-                            entity.projectId
-                        )
-                    }
+                    val restoredConversations = dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId) }
                     val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
                     val restoredProjects = if (storedProjects.isEmpty()) loadProjects(prefs) else storedProjects
                     if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
@@ -615,7 +606,28 @@ fun NestroApp() {
         activeConversationId = conversations.firstOrNull {
             it.id == savedConversationId && it.projectId == activeProjectId
         }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
-        messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
+        val activeConversationMessages = if (databaseReady && activeConversationId.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                database.dao().conversationWithMessages(activeConversationId)?.messages.orEmpty()
+                    .sortedBy { it.position }
+                    .map { message ->
+                        ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                    }
+            }
+        } else {
+            conversations.firstOrNull { it.id == activeConversationId }?.messages.orEmpty()
+        }
+        messages = activeConversationMessages
+        if (activeConversationId.isNotBlank()) {
+            conversations = conversations.map { record ->
+                if (record.id == activeConversationId) record.copy(messages = activeConversationMessages) else record
+            }
+            if (databaseReady) {
+                conversations.firstOrNull { it.id == activeConversationId }?.let { record ->
+                    persistedConversationVersions[record.id] = record.hashCode()
+                }
+            }
+        }
         prefs.edit().putString("active_project_id", activeProjectId).putString("active_conversation_id", activeConversationId).apply()
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
