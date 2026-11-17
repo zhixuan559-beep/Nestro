@@ -10,6 +10,7 @@ import app.nestro.data.ExpertRevision
 import app.nestro.data.ExpertRevisionCodec
 import app.nestro.data.ExpertTemplate
 import app.nestro.data.ExpertTemplateCodec
+import org.json.JSONObject
 
 /** Owns persisted expert catalog, profile revisions and user templates. */
 @Stable
@@ -17,11 +18,24 @@ internal class ExpertCatalogUiState(private val preferences: SharedPreferences) 
     val experts: MutableState<List<String>> =
         mutableStateOf(listOf("文案官", "选题狐", "代码佬"))
     val expertPrompts: MutableState<Map<String, String>> =
-        mutableStateOf(loadExpertPrompts(preferences))
+        mutableStateOf(decodeExpertPrompts(preferences))
     val expertProfiles: MutableState<Map<String, ExpertProfile>> =
         mutableStateOf(ExpertProfileCodec.decode(preferences.getString("expert_profiles_v1", "{}") ?: "{}"))
     val expertRevisions: MutableState<Map<String, List<ExpertRevision>>> =
         mutableStateOf(ExpertRevisionCodec.decode(preferences.getString("expert_versions_v1", "{}") ?: "{}"))
     val expertTemplates: MutableState<List<ExpertTemplate>> =
         mutableStateOf(ExpertTemplateCodec.decode(preferences.getString("expert_templates_v1", "[]") ?: "[]"))
+    
+    private fun decodeExpertPrompts(preferences: SharedPreferences): Map<String, String> =
+        runCatching {
+            val raw = preferences.getString("expert_prompts", "{}") ?: "{}"
+            val json = JSONObject(raw)
+            buildMap {
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    put(key, json.optString(key))
+                }
+            }
+        }.getOrDefault(emptyMap())
 }
