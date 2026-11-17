@@ -13,8 +13,6 @@ import app.nestro.data.ConversationListItem
 import app.nestro.data.ProjectSpaceRules
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
-import app.nestro.data.KnowledgeStore
-import app.nestro.data.ConversationMemoryStore
 import app.nestro.data.ConversationRecallSource
 
 import app.nestro.phone.PhoneAgentPlanner
@@ -130,7 +128,6 @@ fun NestroApp() {
     val scope = rememberCoroutineScope()
     val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val database = remember { appRuntime.database }
     val agentTaskCoordinator = appRuntime.agentTaskCoordinator
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
@@ -810,10 +807,10 @@ fun NestroApp() {
                 val result = runCatching {
                     val recallQuery = requestHistory.takeLast(8)
                         .joinToString("\n") { it.content.take(500) }.take(2400)
-                    val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, recallQuery)
+                    val recall = appRuntime.conversationContextRepository.retrieveMemory(requestProjectId, requestConversationId, recallQuery)
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
-                    val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
+                    val knowledgeContext = appRuntime.conversationContextRepository.retrieveKnowledge(requestProjectId, prompt)
                     val memoryContext = appRuntime.userMemoryRepository.recall(requestProjectId, prompt).context
                     val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
@@ -1941,15 +1938,14 @@ fun NestroApp() {
                                                                     var projectConversationIds = emptySet<String>()
                                                                     runCatching {
                                                                         withContext(Dispatchers.IO) {
-                                                                            val dao = database.dao()
                                                                             projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
-                                                                                dao.projectConversationIds(project.id)).toSet()
+                                                                                appRuntime.projectSpaceRepository.conversationIds(project.id)).toSet()
                                                                             val latestActiveProjectId = prefs.getString("active_project_id", activeProjectId) ?: activeProjectId
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val hasLocalConversationData = conversations.any {
                                                                                 it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
                                                                             }
-                                                                            val hasLinkedData = dao.projectHasLinkedData(project.id)
+                                                                            val hasLinkedData = appRuntime.projectSpaceRepository.hasLinkedData(project.id)
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
                                                                             check(!hasLocalConversationData) { "该空间还有尚未同步的会话内容，请等待保存完成后再删除" }
@@ -1960,7 +1956,7 @@ fun NestroApp() {
                                                                                 project.id, latestActiveProjectId,
                                                                                 if (hasLinkedData) setOf(project.id) else emptySet()
                                                                             )) { "默认空间、当前空间或含有关联数据的空间不可删除" }
-                                                                            check(dao.deleteProjectIfEmpty(project.id, latestActiveProjectId)) {
+                                                                            check(appRuntime.projectSpaceRepository.deleteIfEmpty(project.id, latestActiveProjectId)) {
                                                                                 "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
                                                                         }
