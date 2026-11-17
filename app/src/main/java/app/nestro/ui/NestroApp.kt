@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistry
+import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
 import app.nestro.data.ModelConfig
@@ -1112,11 +1113,36 @@ fun NestroApp() {
                             onDeleteProvider = { providerId ->
                                 runCatching {
                                     val keyIds = modelRegistry.apiKeys.filter { it.providerId == providerId }.map { it.id }
+                                    val legacyProfileIds = modelProfiles
+                                        .filter { ModelRegistryCodec.legacyProviderId(it.baseUrl) == providerId }
+                                        .map { it.id }
                                     val updated = modelRegistry.deleteProvider(providerId)
                                     modelRepository.saveRegistry(updated)
                                     modelRegistry = updated
-                                    // Clear a removed active model before secret cleanup can fail.
-                                    refreshActiveRegistryConfig(updated)
+                                    if (legacyProfileIds.isNotEmpty()) {
+                                        modelProfiles = modelProfiles.filterNot { it.id in legacyProfileIds }
+                                        prefs.edit().putString(
+                                            "model_profiles_v1",
+                                            ModelProfileCatalogCodec.encode(modelProfiles)
+                                        ).apply()
+                                    }
+                                    // Remove legacy profile ownership as well; otherwise startup migration
+                                    // would recreate a provider that the user explicitly deleted.
+                                    if (activeModelProfileId in legacyProfileIds) {
+                                        activeModelProfileId = ""
+                                        activeRegistryModelId = ""
+                                        config = ModelConfig("", "", "")
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit()
+                                            .remove("active_model_profile_id")
+                                            .remove("active_model_registry_id")
+                                            .remove("base_url")
+                                            .remove("model")
+                                            .apply()
+                                    } else {
+                                        // Clear a removed active model before secret cleanup can fail.
+                                        refreshActiveRegistryConfig(updated)
+                                    }
                                     keyIds.forEach(modelRepository::deleteApiKey)
                                     status = "服务商、关联模型及 API Key 已删除"
                                 }.onFailure { status = "服务商删除失败：" + (it.message ?: "未知错误") }
