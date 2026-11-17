@@ -48,7 +48,8 @@
 - [x] 新消息列表平滑滚动。
 - [x] 语音识别部分结果实时回填输入框，松开发起最终识别。
 - [x] 语音识别状态反馈、权限提示、错误提示和识别资源释放。
-- [x] 语音服务扩展契约：定义可选 SpeechInputProvider、SpeechOutputProvider 与 RealtimeVoiceProvider；预留服务商、API 地址、API Key、模型和音色配置字段，不内置第三方服务。\n- [ ] 实体设备键盘、语音识别兼容性和交互流畅度验收。
+- [x] 语音服务扩展契约：定义可选 SpeechInputProvider、SpeechOutputProvider 与 RealtimeVoiceProvider；预留服务商、API 地址、API Key、模型和音色配置字段，不内置第三方服务。
+- [ ] 实体设备键盘、语音识别兼容性和交互流畅度验收。
 
 ### Phone Agent
 - [x] AccessibilityService 注册与用户手动授权入口。
