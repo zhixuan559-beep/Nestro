@@ -938,7 +938,13 @@ fun NestroApp() {
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
                         check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
-                        val teamRun = ExpertTeamEngine.run(
+                        val teamRun = agentTaskCoordinator.runInline(
+                            taskId = UUID.randomUUID().toString(),
+                            owner = "expert_team",
+                            initialCheckpoint = "team:" + selectedTeam.id + ":queued"
+                        ) { taskContext ->
+                            taskContext.checkpoint("team:" + selectedTeam.id + ":running", 0)
+                            val result = ExpertTeamEngine.run(
                             teamName = selectedTeam.name,
                             teamDescription = selectedTeam.description,
                             task = prompt,
@@ -973,6 +979,9 @@ fun NestroApp() {
                                     onUsage = recordModelUsage
                                 ).take(2200)
                             }
+                        }
+                            taskContext.checkpoint("team:" + selectedTeam.id + ":finished", result.members.size)
+                            result
                         }
                         expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
                         prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
