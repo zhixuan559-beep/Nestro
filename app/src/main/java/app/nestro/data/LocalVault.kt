@@ -13,6 +13,7 @@ internal data class ModelConfig(val baseUrl: String, val model: String, val apiK
 
 internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
+    private const val MODEL_KEY_PREFIX = "model_api_key_v1_"
     fun write(context: Context, config: ModelConfig) {
         val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -36,37 +37,82 @@ internal object LocalVault {
         }.getOrDefault("")
         return ModelConfig(prefs.getString("base_url", "") ?: "", prefs.getString("model", "") ?: "", key)
     }
-    fun writeProfile(context: Context, id: String, apiKey: String) {
-        require(id.isNotBlank() && id.length <= 80)
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+    fun writeApiKey(context: Context, keyId: String, apiKey: String) {
+        require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
+        val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val preferenceKey = MODEL_KEY_PREFIX + keyId
         if (apiKey.isBlank()) {
-            prefs.edit().remove("model_api_key_enc_$id").apply()
+            preferences.edit().remove(preferenceKey).apply()
             return
         }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getKey())
-        val encrypted = cipher.doFinal(apiKey.toByteArray(Charsets.UTF_8))
-        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
-            Base64.encodeToString(encrypted, Base64.NO_WRAP)
-        prefs.edit().putString("model_api_key_enc_$id", packed).apply()
+        preferences.edit().putString(preferenceKey, encryptSecret(apiKey)).apply()
+    }
+
+    fun readApiKey(context: Context, keyId: String): String {
+        require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
+        val packed = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .getString(MODEL_KEY_PREFIX + keyId, null) ?: return ""
+        return decryptSecret(packed)
+    }
+
+    fun deleteApiKey(context: Context, keyId: String) {
+        require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
+        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit().remove(MODEL_KEY_PREFIX + keyId).apply()
+    }
+
+    fun writeProfile(context: Context, id: String, apiKey: String) {
+        require(id.isNotBlank() && id.length <= 80)
+        val legacyPreferenceKey = "model_api_key_enc_$id"
+        if (apiKey.isBlank()) {
+            deleteApiKey(context, "legacy-key-$id")
+            context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .edit().remove(legacyPreferenceKey).apply()
+            return
+        }
+        writeApiKey(context, "legacy-key-$id", apiKey)
+        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit().remove(legacyPreferenceKey).apply()
     }
 
     fun readProfile(context: Context, id: String): String {
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val packed = prefs.getString("model_api_key_enc_$id", null) ?: return ""
-        return runCatching {
-            val parts = packed.split(":")
-            require(parts.size == 2)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
-            String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
-        }.getOrDefault("")
+        require(id.isNotBlank() && id.length <= 80)
+        val keyId = "legacy-key-$id"
+        val migrated = readApiKey(context, keyId)
+        if (migrated.isNotBlank()) return migrated
+        val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val legacyPreferenceKey = "model_api_key_enc_$id"
+        val packed = preferences.getString(legacyPreferenceKey, null) ?: return ""
+        val legacyValue = decryptSecret(packed)
+        if (legacyValue.isNotBlank()) {
+            writeApiKey(context, keyId, legacyValue)
+            preferences.edit().remove(legacyPreferenceKey).apply()
+        }
+        return legacyValue
     }
 
     fun deleteProfile(context: Context, id: String) {
+        require(id.isNotBlank() && id.length <= 80)
+        deleteApiKey(context, "legacy-key-$id")
         context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
             .edit().remove("model_api_key_enc_$id").apply()
     }
+
+    private fun encryptSecret(secret: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getKey())
+        val encrypted = cipher.doFinal(secret.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
+            Base64.encodeToString(encrypted, Base64.NO_WRAP)
+    }
+
+    private fun decryptSecret(packed: String): String = runCatching {
+        val parts = packed.split(":")
+        require(parts.size == 2)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
+        String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
+    }.getOrDefault("")
 
     fun clearActive(context: Context) {
         context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
