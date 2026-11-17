@@ -46,8 +46,49 @@ data class ModelRegistry(
     }
 
     fun deleteApiKey(keyId: String): ModelRegistry = copy(
-        apiKeys = apiKeys.filterNot { it.id == keyId }
+        apiKeys = apiKeys.filterNot { it.id == keyId },
+        models = models.map { model ->
+            model.copy(apiKeyIds = model.apiKeyIds.filterNot { it == keyId })
+        }
     )
+
+    fun upsertLegacyProfile(profile: ModelProfileMetadata, keyAvailable: Boolean): ModelRegistry {
+        val providerId = ModelRegistryCodec.legacyProviderId(profile.baseUrl)
+        val keyId = "legacy-key-${profile.id}"
+        val modelId = "legacy-model-${profile.id}"
+        val provider = ModelProvider(
+            providerId,
+            profile.baseUrl.trimEnd('/').substringAfter("://").substringBefore('/').ifBlank { "旧服务商" },
+            profile.baseUrl.trimEnd()
+        )
+        val nextProviders = (providers.filterNot { it.id == providerId } + provider)
+        val nextKeys = if (keyAvailable) {
+            apiKeys.filterNot { it.id == keyId } + ModelApiKey(keyId, providerId, profile.name)
+        } else apiKeys.filterNot { it.id == keyId }
+        val nextModels = models.filterNot { it.id == modelId } + ModelDefinition(
+            id = modelId,
+            providerId = providerId,
+            name = profile.name,
+            modelCode = profile.model,
+            apiKeyIds = if (keyAvailable) listOf(keyId) else emptyList()
+        )
+        val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
+        return copy(
+            providers = nextProviders.filter { it.id in usedProviderIds },
+            apiKeys = nextKeys,
+            models = nextModels
+        )
+    }
+
+    fun deleteLegacyProfile(profileId: String): ModelRegistry {
+        val withoutKey = deleteApiKey("legacy-key-$profileId")
+        val nextModels = withoutKey.models.filterNot { it.id == "legacy-model-$profileId" }
+        val usedProviderIds = (withoutKey.apiKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
+        return withoutKey.copy(
+            models = nextModels,
+            providers = withoutKey.providers.filter { it.id in usedProviderIds }
+        )
+    }
 
     fun deleteModel(modelId: String): ModelRegistry = copy(
         models = models.filterNot { it.id == modelId }
@@ -178,6 +219,6 @@ object ModelRegistryCodec {
             .also { require(it.validate() == null) }
     }
 
-    private fun legacyProviderId(baseUrl: String): String =
+    internal fun legacyProviderId(baseUrl: String): String =
         "legacy-provider-${baseUrl.trimEnd('/').lowercase().hashCode().toUInt().toString(16)}"
 }
