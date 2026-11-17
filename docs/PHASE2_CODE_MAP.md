@@ -7,16 +7,16 @@
 ## 1. 仓库现状
 
 - Gradle 工程当前只有一个 Android app module（`settings.gradle.kts` 仅 include `:app`）；十九项是产品模块，不是十九个独立 Gradle module。
-- 当前树共 132 个文件，其中主源码 74 个 Kotlin 文件。
-- 主源码分布：`data` 35、`ui` 13、`phone` 11、`model` 6、`agent` 5、`speech` 2，根目录 2。
-- 自动化测试共 44 个文件：JVM 单元测试与 Android instrumentation/UI 测试均已有；CI 当前只证明本轮 workflow 配置执行的编译、JVM tests、Lint 与 Android test source 编译通过，不等于 instrumentation tests 已在设备运行。
+- 当前树共 149 个文件，其中主源码 88 个 Kotlin 文件。
+- 主源码分布：`data` 38、`ui` 24、`phone` 11、`model` 6、`agent` 5、`speech` 2，根目录 2。
+- 自动化测试共 47 个 Kotlin 文件：JVM 单元测试 33、Android instrumentation/UI tests 14；CI 只证明编译、JVM tests、Lint 与 Android test source 编译通过，不等于 instrumentation tests 已在设备运行。
 - 主要入口：`MainActivity` → `NestroApp()`；进程级服务组合根为 `NestroApplication`。
 
 ## 2. 已核验的核心结构
 
 | 区域 | 现有实现 | 当前边界/问题 |
 |---|---|---|
-| UI 根 | `ui/NestroApp.kt`，2,997 行、127 处 `remember`、6 处 `LaunchedEffect`、24 处协程启动 | 同时持有大量跨功能状态、导航和业务编排；是第一重构目标，不做机械拆文件 |
+| UI 根 | `ui/NestroApp.kt`，2,995 行、11 处 `remember`、3 处 `LaunchedEffect`、24 处协程启动 | 多个跨功能状态已转移到 state holders，根页面仍承担导航、发送与业务编排；继续按业务边界拆分，不做机械拆文件 |
 | 进程组合根 | `NestroApplication.kt`，106 行 | 已持有 Room、模型配置/连接、聊天执行、记忆/知识/项目/备份仓库及 AgentTaskCoordinator；优先复用 |
 | Agent 运行时 | `agent/AgentRuntime.kt`、`AgentTaskCoordinator.kt`、Room state/trace store | 已有工具目录、权限决策、任务状态/队列/追踪基础；要核对各业务入口是否统一走此边界 |
 | 模型 | `ModelRegistry`、`ModelRegistryStore`、`ModelConfigurationRepository`、`ModelConnectionService`、`ModelRequestConfigurationSelector`、`LocalVault` | 新 Registry 与旧 Profile UI 并存；需要收敛唯一数据源，Key 删除后所有依赖模型必须不可选 |
@@ -156,3 +156,10 @@
 - 同批补齐工作流执行的取消语义：父协程取消继续向上传播，用户主动停止保留为可记录的业务失败结果；`finally` 统一释放暂停闸门并清理运行态，避免工作流异常/取消后界面永久 busy。
 
 - 恢复链专项测试补齐：将中断请求标记解析提取为纯函数，拒绝 malformed/non-running/缺少稳定 ID 的记录，并验证草稿只恢复到原会话；新增 ChatRequestRecoveryCoordinatorTest。
+
+
+## 2026-11-18 当前树规模复核
+
+- 对本轮待推送的完整 Git tree 重新统计：149 个文件；主源码 88 个 Kotlin 文件；JVM tests 33；Android tests 14。
+- `NestroApp.kt` 为 2,995 行，`remember` 11 处、`LaunchedEffect` 3 处、`scope.launch` 24 处。状态所有权拆分已明显减少根页面本地 `remember`，但协程/业务编排仍是后续重构重点。
+- 统计基于当前待推送 tree `4b9f207`，最终以推送后 head tree 为准。
