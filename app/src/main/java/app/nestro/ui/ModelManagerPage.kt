@@ -42,6 +42,7 @@ internal fun ModelManager(
     activeRegistryModelId: String,
     loadApiKey: (String) -> String,
     onSaveProvider: (ModelProvider) -> Unit,
+    onDeleteProvider: (String) -> Unit,
     onSaveApiKey: (ModelApiKey, String) -> Unit,
     onSaveRegistryModel: (ModelDefinition) -> Unit,
     onDeleteRegistryApiKey: (String) -> Unit,
@@ -62,6 +63,8 @@ internal fun ModelManager(
     var formError by remember { mutableStateOf("") }
     var providerNameDraft by remember { mutableStateOf("") }
     var providerUrlDraft by remember { mutableStateOf("https://") }
+    var editingProviderId by remember { mutableStateOf("") }
+    var confirmDeleteProvider by remember { mutableStateOf(false) }
     var selectedProviderId by remember {
         mutableStateOf(registry.providers.firstOrNull()?.id.orEmpty())
     }
@@ -116,9 +119,15 @@ internal fun ModelManager(
                     Text(provider.name, color = Ink)
                     Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
+                TextButton(onClick = {
+                    editingProviderId = provider.id
+                    providerNameDraft = provider.name
+                    providerUrlDraft = provider.baseUrl
+                }) { Text("编辑", color = Mint) }
                 TextButton(onClick = { onSaveProvider(provider.copy(enabled = !provider.enabled)) }) {
                     Text(if (provider.enabled) "停用" else "启用", color = if (provider.enabled) Mint else ColorStop)
                 }
+                TextButton(onClick = { confirmDeleteProvider = true }) { Text("删除", color = ColorStop) }
             }
         }
         OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
@@ -129,9 +138,14 @@ internal fun ModelManager(
                 if (providerNameDraft.isBlank() || !url.startsWith("https://", true)) {
                     registryMessage = "请填写服务商名称和 HTTPS 地址"
                 } else {
-                    val provider = ModelProvider(UUID.randomUUID().toString(), providerNameDraft.trim(), url)
+                    val provider = ModelProvider(
+                        editingProviderId.ifBlank { UUID.randomUUID().toString() },
+                        providerNameDraft.trim(),
+                        url
+                    )
                     onSaveProvider(provider)
                     selectedProviderId = provider.id
+                    editingProviderId = ""
                     providerNameDraft = ""
                     providerUrlDraft = "https://"
                     registryMessage = "服务商已保存"
@@ -139,7 +153,35 @@ internal fun ModelManager(
             },
             enabled = providerNameDraft.isNotBlank() && providerUrlDraft.startsWith("https://"),
             modifier = Modifier.fillMaxWidth()
-        ) { Text("添加服务商") }
+        ) { Text(if (editingProviderId.isBlank()) "添加服务商" else "保存服务商修改") }
+        if (editingProviderId.isNotBlank()) {
+            TextButton(onClick = {
+                editingProviderId = ""
+                providerNameDraft = ""
+                providerUrlDraft = "https://"
+            }) { Text("取消编辑服务商") }
+        }
+        if (confirmDeleteProvider) {
+            AlertDialog(
+                onDismissRequest = { confirmDeleteProvider = false },
+                title = { Text("删除服务商？") },
+                text = { Text("将同时删除该服务商下的模型和 API Key。此操作不可撤销。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDeleteProvider(selectedProviderId)
+                        confirmDeleteProvider = false
+                        selectedProviderId = registry.providers.firstOrNull { it.id != selectedProviderId }?.id.orEmpty()
+                        editingProviderId = ""
+                        providerNameDraft = ""
+                        providerUrlDraft = "https://"
+                        registryMessage = "服务商及其关联配置已删除"
+                    }) { Text("确认删除") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDeleteProvider = false }) { Text("取消") }
+                }
+            )
+        }
 
         if (selectedProviderId.isNotBlank()) {
             Text("API Key", color = Ink, style = MaterialTheme.typography.titleSmall)
