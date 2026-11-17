@@ -46,15 +46,20 @@ class AgentRuntimeTest {
 
     @Test
     fun missingToolReturnsActionableErrorWithoutExecuting() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val traces = InMemoryAgentTaskTraceStore()
         val runtime = DefaultAgentRuntime(
             InMemoryAgentToolCatalog(),
             DefaultAgentPermissionRouter(),
-            InMemoryAgentTaskStateStore()
+            states,
+            traces
         )
 
         val result = runtime.execute(AgentToolRequest("task-3", "missing.tool"))
 
         assertFalse(result.success)
         assertTrue(result.error.contains("工具不存在"))
+        assertEquals(AgentTaskStatus.FAILED, states.get("task-3")?.status)
+        assertTrue(traces.recent("task-3").any { it.event == "tool_missing" })
     }
 }
