@@ -10,6 +10,8 @@ import app.nestro.data.ConversationEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.LocalBackupCompatibility
+import app.nestro.data.LocalVault
+import app.nestro.data.ModelConfig
 import app.nestro.data.MessageEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ProjectEntity
@@ -30,6 +32,7 @@ class LocalBackupRoundTripTest {
         // ArtifactStore uses app-private files shared by instrumentation tests. Start from a
         // clean store so deliberately corrupted fixtures from other tests cannot leak in.
         File(context.filesDir, "artifacts").deleteRecursively()
+        LocalVault.clearAllApiKeys(context)
         val databaseName = "nestro_backup_round_trip.db"
         context.deleteDatabase(databaseName)
         val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
@@ -59,6 +62,10 @@ class LocalBackupRoundTripTest {
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容")))
             dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
 
+            LocalVault.writeApiKey(context, "old-key", "must-not-survive-restore")
+            LocalVault.writeProfile(context, "old-profile", "legacy-secret-must-not-survive")
+            LocalVault.write(context, ModelConfig("https://old.example/v1", "old-model", "active-secret-must-not-survive"))
+
             val artifactTitle = "备份往返测试-" + System.currentTimeMillis()
             val savedArtifact = ArtifactStore.save(context, "p1", artifactTitle, "# 产物备份内容")
             val backup = buildLocalBackup(context, prefs, database)
@@ -84,6 +91,9 @@ class LocalBackupRoundTripTest {
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
+            assertEquals("恢复不能沿用旧 API Key", "", LocalVault.readApiKey(context, "old-key"))
+            assertEquals("恢复不能沿用旧 Profile Key", "", LocalVault.readProfile(context, "old-profile"))
+            assertEquals("恢复不能沿用旧活动模型 Key", "", LocalVault.read(context).apiKey)
             val restoredArtifact = ArtifactStore.list(context, "p1").single { it.title == artifactTitle }
             assertEquals("# 产物备份内容", ArtifactStore.read(context, restoredArtifact))
 
@@ -98,6 +108,7 @@ class LocalBackupRoundTripTest {
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
             File(context.filesDir, "artifacts").deleteRecursively()
+            LocalVault.clearAllApiKeys(context)
             database.close()
             prefs.edit().clear().commit()
             context.deleteDatabase(databaseName)

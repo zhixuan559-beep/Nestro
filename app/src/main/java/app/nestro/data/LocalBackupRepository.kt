@@ -483,8 +483,6 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messageArray))
     }
     val restoreSyncTimestamp = System.currentTimeMillis()
-    val previousProfileMetadata = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-    var profileKeysToClear = emptyList<String>()
     val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("conversations_v1", normalizedConversationBackup.toString())
@@ -517,7 +515,6 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         val restoredProfilesRaw = root.optString("model_profiles_v1", "[]")
         val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
         require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
-        profileKeysToClear = previousProfileMetadata.filter { old -> restoredProfiles.none { it.id == old.id && it.baseUrl == old.baseUrl && it.model == old.model } }.map { it.id }
         val restoredActiveProfileId = root.optString("active_model_profile_id", "")
             .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
         val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
@@ -531,8 +528,6 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             }
         }
         val restoredFailoverEnabled = root.optBoolean("model_failover_enabled", false)
-        val previousBaseUrl = prefs.getString("base_url", "") ?: ""
-        val previousModel = prefs.getString("model", "") ?: ""
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
@@ -542,9 +537,6 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
             editor.putString("model_registry_v1", ModelRegistryCodec.encode(restoredRegistry))
         } else {
             editor.remove("model_registry_v1")
-        }
-        if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
-            editor.remove("api_key_enc")
         }
     }
     val dao = database.dao()
@@ -568,6 +560,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
+    // Credentials are intentionally excluded from backups. Never retain secrets from the
+    // pre-restore installation, even when a restored model happens to reuse the same ID.
+    ModelConfigurationRepository(context).clearAllApiKeys()
     if (hasArtifactBackup) app.nestro.data.ArtifactStore.restoreBackup(context, restoredArtifactRows, restoredProjectIds)
-    profileKeysToClear.forEach { key -> runCatching { ModelConfigurationRepository(context).deleteProfileKey(key) } }
 }

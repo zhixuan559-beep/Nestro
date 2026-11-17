@@ -115,6 +115,15 @@ internal object LocalVault {
         String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
     }.getOrDefault("")
 
+    fun clearAllApiKeys(context: Context) {
+        val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val editor = preferences.edit().remove("api_key_enc")
+        preferences.all.keys
+            .filter { it.startsWith(MODEL_KEY_PREFIX) || it.startsWith("model_api_key_enc_") }
+            .forEach(editor::remove)
+        check(editor.commit()) { "API Key 清理失败" }
+    }
+
     fun clearActive(context: Context) {
         context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
             .edit()
