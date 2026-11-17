@@ -94,8 +94,8 @@ object ExpertTemplateCodec {
                     item.optString("description").take(300),
                     prompt,
                     profile,
-                    item.optString("category", profile.group.ifBlank { "自定义" }).take(30),
-                    item.optBoolean("builtIn", false)
+                    item.optString("category").take(30).ifBlank { profile.group.ifBlank { "自定义" } },
+                    false
                 )
             }
         }.take(100)
@@ -105,7 +105,7 @@ object ExpertTemplateCodec {
         templates.take(100).forEach { template ->
             val p = template.profile
             put(JSONObject().put("id", template.id).put("name", template.name).put("description", template.description).put("prompt", template.prompt)
-                .put("category", template.category).put("builtIn", template.builtIn)
+                .put("category", template.category).put("builtIn", false)
                 .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
                     .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
                     .put("description", p.description).put("version", p.version).put("source", p.source)))
