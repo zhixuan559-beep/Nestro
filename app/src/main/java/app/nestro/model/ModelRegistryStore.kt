@@ -42,7 +42,8 @@ class ModelRegistryStore(context: Context) {
         val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
         val keys = migrated.apiKeys.mapNotNull { key ->
             val profileId = key.id.removePrefix("legacy-key-")
-            if (hasSecret(profileId)) key.copy(enabled = true) else null
+            val old = previous.apiKeys.firstOrNull { it.id == key.id }
+            if (hasSecret(profileId)) key.copy(enabled = old?.enabled ?: true) else null
         }
         val providers = migrated.providers.map { provider ->
             provider.copy(enabled = previous.providers.firstOrNull { it.id == provider.id }?.enabled ?: provider.enabled)
