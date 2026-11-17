@@ -50,6 +50,7 @@ class ContentPagesWindowSizeTest {
                 composeRule.onNodeWithText("测试知识库检索").performScrollTo().assertIsDisplayed()
             }
         } finally {
+            composeRule.setContent { }
             database.close()
         }
     }
