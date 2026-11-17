@@ -27,6 +27,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Owns process-wide agent infrastructure so task execution is not tied to a
@@ -55,6 +57,17 @@ class NestroApplication : Application() {
     val chatExecutionService: ChatExecutionService by lazy { ChatExecutionService() }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val restoreRecoveryMutex = Mutex()
+    @Volatile private var restoreRecoveryComplete = false
+
+    suspend fun ensureBackupRestoreRecovered() {
+        restoreRecoveryMutex.withLock {
+            if (!restoreRecoveryComplete) {
+                localBackupRepository.recoverInterruptedRestore(getSharedPreferences("nestro_local", MODE_PRIVATE))
+                restoreRecoveryComplete = true
+            }
+        }
+    }
 
     val agentTaskHandlers: AgentTaskHandlerRegistry by lazy {
         AgentTaskHandlerRegistry().apply {
@@ -107,6 +120,7 @@ class NestroApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch {
+            ensureBackupRestoreRecovered()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
         }
     }

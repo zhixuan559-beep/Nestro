@@ -116,4 +116,49 @@ class LocalBackupRoundTripTest {
             context.deleteDatabase(databaseName)
         }
     }
+    @Test fun interruptedRestoreJournalRecoversRoomPreferencesAndEncryptedKeys() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        File(context.filesDir, "artifacts").deleteRecursively()
+        LocalVault.clearAllApiKeys(context)
+        val databaseName = "nestro_backup_journal_recovery.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_journal_test", Context.MODE_PRIVATE)
+        val vaultPrefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]").putString("global_memory_v1", "恢复前的记忆")
+                .putBoolean("automatic_memory_enabled", true).putString("draft_old", "旧草稿").commit()
+            LocalVault.writeApiKey(context, "journal-key", "encrypted-old-secret")
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("journal-c1", "恢复日志测试", 1L, "default"))
+            dao.putMessages(listOf(MessageEntity("journal-m1", "journal-c1", 0, "user", "恢复前消息", "[]", 0)))
+            val repository = LocalBackupRepository(context, database)
+            persistLocalBackupRestoreJournal(context, prefs, database)
+            database.withTransaction {
+                dao.deleteAllConversations()
+                dao.deleteAllKnowledgeDocuments()
+                dao.deleteAllUserMemories()
+                dao.deleteAllPhoneAgentTasks()
+                dao.deleteAllProjects()
+            }
+            prefs.edit().clear().putString("global_memory_v1", "错误的新状态").commit()
+            LocalVault.clearAllApiKeys(context)
+            repository.recoverInterruptedRestore(prefs)
+            assertEquals("恢复前消息", dao.loadConversations().single().messages.single().content)
+            assertEquals("恢复前的记忆", prefs.getString("global_memory_v1", ""))
+            assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
+            assertEquals("旧草稿", prefs.getString("draft_old", ""))
+            assertEquals("encrypted-old-secret", LocalVault.readApiKey(context, "journal-key"))
+            assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            vaultPrefs.edit().clear().commit()
+            LocalVault.clearAllApiKeys(context)
+            context.deleteDatabase(databaseName)
+        }
+    }
 }

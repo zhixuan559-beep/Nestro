@@ -243,3 +243,9 @@
 
 - The first reattachment draft exposed a missed call site: `PhoneAgentWorker` still treated persisted `RUNNING` as a passive wait. It now calls `requeueRunningTaskIfIdle()` so a WorkManager worker can reattach the task after process recreation; an already-active coordinator handler remains untouched.
 - `DefaultAgentRuntime.trace()` no longer uses `runCatching` around a suspending trace write. Ordinary trace-storage exceptions remain non-fatal, but `CancellationException` propagates; a JVM regression test verifies that cancellation during the first trace prevents tool execution.
+## 2026-11-18 — Durable cross-store backup restore journal
+
+- Backup restore now snapshots the pre-restore Room/Artifact data as a verified local backup plus typed SharedPreferences snapshots (including encrypted API-Key ciphertext, never plaintext) into an app-private AtomicFile journal before mutation.
+- The restore is applied only after the journal is durably written. On any thrown failure, the old backup and preference snapshots are replayed as compensation. If compensation fails, the journal is retained and the error explicitly blocks startup rather than silently continuing with mixed state.
+- `NestroApplication.ensureBackupRestoreRecovered()` serializes recovery and is awaited before Compose startup and before Phone Agent Workers touch task state. A process death leaves the journal for the next process to replay idempotently.
+- Added an instrumentation regression test that simulates process death after partial Room/Preferences/Key mutation and verifies recovery of Room data, preferences, encrypted API keys, and journal cleanup. CI must validate; no APK/device acceptance is being performed.

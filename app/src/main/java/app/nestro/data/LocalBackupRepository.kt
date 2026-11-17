@@ -2,6 +2,7 @@ package app.nestro.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.AtomicFile
 import android.net.Uri
 import androidx.room.withTransaction
 import app.nestro.model.ModelConfigurationRepository
@@ -9,6 +10,8 @@ import app.nestro.model.ModelRegistryCodec
 import app.nestro.phone.PhoneAgentPlanner
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 
 
 /** Application-facing backup boundary; UI never owns Room access. */
@@ -22,6 +25,9 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
 
     suspend fun restoreBackup(prefs: SharedPreferences, raw: String) =
         restoreLocalBackup(appContext, prefs, raw, database)
+
+    suspend fun recoverInterruptedRestore(prefs: SharedPreferences) =
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
 }
 
 
@@ -172,7 +178,128 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     return encoded
 }
 
-internal suspend fun restoreLocalBackup(context: Context, prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
+internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferences, raw: String, database: NestroDatabase) {
+    recoverInterruptedLocalBackupRestore(context, prefs, database)
+    persistLocalBackupRestoreJournal(context, prefs, database)
+    try {
+        applyLocalBackup(context, prefs, raw, database)
+        deleteLocalBackupRestoreJournal(context)
+    } catch (failure: Throwable) {
+        try {
+            recoverInterruptedLocalBackupRestore(context, prefs, database)
+        } catch (rollbackFailure: Throwable) {
+            rollbackFailure.addSuppressed(failure)
+            throw IllegalStateException(
+                "备份恢复失败，且自动回滚未完成；本机恢复日志已保留，请勿清理应用数据",
+                rollbackFailure
+            )
+        }
+        throw failure
+    }
+}
+
+internal suspend fun persistLocalBackupRestoreJournal(context: Context, prefs: SharedPreferences, database: NestroDatabase) {
+    val vaultPreferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+    val previousBackup = buildLocalBackup(context, prefs, database)
+    val journal = JSONObject()
+        .put("format", "nestro-restore-journal")
+        .put("version", 1)
+        .put("created_at", System.currentTimeMillis())
+        .put("previous_backup", previousBackup)
+        .put("preferences", encodeSharedPreferencesSnapshot(prefs))
+        .put("vault_preferences", encodeSharedPreferencesSnapshot(vaultPreferences))
+    journal.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(journal)))
+    val file = localBackupRestoreJournalFile(context)
+    file.parentFile?.mkdirs()
+    val atomic = AtomicFile(file)
+    var output: FileOutputStream? = null
+    try {
+        output = atomic.startWrite()
+        output.write(journal.toString().toByteArray(Charsets.UTF_8))
+        output.fd.sync()
+        atomic.finishWrite(output)
+    } catch (failure: Throwable) {
+        output?.let { atomic.failWrite(it) }
+        throw failure
+    }
+}
+
+internal suspend fun recoverInterruptedLocalBackupRestore(context: Context, prefs: SharedPreferences, database: NestroDatabase) {
+    val file = localBackupRestoreJournalFile(context)
+    if (!file.isFile) return
+    val journal = JSONObject(file.readText(Charsets.UTF_8))
+    require(journal.optString("format") == "nestro-restore-journal" && journal.optInt("version") == 1) {
+        "本机备份恢复日志格式无效"
+    }
+    val checksum = journal.optString("checksum_sha256")
+    val payload = JSONObject(journal.toString()).apply { remove("checksum_sha256") }
+    require(checksum.isNotBlank() && checksum.equals(
+        LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(payload)),
+        ignoreCase = true
+    )) { "本机备份恢复日志校验失败，已停止自动恢复以保护数据" }
+    // Replaying the old backup is idempotent. If the process dies again, the journal remains.
+    applyLocalBackup(context, prefs, journal.getString("previous_backup"), database)
+    restoreSharedPreferencesSnapshot(prefs, journal.getJSONObject("preferences"))
+    restoreSharedPreferencesSnapshot(
+        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE),
+        journal.getJSONObject("vault_preferences")
+    )
+    deleteLocalBackupRestoreJournal(context)
+}
+
+private fun localBackupRestoreJournalFile(context: Context): File =
+    File(context.filesDir, "backup-restore/restore-journal.json")
+
+private fun encodeSharedPreferencesSnapshot(prefs: SharedPreferences): JSONObject {
+    val rows = JSONObject()
+    prefs.all.forEach { (key, value) ->
+        val entry = JSONObject()
+        when (value) {
+            is String -> entry.put("type", "string").put("value", value)
+            is Boolean -> entry.put("type", "boolean").put("value", value)
+            is Int -> entry.put("type", "int").put("value", value)
+            is Long -> entry.put("type", "long").put("value", value)
+            is Float -> entry.put("type", "float").put("value", value.toDouble())
+            is Set<*> -> {
+                require(value.all { it is String }) { "本机设置包含无法安全快照的数据类型" }
+                entry.put("type", "string_set").put("value", JSONArray(value.sorted()))
+            }
+            else -> error("本机设置包含无法安全快照的数据类型：" + key)
+        }
+        rows.put(key, entry)
+    }
+    return rows
+}
+
+private fun restoreSharedPreferencesSnapshot(prefs: SharedPreferences, snapshot: JSONObject) {
+    val editor = prefs.edit().clear()
+    val keys = snapshot.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val entry = snapshot.getJSONObject(key)
+        when (entry.getString("type")) {
+            "string" -> editor.putString(key, entry.getString("value"))
+            "boolean" -> editor.putBoolean(key, entry.getBoolean("value"))
+            "int" -> editor.putInt(key, entry.getInt("value"))
+            "long" -> editor.putLong(key, entry.getLong("value"))
+            "float" -> editor.putFloat(key, entry.getDouble("value").toFloat())
+            "string_set" -> {
+                val values = entry.getJSONArray("value")
+                editor.putStringSet(key, (0 until values.length()).map { values.getString(it) }.toSet())
+            }
+            else -> error("本机恢复日志包含未知设置类型：" + key)
+        }
+    }
+    check(editor.commit()) { "本机设置回滚失败" }
+}
+
+private fun deleteLocalBackupRestoreJournal(context: Context) {
+    val file = localBackupRestoreJournalFile(context)
+    AtomicFile(file).delete()
+    check(!file.exists()) { "本机恢复日志清理失败" }
+}
+
+private suspend fun applyLocalBackup(context: Context, prefs: SharedPreferences, raw: String, database: NestroDatabase) {
     require(raw.length <= 10_000_000) { "备份文件过大" }
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
