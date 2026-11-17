@@ -209,3 +209,5 @@
 - CI #810 exposed a JUnit test-discovery error: the new Model Registry metadata-preservation test had been appended outside `ModelRegistryTest`, so JUnit discovered a top-level file facade with no valid test methods. The test is now inside the test class; no production-code compile error was reported. This correction is included in the next staged head and must be revalidated by CI.
 
 - Phone Agent task log loading now uses the shared cancellation-safe result wrapper: ordinary log-store errors still degrade to an empty log list, but page/worker coroutine cancellation propagates instead of being swallowed.
+
+- Backup restore now uses `ModelRegistryCodec.decodeOrNull()` for a non-empty model registry payload and rejects malformed/incompatible registry JSON instead of silently accepting the legacy decoder's empty-registry fallback. This protects user-defined provider/model metadata during restore; valid empty registries remain distinct from invalid payloads.
