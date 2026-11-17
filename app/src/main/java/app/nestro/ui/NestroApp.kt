@@ -565,10 +565,10 @@ fun NestroApp() {
         }
         if (loaded.isSuccess) {
             val data = loaded.getOrThrow()
-            conversations = data.first
-            projects = data.second
+            conversations = data.conversations
+            projects = data.projects
             persistedConversationVersions.clear()
-            data.first.forEach { persistedConversationVersions[it.id] = it.hashCode() }
+            data.conversations.forEach { persistedConversationVersions[it.id] = it.hashCode() }
             prefs.edit().putBoolean("room_storage_initialized", true).apply()
             databaseReady = true
         } else {
