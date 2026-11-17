@@ -141,3 +141,12 @@
 - `ConversationSnapshotPersistenceEffect` 显式传播 `CancellationException`，仅将真实持久化故障交给 UI 错误回调。
 - `ModelRequestConfigurationSelectorTest` 增加 active ID 为空和 active ID 已失效时不隐式选择模型的回归测试。
 - 上述为源码修复与测试补充；必须以最新 head 的 Android CI 结果确认编译与测试通过。未构建 APK、未做真机验收；PR #3 保持 Draft / 未合并。
+
+
+## 第二轮凭据选择审查（2026-11-17）
+
+- 发现活动 Registry 模型恢复、配置刷新和手动激活三处仍直接读取首个非空密钥；旧密钥即使已在 Registry 中停用，仍可能被选中。
+- 统一改为 `ModelRequestConfigurationSelector.buildRegistryRequestConfigs(..., failoverEnabled = false)`，确保仅使用启用且归属当前服务商的 Key。
+- 新增回归测试：已停用 Key 即使仍能读出旧 secret，也必须跳过并选择后续启用 Key。
+- 修复同时清理 `NestroApp` 中重复的超时异常判断。
+- 本次修复提交待 PR head 更新并由新 CI 验证；不得把旧 CI #803 的成功结果套用到本次提交。

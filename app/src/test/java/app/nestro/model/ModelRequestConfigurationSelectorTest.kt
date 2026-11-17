@@ -210,4 +210,24 @@ class ModelRequestConfigurationSelectorTest {
         assertEquals(listOf("secret-a", "secret-b"), configs.map { it.apiKey })
         assertEquals(listOf("model-a", "model-a"), configs.map { it.model })
     }
+
+    @Test
+    fun registrySelectionSkipsDisabledKeyEvenWhenSecretStillExists() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(
+                ModelApiKey("disabled-key", "p", "Disabled", enabled = false),
+                ModelApiKey("enabled-key", "p", "Enabled")
+            ),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "model-a", listOf("disabled-key", "enabled-key"))
+            )
+        )
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", false
+        ) { id -> if (id == "disabled-key") "stale-secret" else "valid-secret" }
+
+        assertEquals(listOf("valid-secret"), configs.map { it.apiKey })
+    }
 }
