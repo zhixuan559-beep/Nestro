@@ -11,6 +11,7 @@
         </intent>
     </queries>
     <application
+        android:name=".NestroApplication"
         android:allowBackup="false"
         android:label="Nestro"
         android:supportsRtl="true"
