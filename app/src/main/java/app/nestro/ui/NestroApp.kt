@@ -568,15 +568,18 @@ fun NestroApp() {
             val activeKey = LocalVault.readProfile(context, activeMetadata.id)
             if (activeKey.isNotBlank()) {
                 config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
+                LocalVault.write(context, config)
             } else {
                 activeModelProfileId = ""
                 config = ModelConfig("", "", "")
                 LocalVault.clearActive(context)
                 prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
             }
-        } else if (activeModelProfileId.isBlank()) {
+        } else {
+            activeModelProfileId = ""
             config = ModelConfig("", "", "")
             LocalVault.clearActive(context)
+            prefs.edit().remove("active_model_profile_id").apply()
         }
         val loaded = runCatching {
             withContext(Dispatchers.IO) {
