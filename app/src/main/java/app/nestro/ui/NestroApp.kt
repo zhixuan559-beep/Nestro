@@ -536,11 +536,14 @@ fun NestroApp() {
 
     fun refreshActiveRegistryConfig(updatedRegistry: ModelRegistry) {
         if (activeRegistryModelId.isBlank()) return
-        val active = updatedRegistry.models.firstOrNull { it.id == activeRegistryModelId }
-        val provider = active?.let { model -> updatedRegistry.providers.firstOrNull { it.id == model.providerId } }
-        val secret = active?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
-        if (active != null && provider?.enabled == true && active in updatedRegistry.selectableModels() && !secret.isNullOrBlank()) {
-            config = ModelConfig(provider.baseUrl, active.modelCode, secret)
+        val activeConfig = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry = updatedRegistry,
+            activeModelId = activeRegistryModelId,
+            failoverEnabled = false,
+            readKey = modelRepository::readApiKey
+        ).firstOrNull()
+        if (activeConfig != null) {
+            config = activeConfig
             modelRepository.writeActiveConfig(config)
         } else {
             activeRegistryModelId = ""
@@ -792,7 +795,6 @@ fun NestroApp() {
                     result.isSuccess -> result.getOrThrow()
                     partialAnswer.isNotEmpty() -> partialAnswer.toString()
                     stopRequested -> "已停止生成。"
-                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
                     result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
                     else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
                 }
@@ -1133,12 +1135,16 @@ fun NestroApp() {
                             },
                             onActivateRegistryModel = { id ->
                                 val candidate = modelRegistry.models.firstOrNull { it.id == id }
-                                val provider = candidate?.let { item -> modelRegistry.providers.firstOrNull { it.id == item.providerId } }
-                                val secret = candidate?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
-                                if (candidate != null && provider?.enabled == true && candidate in modelRegistry.selectableModels() && !secret.isNullOrBlank()) {
+                                val selectedConfig = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+                                    registry = modelRegistry,
+                                    activeModelId = id,
+                                    failoverEnabled = false,
+                                    readKey = modelRepository::readApiKey
+                                ).firstOrNull()
+                                if (candidate != null && selectedConfig != null) {
                                     activeRegistryModelId = id
                                     activeModelProfileId = ""
-                                    config = ModelConfig(provider.baseUrl, candidate.modelCode, secret)
+                                    config = selectedConfig
                                     modelRepository.writeActiveConfig(config)
                                     prefs.edit().putString("active_model_registry_id", id).remove("active_model_profile_id").apply()
                                     status = "已切换模型：" + candidate.name

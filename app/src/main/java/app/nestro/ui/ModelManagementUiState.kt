@@ -10,6 +10,7 @@ import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.model.ModelConfigurationRepository
+import app.nestro.model.ModelRequestConfigurationSelector
 
 /**
  * Owns the model-management UI state shared by the model settings and chat
@@ -68,20 +69,18 @@ internal class ModelManagementUiState(
 
         val registry = repository.rebuildLegacyProfiles(profiles)
         val activeRegistryModel = registry.models.firstOrNull { it.id == activeRegistryId }
-        val activeRegistryProvider = activeRegistryModel?.let { model ->
-            registry.providers.firstOrNull { it.id == model.providerId }
-        }
-        val activeRegistrySecret = activeRegistryModel?.apiKeyIds.orEmpty()
-            .asSequence()
-            .map(repository::readApiKey)
-            .firstOrNull { it.isNotBlank() }
-        val activeRegistryIsUsable = activeRegistryModel != null && activeRegistryProvider?.enabled == true &&
-            activeRegistryModel in registry.selectableModels() && !activeRegistrySecret.isNullOrBlank()
+        val activeRegistryConfig = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry = registry,
+            activeModelId = activeRegistryId,
+            failoverEnabled = false,
+            readKey = repository::readApiKey
+        ).firstOrNull()
+        val activeRegistryIsUsable = activeRegistryModel != null && activeRegistryConfig != null
 
         if (activeRegistryIsUsable) {
             activeProfileId = ""
             preferences.edit().remove("active_model_profile_id").apply()
-            loadedConfig = ModelConfig(activeRegistryProvider!!.baseUrl, activeRegistryModel!!.modelCode, activeRegistrySecret!!)
+            loadedConfig = activeRegistryConfig!!
             repository.writeActiveConfig(loadedConfig)
         } else {
             if (activeRegistryId.isNotBlank()) {
