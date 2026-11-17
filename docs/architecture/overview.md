@@ -38,8 +38,8 @@ Dependency rules:
 
 | Foundation | Current implementation to reuse | Ownership boundary |
 |---|---|---|
-| Model catalog and credentials | `ModelRegistry`, `ModelRegistryStore`, `ModelConfigurationRepository`, `ModelRequestConfigurationSelector`, `LocalVault` | Provider/model/key metadata, encrypted secrets, active model, selectable-model and failover policy |
-| Chat transport | `OpenAiClient`, `ChatHttpTransport`, `ChatEndpointPolicy`, `ChatRequestPolicy`, `OpenAiSseDecoder` | Request policy, transport, streaming decode, retry and context limits |
+| Model catalog and credentials | `ModelRegistry`, `ModelRegistryStore`, `ModelConfigurationRepository`, `ModelConnectionService`, `ModelRequestConfigurationSelector`, `LocalVault` | Provider/model/key metadata, encrypted secrets, model connectivity checks, active model, selectable-model and failover policy |
+| Chat execution and transport | `ChatExecutionService`, `OpenAiClient`, `ChatHttpTransport`, `ChatEndpointPolicy`, `ChatRequestPolicy`, `OpenAiSseDecoder` | Application service owns request execution/cancellation; transport and policy own HTTP, streaming decode, retry and context limits |
 | Agent task lifecycle | `AgentTaskCoordinator`, `PhoneAgentTaskService`, state/trace stores, `AgentTaskHandlerRegistry` | Idempotency, queueing, pause/resume/cancel, checkpoints, recovery and trace |
 | Local persistence | `NestroDatabase`, Room stores, preference stores | Durable app data and migrations |
 | Backup | `LocalBackupRepository`, `LocalBackupCompatibility` | Versioned export/import, integrity and compatibility; secrets excluded |
