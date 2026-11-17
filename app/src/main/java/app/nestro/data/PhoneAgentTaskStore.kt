@@ -47,6 +47,7 @@ object PhoneAgentTaskStore {
             val row = JSONObject()
             when (action) {
                 is PhoneAgentExecutor.Action.OpenUrl -> row.put("type", "open_url").put("url", action.url)
+                is PhoneAgentExecutor.Action.SearchWeb -> row.put("type", "search_web").put("query", action.query)
                 is PhoneAgentExecutor.Action.LaunchApp -> row.put("type", "launch_app").put("package", action.packageName)
                 is PhoneAgentExecutor.Action.ClickText -> row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 is PhoneAgentExecutor.Action.EnterText -> row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
@@ -93,6 +94,11 @@ object PhoneAgentTaskStore {
         return (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             when (row.getString("type")) {
+                "search_web" -> {
+                    val query = row.getString("query").trim()
+                    require(query.length in 2..300 && !containsSensitiveText(query)) { "恢复的网页搜索词无效或包含敏感信息" }
+                    PhoneAgentExecutor.Action.SearchWeb(query)
+                }
                 "open_url" -> {
                     val url = row.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("恢复的网页地址无效") }
