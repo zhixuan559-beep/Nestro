@@ -1307,13 +1307,7 @@ fun NestroApp() {
                                     }
                                 }
                             },
-                            onTestConnection = { candidate ->
-                                require(candidate.baseUrl.startsWith("https://") && candidate.model.isNotBlank() && candidate.apiKey.isNotBlank()) { "请填写 HTTPS 地址、模型名称和 API Key" }
-                                val response = withContext(Dispatchers.IO) {
-                                    OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "")
-                                }
-                                if (response.isBlank()) "连接成功，但模型返回了空内容。" else "连接成功：模型已返回内容。"
-                            },
+                            onTestConnection = { candidate -> appRuntime.modelConnectionService.test(candidate) },
                             onDeleteKey = { id ->
                                 modelRepository.deleteProfileKey(id)
                                 modelRegistry = modelRegistry.deleteApiKey("legacy-key-$id")
