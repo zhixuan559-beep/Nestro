@@ -60,6 +60,7 @@ object PhoneAgentExecutor {
         val agentStates = RoomAgentTaskStateStore(dao)
         val service = PhoneAgentService.activeService
         if (service == null) {
+            PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "无障碍服务尚未连接"))
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         }
@@ -177,7 +178,7 @@ object PhoneAgentExecutor {
             onProgress(index + 1, result)
             if (!success) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
-                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, detail)
+                return ExecutionResult(Outcome.FAILED, results.count { it.success }, results, detail)
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, index + 1)
         }
