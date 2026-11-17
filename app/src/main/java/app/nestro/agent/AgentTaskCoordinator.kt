@@ -181,7 +181,17 @@ class AgentTaskCoordinator(
             check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
             return completion.await()
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) { cancel(taskId) }
+            withContext(NonCancellable) {
+                val latest = states.get(taskId)
+                if (latest?.status !in setOf(
+                        AgentTaskStatus.PAUSED,
+                        AgentTaskStatus.CANCELLED,
+                        AgentTaskStatus.COMPLETED,
+                        AgentTaskStatus.WAITING_FOR_USER
+                    )) {
+                    cancel(taskId)
+                }
+            }
             throw cancelled
         } finally {
             handlers.unregister(handlerId)
