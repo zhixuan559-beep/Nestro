@@ -370,6 +370,9 @@ fun NestroApp() {
             if (result.isSuccess) {
                 automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
                 modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
+                modelRegistry = modelRegistryStore.rebuildFromLegacy(modelProfiles) { profileId ->
+                    LocalVault.readProfile(context, profileId).isNotBlank()
+                }
                 activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
                 modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
                 modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
