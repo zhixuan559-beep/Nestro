@@ -2,7 +2,6 @@ package app.nestro.ui
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
-import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -20,7 +19,7 @@ class ArtifactLibraryWindowSizeTest {
     fun artifactLibraryRemainsScrollableAcrossPhoneFoldableAndTabletWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 640.dp))
         composeRule.setContent {
-            DeviceConfigurationOverride(DeviceConfigurationOverride.WindowSize(windowSize.value)) {
+            DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(windowSize.value)) {
                 ArtifactLibraryPage("window-test-project")
             }
         }
