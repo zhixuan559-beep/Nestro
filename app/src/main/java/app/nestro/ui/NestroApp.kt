@@ -266,10 +266,11 @@ fun NestroApp() {
     var runningWorkflowId by workflowUiState.runningWorkflowId
     var workflowPaused by workflowUiState.workflowPaused
     var workflowPauseGate by workflowUiState.workflowPauseGate
-    var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
-    var pendingBackupUri by remember { mutableStateOf<Uri?>(null) }
-    var showBackupRestoreConfirm by remember { mutableStateOf(false) }
-    var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
+    val dataTransferUiState = remember { DataTransferUiState() }
+    var backupStatus by dataTransferUiState.backupStatus
+    var pendingBackupUri by dataTransferUiState.pendingBackupUri
+    var showBackupRestoreConfirm by dataTransferUiState.showBackupRestoreConfirm
+    var voiceStatus by dataTransferUiState.voiceStatus
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
 
