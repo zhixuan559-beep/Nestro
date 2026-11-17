@@ -38,6 +38,7 @@ object ArtifactStore {
                 val row = rows.getJSONObject(index)
                 val id = row.getString("id")
                 require(id.matches(Regex("[0-9a-fA-F-]{36}")))
+                require(row.getString("fileName") == "${id}.md")
                 ArtifactRecord(
                     id = id,
                     projectId = row.getString("projectId"),
@@ -121,7 +122,8 @@ object ArtifactStore {
             val fileName = "$id.md"
             require(row.optString("fileName") == fileName) { "产物索引文件引用无效" }
             val file = File(root(context), fileName)
-            if (!file.isFile) continue
+            require(file.isFile) { "产物文件缺失，已中止备份以避免静默丢失内容" }
+            require(file.length() == row.optLong("sizeBytes")) { "产物文件大小与索引不一致，已中止备份" }
             require(file.length() <= MAX_ARTIFACT_BYTES) { "产物文件超出备份大小限制" }
             totalBytes += file.length()
             require(totalBytes <= 3_000_000L) { "产物总量超过备份安全容量" }
