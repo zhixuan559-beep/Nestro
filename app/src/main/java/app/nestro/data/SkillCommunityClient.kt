@@ -67,7 +67,11 @@ object SkillCommunityClient {
 
     fun downloadVerifiedBundle(release: SignedSkillRelease): SkillBundle {
         require(release.bundleUrl.startsWith("https://")) { "技能包必须使用 HTTPS" }
-        val bytes = requestHttps(release.bundleUrl, MAX_BUNDLE_BYTES)
+        return verifyBundleBytes(release, requestHttps(release.bundleUrl, MAX_BUNDLE_BYTES))
+    }
+
+    fun verifyBundleBytes(release: SignedSkillRelease, bytes: ByteArray): SkillBundle {
+        require(bytes.isNotEmpty() && bytes.size <= MAX_BUNDLE_BYTES) { "技能包为空或超过大小限制" }
         val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         require(actual == release.sha256) { "技能包 SHA-256 不匹配，已拒绝导入" }
         val bundle = SkillBundleParser.parse(bytes.toString(Charsets.UTF_8), release.name)
