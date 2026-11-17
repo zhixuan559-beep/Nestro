@@ -197,3 +197,11 @@
 - Added model editing for display name, model code, ordered API Key associations, input/output per-million-token prices, and currency; existing enabled state and other metadata are retained when editing.
 - Added a JVM regression test proving model identity, enabled state, key associations, prices, and currency survive a metadata edit.
 - Added JVM coverage for stable provider identity during edits and for disabled providers becoming unselectable without deleting their keys/models.
+
+
+## 2026-11-18 — Agent trace cancellation boundary
+
+- Agent task execution context and coordinator previously wrapped trace persistence in `runCatching`, which could swallow coroutine cancellation while writing a trace.
+- Trace persistence failures remain non-fatal, but `CancellationException` is now explicitly rethrown in both trace paths.
+- Added a JVM regression test proving checkpoint state persists while cancellation from trace storage still propagates.
+- This is a lifecycle correctness fix; task state transitions, human handoff, and WorkManager ownership remain unchanged.
