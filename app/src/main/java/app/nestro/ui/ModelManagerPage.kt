@@ -1,7 +1,6 @@
 package app.nestro.ui
 
 import app.nestro.data.ModelConfig
-import app.nestro.data.ChatMessage
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
