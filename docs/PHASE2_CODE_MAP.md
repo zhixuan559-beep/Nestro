@@ -115,3 +115,12 @@
 - 最新 head `a8bc5d5b4115818acc293caca322ce5788925977` 的 CI 在 Kotlin 编译阶段失败，唯一报告错误为 `NestroApplication` 的 public 属性暴露 internal 类型 `ChatRequestRecoveryCoordinator`。这是可见性边界问题，不是恢复逻辑或测试失败。
 - 已将 `NestroApplication.chatRequestRecoveryCoordinator` 收紧为 `internal`，保持协调器和其内部 Result 类型不泄漏到应用公开 API。
 - 修复提交 `4e631ca4045f819a00e1e25a1f677828d0347310`；等待该修复及本次代码地图更新后的最新 head CI。PR #3 保持 Draft / 未合并。
+
+
+## 2026-11-18 批次 A 进展补充（会话启动恢复）
+
+- 新增 `data/ConversationStartupCoordinator.kt`，集中负责 Room/旧 SharedPreferences 快照恢复、活动项目校验、活动会话选择、首屏消息加载，以及恢复后活动 ID 持久化。
+- `NestroApplication` 注册该协调器；`NestroApp` 的启动 effect 改为接收 `StartupState` 并应用到 Compose 状态，不再直接编排会话/项目恢复和首屏消息读取。
+- 会话中断请求恢复仍由 `ChatRequestRecoveryCoordinator` 负责；进程级 Agent 任务恢复仍由 `NestroApplication.onCreate()` 负责，三个恢复职责保持分离。
+- `NestroApp` 仍保留全局记忆/专家配置加载、聊天请求恢复结果应用、页面状态初始化及发送流程；Batch A 未完成。
+- 本次启动恢复拆分尚待最新 head 的 Android CI 核验；不构建 APK、不进行真机验收，PR #3 保持 Draft / 未合并。
