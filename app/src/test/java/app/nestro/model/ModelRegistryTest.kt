@@ -221,3 +221,39 @@ class ModelRegistryTest {
         assertFalse(registry.validate().isNullOrBlank())
     }
 }
+
+    @Test
+    fun editingRegistryModelPreservesIndependentMetadataAndStableIdentity() {
+        val original = ModelDefinition(
+            id = "model-id",
+            providerId = "provider-id",
+            name = "Original",
+            modelCode = "model-v1",
+            apiKeyIds = listOf("key-a", "key-b"),
+            enabled = false,
+            inputPricePerMillion = 0.75,
+            outputPricePerMillion = 1.5,
+            currency = "CNY"
+        )
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("provider-id", "Provider", "https://api.example.com")),
+            apiKeys = listOf(
+                ModelApiKey("key-a", "provider-id", "A"),
+                ModelApiKey("key-b", "provider-id", "B")
+            ),
+            models = listOf(original)
+        )
+
+        val edited = registry.upsertModel(original.copy(name = "Renamed", modelCode = "model-v2"))
+
+        val saved = edited.models.single()
+        assertEquals("model-id", saved.id)
+        assertEquals("Renamed", saved.name)
+        assertEquals("model-v2", saved.modelCode)
+        assertEquals(listOf("key-a", "key-b"), saved.apiKeyIds)
+        assertFalse(saved.enabled)
+        assertEquals(0.75, saved.inputPricePerMillion!!, 0.0)
+        assertEquals(1.5, saved.outputPricePerMillion!!, 0.0)
+        assertEquals("CNY", saved.currency)
+        assertNull(edited.validate())
+    }
