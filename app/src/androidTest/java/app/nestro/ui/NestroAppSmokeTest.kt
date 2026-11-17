@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import org.junit.Rule
 import org.junit.Test
 
@@ -76,6 +77,23 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
     }
 
+
+    @Test
+    fun sendingWithoutAModelShowsActionableConfigurationGuidance() {
+        composeRule.activity.getSharedPreferences("nestro_local", 0)
+            .edit()
+            .clear()
+            .commit()
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
+        composeRule.onNodeWithContentDescription("发送").performClick()
+
+        composeRule.onNodeWithText(
+            "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
+        ).assertIsDisplayed()
+    }
 
     @Test
     fun modelConfigurationFormShowsValidationInsteadOfSavingIncompleteData() {
