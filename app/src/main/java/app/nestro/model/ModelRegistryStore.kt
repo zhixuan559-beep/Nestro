@@ -39,30 +39,7 @@ class ModelRegistryStore(context: Context) {
             ?.takeIf { it.isNotBlank() }
             ?.let(ModelRegistryCodec::decode)
             ?: ModelRegistry()
-        val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
-        val legacyKeys = migrated.apiKeys.mapNotNull { key ->
-            val profileId = key.id.removePrefix("legacy-key-")
-            val old = previous.apiKeys.firstOrNull { it.id == key.id }
-            if (hasSecret(profileId)) key.copy(enabled = old?.enabled ?: true) else null
-        }
-        val legacyProviders = migrated.providers.map { provider ->
-            provider.copy(enabled = previous.providers.firstOrNull { it.id == provider.id }?.enabled ?: provider.enabled)
-        }
-        val legacyModels = migrated.models.map { model ->
-            val profileId = model.id.removePrefix("legacy-model-")
-            val old = previous.models.firstOrNull { it.id == model.id }
-            model.copy(
-                apiKeyIds = if (hasSecret(profileId)) listOf("legacy-key-" + profileId) else emptyList(),
-                enabled = old?.enabled ?: model.enabled,
-                inputPricePerMillion = old?.inputPricePerMillion,
-                outputPricePerMillion = old?.outputPricePerMillion,
-                currency = old?.currency ?: model.currency
-            )
-        }
-        val providers = previous.providers.filterNot { it.id.startsWith("legacy-provider-") } + legacyProviders
-        val keys = previous.apiKeys.filterNot { it.id.startsWith("legacy-key-") } + legacyKeys
-        val models = previous.models.filterNot { it.id.startsWith("legacy-model-") } + legacyModels
-        return ModelRegistry(providers, keys, models).also(::save)
+        return previous.reconcileLegacyProfiles(legacyProfiles, hasSecret).also(::save)
     }
 
     fun save(registry: ModelRegistry) {
