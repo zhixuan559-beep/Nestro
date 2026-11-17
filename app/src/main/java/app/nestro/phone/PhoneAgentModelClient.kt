@@ -1,7 +1,8 @@
 package app.nestro.phone
 
 import android.content.Context
-import app.nestro.ui.LocalVault
+import app.nestro.data.LocalVault
+import app.nestro.data.ModelConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
