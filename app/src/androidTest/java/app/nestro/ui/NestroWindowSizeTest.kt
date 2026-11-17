@@ -1,5 +1,7 @@
 package app.nestro.ui
 
+import android.content.res.Configuration
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
@@ -9,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
@@ -22,10 +25,16 @@ class NestroWindowSizeTest {
     fun keepsPrimaryNavigationUsableAcrossPhoneFoldableAndTabletWindowWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
-            DeviceConfigurationOverride(
-                DeviceConfigurationOverride.ForcedSize(windowSize.value)
-            ) {
-                NestroApp()
+            val configuration = Configuration().apply {
+                screenWidthDp = windowSize.value.width.value.toInt()
+                screenHeightDp = windowSize.value.height.value.toInt()
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                DeviceConfigurationOverride(
+                    DeviceConfigurationOverride.ForcedSize(windowSize.value)
+                ) {
+                    NestroApp()
+                }
             }
         }
 
@@ -50,10 +59,16 @@ class NestroWindowSizeTest {
     fun keepsEveryPrimaryDestinationReachableAcrossPhoneFoldableAndTabletWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
-            DeviceConfigurationOverride(
-                DeviceConfigurationOverride.ForcedSize(windowSize.value)
-            ) {
-                NestroApp()
+            val configuration = Configuration().apply {
+                screenWidthDp = windowSize.value.width.value.toInt()
+                screenHeightDp = windowSize.value.height.value.toInt()
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                DeviceConfigurationOverride(
+                    DeviceConfigurationOverride.ForcedSize(windowSize.value)
+                ) {
+                    NestroApp()
+                }
             }
         }
 
