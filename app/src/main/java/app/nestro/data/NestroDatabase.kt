@@ -138,17 +138,6 @@ data class ConversationListItem(
     val messageCount: Int
 )
 
-data class ConversationRecordSummary(
-    val id: String,
-    val title: String,
-    val updatedAt: Long,
-    val projectId: String,
-    val lastMessagePreview: String,
-    val messageCount: Int
-) {
-    fun toConversationRecord(): ConversationRecordSummary = this
-}
-
 
 @Dao
 interface NestroDao {
