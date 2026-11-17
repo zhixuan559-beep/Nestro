@@ -762,6 +762,10 @@ fun NestroApp() {
             status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
         }
         prefs.edit().remove("chat_request_state_v1").apply()
+        if (databaseReady) {
+            runCatching { agentTaskCoordinator.recoverAfterProcessRestart() }
+                .onFailure { status = "后台任务恢复失败：${it.message ?: "未知错误"}" }
+        }
         if (config.apiKey.isNotBlank() && config.model.isNotBlank() && status == "尚未配置模型") status = "模型已就绪"
     }
 
