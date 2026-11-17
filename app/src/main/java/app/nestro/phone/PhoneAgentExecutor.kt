@@ -14,6 +14,7 @@ import app.nestro.agent.AgentToolSpec
 import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.RoomAgentTaskStateStore
+import app.nestro.agent.RoomAgentTaskTraceStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 
@@ -154,7 +155,8 @@ object PhoneAgentExecutor {
                         else -> AgentAuthorization.Allow
                     }
                 },
-                states = agentStates
+                states = agentStates,
+                traces = RoomAgentTaskTraceStore(dao)
             )
             val toolResult = runtime.execute(AgentToolRequest(taskId, "phone.action"))
             val success = toolResult.success
