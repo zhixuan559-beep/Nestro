@@ -1,5 +1,11 @@
 package app.nestro.data
 
+internal fun ChatMessage.allVersions(): List<String> = when {
+    versions.isEmpty() -> listOf(content)
+    activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
+    else -> versions.distinct().takeLast(20)
+}
+
 internal enum class ChatResponseStatus { STOPPED, SUCCESS, FAILURE }
 
 internal data class ChatResponseFinalization(

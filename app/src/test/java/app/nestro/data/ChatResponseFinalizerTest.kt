@@ -49,4 +49,18 @@ class ChatResponseFinalizerTest {
         )
         assertEquals("请求失败：本次请求超时，请重试或缩短内容。", result.finalText)
     }
+    @Test
+    fun preservesPreviousAssistantVersionsAndAppendsNewReply() {
+        val previous = ChatMessage(
+            id = "assistant-old", role = "assistant", content = "latest content",
+            versions = listOf("version-1", "version-2"), activeVersion = 2
+        )
+        val result = ChatResponseFinalizer.build(
+            result = Result.success("new reply"), partialAnswer = "", stopRequested = false,
+            previousAssistant = previous, requestHistory = emptyList(), assistantId = "assistant-new"
+        )
+        assertEquals(listOf("version-1", "version-2", "latest content", "new reply"), result.completedHistory.last().versions)
+        assertEquals(3, result.completedHistory.last().activeVersion)
+    }
+
 }

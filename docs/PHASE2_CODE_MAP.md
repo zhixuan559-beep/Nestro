@@ -321,3 +321,8 @@
 - Added `CapabilityDraftCoordinator` for expert/skill draft prompt construction, model invocation, and strict JSON/name/prompt validation. `isCreationIntent` moved into the data layer with the coordinator.
 - `NestroApp` now handles the resulting draft preview/confirmation UI only; model request and definition parsing are delegated to the coordinator.
 - Added JVM tests for expert draft prompt context, existing-name constraints, strict definition parsing, and negated creation intent.
+
+## 2026-11-18 — CI #827 revision-history extension fix
+
+- CI #827 found that `ChatMessage.allVersions()` had been a private extension in NestroApp and was not visible to the extracted `ChatResponseFinalizer` data-layer service.
+- Moved the exact revision-history rule into an internal data-layer extension and added a regression test covering an active version beyond the stored version list and appending the new response.
