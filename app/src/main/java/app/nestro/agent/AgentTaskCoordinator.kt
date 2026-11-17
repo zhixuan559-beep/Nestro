@@ -134,13 +134,13 @@ class AgentTaskCoordinator(
     }
 
     suspend fun resume(taskId: String): AgentTaskState? {
-        val queued = transitionMutex.withLock {
-            val existing = states.get(taskId) ?: return@withLock null
+        val queued = withTransitionLock {
+            val existing = states.get(taskId) ?: return@withTransitionLock null
             if (existing.status !in setOf(
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.FAILED,
                     AgentTaskStatus.WAITING_FOR_USER
-                )) return@withLock existing
+                )) return@withTransitionLock existing
             val next = existing.copy(
                 status = AgentTaskStatus.QUEUED,
                 lastError = "",
@@ -195,8 +195,8 @@ class AgentTaskCoordinator(
         val recovered = mutableListOf<AgentTaskState>()
         val queuedIds = mutableListOf<String>()
         states.recoverable().forEach { state ->
-            val next = transitionMutex.withLock {
-                val latest = states.get(state.taskId) ?: return@withLock null
+            val next = withTransitionLock {
+                val latest = states.get(state.taskId) ?: return@withTransitionLock null
                 when (latest.status) {
                     AgentTaskStatus.RUNNING -> {
                         val paused = latest.copy(
@@ -228,9 +228,9 @@ class AgentTaskCoordinator(
     }
 
     private suspend fun stop(taskId: String, status: AgentTaskStatus) {
-        transitionMutex.withLock {
-            val state = states.get(taskId) ?: return@withLock
-            if (state.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return@withLock
+        withTransitionLock {
+            val state = states.get(taskId) ?: return@withTransitionLock
+            if (state.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return@withTransitionLock
             val job = activeJobs[taskId]
             if (job == null) {
                 states.put(state.copy(status = status, updatedAt = System.currentTimeMillis()))
@@ -247,8 +247,8 @@ class AgentTaskCoordinator(
         if (initial.status != AgentTaskStatus.QUEUED) return
         val handler = handlers.find(initial.owner)
         if (handler == null) {
-            transitionMutex.withLock {
-                val latest = states.get(taskId) ?: return@withLock
+            withTransitionLock {
+                val latest = states.get(taskId) ?: return@withTransitionLock
                 if (latest.status == AgentTaskStatus.QUEUED) {
                     states.put(latest.copy(
                         status = AgentTaskStatus.FAILED,
@@ -264,7 +264,7 @@ class AgentTaskCoordinator(
             val job = async(start = CoroutineStart.LAZY) {
                 handler.execute(AgentTaskExecutionContext(taskId, states, traces))
             }
-            val started = transitionMutex.withLock {
+            val started = withTransitionLock {
                 val latest = states.get(taskId)
                 if (latest == null || latest.status != AgentTaskStatus.QUEUED) {
                     false
@@ -286,7 +286,7 @@ class AgentTaskCoordinator(
             trace(taskId, "started", initial.owner)
             try {
                 job.await()
-                transitionMutex.withLock {
+                withTransitionLock {
                     val latest = states.get(taskId) ?: initial
                     val requested = requestedStops.remove(taskId)
                     when {
@@ -307,7 +307,7 @@ class AgentTaskCoordinator(
                 if (finalState?.status == AgentTaskStatus.COMPLETED) trace(taskId, "completed")
                 if (finalState?.status == AgentTaskStatus.WAITING_FOR_USER) trace(taskId, "waiting_for_user", finalState.lastError)
             } catch (cancelled: CancellationException) {
-                val requested = transitionMutex.withLock { requestedStops.remove(taskId) }
+                val requested = withTransitionLock { requestedStops.remove(taskId) }
                 if (requested != null) {
                     withContext(NonCancellable) {
                         val latest = states.get(taskId) ?: initial
@@ -343,7 +343,7 @@ class AgentTaskCoordinator(
                     trace(taskId, "failed", message)
                 }
             } finally {
-                transitionMutex.withLock { activeJobs.remove(taskId, job) }
+                withTransitionLock { activeJobs.remove(taskId, job) }
             }
         }
     }
