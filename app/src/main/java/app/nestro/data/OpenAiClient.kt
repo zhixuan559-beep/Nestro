@@ -58,6 +58,7 @@ internal object OpenAiClient {
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String = UUID.randomUUID().toString(),
         timeoutMillis: Long = 180_000,
+        shouldStop: () -> Boolean = { false },
         onChunk: suspend (String) -> Unit
     ): String {
         require(configs.isNotEmpty()) { "没有可用的模型配置" }
@@ -65,8 +66,10 @@ internal object OpenAiClient {
         return try {
             withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
             configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
+                if (shouldStop()) throw IllegalStateException("用户停止生成")
                 var attempt = 0
                 while (attempt < 2) {
+                    if (shouldStop()) throw IllegalStateException("用户停止生成")
                     var emitted = false
                     try {
                         val response = stream(candidate, history, systemPrompt, temperature, maxTokens, requestId) { chunk ->
@@ -76,7 +79,9 @@ internal object OpenAiClient {
                         onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
                         return@withTimeout response
                     } catch (error: Throwable) {
-                        if (error is kotlinx.coroutines.CancellationException || emitted) throw error
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        if (shouldStop()) throw IllegalStateException("用户停止生成", error)
+                        if (emitted) throw error
                         lastError = error
                         if (attempt == 0 && ChatRequestPolicy.shouldRetry(error)) {
                             attempt++

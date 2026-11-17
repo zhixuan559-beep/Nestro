@@ -29,9 +29,11 @@ class ChatExecutionService {
         maxTokens: Int? = null,
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String = UUID.randomUUID().toString(),
+        shouldStop: () -> Boolean = { false },
         onChunk: suspend (String) -> Unit
     ): String = OpenAiClient.streamWithFallback(
         configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId,
+        shouldStop = shouldStop,
         onChunk = onChunk
     )
 

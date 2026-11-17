@@ -784,7 +784,7 @@ fun NestroApp() {
                     val finalSystemContext = listOf(requestSystemContext, teamContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
                     if (stopRequested) throw IllegalStateException("用户停止生成")
-                    appRuntime.chatExecutionService.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
+                    appRuntime.chatExecutionService.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId, shouldStop = { stopRequested }) { chunk ->
                         partialAnswer.append(chunk)
                         prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
                             .put("request_id", assistantId).put("conversation_id", requestConversationId)
