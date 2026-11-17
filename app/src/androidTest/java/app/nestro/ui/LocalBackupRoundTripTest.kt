@@ -172,6 +172,8 @@ class LocalBackupRoundTripTest {
 
     @Test fun backupExportRecoversInterruptedRestoreBeforeTakingSnapshot() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        File(context.filesDir, "artifacts").deleteRecursively()
+        File(context.filesDir, "backup-restore").deleteRecursively()
         val databaseName = "nestro_backup_export_recovery.db"
         context.deleteDatabase(databaseName)
         val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
@@ -195,13 +197,20 @@ class LocalBackupRoundTripTest {
 
             val exported = repository.createBackup(prefs)
 
-            assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(exported)))
+            val exportedRoot = JSONObject(exported)
+            assertTrue(LocalBackupCompatibility.verifyChecksum(exportedRoot))
+            assertEquals(
+                "原始消息",
+                exportedRoot.getJSONArray("conversations_v1").getJSONObject(0)
+                    .getJSONArray("messages").getJSONObject(0).getString("content")
+            )
             assertEquals("原始消息", dao.loadConversations().single().messages.single().content)
             assertEquals("导出前应保留的原始记忆", prefs.getString("global_memory_v1", ""))
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
             database.close()
             prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
             File(context.filesDir, "backup-restore").deleteRecursively()
             context.deleteDatabase(databaseName)
         }
