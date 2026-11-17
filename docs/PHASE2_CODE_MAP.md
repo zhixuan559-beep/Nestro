@@ -207,3 +207,5 @@
 - This is a lifecycle correctness fix; task state transitions, human handoff, and WorkManager ownership remain unchanged.
 
 - CI #810 exposed a JUnit test-discovery error: the new Model Registry metadata-preservation test had been appended outside `ModelRegistryTest`, so JUnit discovered a top-level file facade with no valid test methods. The test is now inside the test class; no production-code compile error was reported. This correction is included in the next staged head and must be revalidated by CI.
+
+- Phone Agent task log loading now uses the shared cancellation-safe result wrapper: ordinary log-store errors still degrade to an empty log list, but page/worker coroutine cancellation propagates instead of being swallowed.
