@@ -6,14 +6,11 @@ import androidx.work.WorkerParameters
 import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.NestroApplication
-import app.nestro.agent.AgentTaskState
-import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 class PhoneAgentWorker(
     appContext: Context,
@@ -30,102 +27,61 @@ class PhoneAgentWorker(
         }
     }
 
-    /**
-     * Phone Agent uses the same persisted task queue as expert-team and workflow
-     * execution. WorkManager remains the OS scheduling/foreground boundary.
-     */
+    /** WorkManager schedules the task; the application coordinator owns execution. */
     private suspend fun runWithSharedCoordinator(
         dao: app.nestro.data.NestroDao,
-        taskId: String,
-        afterUserHandoff: Boolean,
-        allowRetryCurrentAction: Boolean
+        taskId: String
     ): PhoneAgentAgent.Result {
         val app = applicationContext as NestroApplication
         val coordinator = app.agentTaskCoordinator
         val stateStore = RoomAgentTaskStateStore(dao)
-        val preferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val completion = CompletableDeferred<PhoneAgentAgent.Result>()
+        val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
+        val existing = stateStore.get(taskId)
+        if (existing == null) {
+            stateStore.put(app.nestro.agent.AgentTaskState(
+                taskId = taskId,
+                owner = "phone_agent",
+                status = AgentTaskStatus.QUEUED,
+                currentStep = task.currentStep,
+                checkpoint = task.planJson.take(64_000)
+            ))
+        } else {
+            require(existing.owner == "phone_agent") { "Phone Agent 任务 ID 已被其他模块占用" }
+        }
 
-        app.agentTaskHandlers.register("phone_agent") { taskContext ->
-            try {
-                val taskPreferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                val handoff = taskPreferences.getBoolean(
-                    PhoneAgentWorkScheduler.afterHandoffKey(taskContext.taskId),
-                    taskContext.taskId == taskId && afterUserHandoff
-                )
-                val retry = taskPreferences.getBoolean(
-                    PhoneAgentWorkScheduler.allowRetryKey(taskContext.taskId),
-                    taskContext.taskId == taskId && allowRetryCurrentAction
-                )
-                val result = PhoneAgentAgent.run(
-                    applicationContext, dao, taskContext.taskId, handoff, retry
-                )
-                val latestTask = dao.phoneAgentTask(taskContext.taskId)
-                val latestState = stateStore.get(taskContext.taskId)
-                val nextStatus = when (result.outcome) {
-                    PhoneAgentExecutor.Outcome.COMPLETED -> AgentTaskStatus.COMPLETED
-                    PhoneAgentExecutor.Outcome.PAUSED -> AgentTaskStatus.PAUSED
-                    PhoneAgentExecutor.Outcome.WAITING_USER -> AgentTaskStatus.WAITING_FOR_USER
-                    PhoneAgentExecutor.Outcome.FAILED -> AgentTaskStatus.FAILED
-                }
-                if (latestState != null) {
-                    stateStore.put(latestState.copy(
-                        status = nextStatus,
-                        currentStep = latestTask?.currentStep ?: latestState.currentStep,
-                        lastError = if (nextStatus in setOf(AgentTaskStatus.PAUSED, AgentTaskStatus.WAITING_FOR_USER, AgentTaskStatus.FAILED)) result.message.take(2_000) else "",
-                        updatedAt = System.currentTimeMillis()
-                    ))
-                }
-                if (taskContext.taskId == taskId) completion.complete(result)
-            } catch (error: Throwable) {
-                if (taskContext.taskId == taskId) completion.completeExceptionally(error)
-                throw error
+        when (stateStore.get(taskId)?.status) {
+            AgentTaskStatus.QUEUED -> coordinator.enqueue(taskId, "phone_agent", task.planJson.take(64_000))
+            AgentTaskStatus.PAUSED,
+            AgentTaskStatus.FAILED,
+            AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)
+            AgentTaskStatus.RUNNING -> {
+                coordinator.pause(taskId)
+                coordinator.resume(taskId)
             }
+            AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
+            AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, "任务已取消")
+            null -> error("无法初始化 Phone Agent 任务状态")
         }
 
         try {
-            val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
-            val existing = stateStore.get(taskId)
-            if (existing == null) {
-                stateStore.put(AgentTaskState(
-                    taskId = taskId,
-                    owner = "phone_agent",
-                    status = AgentTaskStatus.QUEUED,
-                    currentStep = task.currentStep,
-                    checkpoint = task.planJson.take(64_000)
-                ))
-            } else {
-                require(existing.owner == "phone_agent") { "Phone Agent 任务 ID 已被其他模块占用" }
-            }
-
-            when (stateStore.get(taskId)?.status) {
-                AgentTaskStatus.QUEUED -> coordinator.enqueue(taskId, "phone_agent", task.planJson.take(64_000))
-                AgentTaskStatus.PAUSED,
-                AgentTaskStatus.FAILED,
-                AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)
-                AgentTaskStatus.RUNNING -> {
-                    coordinator.pause(taskId)
-                    coordinator.resume(taskId)
+            while (true) {
+                val state = stateStore.get(taskId) ?: error("任务状态丢失")
+                when (state.status) {
+                    AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
+                    AgentTaskStatus.PAUSED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, state.lastError)
+                    AgentTaskStatus.WAITING_FOR_USER -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.WAITING_USER, state.lastError)
+                    AgentTaskStatus.FAILED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.FAILED, state.lastError)
+                    AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.PAUSED, "任务已取消")
+                    else -> delay(200)
                 }
-                AgentTaskStatus.COMPLETED,
-                AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(
-                    if (stateStore.get(taskId)?.status == AgentTaskStatus.COMPLETED) PhoneAgentExecutor.Outcome.COMPLETED else PhoneAgentExecutor.Outcome.PAUSED,
-                    "任务已结束"
-                )
-                null -> error("无法初始化 Phone Agent 任务状态")
             }
-            return completion.await()
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) { coordinator.pause(taskId) }
+            withContext(kotlinx.coroutines.NonCancellable) { coordinator.pause(taskId) }
             throw cancelled
-        } finally {
-            app.agentTaskHandlers.unregister("phone_agent")
         }
     }
 
     private suspend fun executeTask(taskId: String): Result {
-        val afterUserHandoff = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_AFTER_HANDOFF, false)
-        val allowRetryCurrentAction = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_ALLOW_RETRY, false)
         val dao = NestroDatabase.get(applicationContext).dao()
         val task = dao.phoneAgentTask(taskId) ?: return Result.success()
 
@@ -143,7 +99,7 @@ class PhoneAgentWorker(
         }
 
         return try {
-            val result = runWithSharedCoordinator(dao, taskId, afterUserHandoff, allowRetryCurrentAction)
+            val result = runWithSharedCoordinator(dao, taskId)
             val cancelRequested = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
                 .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
             if (cancelRequested || dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
