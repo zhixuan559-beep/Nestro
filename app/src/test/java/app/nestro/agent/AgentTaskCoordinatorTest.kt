@@ -58,6 +58,9 @@ class AgentTaskCoordinatorTest {
         assertTrue(rejected.isFailure)
         assertEquals("first", states.get("owned-task")?.owner)
         release.complete(Unit)
+        withTimeout(2_000) {
+            while (states.get("owned-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
     }
 
     @Test
