@@ -7,6 +7,8 @@ import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
 import app.nestro.data.ConversationRecord
 import app.nestro.data.ConversationPreferencesStore
+import app.nestro.data.ProjectRecord
+import app.nestro.data.ProjectPreferencesStore
 import app.nestro.data.OpenAiClient
 import app.nestro.data.ConversationEntity
 import app.nestro.data.ConversationListItem
@@ -142,7 +144,6 @@ internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
     screenWidthDp >= 840 -> 320
     else -> 286
 }
-private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long, val archivedAt: Long = 0L)
 private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
 
 @Composable
@@ -378,7 +379,7 @@ fun NestroApp() {
                 }
                 persistedConversationVersions.clear()
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
-                projects = loadProjects(prefs)
+                projects = ProjectPreferencesStore.loadProjects(prefs)
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: ConversationPreferencesStore.loadMessages(prefs)
@@ -623,9 +624,9 @@ fun NestroApp() {
                             localRecords.filterNot { it.projectId == pendingProjectDeleteId },
                             markDirty = false
                         )
-                        saveProjects(
+                        ProjectPreferencesStore.saveProjects(
                             prefs,
-                            loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
+                            ProjectPreferencesStore.loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
                             markDirty = false
                         )
                         val editor = prefs.edit()
@@ -641,7 +642,7 @@ fun NestroApp() {
                     prefs.getLong("room_synced_at", 0L)
                 if (storedConversationCount == 0 || hasPendingLocalSnapshot) {
                     val legacyConversations = ConversationPreferencesStore.loadConversations(prefs)
-                    val legacyProjects = loadProjects(prefs)
+                    val legacyProjects = ProjectPreferencesStore.loadProjects(prefs)
                     database.withTransaction {
                         val conversationIds = legacyConversations.map { it.id }
                         val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
@@ -666,7 +667,7 @@ fun NestroApp() {
                 } else {
                     val restoredConversations = dao.allConversationSummaries().map { ConversationRecord(it.id, it.title, it.updatedAt, emptyList(), it.projectId, messagesLoaded = false) }
                     val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-                    val restoredProjects = if (storedProjects.isEmpty()) loadProjects(prefs) else storedProjects
+                    val restoredProjects = if (storedProjects.isEmpty()) ProjectPreferencesStore.loadProjects(prefs) else storedProjects
                     if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
                     restoredConversations to restoredProjects
                 }
@@ -682,7 +683,7 @@ fun NestroApp() {
             databaseReady = true
         } else {
             conversations = ConversationPreferencesStore.loadConversations(prefs)
-            projects = loadProjects(prefs)
+            projects = ProjectPreferencesStore.loadProjects(prefs)
             status = "本地数据库暂不可用，已回退到本机旧存储"
         }
         val savedProjectId = prefs.getString("active_project_id", "default") ?: "default"
@@ -791,7 +792,7 @@ fun NestroApp() {
             persistedConversationVersions.clear()
             conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.hashCode() }
             ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot, markDirty = false)
-            saveProjects(prefs, projectSnapshot, markDirty = false)
+            ProjectPreferencesStore.saveProjects(prefs, projectSnapshot, markDirty = false)
             prefs.edit().putLong("room_synced_at", snapshotTimestamp).apply()
         }.onFailure {
             status = "本地数据保存失败：${it.message ?: "未知错误"}"
@@ -2077,7 +2078,7 @@ fun NestroApp() {
                                                             onClick = {
                                                                 val archivedAt = System.currentTimeMillis()
                                                                 projects = projects.map { if (it.id == project.id) it.copy(archivedAt = archivedAt) else it }
-                                                                saveProjects(prefs, projects)
+                                                                ProjectPreferencesStore.saveProjects(prefs, projects)
                                                                 status = "项目已归档，原有会话、知识库、记忆和任务均保留；恢复后可继续使用。"
                                                             }
                                                         ) { Text("归档", color = Muted) }
@@ -2124,7 +2125,7 @@ fun NestroApp() {
                                                                         }
                                                                         ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                         projects = projects.filterNot { it.id == project.id }
-                                                                        saveProjects(prefs, projects)
+                                                                        ProjectPreferencesStore.saveProjects(prefs, projects)
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
@@ -2163,7 +2164,7 @@ fun NestroApp() {
                                                         enabled = deletingProjectId.isBlank() && ProjectSpaceRules.canRestore(project.id),
                                                         onClick = {
                                                             projects = projects.map { if (it.id == project.id) it.copy(archivedAt = 0L) else it }
-                                                            saveProjects(prefs, projects)
+                                                            ProjectPreferencesStore.saveProjects(prefs, projects)
                                                             status = "项目已恢复，可以切换进入。"
                                                         }
                                                     ) { Text("恢复", color = Mint) }
@@ -2449,7 +2450,7 @@ fun NestroApp() {
                         } else {
                             projects = projects.map { if (it.id == editingProjectId) it.copy(name = name, instructions = projectDraftInstructions.trim()) else it }
                         }
-                        saveProjects(prefs, projects)
+                        ProjectPreferencesStore.saveProjects(prefs, projects)
                         showProjectDialog = false
                     }
                 }) { Text("保存", color = Mint) }
@@ -3476,57 +3477,6 @@ private fun parseGeneratedDefinition(raw: String): Pair<String, String> {
     return name to prompt
 }
 
-private fun loadProjects(prefs: android.content.SharedPreferences): List<ProjectRecord> {
-    val parsed = runCatching {
-        val array = JSONArray(prefs.getString("projects", "[]"))
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ProjectRecord(item.getString("id"), item.optString("name", "项目").take(40),
-                item.optString("instructions", "").take(4000), item.optLong("created_at", System.currentTimeMillis()), item.optLong("archived_at", 0L).coerceAtLeast(0L))
-        }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
-    }.getOrDefault(emptyList())
-    val all = if (parsed.any { it.id == "default" }) parsed else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    return all.distinctBy { it.id }.take(100)
-}
-
-private fun parseProjects(array: JSONArray?): List<ProjectRecord> {
-    val parsed = if (array == null) emptyList() else (0 until array.length()).map { index ->
-        val item = array.getJSONObject(index)
-        ProjectRecord(
-            item.getString("id"),
-            item.optString("name", "项目"),
-            item.optString("instructions", ""),
-            item.optLong("created_at", System.currentTimeMillis()),
-            item.optLong("archived_at", 0L).coerceAtLeast(0L)
-        )
-    }
-    val withDefault = if (parsed.any { it.id == "default" }) parsed
-        else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    require(withDefault.all { it.instructions.length <= 4000 }) { "项目空间指令过长" }
-    require(ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) == null) {
-        ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) ?: "项目空间数据无效"
-    }
-    return withDefault
-}
-
-private fun projectsToJson(projects: List<ProjectRecord>): String {
-    val array = JSONArray()
-    projects.take(100).forEach { project ->
-        array.put(JSONObject().put("id", project.id).put("name", project.name.take(40))
-            .put("instructions", project.instructions.take(4000)).put("created_at", project.createdAt)
-            .put("archived_at", project.archivedAt.coerceAtLeast(0L)))
-    }
-    return array.toString()
-}
-
-private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
-    val editor = prefs.edit().putString("projects", projectsToJson(projects))
-    if (markDirty && !prefs.getBoolean("room_storage_initialized", false)) {
-        editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
-    }
-    editor.apply()
-}
-
 private fun jsonStringList(array: JSONArray?): List<String> = array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
 
 private fun loadExpertTeams(prefs: android.content.SharedPreferences): List<ExpertTeam> = runCatching {
@@ -3646,8 +3596,8 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
     val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-    val backupProjects = if (roomProjects.isEmpty()) loadProjects(prefs) else roomProjects
-    root.put("projects", projectsToJson(backupProjects))
+    val backupProjects = if (roomProjects.isEmpty()) ProjectPreferencesStore.loadProjects(prefs) else roomProjects
+    root.put("projects", ProjectPreferencesStore.projectsToJson(backupProjects))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val roomConversationRows = snapshot.conversations
     require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
@@ -3772,9 +3722,9 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
     val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
     val restoredProjects = when (val projectsValue = root.opt("projects")) {
-        is JSONArray -> parseProjects(projectsValue)
-        is String -> parseProjects(JSONArray(projectsValue))
-        else -> parseProjects(null)
+        is JSONArray -> ProjectPreferencesStore.parseProjects(projectsValue)
+        is String -> ProjectPreferencesStore.parseProjects(JSONArray(projectsValue))
+        else -> ProjectPreferencesStore.parseProjects(null)
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
@@ -4051,7 +4001,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
-        .putString("projects", projectsToJson(restoredProjects))
+        .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
         .putString("active_project_id", root.optString("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
