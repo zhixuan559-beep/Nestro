@@ -1,5 +1,7 @@
 package app.nestro.ui
 
+import app.nestro.model.ModelRegistry
+import app.nestro.model.ModelRegistryStore
 import app.nestro.data.ModelConfig
 import app.nestro.data.LocalVault
 import app.nestro.data.ConversationEntity
@@ -163,6 +165,12 @@ fun NestroApp() {
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
     var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
+    val modelRegistryStore = remember { ModelRegistryStore(context) }
+    var modelRegistry by remember {
+        mutableStateOf(modelRegistryStore.load(modelProfiles) { profileId ->
+            LocalVault.readProfile(context, profileId).isNotBlank()
+        })
+    }
     var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
     var modelFailoverEnabled by remember { mutableStateOf(prefs.getBoolean("model_failover_enabled", false)) }
     var modelUsage by remember { mutableStateOf(ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")) }
@@ -1241,6 +1249,8 @@ fun NestroApp() {
                                 } else {
                                     modelProfiles = (modelProfiles.filterNot { it.id == metadata.id } + metadata)
                                     LocalVault.writeProfile(context, metadata.id, apiKey)
+                                    modelRegistry = modelRegistry.upsertLegacyProfile(metadata, apiKey.isNotBlank())
+                                    modelRegistryStore.save(modelRegistry)
                                     prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
                                     if (activate || metadata.id == activeModelProfileId) {
                                         activeModelProfileId = metadata.id
@@ -1253,6 +1263,8 @@ fun NestroApp() {
                             },
                             onDeleteKey = { id ->
                                 LocalVault.deleteProfile(context, id)
+                                modelRegistry = modelRegistry.deleteApiKey("legacy-key-$id")
+                                modelRegistryStore.save(modelRegistry)
                                 if (activeModelProfileId == id) {
                                     activeModelProfileId = ""
                                     config = ModelConfig("", "", "")
@@ -1263,6 +1275,8 @@ fun NestroApp() {
                             },
                             onDelete = { id ->
                                 modelProfiles = modelProfiles.filterNot { it.id == id }
+                                modelRegistry = modelRegistry.deleteLegacyProfile(id)
+                                modelRegistryStore.save(modelRegistry)
                                 LocalVault.deleteProfile(context, id)
                                 prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
                                 if (activeModelProfileId == id) {
