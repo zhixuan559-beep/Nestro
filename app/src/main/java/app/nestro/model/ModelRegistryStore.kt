@@ -11,7 +11,12 @@ class ModelRegistryStore(context: Context) {
         hasSecret: (profileId: String) -> Boolean
     ): ModelRegistry {
         val saved = preferences.getString(KEY, null)
-        if (!saved.isNullOrBlank()) return ModelRegistryCodec.decode(saved)
+        if (!saved.isNullOrBlank()) {
+            val decoded = ModelRegistryCodec.decode(saved)
+            if (decoded.validate() == null && (decoded.providers.isNotEmpty() || legacyProfiles.isEmpty())) {
+                return decoded
+            }
+        }
 
         val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
         val migratedKeys = migrated.apiKeys.map { key ->
