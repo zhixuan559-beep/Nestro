@@ -51,9 +51,12 @@ class PhoneAgentTaskService(
     }
 
     suspend fun cancel(taskId: String, stopCurrent: Boolean) {
+        // Commit the terminal state first. A stale UI tap must not cancel a task
+        // whose completion was already persisted by the worker.
+        val cancelled = PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
+        if (!cancelled) return
         PhoneAgentWorkScheduler.cancel(appContext, taskId, stopCurrent)
         PhoneAgentNotifications.cancel(appContext, taskId)
-        val cancelled = PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
-        if (cancelled) coordinator.cancel(taskId)
+        coordinator.cancel(taskId)
     }
 }
