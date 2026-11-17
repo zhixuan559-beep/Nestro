@@ -41,7 +41,7 @@ class ModelRegistryTest {
         assertTrue(disabled.selectableModels().isEmpty())
         assertEquals(1, disabled.apiKeys.size)
         assertEquals(1, disabled.models.size)
-        assertFalse(disabled.apiKeys.single().enabled.not())
+        assertTrue(disabled.apiKeys.single().enabled)
         assertNull(disabled.validate())
     }
 
