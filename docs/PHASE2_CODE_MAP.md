@@ -284,3 +284,10 @@
 - Added JVM coverage for the last-eight-message query window, project/conversation scoping, context composition, recall source propagation, and the 16k-character cap.
 
 - CI #822 identified one Kotlin API visibility error in the newly extracted chat context assembler: its public method exposed internal `ChatMessage`. The assembler/result and the application composition-root property are now internal, matching their app-internal use and avoiding accidental public API leakage.
+
+
+## 2026-11-18 — Workflow task lifecycle boundary
+
+- Added `WorkflowExecutionCoordinator` as the application boundary for workflow task registration, queued/running/finished checkpoints, and shared AgentTaskCoordinator lifecycle.
+- `NestroApplication` owns the process-scoped coordinator. `NestroApp` now supplies workflow definition/input, model invocation, and pause/stop/UI progress callbacks; the UI root no longer calls `AgentTaskCoordinator.runInline` directly for workflows.
+- Added JVM coverage for step execution, progress callback, output, and terminal shared-task state. WorkflowEngine's existing retry, timeout, repeat, skip, and continue-on-error semantics remain unchanged.

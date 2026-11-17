@@ -57,7 +57,6 @@ import app.nestro.data.WorkflowDefinition
 import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
 import app.nestro.data.WorkflowDefinitionCodec
-import app.nestro.data.WorkflowEngine
 import app.nestro.data.WorkflowRunHistoryCodec
 import app.nestro.data.WorkflowRunRecord
 import app.nestro.data.WorkflowExecutionException
@@ -127,7 +126,6 @@ fun NestroApp() {
     val scope = rememberCoroutineScope()
     val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val agentTaskCoordinator = appRuntime.agentTaskCoordinator
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
@@ -1313,44 +1311,43 @@ fun NestroApp() {
                                                      scope.launch {
                                                          try {
                                                          val result = runCatchingCancellable {
-                                                             agentTaskCoordinator.runInline(
-                                                                 taskId = UUID.randomUUID().toString(),
-                                                                 owner = "workflow",
-                                                                 initialCheckpoint = "workflow:" + workflow.id + ":queued"
-                                                             ) { taskContext ->
-                                                                 taskContext.checkpoint("workflow:" + workflow.id + ":running", 0)
-                                                                 val runResult = WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
-                                                                 val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
-                                                                 val roleContext = when (step.kind) {
-                                                                     WorkflowStepKind.EXPERT -> {
-                                                                          val expertName = step.targetId.ifBlank { step.title }
-                                                                          val profile = expertProfiles[expertName]
-                                                                          check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
-                                                                          listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, skills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
-                                                                      }
-                                                                      WorkflowStepKind.SKILL -> {
-                                                                          val skillName = step.targetId.ifBlank { step.title }
-                                                                          check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
-                                                                          skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
-                                                                      }
-                                                                     WorkflowStepKind.PROMPT -> ""
+                                                             appRuntime.workflowExecutionCoordinator.execute(
+                                                                 workflow = workflow,
+                                                                 input = input,
+                                                                 invokeModel = { step, stepPrompt ->
+                                                                     val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
+                                                                     val roleContext = when (step.kind) {
+                                                                         WorkflowStepKind.EXPERT -> {
+                                                                             val expertName = step.targetId.ifBlank { step.title }
+                                                                             val profile = expertProfiles[expertName]
+                                                                             check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
+                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, skills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
+                                                                         }
+                                                                         WorkflowStepKind.SKILL -> {
+                                                                             val skillName = step.targetId.ifBlank { step.title }
+                                                                             check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
+                                                                             skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
+                                                                         }
+                                                                         WorkflowStepKind.PROMPT -> ""
+                                                                     }
+                                                                     withContext(Dispatchers.IO) {
+                                                                         appRuntime.chatExecutionService.completeWithFallback(
+                                                                             requestModelConfigs,
+                                                                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                             listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
+                                                                             temperature = expertOptions?.temperature,
+                                                                             maxTokens = expertOptions?.maxTokens,
+                                                                             onUsage = recordModelUsage
+                                                                         )
+                                                                     }
+                                                                 },
+                                                                 onStep = { index, step ->
+                                                                     if (stopRequested) throw IllegalStateException("用户停止工作流")
+                                                                     workflowPauseGate?.await()
+                                                                     if (stopRequested) throw IllegalStateException("用户停止工作流")
+                                                                     workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                                  }
-                                                                 withContext(Dispatchers.IO) {
-                                                                     appRuntime.chatExecutionService.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
-                                                                         listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
-                                                                         temperature = expertOptions?.temperature,
-                                                                         maxTokens = expertOptions?.maxTokens,
-                                                                         onUsage = recordModelUsage)
-                                                                 }
-                                                             }, onStep = { index, step ->
-                                                                 if (stopRequested) throw IllegalStateException("用户停止工作流")
-                                                                 workflowPauseGate?.await()
-                                                                 if (stopRequested) throw IllegalStateException("用户停止工作流")
-                                                                 workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
-                                                             })
-                                                                 taskContext.checkpoint("workflow:" + workflow.id + ":finished", runResult.completedSteps)
-                                                                 runResult
-                                                             }
+                                                             )
                                                          }
                                                          val assistantText = when {
                                                              stopRequested -> "工作流已停止。"

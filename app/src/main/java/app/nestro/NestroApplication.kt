@@ -23,6 +23,7 @@ import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.data.ChatRequestContextAssembler
+import app.nestro.data.WorkflowExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
@@ -60,6 +61,9 @@ class NestroApplication : Application() {
     val chatExecutionService: ChatExecutionService by lazy { ChatExecutionService() }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
+    }
+    val workflowExecutionCoordinator: WorkflowExecutionCoordinator by lazy {
+        WorkflowExecutionCoordinator(agentTaskCoordinator)
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
         ChatRequestContextAssembler(
