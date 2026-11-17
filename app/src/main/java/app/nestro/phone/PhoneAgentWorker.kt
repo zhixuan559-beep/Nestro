@@ -20,6 +20,25 @@ class PhoneAgentWorker(
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(PhoneAgentWorkScheduler.KEY_TASK_ID)
             ?: return Result.success()
+        val preferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        // WorkManager input survives process death and automatic retries. Rehydrate
+        // handoff/retry intent before the coordinator handler reads its durable flags.
+        preferences.edit()
+            .putBoolean(
+                PhoneAgentWorkScheduler.afterHandoffKey(taskId),
+                inputData.getBoolean(
+                    PhoneAgentWorkScheduler.KEY_AFTER_HANDOFF,
+                    preferences.getBoolean(PhoneAgentWorkScheduler.afterHandoffKey(taskId), false)
+                )
+            )
+            .putBoolean(
+                PhoneAgentWorkScheduler.allowRetryKey(taskId),
+                inputData.getBoolean(
+                    PhoneAgentWorkScheduler.KEY_ALLOW_RETRY,
+                    preferences.getBoolean(PhoneAgentWorkScheduler.allowRetryKey(taskId), false)
+                )
+            )
+            .apply()
         try {
             return executeTask(taskId)
         } finally {
