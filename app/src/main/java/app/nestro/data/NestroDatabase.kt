@@ -328,8 +328,27 @@ interface NestroDao {
     @Query("SELECT * FROM knowledge_documents ORDER BY projectId, importedAt DESC") suspend fun allKnowledgeDocuments(): List<KnowledgeDocumentEntity>
     @Query("SELECT * FROM knowledge_chunks ORDER BY projectId, documentId, position") suspend fun allKnowledgeChunks(): List<KnowledgeChunkEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putConversation(conversation: ConversationEntity)
+    @Query("UPDATE conversations SET title = :title, updatedAt = :updatedAt, projectId = :projectId WHERE id = :id")
+    suspend fun updateConversationMetadata(
+        id: String,
+        title: String,
+        updatedAt: Long,
+        projectId: String
+    ): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertConversation(conversation: ConversationEntity)
+
+    @Transaction
+    suspend fun putConversation(conversation: ConversationEntity) {
+        val updated = updateConversationMetadata(
+            conversation.id,
+            conversation.title,
+            conversation.updatedAt,
+            conversation.projectId
+        )
+        if (updated == 0) insertConversation(conversation)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putMessages(messages: List<MessageEntity>)
