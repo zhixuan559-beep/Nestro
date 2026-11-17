@@ -97,7 +97,11 @@ data class ModelRegistry(
         })
     }
 
-    fun upsertLegacyProfile(profile: ModelProfileMetadata, keyAvailable: Boolean): ModelRegistry {
+    fun upsertLegacyProfile(
+        profile: ModelProfileMetadata,
+        keyAvailable: Boolean,
+        enableKey: Boolean = false
+    ): ModelRegistry {
         val providerId = ModelRegistryCodec.legacyProviderId(profile.baseUrl)
         val keyId = "legacy-key-${profile.id}"
         val modelId = "legacy-model-${profile.id}"
@@ -112,7 +116,8 @@ data class ModelRegistry(
         val previousKey = apiKeys.firstOrNull { it.id == keyId }
         val nextKeys = if (keyAvailable) {
             apiKeys.filterNot { it.id == keyId } + ModelApiKey(
-                keyId, providerId, profile.name, enabled = previousKey?.enabled ?: true
+                keyId, providerId, profile.name,
+                enabled = if (enableKey) true else previousKey?.enabled ?: true
             )
         } else apiKeys.filterNot { it.id == keyId }
         val previousModel = models.firstOrNull { it.id == modelId }

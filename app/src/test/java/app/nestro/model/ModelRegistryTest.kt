@@ -128,6 +128,14 @@ class ModelRegistryTest {
         assertEquals(1.25, model.inputPricePerMillion!!, 0.0)
         assertEquals(2.5, model.outputPricePerMillion!!, 0.0)
         assertEquals("CNY", model.currency)
+
+        val replacedKey = disabled.upsertLegacyProfile(
+            profile.copy(model = "model-v2"),
+            keyAvailable = true,
+            enableKey = true
+        )
+        assertTrue(replacedKey.apiKeys.first { it.id == "legacy-key-profile-1" }.enabled)
+        assertFalse(replacedKey.providers.first { it.id == providerId }.enabled)
     }
 
     @Test

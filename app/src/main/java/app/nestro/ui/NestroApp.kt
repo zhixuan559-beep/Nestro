@@ -1286,7 +1286,11 @@ fun NestroApp() {
                                     val existingKey = modelRepository.readProfileKey(metadata.id)
                                     val effectiveKey = apiKey.trim().ifBlank { existingKey }
                                     if (apiKey.isNotBlank()) modelRepository.writeProfileKey(metadata.id, effectiveKey)
-                                    modelRegistry = modelRegistry.upsertLegacyProfile(metadata, effectiveKey.isNotBlank())
+                                    modelRegistry = modelRegistry.upsertLegacyProfile(
+                                        metadata,
+                                        keyAvailable = effectiveKey.isNotBlank(),
+                                        enableKey = apiKey.isNotBlank()
+                                    )
                                     modelRepository.saveRegistry(modelRegistry)
                                     prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
                                     if ((activate || metadata.id == activeModelProfileId) && effectiveKey.isNotBlank()) {
