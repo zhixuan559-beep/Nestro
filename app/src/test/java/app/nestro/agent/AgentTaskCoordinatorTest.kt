@@ -3,6 +3,7 @@ package app.nestro.agent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import org.junit.Assert.assertEquals
@@ -130,6 +131,28 @@ class AgentTaskCoordinatorTest {
         assertEquals(AgentTaskStatus.PAUSED, states.get("orphan")?.status)
         assertTrue(states.get("orphan")?.lastError?.contains("处理器尚未恢复") == true)
         assertEquals(AgentTaskStatus.FAILED, recovered.first { it.taskId == "failed" }.status)
+    }
+
+    @Test
+    fun pausingInlineExecutionDoesNotTurnItIntoCancellation() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        val started = CompletableDeferred<Unit>()
+
+        val caller = launch {
+            runCatching {
+                coordinator.runInline("inline-pause", "workflow") {
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+        }
+        started.await()
+        coordinator.pause("inline-pause")
+        caller.join()
+
+        assertEquals(AgentTaskStatus.PAUSED, states.get("inline-pause")?.status)
     }
 
     @Test
