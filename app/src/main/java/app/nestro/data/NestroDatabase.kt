@@ -306,7 +306,7 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_states WHERE taskId = :taskId LIMIT 1")
     suspend fun agentTaskState(taskId: String): AgentTaskStateEntity?
 
-    @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'PAUSED') ORDER BY updatedAt ASC")
+    @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'FAILED') ORDER BY updatedAt ASC")
     suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
