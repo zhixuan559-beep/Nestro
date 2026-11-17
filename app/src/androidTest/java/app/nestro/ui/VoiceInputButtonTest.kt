@@ -1,10 +1,11 @@
 package app.nestro.ui
 
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasRole
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNode
 import org.junit.Rule
@@ -21,7 +22,8 @@ class VoiceInputButtonTest {
         }
 
         composeRule.onNode(
-            hasContentDescription("按住说话") and hasRole(Role.Button)
+            hasContentDescription("按住说话") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
         ).assertIsNotEnabled()
     }
 
