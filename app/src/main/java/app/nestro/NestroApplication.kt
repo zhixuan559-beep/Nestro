@@ -13,6 +13,7 @@ import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
 import app.nestro.model.ModelConfigurationRepository
+import app.nestro.model.ModelConnectionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +28,7 @@ class NestroApplication : Application() {
     val modelConfigurationRepository: ModelConfigurationRepository by lazy {
         ModelConfigurationRepository(this)
     }
+    val modelConnectionService: ModelConnectionService by lazy { ModelConnectionService() }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
