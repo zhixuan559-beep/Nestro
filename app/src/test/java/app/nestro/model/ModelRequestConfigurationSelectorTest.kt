@@ -86,6 +86,40 @@ class ModelRequestConfigurationSelectorTest {
     }
 
     @Test
+    fun registrySelectionDoesNotChooseArbitraryModelWhenActiveSelectionIsMissing() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("key", "p", "Key")),
+            models = listOf(ModelDefinition("model", "p", "Model", "model-a", listOf("key")))
+        )
+        var reads = 0
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "", true
+        ) { reads++; "secret" }
+
+        assertTrue(configs.isEmpty())
+        assertEquals(0, reads)
+    }
+
+    @Test
+    fun registrySelectionDoesNotChooseFallbackForStaleActiveModelId() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("key", "p", "Key")),
+            models = listOf(ModelDefinition("available", "p", "Available", "model-a", listOf("key")))
+        )
+
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "deleted-model", true
+        ) { "secret" }
+
+        assertTrue(configs.isEmpty())
+    }
+
+    @Test
     fun registrySelectionUsesActiveModelAndOrderedFailoverKeys() {
         val provider = ModelProvider("p", "Provider", "https://api.example.com")
         val registry = ModelRegistry(
