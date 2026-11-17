@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   unit-tests:
-    # Run JVM unit tests on pull requests without building or uploading an APK.
+    # Pull requests run JVM unit tests only; no APK or emulator build before feature completion.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -37,8 +37,8 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest
 
   build:
-    # Run the full Android emulator suite and debug APK build for the implementation review.
-    if: github.event_name == 'pull_request'
+    # Reserved for the final integrated build and emulator acceptance stage.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
