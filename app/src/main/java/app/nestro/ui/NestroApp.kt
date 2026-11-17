@@ -133,15 +133,16 @@ fun NestroApp() {
     var page by remember { mutableStateOf("home") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
-    var config by remember { mutableStateOf(ModelConfig("", "", "")) }
-    var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
-    var modelRegistry by remember {
-        mutableStateOf(modelRepository.loadRegistry(modelProfiles))
+    val modelUiState = remember(prefs, modelRepository) {
+        ModelManagementUiState(prefs, modelRepository)
     }
-    var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
-    var modelFailoverEnabled by remember { mutableStateOf(prefs.getBoolean("model_failover_enabled", false)) }
-    var modelUsage by remember { mutableStateOf(ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")) }
+    var config by modelUiState.config
+    var modelProfiles by modelUiState.modelProfiles
+    var modelRegistry by modelUiState.modelRegistry
+    var activeModelProfileId by modelUiState.activeModelProfileId
+    var modelFailoverEnabled by modelUiState.modelFailoverEnabled
+    var modelUsage by modelUiState.modelUsage
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
     var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
