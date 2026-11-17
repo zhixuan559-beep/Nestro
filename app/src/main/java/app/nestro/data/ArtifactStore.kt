@@ -2,9 +2,11 @@ package app.nestro.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.AtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 data class ArtifactRecord(
@@ -66,9 +68,7 @@ object ArtifactStore {
         val id = UUID.randomUUID().toString()
         val fileName = "$id.md"
         val target = File(root(context), fileName)
-        val temp = File(root(context), "$id.tmp")
-        temp.writeBytes(bytes)
-        check(temp.renameTo(target)) { "产物文件写入失败" }
+        writeAtomically(target, bytes)
 
         val all = readAll(context)
         val record = ArtifactRecord(id, projectId, cleanTitle, fileName, "text/markdown", System.currentTimeMillis(), bytes.size.toLong(), version)
@@ -84,13 +84,13 @@ object ArtifactStore {
         require(record.id.matches(Regex("[0-9a-fA-F-]{36}")) && record.fileName == "${record.id}.md") { "产物文件引用无效" }
         val file = File(root(context), record.fileName)
         require(file.isFile && file.length() <= MAX_ARTIFACT_BYTES) { "产物文件不存在或超出大小限制" }
+        require(file.length() == record.sizeBytes) { "产物文件完整性校验失败，请从备份恢复" }
         return file.readText(Charsets.UTF_8)
     }
 
     @Synchronized
     fun delete(context: Context, record: ArtifactRecord) {
         require(record.id.matches(Regex("[0-9a-fA-F-]{36}")) && record.fileName == "${record.id}.md") { "产物文件引用无效" }
-        File(root(context), record.fileName).delete()
         val all = readAll(context)
         val kept = JSONArray()
         for (i in 0 until all.length()) {
@@ -98,6 +98,7 @@ object ArtifactStore {
             if (row.optString("id") != record.id || row.optString("projectId") != record.projectId) kept.put(row)
         }
         writeIndex(context, kept)
+        File(root(context), record.fileName).delete()
     }
 
     fun export(context: Context, record: ArtifactRecord, destination: Uri) {
@@ -169,21 +170,35 @@ object ArtifactStore {
         }
 
         val directory = root(context)
+        val oldRows = readAll(context)
+        val oldFiles = (0 until oldRows.length()).mapNotNull { index ->
+            oldRows.optJSONObject(index)?.optString("fileName")
+                ?.takeIf { it.matches(Regex("[0-9a-fA-F-]{36}\\.md")) }
+                ?.let { File(directory, it) }
+        }
         val newIndex = JSONArray()
+        val newFiles = mutableListOf<File>()
         pending.forEach { item ->
-            val fileName = "${item.id}.md"
+            // Fresh IDs ensure a failed restore cannot overwrite files referenced by the old index.
+            val id = UUID.randomUUID().toString()
+            val fileName = "${id}.md"
             val target = File(directory, fileName)
-            val temp = File(directory, "${item.id}.restore.tmp")
-            temp.writeText(item.content, Charsets.UTF_8)
-            check(temp.renameTo(target)) { "产物文件恢复失败" }
+            writeAtomically(target, item.content.toByteArray(Charsets.UTF_8))
+            newFiles += target
             val size = item.content.toByteArray(Charsets.UTF_8).size.toLong()
             newIndex.put(JSONObject()
-                .put("id", item.id).put("projectId", item.projectId)
+                .put("id", id).put("projectId", item.projectId)
                 .put("title", item.title).put("fileName", fileName)
                 .put("mimeType", "text/markdown").put("createdAt", item.createdAt)
                 .put("sizeBytes", size).put("version", item.version))
         }
-        writeIndex(context, newIndex)
+        try {
+            writeIndex(context, newIndex)
+        } catch (error: Throwable) {
+            newFiles.forEach { it.delete() }
+            throw error
+        }
+        oldFiles.forEach { it.delete() }
     }
 
     private fun readAll(context: Context): JSONArray {
@@ -192,13 +207,20 @@ object ArtifactStore {
     }
 
     private fun writeIndex(context: Context, rows: JSONArray) {
-        val target = indexFile(context)
-        val temp = File(root(context), "index.tmp")
-        temp.writeText(rows.toString(), Charsets.UTF_8)
-        check(temp.renameTo(target) || run {
-            target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
-            temp.delete()
-            true
-        }) { "产物索引写入失败" }
+        writeAtomically(indexFile(context), rows.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    private fun writeAtomically(target: File, bytes: ByteArray) {
+        val atomic = AtomicFile(target)
+        var output: FileOutputStream? = null
+        try {
+            output = atomic.startWrite()
+            output.write(bytes)
+            output.fd.sync()
+            atomic.finishWrite(output)
+        } catch (error: Throwable) {
+            output?.let { atomic.failWrite(it) }
+            throw error
+        }
     }
 }
