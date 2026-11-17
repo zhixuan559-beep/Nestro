@@ -1,7 +1,6 @@
 package app.nestro.ui
 
 import app.nestro.NestroApplication
-import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
@@ -17,7 +16,6 @@ import app.nestro.data.ProjectEntity
 import app.nestro.data.ProjectSpaceRules
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
-import app.nestro.data.NestroDatabase
 import app.nestro.data.KnowledgeStore
 import app.nestro.data.ConversationMemoryStore
 import app.nestro.data.ConversationRecallSource
