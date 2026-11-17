@@ -37,6 +37,43 @@ class PhoneAgentTaskStoreTest {
     }
 
     @Test
+    fun rejectsUnsafePersistedUrlBeforeResume() {
+        val encoded = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "open_url").put("url", "file:///private/data")
+            ))
+            .toString()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(encoded)
+        }
+    }
+
+    @Test
+    fun rejectsPersistedHighRiskClicksAndSensitiveInput() {
+        val riskyClick = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click").put("text", "确认支付")
+            ))
+            .toString()
+        val sensitiveInput = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "enter_text").put("label", "验证码").put("value", "123456")
+            ))
+            .toString()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(riskyClick)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(sensitiveInput)
+        }
+    }
+
+    @Test
     fun validatesLegacyPlanRiskAndConfirmationFields() {
         val valid = JSONArray().put(
             JSONObject()
