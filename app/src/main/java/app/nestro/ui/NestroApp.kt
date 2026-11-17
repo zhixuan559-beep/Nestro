@@ -205,6 +205,11 @@ fun NestroApp() {
     var expertTemplates by remember { mutableStateOf(ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")) }
     var showExpertTemplatesDialog by remember { mutableStateOf(false) }
     var templateNameDraft by remember { mutableStateOf("") }
+    var templateSearchDraft by remember { mutableStateOf("") }
+    var templateCategoryFilter by remember { mutableStateOf("全部") }
+    var templateStatus by remember { mutableStateOf("") }
+    var templateExportJson by remember { mutableStateOf("") }
+    var pendingTemplateBundle by remember { mutableStateOf<List<ExpertTemplate>?>(null) }
     var showExpertHistoryDialog by remember { mutableStateOf(false) }
     var historyExpertName by remember { mutableStateOf("") }
     var historyCompareVersion by remember { mutableStateOf("") }
@@ -415,6 +420,28 @@ fun NestroApp() {
                 context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) } ?: error("无法创建专家文件")
             } }
             expertExportStatus=result.fold({ "专家配置已导出。" },{ "导出失败：${it.message ?: "未知错误"}" })
+        }
+    }
+
+    val importTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    ?: error("无法读取模板文件")
+                ExpertTemplateBundleCodec.decode(raw)
+            } }
+            result.fold({ pendingTemplateBundle = it; templateStatus = "" }, { templateStatus = "模板导入失败：" + (it.message ?: "文件格式无效") })
+        }
+    }
+    val exportTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri == null) templateStatus = "已取消模板导出。"
+        else scope.launch {
+            val content = templateExportJson
+            val result = withContext(Dispatchers.IO) { runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                    ?: error("无法创建模板文件")
+            } }
+            templateStatus = result.fold({ "专家模板已导出。" }, { "模板导出失败：" + (it.message ?: "未知错误") })
         }
     }
 
@@ -1423,7 +1450,13 @@ fun NestroApp() {
                                 Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
-                                     OutlinedButton(onClick = { templateNameDraft = selectedExpert.takeIf { it != "通用助手" } ?: ""; showExpertTemplatesDialog = true }) { Text("模板库") }
+                                     OutlinedButton(onClick = {
+                                        templateNameDraft = selectedExpert.takeIf { it != "通用助手" } ?: ""
+                                        templateSearchDraft = ""
+                                        templateCategoryFilter = "全部"
+                                        templateStatus = ""
+                                        showExpertTemplatesDialog = true
+                                    }) { Text("模板库") }
                                 }
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -2887,34 +2920,67 @@ fun NestroApp() {
     }
 
     if (showExpertTemplatesDialog) {
+        val builtInTemplates = ExpertTemplateCatalog.builtIns()
+        val allTemplates = builtInTemplates + expertTemplates
+        val templateCategories = listOf("全部") + allTemplates.map { it.category }.distinct().sorted()
+        val visibleTemplates = allTemplates.filter { template ->
+            (templateCategoryFilter == "全部" || template.category == templateCategoryFilter) &&
+                (templateSearchDraft.isBlank() || listOf(template.name, template.description, template.prompt, template.category)
+                    .any { it.contains(templateSearchDraft, ignoreCase = true) })
+        }
         AlertDialog(
             onDismissRequest = { showExpertTemplatesDialog = false },
             title = { Text("专家模板库") },
             text = {
-                Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = templateNameDraft, onValueChange = { templateNameDraft = it.take(40) }, label = { Text("模板名称") }, singleLine = true)
                     Button(onClick = {
                         val name = templateNameDraft.trim()
                         val sourceName = selectedExpert
                         val prompt = expertPrompts[sourceName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(sourceName) }
                         val profile = expertProfiles[sourceName] ?: ExpertProfile()
+                        val builtInName = builtInTemplates.any { it.name == name }
                         if (name.isBlank() || prompt.isBlank()) {
-                            expertImportStatus = "模板名称或当前专家指令为空，无法保存。"
+                            templateStatus = "模板名称或当前专家指令为空，无法保存。"
+                        } else if (builtInName) {
+                            templateStatus = "该名称属于内置模板，请换一个名称保存自定义副本。"
                         } else if (name !in expertTemplates.map { it.name } && expertTemplates.size >= 100) {
-                            expertImportStatus = "模板库已达到 100 个上限。"
+                            templateStatus = "自定义模板库已达到 100 个上限。"
                         } else {
-                            val template = ExpertTemplate(name = name, description = profile.description, prompt = prompt, profile = profile)
+                            val template = ExpertTemplate(name = name, description = profile.description, prompt = prompt, profile = profile, category = profile.group.ifBlank { "自定义" })
                             expertTemplates = expertTemplates.filterNot { it.name == name } + template
                             prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
-                            expertImportStatus = "模板「$name」已保存。"
+                            templateStatus = "模板「$name」已保存。"
                         }
                     }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存当前专家为模板") }
-                    if (expertTemplates.isEmpty()) Text("还没有模板。可以先选中一个专家，再保存为模板。", color = Muted)
-                    expertTemplates.forEach { template ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { importTemplateLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.weight(1f)) { Text("导入模板") }
+                        OutlinedButton(
+                            enabled = expertTemplates.isNotEmpty(),
+                            onClick = {
+                                templateExportJson = ExpertTemplateBundleCodec.encode(expertTemplates)
+                                exportTemplateLauncher.launch("nestro-expert-templates.json")
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("导出自定义模板") }
+                    }
+                    OutlinedTextField(value = templateSearchDraft, onValueChange = { templateSearchDraft = it }, label = { Text("搜索模板名称、说明或指令") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        templateCategories.take(5).forEach { category ->
+                            FilterChip(selected = templateCategoryFilter == category, onClick = { templateCategoryFilter = category }, label = { Text(category) })
+                        }
+                    }
+                    Text("内置模板 ${builtInTemplates.size} 个 · 自定义模板 ${expertTemplates.size} 个", color = Muted, style = MaterialTheme.typography.labelSmall)
+                    if (visibleTemplates.isEmpty()) Text("没有匹配的模板。", color = Muted)
+                    visibleTemplates.forEach { template ->
                         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall)
-                                Text(template.description.ifBlank { "无描述" }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                    Text(if (template.builtIn) "内置" else "自定义", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                }
+                                Text("${template.category} · ${template.description.ifBlank { "无描述" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text(template.prompt.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     TextButton(onClick = {
                                         editingExpertName = template.name.takeIf { it in experts }.orEmpty()
@@ -2930,18 +2996,52 @@ fun NestroApp() {
                                         expertDialogError = ""
                                         showExpertTemplatesDialog = false
                                         showExpertDialog = true
-                                    }) { Text("应用", color = Mint) }
-                                    TextButton(onClick = {
+                                    }) { Text("使用模板", color = Mint) }
+                                    if (!template.builtIn) TextButton(onClick = {
                                         expertTemplates = expertTemplates.filterNot { it.id == template.id }
                                         prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
+                                        templateStatus = "已删除模板「${template.name}」。"
                                     }) { Text("删除", color = ColorStop) }
                                 }
                             }
                         }
                     }
+                    if (templateStatus.isNotBlank()) Text(templateStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = { TextButton(onClick = { showExpertTemplatesDialog = false }) { Text("关闭") } }
+        )
+    }
+
+    pendingTemplateBundle?.let { importedTemplates ->
+        AlertDialog(
+            onDismissRequest = { pendingTemplateBundle = null },
+            title = { Text("导入专家模板") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("共 ${importedTemplates.size} 个模板")
+                    importedTemplates.take(8).forEach { Text("• ${it.name} · ${it.category}") }
+                    if (importedTemplates.size > 8) Text("另有 ${importedTemplates.size - 8} 个模板")
+                    Text("同名自定义模板将被更新；内置模板不会被覆盖。", color = Muted)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val builtInNames = ExpertTemplateCatalog.builtIns().map { it.name }.toSet()
+                    val conflicts = importedTemplates.filter { it.name in builtInNames }
+                    if (conflicts.isNotEmpty()) {
+                        templateStatus = "导入失败：模板名称与内置模板冲突，请先修改文件名称。"
+                    } else if (expertTemplates.size + importedTemplates.count { incoming -> expertTemplates.none { it.name == incoming.name } } > 100) {
+                        templateStatus = "导入失败：自定义模板总数不能超过 100 个。"
+                    } else {
+                        expertTemplates = (expertTemplates.filterNot { old -> importedTemplates.any { it.name == old.name } } + importedTemplates.map { it.copy(builtIn = false) })
+                        prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
+                        templateStatus = "已导入 ${importedTemplates.size} 个专家模板。"
+                    }
+                    pendingTemplateBundle = null
+                }) { Text("确认导入") }
+            },
+            dismissButton = { TextButton(onClick = { pendingTemplateBundle = null }) { Text("取消") } }
         )
     }
 }
