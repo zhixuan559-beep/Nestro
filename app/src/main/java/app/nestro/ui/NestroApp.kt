@@ -1219,7 +1219,7 @@ fun NestroApp() {
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
                             selectableProfileIds = modelRegistry.selectableModels()
-                                .mapNotNull { it.id.removePrefix("legacy-model-").takeIf { id -> id != it.id } }
+                                .mapNotNull { model -> model.id.takeIf { it.startsWith("legacy-model-") }?.removePrefix("legacy-model-") }
                                 .toSet(),
                             activeConfig = config,
                             usage = modelUsage,
