@@ -17,7 +17,11 @@ object PhoneAgentWorkScheduler {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val pendingKey = pendingKey(taskId)
         if (preferences.getBoolean(pendingKey, false)) return
-        preferences.edit().putBoolean(pendingKey, true).apply()
+        preferences.edit()
+            .putBoolean(pendingKey, true)
+            .putBoolean(afterHandoffKey(taskId), afterUserHandoff)
+            .putBoolean(allowRetryKey(taskId), allowRetryCurrentAction)
+            .apply()
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
             .setInputData(
                 Data.Builder()
@@ -33,7 +37,7 @@ object PhoneAgentWorkScheduler {
                 .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
                 .enqueue()
         } catch (error: Throwable) {
-            preferences.edit().remove(pendingKey).apply()
+            preferences.edit().remove(pendingKey).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
             throw error
         }
     }
@@ -47,6 +51,8 @@ object PhoneAgentWorkScheduler {
     }
 
     internal fun cancelKey(taskId: String) = "phone_agent_cancel_requested_$taskId"
+    internal fun afterHandoffKey(taskId: String) = "phone_agent_after_handoff_$taskId"
+    internal fun allowRetryKey(taskId: String) = "phone_agent_allow_retry_$taskId"
     internal fun pendingKey(taskId: String) = "phone_agent_work_pending_$taskId"
     private fun uniqueName(taskId: String) = "nestro-phone-agent-$taskId"
 }
