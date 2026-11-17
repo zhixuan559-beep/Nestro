@@ -22,6 +22,11 @@ object PhoneAgentActionParser {
         val actions = (0 until rows.length()).map { index ->
             val item = rows.getJSONObject(index)
             when (item.getString("type")) {
+                "search_web" -> {
+                    val query = item.getString("query").trim()
+                    require(query.length in 2..300 && !PhoneAgentTaskStore.containsSensitiveText(query)) { "网页搜索词无效或包含敏感信息" }
+                    PhoneAgentExecutor.Action.SearchWeb(query)
+                }
                 "open_url" -> {
                     val url = item.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("模型生成的网址无效") }
