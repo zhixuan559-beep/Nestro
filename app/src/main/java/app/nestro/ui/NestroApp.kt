@@ -1,11 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.NestroApplication
-import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelRegistry
-import app.nestro.model.ModelProvider
-import app.nestro.model.ModelApiKey
-import app.nestro.model.ModelDefinition
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
@@ -31,7 +27,6 @@ import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
-import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
@@ -106,7 +101,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
