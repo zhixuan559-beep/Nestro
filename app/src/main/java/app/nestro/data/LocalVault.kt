@@ -11,7 +11,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
 
-object LocalVault {
+internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
     fun write(context: Context, config: ModelConfig) {
         val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
