@@ -189,30 +189,33 @@ fun NestroApp() {
     var expertProfiles by expertCatalogUiState.expertProfiles
     var expertRevisions by expertCatalogUiState.expertRevisions
     var expertTemplates by expertCatalogUiState.expertTemplates
-    var showExpertTemplatesDialog by remember { mutableStateOf(false) }
-    var templateNameDraft by remember { mutableStateOf("") }
-    var templateSearchDraft by remember { mutableStateOf("") }
-    var templateCategoryFilter by remember { mutableStateOf("全部") }
-    var templateStatus by remember { mutableStateOf("") }
-    var templateExportJson by remember { mutableStateOf("") }
-    var pendingTemplateBundle by remember { mutableStateOf<List<ExpertTemplate>?>(null) }
-    var showExpertHistoryDialog by remember { mutableStateOf(false) }
-    var historyExpertName by remember { mutableStateOf("") }
-    var historyCompareVersion by remember { mutableStateOf("") }
-    var skills by remember { mutableStateOf(loadSkills(prefs)) }
-    var skillMetadata by remember { mutableStateOf(loadSkillMetadata(prefs)) }
-    var disabledSkills by remember { mutableStateOf(loadDisabledSkills(prefs)) }
-    var editingSkillName by remember { mutableStateOf("") }
-    var skillDialogError by remember { mutableStateOf("") }
-    var pendingSkillBundle by remember { mutableStateOf<SkillBundle?>(null) }
-    var showSkillImportDialog by remember { mutableStateOf(false) }
-    var skillImportStatus by remember { mutableStateOf("") }
-     var skillExportStatus by remember { mutableStateOf("") }
-     var skillExportJson by remember { mutableStateOf("") }
-    var selectedSkill by remember { mutableStateOf("") }
-    var skillDraftName by remember { mutableStateOf("") }
-    var skillDraftPrompt by remember { mutableStateOf("") }
-    var showSkillDialog by remember { mutableStateOf(false) }
+    val expertAssetsUiState = remember(prefs) {
+        ExpertAssetsUiState(loadSkills(prefs), loadSkillMetadata(prefs), loadDisabledSkills(prefs))
+    }
+    var showExpertTemplatesDialog by expertAssetsUiState.showExpertTemplatesDialog
+    var templateNameDraft by expertAssetsUiState.templateNameDraft
+    var templateSearchDraft by expertAssetsUiState.templateSearchDraft
+    var templateCategoryFilter by expertAssetsUiState.templateCategoryFilter
+    var templateStatus by expertAssetsUiState.templateStatus
+    var templateExportJson by expertAssetsUiState.templateExportJson
+    var pendingTemplateBundle by expertAssetsUiState.pendingTemplateBundle
+    var showExpertHistoryDialog by expertAssetsUiState.showExpertHistoryDialog
+    var historyExpertName by expertAssetsUiState.historyExpertName
+    var historyCompareVersion by expertAssetsUiState.historyCompareVersion
+    var skills by expertAssetsUiState.skills
+    var skillMetadata by expertAssetsUiState.skillMetadata
+    var disabledSkills by expertAssetsUiState.disabledSkills
+    var editingSkillName by expertAssetsUiState.editingSkillName
+    var skillDialogError by expertAssetsUiState.skillDialogError
+    var pendingSkillBundle by expertAssetsUiState.pendingSkillBundle
+    var showSkillImportDialog by expertAssetsUiState.showSkillImportDialog
+    var skillImportStatus by expertAssetsUiState.skillImportStatus
+    var skillExportStatus by expertAssetsUiState.skillExportStatus
+    var skillExportJson by expertAssetsUiState.skillExportJson
+    var selectedSkill by expertAssetsUiState.selectedSkill
+    var skillDraftName by expertAssetsUiState.skillDraftName
+    var skillDraftPrompt by expertAssetsUiState.skillDraftPrompt
+    var showSkillDialog by expertAssetsUiState.showSkillDialog
     var selectedExpert by remember {
         mutableStateOf(ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles))
     }
