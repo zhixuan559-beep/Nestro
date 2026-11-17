@@ -4,21 +4,21 @@ import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.BackoffPolicy
-import java.util.concurrent.TimeUnit
 import androidx.work.WorkManager
 
 object PhoneAgentWorkScheduler {
     const val KEY_TASK_ID = "phone_agent_task_id"
     const val KEY_AFTER_HANDOFF = "phone_agent_after_handoff"
     const val KEY_ALLOW_RETRY = "phone_agent_allow_retry"
+    private const val QUEUE_NAME = "nestro-phone-agent-queue"
 
     fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false) {
         require(taskId.isNotBlank())
-        context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().remove("phone_task_stop_requested").apply()
+        val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val pendingKey = pendingKey(taskId)
+        if (preferences.getBoolean(pendingKey, false)) return
+        preferences.edit().putBoolean(pendingKey, true).apply()
         val request = OneTimeWorkRequestBuilder<PhoneAgentWorker>()
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(
                 Data.Builder()
                     .putString(KEY_TASK_ID, taskId)
@@ -28,13 +28,20 @@ object PhoneAgentWorkScheduler {
             )
             .addTag(uniqueName(taskId))
             .build()
-        WorkManager.getInstance(context.applicationContext)
-            .enqueueUniqueWork(uniqueName(taskId), ExistingWorkPolicy.KEEP, request)
+        try {
+            WorkManager.getInstance(context.applicationContext)
+                .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+                .enqueue()
+        } catch (error: Throwable) {
+            preferences.edit().remove(pendingKey).apply()
+            throw error
+        }
     }
 
-    fun cancel(context: Context, taskId: String) {
-        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(uniqueName(taskId))
+    fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
+        if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop()
     }
 
+    internal fun pendingKey(taskId: String) = "phone_agent_work_pending_$taskId"
     private fun uniqueName(taskId: String) = "nestro-phone-agent-$taskId"
 }

@@ -107,6 +107,85 @@ object ArtifactStore {
         } ?: error("无法写入所选位置")
     }
 
+    @Synchronized
+    fun backupAll(context: Context, allowedProjectIds: Set<String>): JSONArray {
+        val rows = readAll(context)
+        require(rows.length() <= MAX_ITEMS) { "产物版本数量超过备份上限" }
+        val output = JSONArray()
+        var totalBytes = 0L
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index) ?: continue
+            val id = row.optString("id")
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && row.optString("projectId") in allowedProjectIds) { "产物索引包含无效 ID 或项目归属" }
+            val fileName = "$id.md"
+            require(row.optString("fileName") == fileName) { "产物索引文件引用无效" }
+            val file = File(root(context), fileName)
+            if (!file.isFile) continue
+            require(file.length() <= MAX_ARTIFACT_BYTES) { "产物文件超出备份大小限制" }
+            totalBytes += file.length()
+            require(totalBytes <= 3_000_000L) { "产物总量超过备份安全容量" }
+            output.put(JSONObject()
+                .put("id", id)
+                .put("projectId", row.optString("projectId"))
+                .put("title", row.optString("title").take(100))
+                .put("version", row.optInt("version", 1).coerceAtLeast(1))
+                .put("createdAt", row.optLong("createdAt"))
+                .put("content", file.readText(Charsets.UTF_8)))
+        }
+        return output
+    }
+
+    fun validateBackup(rows: JSONArray, allowedProjectIds: Set<String>): JSONArray {
+        require(rows.length() <= MAX_ITEMS) { "备份中的产物版本数量超出限制" }
+        val normalized = JSONArray()
+        val ids = mutableSetOf<String>()
+        var totalBytes = 0L
+        for (index in 0 until rows.length()) {
+            val row = rows.getJSONObject(index)
+            val id = row.optString("id")
+            val projectId = row.optString("projectId")
+            val title = row.optString("title").trim()
+            val content = row.optString("content")
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            val version = row.optInt("version", 0)
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && ids.add(id) && projectId in allowedProjectIds) { "产物项目归属、ID 无效或重复" }
+            require(title.isNotBlank() && title.length <= 100 && version in 1..10000) { "产物元数据无效" }
+            require(bytes.isNotEmpty() && bytes.size <= MAX_ARTIFACT_BYTES) { "产物内容为空或超出大小限制" }
+            totalBytes += bytes.size
+            require(totalBytes <= 3_000_000L) { "产物总量超过备份安全容量" }
+            normalized.put(JSONObject().put("id", id).put("projectId", projectId).put("title", title)
+                .put("version", version).put("createdAt", row.optLong("createdAt")).put("content", content))
+        }
+        return normalized
+    }
+
+    @Synchronized
+    fun restoreBackup(context: Context, rows: JSONArray, allowedProjectIds: Set<String>) {
+        val pendingRows = validateBackup(rows, allowedProjectIds)
+        data class Pending(val id: String, val projectId: String, val title: String, val version: Int, val createdAt: Long, val content: String)
+        val pending = (0 until pendingRows.length()).map { index ->
+            val row = pendingRows.getJSONObject(index)
+            Pending(row.getString("id"), row.getString("projectId"), row.getString("title"), row.getInt("version"), row.optLong("createdAt"), row.getString("content"))
+        }
+
+        val directory = root(context)
+        val newIndex = JSONArray()
+        pending.forEach { item ->
+            val fileName = "${item.id}.md"
+            val target = File(directory, fileName)
+            val temp = File(directory, "${item.id}.restore.tmp")
+            temp.writeText(item.content, Charsets.UTF_8)
+            check(temp.renameTo(target)) { "产物文件恢复失败" }
+            val size = item.content.toByteArray(Charsets.UTF_8).size.toLong()
+            newIndex.put(JSONObject()
+                .put("id", item.id).put("projectId", item.projectId)
+                .put("title", item.title).put("fileName", fileName)
+                .put("mimeType", "text/markdown").put("createdAt", item.createdAt)
+                .put("sizeBytes", size).put("version", item.version))
+        }
+        writeIndex(context, newIndex)
+    }
+
     private fun readAll(context: Context): JSONArray {
         val file = indexFile(context)
         return if (!file.exists()) JSONArray() else JSONArray(file.readText(Charsets.UTF_8))

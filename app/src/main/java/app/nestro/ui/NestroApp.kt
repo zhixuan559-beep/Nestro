@@ -390,7 +390,7 @@ fun NestroApp() {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val json = buildLocalBackup(prefs, database)
+                        val json = buildLocalBackup(context, prefs, database)
                         context.contentResolver.openOutputStream(uri)?.use {
                             it.write(json.toByteArray(Charsets.UTF_8))
                         } ?: error("无法创建备份文件")
@@ -3697,7 +3697,7 @@ private data class LocalBackupDatabaseSnapshot(
     val taskLogs: List<PhoneAgentTaskLogEntity>
 )
 
-internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
+internal suspend fun buildLocalBackup(context: Context, prefs: android.content.SharedPreferences, database: NestroDatabase): String {
     val dao = database.dao()
     val snapshot = database.withTransaction {
         val tasks = dao.allPhoneAgentTasks()
@@ -3810,6 +3810,7 @@ internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, 
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
+    root.put("artifacts_v1", app.nestro.data.ArtifactStore.backupAll(context, backupProjects.map { it.id }.toSet() + "default"))
     root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
     val encoded = root.toString(2)
     require(encoded.length <= 10_000_000) { "备份超过 10 MB，请减少历史数据或知识库文档后重试" }
@@ -3879,6 +3880,8 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
+    val hasArtifactBackup = root.has("artifacts_v1")
+    val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.optJSONArray("artifacts_v1") ?: JSONArray(), restoredProjectIds) else JSONArray()
     val conversationRows = root.optJSONArray("conversations_v1") ?: JSONArray()
     require(conversationRows.length() <= 200) { "会话数量超出限制" }
     val restoredConversations = (0 until conversationRows.length()).map { index ->
@@ -4201,6 +4204,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: android.content
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
+    if (hasArtifactBackup) app.nestro.data.ArtifactStore.restoreBackup(context, restoredArtifactRows, restoredProjectIds)
     profileKeysToClear.forEach { key -> runCatching { LocalVault.deleteProfile(context, key) } }
 }
 
@@ -4404,7 +4408,7 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
-                                    PhoneAgentWorkScheduler.cancel(context, task.id)
+                                    PhoneAgentWorkScheduler.cancel(context, task.id, stopCurrent = task.status == PhoneAgentTaskStore.STATUS_RUNNING)
                                     PhoneAgentNotifications.cancel(context, task.id)
                                     scope.launch {
                                         withContext(Dispatchers.IO) {

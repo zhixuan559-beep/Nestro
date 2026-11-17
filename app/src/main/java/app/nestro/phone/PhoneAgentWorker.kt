@@ -13,13 +13,25 @@ class PhoneAgentWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(PhoneAgentWorkScheduler.KEY_TASK_ID)
-            ?: return Result.failure()
+            ?: return Result.success()
+        try {
+            return executeTask(taskId)
+        } finally {
+            applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove("phone_task_stop_requested").apply()
+        }
+    }
+
+    private suspend fun executeTask(taskId: String): Result {
         val afterUserHandoff = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_AFTER_HANDOFF, false)
         val allowRetryCurrentAction = inputData.getBoolean(PhoneAgentWorkScheduler.KEY_ALLOW_RETRY, false)
         val dao = NestroDatabase.get(applicationContext).dao()
-        val task = dao.phoneAgentTask(taskId) ?: return Result.failure()
+        val task = dao.phoneAgentTask(taskId) ?: return Result.success()
 
         if (task.status in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) return Result.success()
+        applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit().remove("phone_task_stop_requested").apply()
+        setForeground(PhoneAgentNotifications.foregroundInfo(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100)))
         PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100), true)
         if (PhoneAgentService.activeService == null) {
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
@@ -31,6 +43,10 @@ class PhoneAgentWorker(
 
         return try {
             val result = PhoneAgentAgent.run(applicationContext, dao, taskId, afterUserHandoff, allowRetryCurrentAction)
+            if (dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+                PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
+                return Result.success()
+            }
             when (result.outcome) {
                 PhoneAgentExecutor.Outcome.COMPLETED -> {
                     PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已完成", result.message.take(160), false)
@@ -46,28 +62,32 @@ class PhoneAgentWorker(
                 }
                 PhoneAgentExecutor.Outcome.FAILED -> {
                     PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 执行失败", result.message.take(160), false)
-                    Result.failure()
+                    Result.success()
                 }
             }
         } catch (cancelled: CancellationException) {
             val latest = dao.phoneAgentTask(taskId)
+            val userCancelled = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .getBoolean("phone_task_stop_requested", false)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
-                PhoneAgentTaskStore.markInterrupted(dao, taskId)
+                if (userCancelled) PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
+                else PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
-            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已暂停", "任务已停止，重新打开应用后可核对页面并继续。", false)
-            throw cancelled
+            PhoneAgentNotifications.show(
+                applicationContext, taskId,
+                if (userCancelled) "Phone Agent 已取消" else "Phone Agent 已暂停",
+                if (userCancelled) "任务已停止，不会自动重新执行。" else "任务已停止，重新打开应用后可核对页面并继续。",
+                false
+            )
+            if (userCancelled) Result.success() else throw cancelled
         } catch (_: Throwable) {
             val latest = dao.phoneAgentTask(taskId)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, latest.currentStep, "任务失败", false, "后台执行发生未处理异常")
-                if (runAttemptCount < 2) {
-                    PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在重试", "后台执行遇到临时异常，系统将进行有限重试。", true)
-                    return Result.retry()
-                }
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, latest.currentStep)
+                PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
-            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 执行失败", "重试次数已用尽，请打开任务页查看并手动重试。", false)
-            Result.failure()
+            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已暂停待核验", "后台操作出现异常。为避免重复点击或重复提交，请先核对目标应用当前页面，再手动继续。", false)
+            Result.success()
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.nestro.data.ArtifactStore
 import app.nestro.data.ConversationEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
@@ -55,8 +56,11 @@ class LocalBackupRoundTripTest {
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容")))
             dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
 
-            val backup = buildLocalBackup(prefs, database)
+            val artifactTitle = "备份往返测试-" + System.currentTimeMillis()
+            val savedArtifact = ArtifactStore.save(context, "p1", artifactTitle, "# 产物备份内容")
+            val backup = buildLocalBackup(context, prefs, database)
             assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(backup)))
+            ArtifactStore.delete(context, savedArtifact)
 
             database.withTransaction {
                 dao.deleteAllConversations()
@@ -78,6 +82,8 @@ class LocalBackupRoundTripTest {
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
+            val restoredArtifact = ArtifactStore.list(context, "p1").single { it.title == artifactTitle }
+            assertEquals("# 产物备份内容", ArtifactStore.read(context, restoredArtifact))
 
             val tamperedBackup = backup.replace("保留这条消息", "被篡改的消息")
             assertTrue("篡改后的备份必须被拒绝", runCatching {
@@ -89,6 +95,7 @@ class LocalBackupRoundTripTest {
             }.isFailure)
             assertEquals("校验失败不得破坏现有数据", "保留这条消息", dao.loadConversations().single().messages.single().content)
         } finally {
+            ArtifactStore.list(context, "p1").filter { it.title.startsWith("备份往返测试-") }.forEach { runCatching { ArtifactStore.delete(context, it) } }
             database.close()
             prefs.edit().clear().commit()
             context.deleteDatabase(databaseName)
