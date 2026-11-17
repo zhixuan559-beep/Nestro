@@ -378,7 +378,7 @@ fun NestroApp() {
                 workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
                 workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
                 expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
             }
             backupStatus = result.fold({ "恢复完成。备份不含 API Key；仅保留本机地址与型号匹配的密钥。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
         }
@@ -492,7 +492,7 @@ fun NestroApp() {
     LaunchedEffect(page, activeProjectId) {
         if (page == "memory") {
             automaticMemories = withContext(Dispatchers.IO) {
-                runCatching { UserMemoryStore.list(database.dao(), activeProjectId) }.getOrDefault(emptyList())
+                runCatching { appRuntime.userMemoryRepository.list(activeProjectId) }.getOrDefault(emptyList())
             }
             memoryEdits = emptyMap()
         }
@@ -511,7 +511,7 @@ fun NestroApp() {
         conversationHistoryListState.scrollToItem(0)
         delay(250)
         val result = withContext(Dispatchers.IO) {
-            database.dao().conversationListPage(
+            appRuntime.conversationPersistenceService.loadConversationPage(
                 projectId = activeProjectId,
                 query = conversationSearch.trim().take(120),
                 limit = 30,
@@ -584,11 +584,7 @@ fun NestroApp() {
         }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
         val activeConversationMessages = if (databaseReady && activeConversationId.isNotBlank()) {
             withContext(Dispatchers.IO) {
-                database.dao().conversationWithMessages(activeConversationId)?.messages.orEmpty()
-                    .sortedBy { it.position }
-                    .map { message ->
-                        ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                    }
+                appRuntime.conversationPersistenceService.loadMessages(activeConversationId).orEmpty()
             }
         } else {
             conversations.firstOrNull { it.id == activeConversationId }?.messages.orEmpty()
@@ -620,11 +616,7 @@ fun NestroApp() {
             if (record != null) {
                 val existingMessages = if (databaseReady) {
                     withContext(Dispatchers.IO) {
-                        database.dao().conversationWithMessages(conversationId)?.messages.orEmpty()
-                            .sortedBy { it.position }
-                            .map { message ->
-                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                            }
+                        appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
                     }
                 } else record.messages
                 if (existingMessages.none { it.id == requestId }) {
@@ -822,7 +814,7 @@ fun NestroApp() {
                     recalledCount = recall.hitCount
                     if (activeConversationId == requestConversationId) recallSources = recall.sources
                     val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, prompt).context
+                    val memoryContext = appRuntime.userMemoryRepository.recall(requestProjectId, prompt).context
                     val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
                         .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
                     val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
@@ -934,8 +926,8 @@ fun NestroApp() {
                         val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
                         if (candidates.isNotEmpty()) {
                             runCatching {
-                                UserMemoryStore.saveCandidates(
-                                    database.dao(), requestProjectId, requestConversationId, user.id, candidates
+                                appRuntime.userMemoryRepository.saveCandidates(
+                                    requestProjectId, requestConversationId, user.id, candidates
                                 )
                             }
                         }
@@ -1683,12 +1675,8 @@ fun NestroApp() {
                                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f).clickable {
                                                     scope.launch {
-                                                        val loaded = withContext(Dispatchers.IO) {
-                                                            database.dao().conversationWithMessages(record.id)
-                                                        }
-                                                        val loadedMessages = loaded?.messages?.sortedBy { it.position }?.map { message ->
-                                                            ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                                                        } ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
+                                                        val loadedMessages = appRuntime.conversationPersistenceService.loadMessages(record.id)
+                                                            ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
                                                         activeConversationId = record.id
                                                         activeProjectId = record.projectId
                                                         messages = loadedMessages
@@ -1720,11 +1708,7 @@ fun NestroApp() {
                                                             activeProjectId = record.projectId
                                                             val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
                                                                 withContext(Dispatchers.IO) {
-                                                                    database.dao().conversationWithMessages(next.id)?.messages.orEmpty()
-                                                                        .sortedBy { it.position }
-                                                                        .map { message ->
-                                                                            ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                                                                        }
+                                                                    appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
                                                                 }
                                                             } else next.messages
                                                             messages = nextMessages
@@ -1757,7 +1741,7 @@ fun NestroApp() {
                                                     scope.launch {
                                                         conversationPageLoading = true
                                                         val nextPage = withContext(Dispatchers.IO) {
-                                                            database.dao().conversationListPage(
+                                                            appRuntime.conversationPersistenceService.loadConversationPage(
                                                                 projectId = activeProjectId,
                                                                 query = conversationSearch.trim().take(120),
                                                                 limit = 30,
@@ -1832,11 +1816,7 @@ fun NestroApp() {
                                                             scope.launch {
                                                                 val sourceMessages = if (databaseReady) {
                                                                     withContext(Dispatchers.IO) {
-                                                                        database.dao().conversationWithMessages(source.id)?.messages.orEmpty()
-                                                                            .sortedBy { it.position }
-                                                                            .map { message ->
-                                                                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                                                                            }
+                                                                        appRuntime.conversationPersistenceService.loadMessages(source.id).orEmpty()
                                                                     }
                                                                 } else source.messages
                                                                 activeConversationId = source.id
@@ -1856,22 +1836,22 @@ fun NestroApp() {
                                                         scope.launch {
                                                             val result = withContext(Dispatchers.IO) {
                                                                 runCatching {
-                                                                    UserMemoryStore.edit(
-                                                                        database.dao(), memory.id, activeProjectId,
+                                                                    appRuntime.userMemoryRepository.edit(
+                                                                        memory.id, activeProjectId,
                                                                         memoryEdits[memory.id] ?: memory.content, memory.category
                                                                     )
                                                                 }
                                                             }
                                                             memoryStatus = result.fold({ "记忆已更新" }, { "更新失败：${it.message ?: "内容无效"}" })
                                                             if (result.isSuccess) {
-                                                                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                                                                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
                                                                 memoryEdits = memoryEdits - memory.id
                                                             }
                                                         }
                                                     }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存修改") }
                                                     TextButton(onClick = {
                                                         scope.launch {
-                                                            withContext(Dispatchers.IO) { UserMemoryStore.delete(database.dao(), memory.id, activeProjectId) }
+                                                            withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.delete(memory.id, activeProjectId) }
                                                             automaticMemories = automaticMemories.filterNot { it.id == memory.id }
                                                             memoryEdits = memoryEdits - memory.id
                                                             memoryStatus = "记忆已删除"
@@ -1918,11 +1898,7 @@ fun NestroApp() {
                                                                 activeConversationId = target.id
                                                                 val targetMessages = if (databaseReady) {
                                                                     withContext(Dispatchers.IO) {
-                                                                        database.dao().conversationWithMessages(target.id)?.messages.orEmpty()
-                                                                            .sortedBy { it.position }
-                                                                            .map { message ->
-                                                                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                                                                            }
+                                                                        appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
                                                                     }
                                                                 } else target.messages
                                                                 messages = targetMessages
@@ -2344,11 +2320,7 @@ fun NestroApp() {
                                 scope.launch {
                                     val targetMessages = if (databaseReady) {
                                         withContext(Dispatchers.IO) {
-                                            database.dao().conversationWithMessages(target.id)?.messages.orEmpty()
-                                                .sortedBy { it.position }
-                                                .map { message ->
-                                                    ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                                                }
+                                            appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
                                         }
                                     } else target.messages
                                     activeConversationId = target.id

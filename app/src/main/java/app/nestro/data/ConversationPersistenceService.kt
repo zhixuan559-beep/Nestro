@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import app.nestro.data.ChatMessage
 
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
 class ConversationPersistenceService(private val database: NestroDatabase) {
@@ -116,6 +117,30 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         }
         restored
     }
+
+    suspend fun loadConversationPage(
+        projectId: String,
+        query: String,
+        limit: Int,
+        offset: Int
+    ): List<ConversationListItem> = withContext(Dispatchers.IO) {
+        database.dao().conversationListPage(projectId, query, limit, offset)
+    }
+
+    suspend fun loadMessages(conversationId: String): List<ChatMessage>? = withContext(Dispatchers.IO) {
+        val entity = database.dao().conversationWithMessages(conversationId) ?: return@withContext null
+        entity.messages.sortedBy { it.position }.map { message ->
+            ChatMessage(
+                message.id, message.role, message.content,
+                decodeVersions(message.versionsJson), message.activeVersion
+            )
+        }
+    }
+
+    private fun decodeVersions(raw: String): List<String> = runCatching {
+        val values = JSONArray(raw)
+        (0 until values.length()).map { values.optString(it) }
+    }.getOrDefault(emptyList())
 
     suspend fun persist(
         prefs: SharedPreferences,

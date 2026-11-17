@@ -13,6 +13,7 @@ import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ConversationPersistenceService
+import app.nestro.data.UserMemoryRepository
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
 import app.nestro.model.ChatExecutionService
@@ -30,6 +31,7 @@ class NestroApplication : Application() {
     val conversationPersistenceService: ConversationPersistenceService by lazy {
         ConversationPersistenceService(database)
     }
+    val userMemoryRepository: UserMemoryRepository by lazy { UserMemoryRepository(database) }
     val modelConfigurationRepository: ModelConfigurationRepository by lazy {
         ModelConfigurationRepository(this)
     }
