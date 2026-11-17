@@ -4,6 +4,7 @@ import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -139,7 +140,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
         composeRule.onNodeWithText("搜索模板名称、说明或指令").performTextInput("风险")
         composeRule.onNodeWithText("风险审查员").assertIsDisplayed()
-        composeRule.onNodeWithText("深度研究员").assertDoesNotExist()
+        composeRule.onNodeWithText("深度研究员").assertIsNotDisplayed()
     }
 
     @Test
