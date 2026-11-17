@@ -44,6 +44,14 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun strictDecoderDistinguishesMalformedRegistryFromAnEmptyRegistry() {
+        assertEquals(null, ModelRegistryCodec.decodeOrNull("{not-json"))
+        assertEquals(ModelRegistry(), ModelRegistryCodec.decodeOrNull(
+            ModelRegistryCodec.encode(ModelRegistry())
+        ))
+    }
+
+    @Test
     fun codecRoundTripsProviderKeyAndIndependentPricing() {
         val registry = ModelRegistry(
             providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),

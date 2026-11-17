@@ -241,7 +241,7 @@ object ModelRegistryCodec {
         }.toString()
     }
 
-    fun decode(raw: String): ModelRegistry = runCatching {
+    fun decodeOrNull(raw: String): ModelRegistry? = runCatching {
         val root = JSONObject(raw)
         require(root.optInt("version") == 1)
         val providers = root.getJSONArray("providers").let { array ->
@@ -276,7 +276,10 @@ object ModelRegistryCodec {
             }
         }
         ModelRegistry(providers, keys, models).also { require(it.validate() == null) }
-    }.getOrDefault(ModelRegistry())
+    }.getOrNull()
+
+    /** Backward-compatible tolerant decoder for non-destructive read-only callers. */
+    fun decode(raw: String): ModelRegistry = decodeOrNull(raw) ?: ModelRegistry()
 
     /**
      * Lossless metadata migration from the legacy one-profile/one-key catalog.
