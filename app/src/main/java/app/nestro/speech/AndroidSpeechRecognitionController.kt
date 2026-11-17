@@ -89,7 +89,7 @@ class AndroidSpeechRecognitionController(context: Context) : AutoCloseable {
     }
 
     fun cancel() {
-        recognizer?.let(::release)
+        recognizer?.let { engine -> release(engine) }
     }
 
     private fun release(engine: SpeechRecognizer, cancel: Boolean = true) {
