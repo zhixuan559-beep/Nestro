@@ -57,27 +57,25 @@ internal object ModelRequestConfigurationSelector {
         val providers = registry.providers.associateBy { it.id }
         val keys = registry.apiKeys.associateBy { it.id }
 
-        fun resolve(model: ModelDefinition): ModelConfig? {
-            if (!model.enabled) return null
-            val provider = providers[model.providerId]?.takeIf { it.enabled } ?: return null
-            val secret = model.apiKeyIds.asSequence()
-                .mapNotNull { keyId ->
-                    val key = keys[keyId] ?: return@mapNotNull null
-                    if (!key.enabled || key.providerId != provider.id) return@mapNotNull null
-                    readKey(keyId).takeIf { it.isNotBlank() }
-                }
-                .firstOrNull() ?: return null
-            return ModelConfig(provider.baseUrl, model.modelCode, secret)
+        fun resolve(model: ModelDefinition): List<ModelConfig> {
+            if (!model.enabled) return emptyList()
+            val provider = providers[model.providerId]?.takeIf { it.enabled } ?: return emptyList()
+            return model.apiKeyIds.mapNotNull { keyId ->
+                val key = keys[keyId] ?: return@mapNotNull null
+                if (!key.enabled || key.providerId != provider.id) return@mapNotNull null
+                val secret = readKey(keyId).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                ModelConfig(provider.baseUrl, model.modelCode, secret)
+            }
         }
 
-        val candidates = registry.models
-        return buildList {
-            candidates.firstOrNull { it.id == activeModelId }?.let { resolve(it)?.let(::add) }
+        val active = registry.models.firstOrNull { it.id == activeModelId }
+        val orderedModels = buildList {
+            active?.let(::add)
             if (failoverEnabled) {
-                candidates.asSequence()
-                    .filterNot { it.id == activeModelId }
-                    .forEach { model -> resolve(model)?.let(::add) }
+                registry.models.filterNot { it.id == activeModelId }.forEach(::add)
             }
-        }.distinctBy { "${it.baseUrl}|${it.model}" }
+        }
+        return orderedModels.flatMap(::resolve)
+            .distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }
     }
 }
