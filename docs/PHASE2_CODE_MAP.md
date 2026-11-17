@@ -232,8 +232,9 @@
 - Scheduler cancellation now persists the per-task cancel flag and optionally requests the active Accessibility service to stop, but does not cancel the WorkRequest by tag. `PhoneAgentTaskService` first persists the Room terminal state and then cancels the shared coordinator; the worker observes the terminal state/cancel flag and exits successfully, allowing later queued work to proceed.
 - This preserves the global queue order and avoids cancelling unrelated tasks. It complements the recovery fix that keeps WorkManager-owned `phone_agent` tasks out of direct application-scope dispatch.
 
-## 2026-11-18 — WorkManager reattachment for interrupted running tasks
+## 2026-11-18 — Phone Agent fatal-error and cancellation cleanup boundaries
 
-- Follow-up race audit found that process recovery could mark a Phone Agent task PAUSED while its newly restarted Worker had already reattached it, or leave a persisted RUNNING task waiting forever if recovery intentionally avoided direct execution.
-- Externally scheduled owners now retain RUNNING during generic process recovery. When the WorkManager Worker starts, it calls `requeueRunningTaskIfIdle()`: the coordinator atomically requeues a stale RUNNING task only when no in-memory handler is active; an already-running task is left untouched.
-- Added JVM tests for both reattachment after process recreation and no duplicate execution when the handler is already active. Non-WorkManager task owners retain the existing interrupted-task-to-PAUSED behavior.
+- `runCatchingCancellable` now captures ordinary `Exception` failures only; fatal JVM `Error` subclasses propagate instead of being converted into recoverable `Result.failure`. Added a JVM regression test using `AssertionError`.
+- Phone Agent planning and typed-action execution now use `Exception`/cancellation-safe handling. The suspend action wrapper propagates coroutine cancellation and no longer turns fatal runtime errors into an ordinary failed device action.
+- `PhoneAgentAgent.pause()` now uses the cancellation-safe result helper for best-effort audit/state writes; cancellation is not swallowed.
+- `PhoneAgentWorker` cancellation cleanup now runs Room/state-store reconciliation in `NonCancellable`, then rethrows the original worker cancellation unless the persisted user-cancel request requires a successful terminal result. This avoids losing cleanup immediately because the worker coroutine is already cancelled.

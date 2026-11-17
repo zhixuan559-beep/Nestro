@@ -3,6 +3,7 @@ package app.nestro.phone
 import android.content.Context
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
@@ -26,7 +27,7 @@ object PhoneAgentAgent {
         val service = PhoneAgentService.activeService
             ?: return pause(dao, taskId, "无障碍服务尚未连接")
         if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
-        val existingActions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.getOrNull()
+        val existingActions = try { PhoneAgentTaskStore.decodeActions(task.planJson) } catch (_: Exception) { null }
         if (existingActions != null) {
             val resumed = PhoneAgentExecutor.resume(
                 dao = dao,
@@ -69,7 +70,7 @@ object PhoneAgentAgent {
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 return pause(dao, taskId, error.message ?: "动作规划失败")
             }
             task = dao.phoneAgentTask(taskId)
@@ -84,9 +85,11 @@ object PhoneAgentAgent {
                     service.verifyVisibleText(plan.completionEvidence)
                 ) {
                     val current = dao.phoneAgentTask(taskId) ?: task
-                    val count = runCatching {
+                    val count = try {
                         PhoneAgentTaskStore.decodeActions(current.planJson).size
-                    }.getOrDefault(current.currentStep)
+                    } catch (_: Exception) {
+                        current.currentStep
+                    }
                     PhoneAgentTaskStore.recordActionResult(
                         dao, taskId, count, "任务完成",
                         true,
@@ -154,11 +157,11 @@ object PhoneAgentAgent {
             }
         }
         if (task != null) {
-            runCatching {
+            runCatchingCancellable {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "任务状态", false, message)
             }
         }
-        runCatching {
+        runCatchingCancellable {
             val stateStore = RoomAgentTaskStateStore(dao)
             val state = stateStore.get(taskId)
             if (state != null && state.status !in setOf(

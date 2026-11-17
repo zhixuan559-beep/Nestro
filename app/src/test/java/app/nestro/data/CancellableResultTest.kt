@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class CancellableResultTest {
@@ -29,4 +30,14 @@ class CancellableResultTest {
         child.cancelAndJoin()
         assertTrue(child.isCancelled)
     }
+
+    @Test
+    fun fatalErrorsAreNotConvertedIntoRecoverableFailures() {
+        val fatal = AssertionError("fatal runtime failure")
+        val thrown = assertThrows(AssertionError::class.java) {
+            runBlocking { runCatchingCancellable { throw fatal } }
+        }
+        assertTrue(thrown === fatal)
+    }
+
 }

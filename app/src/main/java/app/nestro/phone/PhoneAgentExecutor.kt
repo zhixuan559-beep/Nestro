@@ -2,6 +2,7 @@ package app.nestro.phone
 
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
 import app.nestro.agent.AgentAuthorization
 import app.nestro.agent.AgentPermissionRouter
 import app.nestro.agent.AgentRuntime
@@ -44,12 +45,16 @@ object PhoneAgentExecutor {
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
     suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
-        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < runCatching { PhoneAgentTaskStore.decodeActions(task.planJson).size }.getOrDefault(0) && !allowRetryCurrentAction) {
+        val actionCount = try { PhoneAgentTaskStore.decodeActions(task.planJson).size } catch (_: Exception) { 0 }
+        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < actionCount && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
         }
-        val actions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }
-            .getOrElse { return ExecutionResult(Outcome.FAILED, 0, emptyList(), it.message ?: "动作计划无法恢复") }
+        val actions = try {
+            PhoneAgentTaskStore.decodeActions(task.planJson)
+        } catch (error: Exception) {
+            return ExecutionResult(Outcome.FAILED, 0, emptyList(), error.message ?: "动作计划无法恢复")
+        }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
             actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
         return runFrom(dao, taskId, actions, start, true, onProgress)
@@ -93,7 +98,7 @@ object PhoneAgentExecutor {
             )
         ) {
             val executingAction = action
-            val attempt = runCatching {
+            val attempt = runCatchingCancellable {
                 when (executingAction) {
                     is Action.OpenUrl -> {
                         val before = service.captureVisibleText()
@@ -135,7 +140,6 @@ object PhoneAgentExecutor {
                 }
             }
             val failure = attempt.exceptionOrNull()
-            if (failure is CancellationException) throw failure
             val success = attempt.getOrDefault(false)
             val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
             AgentToolResult(success = success, output = detail, error = if (success) "" else detail)

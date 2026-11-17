@@ -20,6 +20,6 @@ internal suspend fun <T> runCatchingCancellable(
     Result.failure(timeout)
 } catch (cancelled: CancellationException) {
     throw cancelled
-} catch (failure: Throwable) {
+} catch (failure: Exception) {
     Result.failure(failure)
 }
