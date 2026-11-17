@@ -485,47 +485,16 @@ fun NestroApp() {
 
     LaunchedEffect(Unit) {
         modelUiState.initialize()
-        val loaded = runCatching {
-            appRuntime.conversationPersistenceService.restore(prefs)
-        }
-        if (loaded.isSuccess) {
-            val data = loaded.getOrThrow()
-            conversations = data.conversations
-            projects = data.projects
-            persistedConversationVersions.clear()
-            data.conversations.forEach { persistedConversationVersions[it.id] = it.hashCode() }
-            prefs.edit().putBoolean("room_storage_initialized", true).apply()
-            databaseReady = true
-        } else {
-            conversations = ConversationPreferencesStore.loadConversations(prefs)
-            projects = ProjectPreferencesStore.loadProjects(prefs)
-            status = "本地数据库暂不可用，已回退到本机旧存储"
-        }
-        val savedProjectId = prefs.getString("active_project_id", "default") ?: "default"
-        activeProjectId = savedProjectId.takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
-        val savedConversationId = prefs.getString("active_conversation_id", "") ?: ""
-        activeConversationId = conversations.firstOrNull {
-            it.id == savedConversationId && it.projectId == activeProjectId
-        }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
-        val activeConversationMessages = if (databaseReady && activeConversationId.isNotBlank()) {
-            withContext(Dispatchers.IO) {
-                appRuntime.conversationPersistenceService.loadMessages(activeConversationId).orEmpty()
-            }
-        } else {
-            conversations.firstOrNull { it.id == activeConversationId }?.messages.orEmpty()
-        }
-        messages = activeConversationMessages
-        if (activeConversationId.isNotBlank()) {
-            conversations = conversations.map { record ->
-                if (record.id == activeConversationId) record.copy(messages = activeConversationMessages, messagesLoaded = true) else record
-            }
-            if (databaseReady) {
-                conversations.firstOrNull { it.id == activeConversationId }?.let { record ->
-                    persistedConversationVersions[record.id] = record.hashCode()
-                }
-            }
-        }
-        prefs.edit().putString("active_project_id", activeProjectId).putString("active_conversation_id", activeConversationId).apply()
+        val startup = appRuntime.conversationStartupCoordinator.restore(prefs)
+        conversations = startup.conversations
+        projects = startup.projects
+        activeProjectId = startup.activeProjectId
+        activeConversationId = startup.activeConversationId
+        messages = startup.messages
+        persistedConversationVersions.clear()
+        persistedConversationVersions.putAll(startup.persistedConversationVersions)
+        databaseReady = startup.databaseReady
+        startup.statusMessage?.let { status = it }
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
