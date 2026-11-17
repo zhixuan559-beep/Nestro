@@ -180,21 +180,21 @@ object ArtifactStore {
         }
         val newIndex = JSONArray()
         val newFiles = mutableListOf<File>()
-        pending.forEach { item ->
-            // Fresh IDs ensure a failed restore cannot overwrite files referenced by the old index.
-            val id = UUID.randomUUID().toString()
-            val fileName = "${id}.md"
-            val target = File(directory, fileName)
-            writeAtomically(target, item.content.toByteArray(Charsets.UTF_8))
-            newFiles += target
-            val size = item.content.toByteArray(Charsets.UTF_8).size.toLong()
-            newIndex.put(JSONObject()
-                .put("id", id).put("projectId", item.projectId)
-                .put("title", item.title).put("fileName", fileName)
-                .put("mimeType", "text/markdown").put("createdAt", item.createdAt)
-                .put("sizeBytes", size).put("version", item.version))
-        }
         try {
+            pending.forEach { item ->
+                // Fresh IDs ensure a failed restore cannot overwrite files referenced by the old index.
+                val id = UUID.randomUUID().toString()
+                val fileName = "${id}.md"
+                val target = File(directory, fileName)
+                val bytes = item.content.toByteArray(Charsets.UTF_8)
+                writeAtomically(target, bytes)
+                newFiles += target
+                newIndex.put(JSONObject()
+                    .put("id", id).put("projectId", item.projectId)
+                    .put("title", item.title).put("fileName", fileName)
+                    .put("mimeType", "text/markdown").put("createdAt", item.createdAt)
+                    .put("sizeBytes", bytes.size.toLong()).put("version", item.version))
+            }
             writeIndex(context, newIndex)
         } catch (error: Throwable) {
             newFiles.forEach { it.delete() }
