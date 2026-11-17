@@ -219,38 +219,37 @@ fun NestroApp() {
     var selectedExpert by remember {
         mutableStateOf(ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles))
     }
-    var expertDraft by remember { mutableStateOf("") }
-    var editingExpertName by remember { mutableStateOf("") }
-    var expertPromptDraft by remember { mutableStateOf("") }
-    var expertGroupDraft by remember { mutableStateOf("默认") }
-    var expertAvatarDraft by remember { mutableStateOf("✦") }
-    var expertEnabledDraft by remember { mutableStateOf(true) }
-    var expertSkillDraft by remember { mutableStateOf(emptySet<String>()) }
-    var expertTemperatureDraft by remember { mutableStateOf("") }
-    var expertMaxTokensDraft by remember { mutableStateOf("") }
-    var expertDescriptionDraft by remember { mutableStateOf("") }
-    var showExpertDialog by remember { mutableStateOf(false) }
-    var expertDialogError by remember { mutableStateOf("") }
-    var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
-    var selectedTeamId by remember { mutableStateOf((prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: "") }
-    var showTeamDialog by remember { mutableStateOf(false) }
-    var editingTeamId by remember { mutableStateOf("") }
-    var teamDraftName by remember { mutableStateOf("") }
-    var teamDraftDescription by remember { mutableStateOf("") }
-    var teamDraftMembers by remember { mutableStateOf(emptySet<String>()) }
-    var pendingExpertBundle by remember { mutableStateOf<ExpertBundle?>(null) }
-    var expertImportStatus by remember { mutableStateOf("") }
-    var expertExportStatus by remember { mutableStateOf("") }
-    var expertExportJson by remember { mutableStateOf("") }
-    var pendingTeamBundle by remember { mutableStateOf<ExpertTeamBundle?>(null) }
-    var teamImportStatus by remember { mutableStateOf("") }
-    var teamExportStatus by remember { mutableStateOf("") }
-    var teamExportJson by remember { mutableStateOf("") }
-    var teamRunStatus by remember { mutableStateOf("") }
-    var expertTeamRunHistory by remember {
-        mutableStateOf(ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]"))
-    }
-    var teamMemberStatuses by remember { mutableStateOf(emptyMap<String,String>()) }
+    val expertWorkspaceUiState = remember(prefs) { ExpertWorkspaceUiState(prefs) }
+    var expertDraft by expertWorkspaceUiState.expertDraft
+    var editingExpertName by expertWorkspaceUiState.editingExpertName
+    var expertPromptDraft by expertWorkspaceUiState.expertPromptDraft
+    var expertGroupDraft by expertWorkspaceUiState.expertGroupDraft
+    var expertAvatarDraft by expertWorkspaceUiState.expertAvatarDraft
+    var expertEnabledDraft by expertWorkspaceUiState.expertEnabledDraft
+    var expertSkillDraft by expertWorkspaceUiState.expertSkillDraft
+    var expertTemperatureDraft by expertWorkspaceUiState.expertTemperatureDraft
+    var expertMaxTokensDraft by expertWorkspaceUiState.expertMaxTokensDraft
+    var expertDescriptionDraft by expertWorkspaceUiState.expertDescriptionDraft
+    var showExpertDialog by expertWorkspaceUiState.showExpertDialog
+    var expertDialogError by expertWorkspaceUiState.expertDialogError
+    var expertTeams by expertWorkspaceUiState.expertTeams
+    var selectedTeamId by expertWorkspaceUiState.selectedTeamId
+    var showTeamDialog by expertWorkspaceUiState.showTeamDialog
+    var editingTeamId by expertWorkspaceUiState.editingTeamId
+    var teamDraftName by expertWorkspaceUiState.teamDraftName
+    var teamDraftDescription by expertWorkspaceUiState.teamDraftDescription
+    var teamDraftMembers by expertWorkspaceUiState.teamDraftMembers
+    var pendingExpertBundle by expertWorkspaceUiState.pendingExpertBundle
+    var expertImportStatus by expertWorkspaceUiState.expertImportStatus
+    var expertExportStatus by expertWorkspaceUiState.expertExportStatus
+    var expertExportJson by expertWorkspaceUiState.expertExportJson
+    var pendingTeamBundle by expertWorkspaceUiState.pendingTeamBundle
+    var teamImportStatus by expertWorkspaceUiState.teamImportStatus
+    var teamExportStatus by expertWorkspaceUiState.teamExportStatus
+    var teamExportJson by expertWorkspaceUiState.teamExportJson
+    var teamRunStatus by expertWorkspaceUiState.teamRunStatus
+    var expertTeamRunHistory by expertWorkspaceUiState.expertTeamRunHistory
+    var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
     var workflowHistory by workflowUiState.workflowHistory
     var workflows by workflowUiState.workflows
