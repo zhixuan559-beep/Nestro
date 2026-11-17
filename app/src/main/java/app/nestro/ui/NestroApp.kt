@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.data.ConversationEntity
+import app.nestro.data.ConversationListItem
 import app.nestro.data.MessageEntity
 import app.nestro.data.ProjectEntity
 import app.nestro.data.ProjectSpaceRules
@@ -160,6 +161,10 @@ fun NestroApp() {
     var editingProjectId by remember { mutableStateOf("") }
     var activeConversationId by remember { mutableStateOf("") }
     var conversationSearch by remember { mutableStateOf("") }
+    var conversationPageItems by remember { mutableStateOf(emptyList<ConversationListItem>()) }
+    var conversationPageLoading by remember { mutableStateOf(false) }
+    var conversationPageHasMore by remember { mutableStateOf(false) }
+    var conversationPageRefreshKey by remember { mutableIntStateOf(0) }
     var showRenameConversation by remember { mutableStateOf(false) }
     var showEditMessageDialog by remember { mutableStateOf(false) }
     var editMessageId by remember { mutableStateOf("") }
@@ -283,6 +288,7 @@ fun NestroApp() {
     var showBackupRestoreConfirm by remember { mutableStateOf(false) }
     var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
     val chatListState = rememberLazyListState()
+    val conversationHistoryListState = rememberLazyListState()
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -455,6 +461,26 @@ fun NestroApp() {
     LaunchedEffect(activeConversationId) {
         recallSources = emptyList()
         draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
+    }
+
+    LaunchedEffect(page, activeProjectId, conversationSearch, conversationPageRefreshKey) {
+        if (page != "conversations") return@LaunchedEffect
+        conversationPageLoading = true
+        conversationPageItems = emptyList()
+        conversationPageHasMore = false
+        conversationHistoryListState.scrollToItem(0)
+        delay(250)
+        val result = withContext(Dispatchers.IO) {
+            database.dao().conversationListPage(
+                projectId = activeProjectId,
+                query = conversationSearch.trim().take(120),
+                limit = 30,
+                offset = 0
+            )
+        }
+        conversationPageItems = result
+        conversationPageHasMore = result.size == 30
+        conversationPageLoading = false
     }
 
     LaunchedEffect(Unit) {
@@ -1619,22 +1645,31 @@ fun NestroApp() {
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
                                     Text("＋ 新建对话")
                                 }
-                                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(conversations.filter { record ->
-                                        record.projectId == activeProjectId && (conversationSearch.isBlank() || record.title.contains(conversationSearch, true) ||
-                                            record.messages.any { it.content.contains(conversationSearch, true) })
-                                    }, key = { it.id }) { record ->
+                                LazyColumn(
+                                    state = conversationHistoryListState,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(conversationPageItems, key = { it.id }) { record ->
                                         Surface(color = if (record.id == activeConversationId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f).clickable {
-                                                    activeConversationId = record.id
-                                                    activeProjectId = record.projectId
-                                                    messages = record.messages
-                                                    prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
-                                                    page = "home"
+                                                    scope.launch {
+                                                        val loaded = withContext(Dispatchers.IO) {
+                                                            database.dao().conversationWithMessages(record.id)
+                                                        }
+                                                        val loadedMessages = loaded?.messages?.sortedBy { it.position }?.map { message ->
+                                                            ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                                                        } ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
+                                                        activeConversationId = record.id
+                                                        activeProjectId = record.projectId
+                                                        messages = loadedMessages
+                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
+                                                        page = "home"
+                                                    }
                                                 }) {
                                                     Text(record.title, color = if (record.id == activeConversationId) Mint else Ink)
-                                                    Text(record.messages.lastOrNull()?.content?.take(72) ?: "空白对话", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    Text(record.lastMessagePreview.take(72).ifBlank { "空白对话" }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    Text("${record.messageCount} 条消息", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 }
                                                 TextButton(onClick = {
                                                     renameConversationId = record.id
@@ -1655,9 +1690,41 @@ fun NestroApp() {
                                                         conversations = remaining
                                                     }
                                                     saveConversationList(prefs, conversations)
+                                                    conversationPageItems = conversationPageItems.filterNot { it.id == record.id }
+                                                    conversationPageRefreshKey++
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
+                                    }
+                                    if (conversationPageLoading) {
+                                        item { Text("正在加载会话…", color = Muted, modifier = Modifier.padding(12.dp)) }
+                                    }
+                                    if (conversationPageHasMore) {
+                                        item {
+                                            TextButton(
+                                                enabled = !conversationPageLoading,
+                                                onClick = {
+                                                    scope.launch {
+                                                        conversationPageLoading = true
+                                                        val nextPage = withContext(Dispatchers.IO) {
+                                                            database.dao().conversationListPage(
+                                                                projectId = activeProjectId,
+                                                                query = conversationSearch.trim().take(120),
+                                                                limit = 30,
+                                                                offset = conversationPageItems.size
+                                                            )
+                                                        }
+                                                        val existingIds = conversationPageItems.mapTo(mutableSetOf()) { it.id }
+                                                        conversationPageItems = conversationPageItems + nextPage.filterNot { it.id in existingIds }
+                                                        conversationPageHasMore = nextPage.size == 30
+                                                        conversationPageLoading = false
+                                                    }
+                                                }
+                                            ) { Text("加载更多会话") }
+                                        }
+                                    }
+                                    if (conversationPageItems.isEmpty() && !conversationPageLoading) {
+                                        item { Text("暂无匹配的对话", color = Muted, modifier = Modifier.padding(12.dp)) }
                                     }
                                 }
                             }
@@ -2222,6 +2289,10 @@ fun NestroApp() {
                             if (record.id == renameConversationId) record.copy(title = title, updatedAt = System.currentTimeMillis()) else record
                         }
                         saveConversationList(prefs, conversations)
+                        conversationPageItems = conversationPageItems.map { item ->
+                            if (item.id == renameConversationId) item.copy(title = title) else item
+                        }
+                        conversationPageRefreshKey++
                     }
                     showRenameConversation = false
                 }) { Text("保存", color = Mint) }
