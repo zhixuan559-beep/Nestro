@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main", "refactor/**" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main", "feature/voice-system" ]
   workflow_dispatch:
@@ -11,14 +11,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-ci-${{ github.ref }}
-  cancel-in-progress: false
+  group: android-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
     # PR verification compiles Kotlin, runs JVM tests and Android lint.
     # It deliberately does not assemble/install an APK before the integrated acceptance stage.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/refactor/')
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
