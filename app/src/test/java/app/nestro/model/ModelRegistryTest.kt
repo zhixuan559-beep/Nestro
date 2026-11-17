@@ -105,6 +105,32 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun legacyProfileUpdatePreservesIndependentEnabledFlagsAndPricing() {
+        val profile = ModelProfileMetadata("profile-1", "Profile", "https://api.example.com", "model-v1")
+        val initial = ModelRegistry().upsertLegacyProfile(profile, keyAvailable = true)
+        val modelId = "legacy-model-profile-1"
+        val providerId = ModelRegistryCodec.legacyProviderId(profile.baseUrl)
+        val disabled = initial.copy(
+            providers = initial.providers.map { it.copy(enabled = false) },
+            apiKeys = initial.apiKeys.map { it.copy(enabled = false) },
+            models = initial.models.map {
+                it.copy(enabled = false, inputPricePerMillion = 1.25, outputPricePerMillion = 2.5, currency = "CNY")
+            }
+        )
+
+        val updated = disabled.upsertLegacyProfile(profile.copy(model = "model-v2"), keyAvailable = true)
+
+        assertFalse(updated.providers.first { it.id == providerId }.enabled)
+        assertFalse(updated.apiKeys.first { it.id == "legacy-key-profile-1" }.enabled)
+        val model = updated.models.first { it.id == modelId }
+        assertFalse(model.enabled)
+        assertEquals("model-v2", model.modelCode)
+        assertEquals(1.25, model.inputPricePerMillion!!, 0.0)
+        assertEquals(2.5, model.outputPricePerMillion!!, 0.0)
+        assertEquals("CNY", model.currency)
+    }
+
+    @Test
     fun deletingProviderRemovesItsModelsAndKeysOnly() {
         val registry = ModelRegistry(
             providers = listOf(
