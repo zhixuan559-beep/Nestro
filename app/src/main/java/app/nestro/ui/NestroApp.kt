@@ -518,6 +518,7 @@ fun NestroApp() {
         onLoadingChanged = { conversationPageLoading = it },
         onItemsLoaded = { conversationPageItems = it },
         onHasMoreChanged = { conversationPageHasMore = it },
+        onLoadFailure = { status = "会话历史加载失败：${it.message ?: "未知错误"}" },
         loadPage = { projectId, query, limit, offset ->
             withContext(Dispatchers.IO) {
                 appRuntime.conversationPersistenceService.loadConversationPage(
