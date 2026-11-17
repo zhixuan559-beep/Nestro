@@ -298,3 +298,8 @@
 - Added `ChatStreamingCoordinator` as the boundary for model stream transport, incremental partial-response persistence, and cancellation-safe result handling.
 - Partial answers continue to be written to `chat_request_state_v1` with the same request/conversation/project metadata and 24k cap; Compose root only applies partial text to the active conversation.
 - Added JVM tests for incremental persistence, preserving partial output on transport failure, caller cancellation propagation, and partial-state JSON metadata/size bounds.
+
+## 2026-11-18 — Retry pending restore recovery within the same process
+
+- `ensureBackupRestoreRecovered()` now checks for a journal even after one successful startup recovery. If a later restore attempt fails and its compensation journal remains, subsequent UI/Worker entry points retry recovery instead of trusting a stale in-memory completion flag.
+- `LocalBackupRepository.hasPendingRestoreJournal()` exposes only the app-private journal presence; it does not read or expose journal contents.

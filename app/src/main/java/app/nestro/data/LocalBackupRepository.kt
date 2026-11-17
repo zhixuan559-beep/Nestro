@@ -38,6 +38,8 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
     suspend fun recoverInterruptedRestore(prefs: SharedPreferences) = operationMutex.withLock {
         recoverInterruptedLocalBackupRestore(appContext, prefs, database)
     }
+
+    fun hasPendingRestoreJournal(): Boolean = localBackupRestoreJournalFile(appContext).isFile
 }
 
 

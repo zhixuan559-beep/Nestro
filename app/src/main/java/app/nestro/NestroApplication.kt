@@ -94,9 +94,9 @@ class NestroApplication : Application() {
 
     suspend fun ensureBackupRestoreRecovered() {
         restoreRecoveryMutex.withLock {
-            if (!restoreRecoveryComplete) {
+            if (!restoreRecoveryComplete || localBackupRepository.hasPendingRestoreJournal()) {
                 localBackupRepository.recoverInterruptedRestore(getSharedPreferences("nestro_local", MODE_PRIVATE))
-                restoreRecoveryComplete = true
+                restoreRecoveryComplete = !localBackupRepository.hasPendingRestoreJournal()
             }
         }
     }
