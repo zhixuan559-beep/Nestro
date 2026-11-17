@@ -88,38 +88,39 @@ object PhoneAgentExecutor {
                 permission = AgentToolPermission.DEVICE_ACTION
             )
         ) {
+            val executingAction = action
             val attempt = runCatching {
-                when (action) {
+                when (executingAction) {
                     is Action.OpenUrl -> {
                         val before = service.captureVisibleText()
-                        val opened = service.openUrl(action.url)
+                        val opened = service.openUrl(executingAction.url)
                         delay(1200)
                         opened && service.screenTextChanged(before)
                     }
                     is Action.LaunchApp -> {
                         val beforePackage = service.activePackageName()
                         val beforeText = service.captureVisibleText()
-                        val launched = service.launchPackage(action.packageName)
+                        val launched = service.launchPackage(executingAction.packageName)
                         delay(1000)
                         launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
                     }
                     is Action.ClickText -> {
                         val before = service.captureVisibleText()
-                        val clicked = service.clickVisibleText(action.exactText)
+                        val clicked = service.clickVisibleText(executingAction.exactText)
                         if (clicked) {
                             delay(500)
-                            if (action.expectedAfter != null) service.verifyVisibleText(action.expectedAfter)
+                            if (executingAction.expectedAfter != null) service.verifyVisibleText(executingAction.expectedAfter)
                             else service.screenTextChanged(before)
                         } else false
                     }
-                    is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
+                    is Action.EnterText -> service.setTextOnVisibleField(executingAction.fieldLabel, executingAction.value)
                     is Action.Scroll -> {
                         val before = service.captureVisibleText()
-                        val scrolled = service.scroll(action.direction)
+                        val scrolled = service.scroll(executingAction.direction)
                         if (scrolled) { delay(350); service.screenTextChanged(before) } else false
                     }
-                    is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
-                    is Action.VerifyText -> service.verifyVisibleText(action.expected)
+                    is Action.Wait -> { delay(executingAction.millis.coerceIn(0, 10_000)); true }
+                    is Action.VerifyText -> service.verifyVisibleText(executingAction.expected)
                     Action.Back -> {
                         val beforePackage = service.activePackageName()
                         val beforeText = service.captureVisibleText()
