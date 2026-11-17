@@ -35,12 +35,12 @@ class NestroAppSmokeTest {
     }
 
     @Test
-    fun exposesVoiceInputStateToAccessibilityServices() {
-        composeRule.setContent {
-            VoiceInputButton(enabled = false, onResult = {})
-        }
+    fun opensVoiceInputGuidanceFromNavigationDrawer() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("语音输入", substring = true).performClick()
 
-        composeRule.onNodeWithContentDescription("按住说话").assertIsDisplayed()
+        composeRule.onNodeWithText("语音输入").assertIsDisplayed()
+        composeRule.onNodeWithText("当前不内置语音合成或第三方语音插件。", substring = true).assertIsDisplayed()
     }
 
 }
