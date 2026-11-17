@@ -3150,7 +3150,7 @@ private fun NavigationDrawerContent(
     onNavigate: (String) -> Unit
 ) {
     Column(
-        modifier.background(Card).padding(18.dp),
+        modifier.background(Card).verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
@@ -3171,7 +3171,7 @@ private fun NavigationDrawerContent(
         DrawerItem("◇", "能力中心") { onNavigate("skills") }
         DrawerItem("⚙", "模型管理") { onNavigate("models") }
         DrawerItem("▤", "数据与设置") { onNavigate("settings") }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(12.dp))
         Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
     }
 }

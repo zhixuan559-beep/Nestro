@@ -3,6 +3,7 @@ package app.nestro.ui
 import app.nestro.MainActivity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -41,7 +42,7 @@ class NestroWindowSizeTest {
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
             composeRule.onNodeWithText("项目空间", substring = true).performClick()
-            composeRule.onNodeWithText("项目空间").assertExists()
+            composeRule.onNodeWithText("项目空间").assertIsDisplayed()
         }
     }
 }
