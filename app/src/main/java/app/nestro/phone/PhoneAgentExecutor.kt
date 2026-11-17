@@ -56,14 +56,19 @@ object PhoneAgentExecutor {
     }
 
     private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
-        val service = PhoneAgentService.activeService ?: return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
+        val agentStates = RoomAgentTaskStateStore(dao)
+        val service = PhoneAgentService.activeService
+        if (service == null) {
+            agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "无障碍服务尚未连接"))
+            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
+        }
         if (!service.hasValidGrant()) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
+            agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "没有有效的操作授权"))
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
         }
         val results = mutableListOf<ActionResult>()
-        val agentStates = RoomAgentTaskStateStore(dao)
         agentStates.put(
             AgentTaskState(
                 taskId = taskId,
@@ -89,6 +94,8 @@ object PhoneAgentExecutor {
             if (action is Action.ConfirmSensitive) {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, action.description)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), action.description))
+                RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = action.description.take(2_000)))
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
             val catalog = InMemoryAgentToolCatalog()
