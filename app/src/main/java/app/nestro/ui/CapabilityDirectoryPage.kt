@@ -79,12 +79,14 @@ fun CapabilityDirectoryPage() {
                     val dependency = dependencies.optJSONObject(index) ?: JSONObject()
                     dependency.optString("name") + "@" + dependency.optString("version", "*")
                 }
+                val permissionSummary = "权限声明（不代表已授权）：" +
+                    permissions.ifEmpty { listOf("无") }.joinToString("、") +
+                    (if (dependencyNames.isEmpty()) "" else "；依赖：" + dependencyNames.joinToString("、"))
                 CapabilityEntry(
                     name = name,
                     description = detail.optString("description", "本地安装的自定义技能").ifBlank { "本地安装的自定义技能" },
                     source = "包内来源声明：" + detail.optString("source", "未声明").ifBlank { "未声明" },
-                    permission = "权限声明（不代表已授权）：" + permissions.ifEmpty { listOf("无") }.joinToString("、") +
-                        if (dependencyNames.isEmpty()) "" else "；依赖：" + dependencyNames.joinToString("、"),
+                    permission = permissionSummary,
                     state = if (name in disabled) "已停用" else "已启用"
                 )
             }.toList()

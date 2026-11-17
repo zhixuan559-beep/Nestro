@@ -18,7 +18,7 @@ class PhoneAgentWorker(
             return executeTask(taskId)
         } finally {
             applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove("phone_task_stop_requested").apply()
+                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove("phone_task_stop_requested").apply()
         }
     }
 
@@ -43,7 +43,13 @@ class PhoneAgentWorker(
 
         return try {
             val result = PhoneAgentAgent.run(applicationContext, dao, taskId, afterUserHandoff, allowRetryCurrentAction)
-            if (dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+            val cancelRequested = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+            if (cancelRequested || dao.phoneAgentTask(taskId)?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+                val latest = dao.phoneAgentTask(taskId)
+                if (latest != null && latest.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
+                    PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
+                }
                 PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
                 return Result.success()
             }
@@ -68,7 +74,7 @@ class PhoneAgentWorker(
         } catch (cancelled: CancellationException) {
             val latest = dao.phoneAgentTask(taskId)
             val userCancelled = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                .getBoolean("phone_task_stop_requested", false)
+                .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
                 if (userCancelled) PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
                 else PhoneAgentTaskStore.markInterrupted(dao, taskId)

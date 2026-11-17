@@ -4314,7 +4314,6 @@ private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = {
-                            tasks.firstOrNull { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }?.let { PhoneAgentWorkScheduler.cancel(context, it.id) }
                             PhoneAgentService.activeService?.requestTaskStop()
                             taskMessage = "已请求停止当前任务"
                         },

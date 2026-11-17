@@ -73,7 +73,8 @@ class PhoneAgentNotificationReceiver : BroadcastReceiver() {
         val taskId = intent.getStringExtra(PhoneAgentNotifications.taskIdExtra()).orEmpty()
         if (taskId.isBlank()) return
         context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().putBoolean("phone_task_stop_requested", true).apply()
+            .edit().putBoolean("phone_task_stop_requested", true)
+            .putBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), true).apply()
         PhoneAgentService.activeService?.requestTaskStop()
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
