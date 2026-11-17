@@ -89,8 +89,10 @@ class PhoneAgentWorker(
 
         val preferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         if (task.status == PhoneAgentTaskStore.STATUS_COMPLETED) return Result.success()
-        if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED ||
-            preferences.getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+        if (PhoneAgentCancellationPolicy.isCancellationRequested(
+                task.status,
+                preferences.getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+            )
         ) {
             val store = RoomAgentTaskStateStore(dao)
             store.get(taskId)?.let { state ->

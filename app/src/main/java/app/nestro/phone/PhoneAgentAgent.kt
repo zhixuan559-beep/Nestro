@@ -130,9 +130,11 @@ object PhoneAgentAgent {
     }
 
     private fun isCancellationRequested(context: Context, taskId: String, taskStatus: String): Boolean =
-        taskStatus == PhoneAgentTaskStore.STATUS_CANCELLED ||
+        PhoneAgentCancellationPolicy.isCancellationRequested(
+            taskStatus,
             context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
                 .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
+        )
 
     private suspend fun pause(dao: NestroDao, taskId: String, message: String): Result {
         val task = dao.phoneAgentTask(taskId)
