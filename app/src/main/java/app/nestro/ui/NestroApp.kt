@@ -166,12 +166,13 @@ fun NestroApp() {
     var editMessageDraft by conversationUiState.editMessageDraft
     var renameConversationId by conversationUiState.renameConversationId
     var renameConversationDraft by conversationUiState.renameConversationDraft
-    var globalMemory by remember { mutableStateOf("") }
-    var memoryDraft by remember { mutableStateOf("") }
-    var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
-    var automaticMemoryEnabled by remember { mutableStateOf(prefs.getBoolean("automatic_memory_enabled", false)) }
-    var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
-    var memoryStatus by remember { mutableStateOf("") }
+    val memoryUiState = remember(prefs) { MemoryUiState(prefs) }
+    var globalMemory by memoryUiState.globalMemory
+    var memoryDraft by memoryUiState.memoryDraft
+    var automaticMemories by memoryUiState.automaticMemories
+    var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
+    var memoryEdits by memoryUiState.memoryEdits
+    var memoryStatus by memoryUiState.memoryStatus
     var draft by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var stopRequested by remember { mutableStateOf(false) }
