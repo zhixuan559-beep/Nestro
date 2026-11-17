@@ -2029,7 +2029,7 @@ fun NestroApp() {
                                 Text("当前不内置语音合成或第三方语音插件。后续可通过独立 Provider 接口接入用户自行选择的 API 服务。", color = Muted)
                             }
                         }
-                        "knowledge" -> KnowledgePage(database, activeProjectId)
+                        "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)

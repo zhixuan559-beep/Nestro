@@ -1,8 +1,7 @@
 package app.nestro.ui
 import app.nestro.data.KnowledgeDocumentEntity
-import app.nestro.data.KnowledgeStore
 import app.nestro.data.KnowledgeSearchResult
-import app.nestro.data.NestroDatabase
+import app.nestro.data.KnowledgeRepository
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -28,7 +27,7 @@ private val KnowledgeInk=androidx.compose.ui.graphics.Color(0xFFE8EAED)
 private val KnowledgeMuted=androidx.compose.ui.graphics.Color(0xFF8A8F98)
 private val KnowledgeMint=androidx.compose.ui.graphics.Color(0xFF34D399)
 @Composable
-fun KnowledgePage(database:NestroDatabase,projectId:String) {
+fun KnowledgePage(repository:KnowledgeRepository,projectId:String) {
  val context=LocalContext.current; val scope=rememberCoroutineScope()
  val latestProjectId by rememberUpdatedState(projectId)
  val documents=remember { mutableStateListOf<KnowledgeDocumentEntity>() }
@@ -39,7 +38,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
  var searching by remember { mutableStateOf(false) }
  val searchResults=remember { mutableStateListOf<KnowledgeSearchResult>() }
  suspend fun refresh(targetProjectId:String=projectId) {
-  val rows=withContext(Dispatchers.IO) { database.dao().knowledgeDocuments(targetProjectId) }
+  val rows=repository.documents(targetProjectId)
   if(latestProjectId!=targetProjectId) return
   documents.clear(); documents.addAll(rows)
  }
@@ -56,7 +55,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
    loading=true; status="正在读取并建立本地索引…"
    val requestedProjectId=projectId
    scope.launch {
-    val result=runCatching { KnowledgeStore.importText(context.contentResolver,uri,requestedProjectId,database.dao()) }
+    val result=runCatching { repository.importText(context.contentResolver,uri,requestedProjectId) }
     if(latestProjectId==requestedProjectId) {
      result.onSuccess { refresh(requestedProjectId); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
       .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
@@ -86,7 +85,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
     val requestedProjectId=projectId
     val requestedQuery=searchQuery
     scope.launch {
-     val result=runCatching { KnowledgeStore.search(database.dao(),requestedProjectId,requestedQuery,6) }
+     val result=runCatching { repository.search(requestedProjectId,requestedQuery,6) }
      if(latestProjectId==requestedProjectId) {
       result.onSuccess {
        searchResults.clear(); searchResults.addAll(it)
@@ -138,7 +137,7 @@ fun KnowledgePage(database:NestroDatabase,projectId:String) {
      pendingDelete=null
      val requestedProjectId=projectId
      scope.launch {
-      val result=runCatching { withContext(Dispatchers.IO) { database.dao().deleteKnowledgeDocument(target.id, requestedProjectId) } }
+      val result=runCatching { repository.deleteDocument(target.id,requestedProjectId) }
       if(latestProjectId==requestedProjectId) {
        result.onSuccess {
         documents.removeAll { it.id==target.id }
