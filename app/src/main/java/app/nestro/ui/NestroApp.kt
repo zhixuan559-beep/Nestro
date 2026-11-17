@@ -1250,6 +1250,16 @@ fun NestroApp() {
                                     } else status = "模型配置已保存：${metadata.name}"
                                 }
                             },
+                            onDeleteKey = { id ->
+                                LocalVault.deleteProfile(context, id)
+                                if (activeModelProfileId == id) {
+                                    activeModelProfileId = ""
+                                    config = ModelConfig("", "", "")
+                                    prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
+                                    LocalVault.write(context, config)
+                                }
+                                status = "API Key 已删除；对应模型已从可用模型中排除"
+                            },
                             onDelete = { id ->
                                 modelProfiles = modelProfiles.filterNot { it.id == id }
                                 LocalVault.deleteProfile(context, id)
@@ -3127,10 +3137,12 @@ private fun ModelManager(
     loadKey: (String) -> String,
     onActivate: (String) -> Unit,
     onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onDeleteKey: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var revealKey by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
@@ -3146,6 +3158,7 @@ private fun ModelManager(
         endpoint = "https://"
         model = ""
         key = ""
+        revealKey = false
         activateAfterSave = true
         testStatus = ""
         formError = ""
@@ -3156,6 +3169,7 @@ private fun ModelManager(
         endpoint = profile.baseUrl
         model = profile.model
         key = loadKey(profile.id)
+        revealKey = false
         activateAfterSave = profile.id == activeProfileId
         testStatus = ""
         formError = ""
@@ -3183,7 +3197,7 @@ private fun ModelManager(
                             Column(Modifier.weight(1f)) {
                                 Text(profile.name + if (active) " · 当前使用" else "", color = if (active) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                 Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存" else "缺少 API Key", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                                Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存 · 可用" else "API Key 已删除或未配置 · 此模型不可选择", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
                                 usage[profile.id]?.let { stats ->
                                     Text("成功请求 ${stats.requests} 次 · 估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                 }
@@ -3192,7 +3206,8 @@ private fun ModelManager(
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { edit(profile) }) { Text("编辑", color = Mint) }
                             TextButton(onClick = { onActivate(profile.id) }, enabled = !active && loadKey(profile.id).isNotBlank()) { Text("启用", color = Mint) }
-                            TextButton(onClick = { onDelete(profile.id); if (editingId == profile.id) beginNew() }) { Text("删除", color = ColorStop) }
+                            TextButton(onClick = { onDeleteKey(profile.id); if (editingId == profile.id) { key = ""; revealKey = false } }, enabled = loadKey(profile.id).isNotBlank()) { Text("删除 Key", color = ColorStop) }
+                            TextButton(onClick = { onDelete(profile.id); if (editingId == profile.id) beginNew() }) { Text("删除模型", color = ColorStop) }
                         }
                     }
                 }
@@ -3202,7 +3217,7 @@ private fun ModelManager(
         OutlinedTextField(name, { name = it.take(40) }, modifier = Modifier.fillMaxWidth(), label = { Text("配置名称") }, singleLine = true)
         OutlinedTextField(endpoint, { endpoint = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true)
         OutlinedTextField(model, { model = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型名称") }, placeholder = { Text("例如 deepseek-chat") }, singleLine = true)
-        OutlinedTextField(key, { key = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+        OutlinedTextField(key, { key = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key") }, visualTransformation = if (revealKey) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true, trailingIcon = { TextButton(onClick = { revealKey = !revealKey }) { Text(if (revealKey) "隐藏" else "查看") } })
         Text("每组 Key 独立使用 Android Keystore AES-GCM 加密。备份只包含配置名称、地址和模型名，不包含 Key。", color = Muted, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = activateAfterSave, onCheckedChange = { activateAfterSave = it })
