@@ -44,11 +44,11 @@ object PhoneAgentWorkScheduler {
 
     fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        // Persist cancellation even before a worker starts, then remove this task's queued/running work.
+        // Persist cancellation even before this task reaches the head of the shared WorkManager chain.
+        // Do not cancel the tagged WorkRequest: WorkManager may cancel dependent requests in the
+        // same unique-work chain as well. The Room terminal state + coordinator cancellation stop
+        // this task; its worker returns success so later queued tasks can continue.
         preferences.edit().putBoolean(cancelKey(taskId), true).apply()
-        runCatching {
-            WorkManager.getInstance(context.applicationContext).cancelAllWorkByTag(uniqueName(taskId))
-        }
         if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop()
     }
 
