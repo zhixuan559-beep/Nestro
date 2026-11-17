@@ -44,17 +44,21 @@ class ModelRegistryStore(context: Context) {
             val profileId = key.id.removePrefix("legacy-key-")
             if (hasSecret(profileId)) key.copy(enabled = true) else null
         }
+        val providers = migrated.providers.map { provider ->
+            provider.copy(enabled = previous.providers.firstOrNull { it.id == provider.id }?.enabled ?: provider.enabled)
+        }
         val models = migrated.models.map { model ->
             val profileId = model.id.removePrefix("legacy-model-")
             val old = previous.models.firstOrNull { it.id == model.id }
             model.copy(
                 apiKeyIds = if (hasSecret(profileId)) listOf("legacy-key-" + profileId) else emptyList(),
+                enabled = old?.enabled ?: model.enabled,
                 inputPricePerMillion = old?.inputPricePerMillion,
                 outputPricePerMillion = old?.outputPricePerMillion,
                 currency = old?.currency ?: model.currency
             )
         }
-        return migrated.copy(apiKeys = keys, models = models).also(::save)
+        return migrated.copy(providers = providers, apiKeys = keys, models = models).also(::save)
     }
 
     fun save(registry: ModelRegistry) {
