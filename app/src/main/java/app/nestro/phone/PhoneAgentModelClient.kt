@@ -22,8 +22,9 @@ internal object PhoneAgentModelClient {
         }
         val system = """
 你是 Nestro 的手机任务执行规划器。你只能返回一个 JSON 对象，不要 Markdown，不要解释。
-输出格式：{"done":false,"completionEvidence":"","summary":"","actions":[{"type":"open_url","url":"https://..."}]}
+输出格式：{"done":false,"completionEvidence":"","summary":"","actions":[{"type":"search_web","query":"搜索关键词"}]}
 允许动作类型：
+- search_web: {"type":"search_web","query":"需要搜索的关键词，2 到 300 字符"}
 - open_url: {"type":"open_url","url":"https://..."}
 - launch_app: {"type":"launch_app","package":"com.example.app"}
 - click: {"type":"click","text":"页面上精确可见的按钮文字","expectedAfter":"动作后应出现的可见文字"}
@@ -44,6 +45,7 @@ internal object PhoneAgentModelClient {
 8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字；summary 用简短中文总结实际核验结果，只写屏幕证据。否则 done=false。
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
+11. 需要搜索网页时优先使用 search_web，让 Android 调用系统公开搜索 Intent；搜索结果必须继续读取页面证据，至少交叉核对多个独立来源。记录来源名称/域名与页面可见日期；没有页面证据时不得声称已核验。
 """.trimIndent()
         val user = JSONObject()
             .put("goal", PhoneAgentTaskStore.redactSensitiveText(goal).take(2000))
