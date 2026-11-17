@@ -31,6 +31,32 @@ class ModelRegistryStore(context: Context) {
         return migrated.copy(apiKeys = migratedKeys, models = migratedModels).also(::save)
     }
 
+    fun rebuildFromLegacy(
+        legacyProfiles: List<ModelProfileMetadata>,
+        hasSecret: (profileId: String) -> Boolean
+    ): ModelRegistry {
+        val previous = preferences.getString(KEY, null)
+            ?.takeIf { it.isNotBlank() }
+            ?.let(ModelRegistryCodec::decode)
+            ?: ModelRegistry()
+        val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
+        val keys = migrated.apiKeys.mapNotNull { key ->
+            val profileId = key.id.removePrefix("legacy-key-")
+            if (hasSecret(profileId)) key.copy(enabled = true) else null
+        }
+        val models = migrated.models.map { model ->
+            val profileId = model.id.removePrefix("legacy-model-")
+            val old = previous.models.firstOrNull { it.id == model.id }
+            model.copy(
+                apiKeyIds = if (hasSecret(profileId)) listOf("legacy-key-" + profileId) else emptyList(),
+                inputPricePerMillion = old?.inputPricePerMillion,
+                outputPricePerMillion = old?.outputPricePerMillion,
+                currency = old?.currency ?: model.currency
+            )
+        }
+        return migrated.copy(apiKeys = keys, models = models).also(::save)
+    }
+
     fun save(registry: ModelRegistry) {
         require(registry.validate() == null) { registry.validate() ?: "模型目录无效" }
         preferences.edit().putString(KEY, ModelRegistryCodec.encode(registry)).apply()
