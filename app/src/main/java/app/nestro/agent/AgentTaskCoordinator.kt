@@ -91,13 +91,15 @@ class AgentTaskCoordinator(
                     AgentTaskStatus.RUNNING,
                     AgentTaskStatus.COMPLETED
                 )) return@withLock existing
-            (existing ?: AgentTaskState(taskId, owner)).copy(
+            val next = (existing ?: AgentTaskState(taskId, owner)).copy(
                 owner = owner,
                 status = AgentTaskStatus.QUEUED,
                 checkpoint = checkpoint?.take(64_000) ?: existing?.checkpoint.orEmpty(),
                 lastError = "",
                 updatedAt = System.currentTimeMillis()
-            ).also { states.put(it) }
+            )
+            states.put(next)
+            next
         }
         if (queued.status == AgentTaskStatus.QUEUED) queue.send(taskId)
         return queued
@@ -111,11 +113,13 @@ class AgentTaskCoordinator(
                     AgentTaskStatus.FAILED,
                     AgentTaskStatus.WAITING_FOR_USER
                 )) return@withLock existing
-            existing.copy(
+            val next = existing.copy(
                 status = AgentTaskStatus.QUEUED,
                 lastError = "",
                 updatedAt = System.currentTimeMillis()
-            ).also { states.put(it) }
+            )
+            states.put(next)
+            next
         } ?: return null
         if (queued.status == AgentTaskStatus.QUEUED) queue.send(taskId)
         return queued
