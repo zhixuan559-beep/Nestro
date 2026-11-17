@@ -6,6 +6,7 @@ import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
 
 /**
  * Application boundary for Phone Agent task persistence and background scheduling.
@@ -27,7 +28,7 @@ class PhoneAgentTaskService(
     ): Map<String, List<PhoneAgentTaskLogEntity>> {
         val dao = database.dao()
         return tasks.associate { task ->
-            task.id to runCatching {
+            task.id to runCatchingCancellable {
                 PhoneAgentTaskStore.recentLogs(dao, task.id, limit.coerceIn(1, 100))
             }.getOrDefault(emptyList())
         }
