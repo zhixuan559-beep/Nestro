@@ -9,7 +9,7 @@ import java.util.UUID
 
 /** Application-level model connectivity check shared by model-management UI. */
 class ModelConnectionService {
-    suspend fun test(candidate: ModelConfig): String {
+    internal suspend fun test(candidate: ModelConfig): String {
         require(candidate.baseUrl.startsWith("https://") && candidate.model.isNotBlank() && candidate.apiKey.isNotBlank()) {
             "请填写 HTTPS 地址、模型名称和 API Key"
         }
