@@ -1,11 +1,8 @@
 package app.nestro.ui
 
+import app.nestro.NestroApplication
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelRegistryCodec
-import app.nestro.agent.AgentTaskCoordinator
-import app.nestro.agent.AgentTaskHandlerRegistry
-import app.nestro.agent.RoomAgentTaskStateStore
-import app.nestro.agent.RoomAgentTaskTraceStore
 import app.nestro.data.ModelConfig
 import app.nestro.data.LocalVault
 import app.nestro.data.ConversationEntity
@@ -155,15 +152,8 @@ fun NestroApp() {
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val database = remember { NestroDatabase.get(context) }
-    val agentTaskHandlers = remember { AgentTaskHandlerRegistry() }
-    val agentTaskCoordinator = remember {
-        AgentTaskCoordinator(
-            states = RoomAgentTaskStateStore(database.dao()),
-            handlers = agentTaskHandlers,
-            scope = scope,
-            traces = RoomAgentTaskTraceStore(database.dao())
-        )
-    }
+    val appRuntime = context.applicationContext as NestroApplication
+    val agentTaskCoordinator = appRuntime.agentTaskCoordinator
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember { mutableStateOf("home") }
