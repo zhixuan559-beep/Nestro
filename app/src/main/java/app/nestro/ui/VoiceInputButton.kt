@@ -62,6 +62,7 @@ fun VoiceInputButton(
         controller.start(Locale.getDefault().toLanguageTag(), object : AndroidSpeechRecognitionController.Listener {
             override fun onListening() { phase = VoicePhase.LISTENING }
             override fun onProcessing() { phase = VoicePhase.PROCESSING }
+            override fun onIdle() { phase = VoicePhase.IDLE }
             override fun onPartialResult(text: String) { latestPartial.value(text) }
             override fun onResult(text: String) { latestResult.value(text) }
             override fun onStatus(message: String) { latestStatus.value(message) }
