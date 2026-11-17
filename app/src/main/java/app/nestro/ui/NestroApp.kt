@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistryCodec
+import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
 import app.nestro.data.ConversationRecord
@@ -783,18 +784,16 @@ fun NestroApp() {
     }
 
 
-    val selectableModelProfileIds = modelRegistry.selectableModels()
-        .mapNotNull { model -> model.id.removePrefix("legacy-model-").takeIf { model.id.startsWith("legacy-model-") } }
-        .toSet()
-    val requestModelConfigs = buildList {
-        if (activeModelProfileId in selectableModelProfileIds && config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
-        if (modelFailoverEnabled) modelProfiles.filter {
-            it.id != activeModelProfileId && it.id in selectableModelProfileIds
-        }.forEach { profile ->
-            val key = modelRepository.readProfileKey(profile.id)
-            if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
-        }
-    }.distinctBy { "${it.baseUrl}|${it.model}" }
+    val selectableModelProfileIds =
+        ModelRequestConfigurationSelector.selectableLegacyProfileIds(modelRegistry)
+    val requestModelConfigs = ModelRequestConfigurationSelector.buildRequestConfigs(
+        registry = modelRegistry,
+        profiles = modelProfiles,
+        activeProfileId = activeModelProfileId,
+        activeConfig = config,
+        failoverEnabled = modelFailoverEnabled,
+        readKey = { profileId -> modelRepository.readProfileKey(profileId) }
+    )
 
     val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputChars, outputChars ->
         scope.launch {
