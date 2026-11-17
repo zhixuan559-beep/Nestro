@@ -36,7 +36,7 @@ class NestroApplication : Application() {
     val conversationPersistenceService: ConversationPersistenceService by lazy {
         ConversationPersistenceService(database)
     }
-    val chatRequestRecoveryCoordinator: ChatRequestRecoveryCoordinator by lazy {
+    internal val chatRequestRecoveryCoordinator: ChatRequestRecoveryCoordinator by lazy {
         ChatRequestRecoveryCoordinator(conversationPersistenceService)
     }
     val userMemoryRepository: UserMemoryRepository by lazy { UserMemoryRepository(database) }
