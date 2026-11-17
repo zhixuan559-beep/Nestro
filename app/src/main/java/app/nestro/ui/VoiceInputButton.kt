@@ -35,6 +35,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -146,6 +149,15 @@ fun VoiceInputButton(
 
     Box(
         modifier = Modifier.size(52.dp).scale(scale)
+            .semantics {
+                contentDescription = when (phase) {
+                    VoicePhase.LISTENING -> "正在录音，松开结束"
+                    VoicePhase.PROCESSING -> "正在识别语音"
+                    VoicePhase.IDLE -> "按住说话"
+                }
+                role = Role.Button
+                if (!enabled) disabled()
+            }
             .background(buttonColor, CircleShape)
             .pointerInput(enabled, hasPermission) {
                 detectTapGestures(onPress = {
