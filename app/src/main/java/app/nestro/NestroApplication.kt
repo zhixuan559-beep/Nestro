@@ -14,6 +14,7 @@ import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ConversationPersistenceService
 import app.nestro.data.ChatRequestRecoveryCoordinator
+import app.nestro.data.ConversationStartupCoordinator
 import app.nestro.data.UserMemoryRepository
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
@@ -38,6 +39,9 @@ class NestroApplication : Application() {
     }
     internal val chatRequestRecoveryCoordinator: ChatRequestRecoveryCoordinator by lazy {
         ChatRequestRecoveryCoordinator(conversationPersistenceService)
+    }
+    internal val conversationStartupCoordinator: ConversationStartupCoordinator by lazy {
+        ConversationStartupCoordinator(conversationPersistenceService)
     }
     val userMemoryRepository: UserMemoryRepository by lazy { UserMemoryRepository(database) }
     val conversationContextRepository: ConversationContextRepository by lazy { ConversationContextRepository(database) }
