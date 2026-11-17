@@ -211,8 +211,18 @@ class AgentTaskCoordinator(
                         paused
                     }
                     AgentTaskStatus.QUEUED -> {
-                        queuedIds += latest.taskId
-                        latest
+                        if (handlers.find(latest.owner) != null) {
+                            queuedIds += latest.taskId
+                            latest
+                        } else {
+                            val paused = latest.copy(
+                                status = AgentTaskStatus.PAUSED,
+                                lastError = "任务处理器尚未恢复；请重新打开对应功能后再继续",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            states.put(paused)
+                            paused
+                        }
                     }
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.WAITING_FOR_USER,
