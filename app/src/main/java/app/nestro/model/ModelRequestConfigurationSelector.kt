@@ -68,9 +68,12 @@ internal object ModelRequestConfigurationSelector {
             }
         }
 
-        val active = registry.models.firstOrNull { it.id == activeModelId }
+        // Failover is only meaningful after the user has selected a model.
+        // An empty or stale selection must never silently choose an arbitrary registry entry.
+        if (activeModelId.isBlank()) return emptyList()
+        val active = registry.models.firstOrNull { it.id == activeModelId } ?: return emptyList()
         val orderedModels = buildList {
-            active?.let(::add)
+            add(active)
             if (failoverEnabled) {
                 registry.models.filterNot { it.id == activeModelId }.forEach(::add)
             }
