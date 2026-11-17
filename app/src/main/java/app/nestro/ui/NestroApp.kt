@@ -1,6 +1,5 @@
 package app.nestro.ui
 
-import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelRegistryStore
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.agent.AgentTaskCoordinator
@@ -79,9 +78,6 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -124,10 +120,6 @@ import java.util.UUID
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 private val Bg = androidx.compose.ui.graphics.Color(0xFF0F1115)
 private val Card = androidx.compose.ui.graphics.Color(0xFF1A1C20)
