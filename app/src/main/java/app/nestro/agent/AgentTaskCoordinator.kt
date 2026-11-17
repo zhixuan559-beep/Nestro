@@ -263,6 +263,11 @@ class AgentTaskCoordinator(
                 states.put(state.copy(status = status, updatedAt = System.currentTimeMillis()))
             } else {
                 requestedStops[taskId] = status
+                states.put(state.copy(
+                    status = status,
+                    lastError = if (status == AgentTaskStatus.PAUSED) "正在暂停任务" else "正在取消任务",
+                    updatedAt = System.currentTimeMillis()
+                ))
                 job.cancel(CancellationException(if (status == AgentTaskStatus.PAUSED) "用户暂停任务" else "用户取消任务"))
             }
         }
