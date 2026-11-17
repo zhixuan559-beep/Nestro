@@ -173,15 +173,16 @@ fun NestroApp() {
     var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
     var memoryEdits by memoryUiState.memoryEdits
     var memoryStatus by memoryUiState.memoryStatus
-    var draft by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var stopRequested by remember { mutableStateOf(false) }
-    var activeRequestId by remember { mutableStateOf("") }
-    var reuseLastUserOnSend by remember { mutableStateOf(false) }
-    var pendingAssistantRevision by remember { mutableStateOf<ChatMessage?>(null) }
-    var status by remember { mutableStateOf("尚未配置模型") }
-    var recallSources by remember { mutableStateOf(emptyList<ConversationRecallSource>()) }
-    var showRecallDialog by remember { mutableStateOf(false) }
+    val chatExecutionUiState = remember { ChatExecutionUiState() }
+    var draft by chatExecutionUiState.draft
+    var busy by chatExecutionUiState.busy
+    var stopRequested by chatExecutionUiState.stopRequested
+    var activeRequestId by chatExecutionUiState.activeRequestId
+    var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
+    var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
+    var status by chatExecutionUiState.status
+    var recallSources by chatExecutionUiState.recallSources
+    var showRecallDialog by chatExecutionUiState.showRecallDialog
     var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
     var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
     var expertProfiles by remember { mutableStateOf(ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")) }
