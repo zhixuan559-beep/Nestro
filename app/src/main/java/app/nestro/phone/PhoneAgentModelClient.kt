@@ -1,12 +1,13 @@
 package app.nestro.phone
 
 import android.content.Context
-import app.nestro.data.LocalVault
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import app.nestro.NestroApplication
+import app.nestro.data.ChatMessage
+import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.model.ModelRequestConfigurationSelector
+import java.util.UUID
 
+/** Phone Agent uses the same model registry, credential vault and fallback policy as chat. */
 internal object PhoneAgentModelClient {
     fun planNext(
         context: Context,
@@ -15,10 +16,26 @@ internal object PhoneAgentModelClient {
         visibleScreen: String,
         recentActions: String
     ): PhoneAgentActionParser.ParsedPlan {
-        val config = LocalVault.read(context)
-        require(config.baseUrl.startsWith("https://") && config.model.isNotBlank() && config.apiKey.isNotBlank()) {
+        val app = context.applicationContext as NestroApplication
+        val preferences = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        val repository = app.modelConfigurationRepository
+        val profiles = ModelProfileCatalogCodec.decode(
+            preferences.getString("model_profiles_v1", "[]").orEmpty()
+        )
+        val registry = repository.loadRegistry(profiles)
+        val activeProfileId = preferences.getString("active_model_profile_id", "").orEmpty()
+        val configs = ModelRequestConfigurationSelector.buildRequestConfigs(
+            registry = registry,
+            profiles = profiles,
+            activeProfileId = activeProfileId,
+            activeConfig = repository.readActiveConfig(),
+            failoverEnabled = preferences.getBoolean("model_failover_enabled", false),
+            readKey = repository::readProfileKey
+        )
+        require(configs.isNotEmpty()) {
             "请先在模型管理中配置可用的 HTTPS 模型与 API Key"
         }
+
         val system = """
 你是 Nestro 的手机任务执行规划器。你只能返回一个 JSON 对象，不要 Markdown，不要解释。
 输出格式：{"done":false,"completionEvidence":"","summary":"","actions":[{"type":"open_url","url":"https://..."}]}
@@ -44,43 +61,21 @@ internal object PhoneAgentModelClient {
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
 """.trimIndent()
-        val user = JSONObject()
+        val user = org.json.JSONObject()
             .put("goal", goal)
             .put("category", category)
             .put("visibleScreenText", visibleScreen.take(7000))
             .put("recentActionResults", recentActions.take(2500))
             .toString()
-        val connection = (URL(config.baseUrl.trimEnd('/') + "/chat/completions").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15000
-            readTimeout = 45000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer " + config.apiKey)
-        }
-        return try {
-            val body = JSONObject().apply {
-                put("model", config.model)
-                put("stream", false)
-                put("temperature", 0.1)
-                put("messages", JSONArray().apply {
-                    put(JSONObject().put("role", "system").put("content", system))
-                    put(JSONObject().put("role", "user").put("content", user))
-                })
-            }
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
-            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
-                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                error(detail?.takeIf { it.isNotBlank() } ?: "模型请求失败：HTTP " + code)
-            }
-            val content = JSONObject(response).getJSONArray("choices").getJSONObject(0)
-                .getJSONObject("message").optString("content")
-            PhoneAgentActionParser.parse(content)
-        } finally {
-            connection.disconnect()
-        }
+        val response = app.chatExecutionService.completeWithFallback(
+            configs,
+            listOf(ChatMessage(UUID.randomUUID().toString(), "user", user)),
+            system,
+            connectTimeoutMillis = 15_000,
+            readTimeoutMillis = 45_000,
+            temperature = 0.1,
+            maxTokens = 4096
+        )
+        return PhoneAgentActionParser.parse(response)
     }
 }
