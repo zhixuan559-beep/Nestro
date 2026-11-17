@@ -80,6 +80,7 @@ internal class ModelManagementUiState(
 
         if (activeRegistryIsUsable) {
             activeProfileId = ""
+            preferences.edit().remove("active_model_profile_id").apply()
             loadedConfig = ModelConfig(activeRegistryProvider!!.baseUrl, activeRegistryModel!!.modelCode, activeRegistrySecret!!)
             repository.writeActiveConfig(loadedConfig)
         } else {
