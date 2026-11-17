@@ -641,11 +641,22 @@ fun NestroApp() {
             val restoredPrompt = pendingRequest.optString("prompt")
             val partial = pendingRequest.optString("partial_answer")
             val record = conversations.firstOrNull { it.id == conversationId }
-            if (record != null && record.messages.none { it.id == requestId }) {
-                val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
-                val recovered = record.messages + ChatMessage(requestId, "assistant", content)
-                conversations = saveConversationMessages(prefs, conversationId, recovered, projectId)
-                if (activeConversationId == conversationId) messages = recovered
+            if (record != null) {
+                val existingMessages = if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        database.dao().conversationWithMessages(conversationId)?.messages.orEmpty()
+                            .sortedBy { it.position }
+                            .map { message ->
+                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                            }
+                    }
+                } else record.messages
+                if (existingMessages.none { it.id == requestId }) {
+                    val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
+                    val recovered = existingMessages + ChatMessage(requestId, "assistant", content)
+                    conversations = saveConversationMessages(prefs, conversationId, recovered, projectId)
+                    if (activeConversationId == conversationId) messages = recovered
+                }
             }
             if (restoredPrompt.isNotBlank() && activeConversationId == conversationId) {
                 draft = restoredPrompt
@@ -1791,9 +1802,24 @@ fun NestroApp() {
                                                     onClick = {
                                                         val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
                                                         if (source != null) {
-                                                            activeConversationId = source.id
-                                                            messages = source.messages
-                                                            page = "home"
+                                                            scope.launch {
+                                                                val sourceMessages = if (databaseReady) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        database.dao().conversationWithMessages(source.id)?.messages.orEmpty()
+                                                                            .sortedBy { it.position }
+                                                                            .map { message ->
+                                                                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                                                                            }
+                                                                    }
+                                                                } else source.messages
+                                                                activeConversationId = source.id
+                                                                messages = sourceMessages
+                                                                conversations = conversations.map { record ->
+                                                                    if (record.id == source.id) record.copy(messages = sourceMessages) else record
+                                                                }
+                                                                conversations.firstOrNull { it.id == source.id }?.let { persistedConversationVersions[source.id] = it.hashCode() }
+                                                                page = "home"
+                                                            }
                                                         }
                                                     },
                                                     enabled = conversations.any { it.id == memory.sourceConversationId }
@@ -2261,11 +2287,26 @@ fun NestroApp() {
                         Column(Modifier.fillMaxWidth().clickable {
                             val target = conversations.firstOrNull { it.id == source.conversationId }
                             if (target != null) {
-                                activeConversationId = target.id
-                                activeProjectId = target.projectId
-                                messages = target.messages
-                                prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
-                                page = "home"
+                                scope.launch {
+                                    val targetMessages = if (databaseReady) {
+                                        withContext(Dispatchers.IO) {
+                                            database.dao().conversationWithMessages(target.id)?.messages.orEmpty()
+                                                .sortedBy { it.position }
+                                                .map { message ->
+                                                    ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
+                                                }
+                                        }
+                                    } else target.messages
+                                    activeConversationId = target.id
+                                    activeProjectId = target.projectId
+                                    messages = targetMessages
+                                    conversations = conversations.map { record ->
+                                        if (record.id == target.id) record.copy(messages = targetMessages) else record
+                                    }
+                                    conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
+                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
+                                    page = "home"
+                                }
                             }
                             showRecallDialog = false
                         }.padding(vertical = 9.dp)) {
