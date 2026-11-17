@@ -13,6 +13,7 @@ import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ConversationPersistenceService
+import app.nestro.data.ChatRequestRecoveryCoordinator
 import app.nestro.data.UserMemoryRepository
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
@@ -34,6 +35,9 @@ class NestroApplication : Application() {
     val database: NestroDatabase by lazy { NestroDatabase.get(this) }
     val conversationPersistenceService: ConversationPersistenceService by lazy {
         ConversationPersistenceService(database)
+    }
+    val chatRequestRecoveryCoordinator: ChatRequestRecoveryCoordinator by lazy {
+        ChatRequestRecoveryCoordinator(conversationPersistenceService)
     }
     val userMemoryRepository: UserMemoryRepository by lazy { UserMemoryRepository(database) }
     val conversationContextRepository: ConversationContextRepository by lazy { ConversationContextRepository(database) }
