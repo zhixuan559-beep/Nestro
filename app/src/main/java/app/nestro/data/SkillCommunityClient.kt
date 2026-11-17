@@ -84,7 +84,9 @@ object SkillCommunityClient {
         fun parse(raw: String): Pair<List<Int>, String?> {
             require(raw.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本格式无效" }
             val withoutBuild = raw.substringBefore("+")
-            val core = withoutBuild.substringBefore("-").split(".").map { it.toInt() }
+            val coreParts = withoutBuild.substringBefore("-").split(".")
+            require(coreParts.all { it.length <= 18 }) { "技能版本数字过长" }
+            val core = coreParts.map { it.toLong() }
             val preRelease = withoutBuild.substringAfter("-", "").takeIf { it.isNotEmpty() }
             return core to preRelease
         }
