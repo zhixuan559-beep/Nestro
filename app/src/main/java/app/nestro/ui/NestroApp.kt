@@ -251,44 +251,21 @@ fun NestroApp() {
         mutableStateOf(ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]"))
     }
     var teamMemberStatuses by remember { mutableStateOf(emptyMap<String,String>()) }
-    var workflowHistory by remember {
-        mutableStateOf(WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]"))
-    }
-    var workflows by remember {
-        mutableStateOf(
-            WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]").ifEmpty {
-                listOf(
-                    WorkflowDefinition(
-                        name = "研究到方案",
-                        description = "先拆解问题，再形成可执行方案",
-                        steps = listOf(
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "拆解与研究", instruction = "识别目标、关键事实、约束和风险，形成结构化分析。"),
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成方案", instruction = "基于上一步结果，形成清晰、可执行、带优先级的方案。")
-                        )
-                    )
-                )
-            }
-        )
-    }
-    var showWorkflowDialog by remember { mutableStateOf(false) }
-    var editingWorkflowId by remember { mutableStateOf("") }
-    var workflowDraftName by remember { mutableStateOf("") }
-    var workflowDraftDescription by remember { mutableStateOf("") }
-    var workflowDraftSteps by remember {
-        mutableStateOf(
-            listOf(
-                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "分析需求", instruction = "拆解用户目标，列出关键事实、约束和待解决问题。"),
-                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成结果", instruction = "根据上一步分析，形成可直接交付的结果，并检查完整性。")
-            )
-        )
-    }
-    var workflowTargetPickerIndex by remember { mutableIntStateOf(-1) }
-    var showWorkflowTargetPicker by remember { mutableStateOf(false) }
-    var workflowInputDraft by remember { mutableStateOf("") }
-    var workflowRunStatus by remember { mutableStateOf("") }
-    var runningWorkflowId by remember { mutableStateOf("") }
-    var workflowPaused by remember { mutableStateOf(false) }
-    var workflowPauseGate by remember { mutableStateOf<CompletableDeferred<Unit>?>(null) }
+    val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
+    var workflowHistory by workflowUiState.workflowHistory
+    var workflows by workflowUiState.workflows
+    var showWorkflowDialog by workflowUiState.showWorkflowDialog
+    var editingWorkflowId by workflowUiState.editingWorkflowId
+    var workflowDraftName by workflowUiState.workflowDraftName
+    var workflowDraftDescription by workflowUiState.workflowDraftDescription
+    var workflowDraftSteps by workflowUiState.workflowDraftSteps
+    var workflowTargetPickerIndex by workflowUiState.workflowTargetPickerIndex
+    var showWorkflowTargetPicker by workflowUiState.showWorkflowTargetPicker
+    var workflowInputDraft by workflowUiState.workflowInputDraft
+    var workflowRunStatus by workflowUiState.workflowRunStatus
+    var runningWorkflowId by workflowUiState.runningWorkflowId
+    var workflowPaused by workflowUiState.workflowPaused
+    var workflowPauseGate by workflowUiState.workflowPauseGate
     var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
     var pendingBackupUri by remember { mutableStateOf<Uri?>(null) }
     var showBackupRestoreConfirm by remember { mutableStateOf(false) }
