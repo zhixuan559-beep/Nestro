@@ -1255,8 +1255,8 @@ fun NestroApp() {
                                 if (activeModelProfileId == id) {
                                     activeModelProfileId = ""
                                     config = ModelConfig("", "", "")
+                                    LocalVault.clearActive(context)
                                     prefs.edit().remove("active_model_profile_id").remove("base_url").remove("model").apply()
-                                    LocalVault.write(context, config)
                                 }
                                 status = "API Key 已删除；对应模型已从可用模型中排除"
                             },
@@ -3620,6 +3620,16 @@ internal object LocalVault {
     fun deleteProfile(context: Context, id: String) {
         context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
             .edit().remove("model_api_key_enc_$id").apply()
+    }
+
+    fun clearActive(context: Context) {
+        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+            .edit()
+            .remove("active_model_profile_id")
+            .remove("base_url")
+            .remove("model")
+            .remove("api_key_enc")
+            .apply()
     }
 
     private fun getKey(): SecretKey {
