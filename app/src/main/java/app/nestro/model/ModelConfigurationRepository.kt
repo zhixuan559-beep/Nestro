@@ -3,6 +3,7 @@ package app.nestro.model
 import android.content.Context
 import app.nestro.data.LocalVault
 import app.nestro.data.ModelProfileMetadata
+import app.nestro.data.ModelConfig
 
 /**
  * Application boundary for model metadata and encrypted credentials.
@@ -49,4 +50,13 @@ class ModelConfigurationRepository(context: Context) {
 
     fun deleteApiKey(keyId: String) =
         LocalVault.deleteApiKey(vaultContext, keyId)
+
+    /** Keeps the legacy active-model preference format behind the model boundary. */
+    fun readActiveConfig(): ModelConfig = LocalVault.read(vaultContext)
+
+    fun writeActiveConfig(config: ModelConfig) =
+        LocalVault.write(vaultContext, config)
+
+    fun clearActiveConfig() =
+        LocalVault.clearActive(vaultContext)
 }
