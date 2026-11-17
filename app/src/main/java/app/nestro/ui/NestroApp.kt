@@ -370,9 +370,23 @@ fun NestroApp() {
                 modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
                 modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
                 val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-                config = if (restoredActiveProfile != null) {
-                    ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
-                } else LocalVault.read(context)
+                if (restoredActiveProfile != null) {
+                    val restoredKey = LocalVault.readProfile(context, restoredActiveProfile.id)
+                    if (restoredKey.isNotBlank()) {
+                        config = ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, restoredKey)
+                        LocalVault.write(context, config)
+                    } else {
+                        activeModelProfileId = ""
+                        config = ModelConfig("", "", "")
+                        LocalVault.clearActive(context)
+                        prefs.edit().remove("active_model_profile_id").apply()
+                    }
+                } else {
+                    activeModelProfileId = ""
+                    config = ModelConfig("", "", "")
+                    LocalVault.clearActive(context)
+                    prefs.edit().remove("active_model_profile_id").apply()
+                }
                 persistedConversationVersions.clear()
                 conversations = loadConversations(prefs)
                 projects = loadProjects(prefs)
