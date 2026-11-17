@@ -11,6 +11,7 @@ import app.nestro.phone.PhoneAgentAgent
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.data.NestroDatabase
+import app.nestro.model.ModelConfigurationRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,12 +22,17 @@ import kotlinx.coroutines.launch
  * Compose screen or Activity lifecycle.
  */
 class NestroApplication : Application() {
+    val database: NestroDatabase by lazy { NestroDatabase.get(this) }
+    val modelConfigurationRepository: ModelConfigurationRepository by lazy {
+        ModelConfigurationRepository(this)
+    }
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val agentTaskHandlers: AgentTaskHandlerRegistry by lazy {
         AgentTaskHandlerRegistry().apply {
             register("phone_agent") { taskContext ->
-                val dao = NestroDatabase.get(this@NestroApplication).dao()
+                val dao = database.dao()
                 val task = dao.phoneAgentTask(taskContext.taskId) ?: error("Phone Agent 任务不存在")
                 val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
                 val result = PhoneAgentAgent.run(
@@ -58,7 +64,7 @@ class NestroApplication : Application() {
     }
 
     val agentTaskCoordinator: AgentTaskCoordinator by lazy {
-        val dao = NestroDatabase.get(this).dao()
+        val dao = database.dao()
         AgentTaskCoordinator(
             states = RoomAgentTaskStateStore(dao),
             handlers = agentTaskHandlers,

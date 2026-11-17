@@ -137,9 +137,9 @@ fun NestroApp() {
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val adaptiveDrawerWidth = adaptiveDrawerWidthDp(screenWidthDp).dp
     val scope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val database = remember { NestroDatabase.get(context) }
     val appRuntime = context.applicationContext as NestroApplication
+    val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
+    val database = remember { appRuntime.database }
     val agentTaskCoordinator = appRuntime.agentTaskCoordinator
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
@@ -148,7 +148,7 @@ fun NestroApp() {
     var showDrawer by remember { mutableStateOf(false) }
     var config by remember { mutableStateOf(ModelConfig("", "", "")) }
     var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
-    val modelRepository = remember { ModelConfigurationRepository(context) }
+    val modelRepository = remember { appRuntime.modelConfigurationRepository }
     var modelRegistry by remember {
         mutableStateOf(modelRepository.loadRegistry(modelProfiles))
     }
