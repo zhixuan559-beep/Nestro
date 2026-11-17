@@ -102,7 +102,11 @@ object PhoneAgentTaskStore {
                     val value = row.getString("value")
                     require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "已保存的输入动作无效" }
                     require(listOf("密码", "验证码", "银行卡", "身份证", "安全码", "手机号", "电话", "邮箱", "地址", "姓名", "账号").none { label.contains(it, true) }) { "已保存的敏感输入必须由用户本人处理" }
-                    require(!Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}").containsMatchIn(value) && !Regex("[0-9]{6,19}").containsMatchIn(value)) { "已保存的敏感输入必须由用户本人处理" }
+                    require(!Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}").containsMatchIn(value) &&
+                        !Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""").containsMatchIn(value) &&
+                        !Regex("""(?<!\d)\d{17}[0-9Xx](?!\d)""").containsMatchIn(value)) {
+                        "已保存的敏感输入必须由用户本人处理"
+                    }
                     PhoneAgentExecutor.Action.EnterText(label, value)
                 }
                 "scroll" -> {
@@ -121,7 +125,11 @@ object PhoneAgentTaskStore {
                     PhoneAgentExecutor.Action.VerifyText(expected)
                 }
                 "back" -> PhoneAgentExecutor.Action.Back
-                "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(row.getString("description"))
+                "confirm_sensitive" -> {
+                    val description = row.getString("description").trim()
+                    require(description.isNotBlank() && description.length <= 240) { "已保存的用户确认说明无效" }
+                    PhoneAgentExecutor.Action.ConfirmSensitive(description)
+                }
                 else -> error("任务包含未知动作类型")
             }
         }
@@ -191,7 +199,6 @@ object PhoneAgentTaskStore {
     private fun containsSensitiveClarification(value: String): Boolean =
         Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
             Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""").containsMatchIn(value) ||
-            Regex("""(?<!\d)\d{6,19}(?!\d)""").containsMatchIn(value) ||
             listOf("地址", "住址", "电话", "手机号", "验证码", "密码", "银行卡", "身份证").any { value.contains(it, true) }
 
     private fun encodePlan(plan: PhoneAgentPlanner.Plan): String {
