@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.nestro.data.NestroDatabase
@@ -55,7 +56,7 @@ class ContentPageInteractionTest {
         composeRule.onNodeWithText("受信任 RSA 公钥（Base64 X.509）").performTextInput("test-key")
         composeRule.onNodeWithText("验证并刷新社区目录").assertIsNotEnabled()
 
-        composeRule.onNodeWithText("社区目录 HTTPS 地址").performTextInput("https://example.invalid/catalog.json")
+        composeRule.onNodeWithText("社区目录 HTTPS 地址").performTextReplacement("https://example.invalid/catalog.json")
         composeRule.onNodeWithText("验证并刷新社区目录").assertIsEnabled()
     }
 }
