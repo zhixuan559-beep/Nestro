@@ -1109,6 +1109,17 @@ fun NestroApp() {
                                     status = "服务商已保存"
                                 }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
                             },
+                            onDeleteProvider = { providerId ->
+                                runCatching {
+                                    val keyIds = modelRegistry.apiKeys.filter { it.providerId == providerId }.map { it.id }
+                                    val updated = modelRegistry.deleteProvider(providerId)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    keyIds.forEach(modelRepository::deleteApiKey)
+                                    refreshActiveRegistryConfig(updated)
+                                    status = "服务商、关联模型及 API Key 已删除"
+                                }.onFailure { status = "服务商删除失败：" + (it.message ?: "未知错误") }
+                            },
                             onSaveApiKey = { item, secret ->
                                 val keyAlreadyExists = modelRegistry.apiKeys.any { it.id == item.id }
                                 runCatching {
