@@ -88,3 +88,10 @@
 - 该改动属于页面副作用边界抽离，不代表 Batch A 完成；根页面仍保留启动恢复、模型初始化、发送编排、专家/工作流操作等较大业务流程，后续继续按业务域抽离。
 - 本批次 CI：等待当前 PR head 对应 Android CI 验证；不得把旧 SHA 的成功结果套用到新提交。
 - PR #3 保持 Draft / 未合并；未构建安装 APK，未进行真机验收。
+
+## 2026-11-18 批次 A 进展补充（二）
+
+- `ModelManagementUiState.initialize()` 现在负责模型启动恢复：读取活动配置、迁移旧版单 Profile 配置、重建 Registry、校验当前模型与加密 Key、恢复统一 active model ID，并将恢复后的状态写回 state holder。
+- `NestroApp` 的启动 `LaunchedEffect(Unit)` 不再直接处理模型迁移和 Registry 活动模型校验，改为调用 `modelUiState.initialize()`；会话恢复、项目/会话选择、聊天中断恢复和 Agent 任务恢复仍留在启动流程中。
+- 该拆分把模型域初始化归还模型状态所有者，但启动编排尚未整体拆完；后续需继续处理会话恢复与聊天请求恢复的边界。
+- 当前分支最新提交 `2754d0f3b6d5a698e4bf3f0c3b5adf3c43c4c002` 的 CI 待核验。
