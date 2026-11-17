@@ -62,7 +62,7 @@ internal fun ModelManager(
     var formError by remember { mutableStateOf("") }
     var providerNameDraft by remember { mutableStateOf("") }
     var providerUrlDraft by remember { mutableStateOf("https://") }
-    var selectedProviderId by remember(registry.providers) {
+    var selectedProviderId by remember {
         mutableStateOf(registry.providers.firstOrNull()?.id.orEmpty())
     }
     var apiKeyLabelDraft by remember { mutableStateOf("") }
@@ -109,7 +109,9 @@ internal fun ModelManager(
                     Text(provider.name, color = Ink)
                     Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
-                Text(if (provider.enabled) "启用" else "停用", color = if (provider.enabled) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { onSaveProvider(provider.copy(enabled = !provider.enabled)) }) {
+                    Text(if (provider.enabled) "停用" else "启用", color = if (provider.enabled) Mint else ColorStop)
+                }
             }
         }
         OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
@@ -140,24 +142,40 @@ internal fun ModelManager(
                         Text(item.label, color = Ink)
                         Text(if (loadApiKey(item.id).isNotBlank()) "已加密保存 · 可用" else "密钥缺失", color = if (loadApiKey(item.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
                     }
-                    TextButton(onClick = { onDeleteRegistryApiKey(item.id); selectedModelKeyIds = selectedModelKeyIds - item.id }) {
-                        Text("删除", color = ColorStop)
-                    }
+                    TextButton(
+                        onClick = { onSaveApiKey(item.copy(enabled = !item.enabled), loadApiKey(item.id)) },
+                        enabled = loadApiKey(item.id).isNotBlank()
+                    ) { Text(if (item.enabled) "停用" else "启用", color = if (item.enabled) Mint else ColorStop) }
+                    TextButton(onClick = {
+                        replacingApiKeyId = item.id
+                        apiKeyLabelDraft = item.label
+                        apiKeyDraft = ""
+                    }) { Text("替换密钥", color = Mint) }
+                    TextButton(onClick = {
+                        onDeleteRegistryApiKey(item.id)
+                        selectedModelKeyIds = selectedModelKeyIds - item.id
+                        if (replacingApiKeyId == item.id) replacingApiKeyId = ""
+                    }) { Text("删除", color = ColorStop) }
                 }
             }
             OutlinedTextField(apiKeyLabelDraft, { apiKeyLabelDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("Key 名称") }, singleLine = true)
             OutlinedTextField(apiKeyDraft, { apiKeyDraft = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key 密钥") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
             OutlinedButton(
                 onClick = {
-                    val item = ModelApiKey(UUID.randomUUID().toString(), selectedProviderId, apiKeyLabelDraft.trim())
+                    val item = ModelApiKey(
+                        replacingApiKeyId.ifBlank { UUID.randomUUID().toString() },
+                        selectedProviderId,
+                        apiKeyLabelDraft.trim()
+                    )
                     onSaveApiKey(item, apiKeyDraft.trim())
+                    replacingApiKeyId = ""
                     apiKeyLabelDraft = ""
                     apiKeyDraft = ""
                     registryMessage = "API Key 已加密保存"
                 },
                 enabled = apiKeyLabelDraft.isNotBlank() && apiKeyDraft.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("添加 API Key") }
+            ) { Text(if (replacingApiKeyId.isBlank()) "添加 API Key" else "保存替换后的 API Key") }
 
             Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
             registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
@@ -172,7 +190,10 @@ internal fun ModelManager(
                         if (item.id == activeRegistryModelId) Text("当前", color = Mint)
                     }
                     Row {
-                        TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("启用", color = Mint) }
+                        TextButton(onClick = { onSaveRegistryModel(item.copy(enabled = !item.enabled)) }) {
+                            Text(if (item.enabled) "停用" else "启用", color = if (item.enabled) Mint else ColorStop)
+                        }
+                        TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("设为当前", color = Mint) }
                         TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
                     }
                 }
