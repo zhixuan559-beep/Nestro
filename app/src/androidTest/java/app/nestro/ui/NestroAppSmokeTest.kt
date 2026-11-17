@@ -4,6 +4,8 @@ import app.nestro.MainActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import org.junit.Rule
 import org.junit.Test
 
@@ -15,4 +17,21 @@ class NestroAppSmokeTest {
     fun mainScreenRendersApplicationHeader() {
         composeRule.onNodeWithText("Nestro").assertIsDisplayed()
     }
+    @Test
+    fun opensConversationHistoryFromAccessibleNavigationDrawer() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("对话历史", substring = true).performClick()
+
+        composeRule.onNodeWithText("搜索会话标题与内容").assertIsDisplayed()
+        composeRule.onNodeWithText("＋ 新建对话").assertIsDisplayed()
+    }
+
+    @Test
+    fun opensProjectSpacesFromNavigationDrawer() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("项目空间", substring = true).performClick()
+
+        composeRule.onNodeWithText("每个空间拥有独立会话与项目指令。", substring = true).assertIsDisplayed()
+    }
+
 }
