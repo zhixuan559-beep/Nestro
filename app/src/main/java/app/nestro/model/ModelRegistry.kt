@@ -180,8 +180,8 @@ object ModelRegistryCodec {
                     modelCode = item.getString("modelCode"),
                     apiKeyIds = (0 until keyIds.length()).map { keyIds.getString(it) },
                     enabled = item.optBoolean("enabled", true),
-                    inputPricePerMillion = item.optDouble("inputPricePerMillion").takeUnless { it.isNaN() },
-                    outputPricePerMillion = item.optDouble("outputPricePerMillion").takeUnless { it.isNaN() },
+                    inputPricePerMillion = if (item.isNull("inputPricePerMillion")) null else item.optDouble("inputPricePerMillion"),
+                    outputPricePerMillion = if (item.isNull("outputPricePerMillion")) null else item.optDouble("outputPricePerMillion"),
                     currency = item.optString("currency", "USD")
                 )
             }
