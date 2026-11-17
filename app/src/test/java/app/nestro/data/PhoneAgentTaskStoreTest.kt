@@ -74,6 +74,25 @@ class PhoneAgentTaskStoreTest {
     }
 
     @Test
+    fun allowsOrdinaryNumericTextAndNonSensitiveConfirmationLabels() {
+        val ordinaryNumber = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "enter_text").put("label", "订单编号").put("value", "123456")
+            ))
+            .toString()
+        val ordinaryConfirm = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click").put("text", "确认")
+            ))
+            .toString()
+
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(ordinaryNumber))
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(ordinaryConfirm))
+    }
+
+    @Test
     fun validatesLegacyPlanRiskAndConfirmationFields() {
         val valid = JSONArray().put(
             JSONObject()
