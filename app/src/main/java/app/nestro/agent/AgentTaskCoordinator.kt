@@ -326,7 +326,13 @@ class AgentTaskCoordinator(
                             lastError = if (requested == AgentTaskStatus.PAUSED) "任务已暂停，可从检查点恢复" else "任务已取消",
                             updatedAt = System.currentTimeMillis()
                         ))
-                        latest.status == AgentTaskStatus.WAITING_FOR_USER -> Unit
+                        latest.status in setOf(
+                            AgentTaskStatus.WAITING_FOR_USER,
+                            AgentTaskStatus.PAUSED,
+                            AgentTaskStatus.FAILED,
+                            AgentTaskStatus.CANCELLED,
+                            AgentTaskStatus.COMPLETED
+                        ) -> Unit
                         else -> states.put(latest.copy(
                             status = AgentTaskStatus.COMPLETED,
                             lastError = "",
