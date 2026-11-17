@@ -2945,6 +2945,7 @@ fun NestroApp() {
         )
     }
 }
+}
 
 @Composable
 private fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
