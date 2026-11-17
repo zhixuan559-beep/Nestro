@@ -12,7 +12,20 @@ data class SpeechProviderConfig(
     val apiKey: String,
     val model: String,
     val voice: String? = null
-)
+) {
+    fun validateForRemoteProvider() {
+        require(providerId.matches(Regex("[a-zA-Z0-9._-]{1,80}"))) { "语音服务商标识无效" }
+        val uri = java.net.URI(baseUrl)
+        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null) {
+            "语音服务地址必须使用 HTTPS，且不能包含 URL 用户凭据"
+        }
+        require(apiKey.length <= 4096) { "API Key 超出长度限制" }
+        require(model.isNotBlank() && model.length <= 120) { "语音模型名称无效" }
+        require(voice == null || voice.length <= 120) { "音色标识超出长度限制" }
+    }
+
+    override fun toString(): String = "SpeechProviderConfig(providerId=$providerId, baseUrl=$baseUrl, apiKey=[REDACTED], model=$model, voice=$voice)"
+}
 
 data class SpeechTranscript(
     val text: String,
