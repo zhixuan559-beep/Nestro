@@ -3622,7 +3622,9 @@ private fun projectsToJson(projects: List<ProjectRecord>): String {
 
 private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
     val editor = prefs.edit().putString("projects", projectsToJson(projects))
-    if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+    if (markDirty && !prefs.getBoolean("room_storage_initialized", false)) {
+        editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+    }
     editor.apply()
 }
 
