@@ -2,6 +2,9 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistryCodec
+import app.nestro.model.ModelProvider
+import app.nestro.model.ModelApiKey
+import app.nestro.model.ModelDefinition
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
@@ -1125,6 +1128,8 @@ fun NestroApp() {
                                     val key = modelRepository.readProfileKey(id)
                                     if (key.isNotBlank() && modelRegistry.selectableModels().any { it.id == "legacy-model-$id" }) {
                                         activeModelProfileId = id
+                                        activeRegistryModelId = "legacy-model-" + id
+                                        prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
                                         config = ModelConfig(metadata.baseUrl, metadata.model, key)
                                         prefs.edit().putString("active_model_profile_id", id)
                                             .putString("base_url", metadata.baseUrl).putString("model", metadata.model).apply()
@@ -1153,6 +1158,8 @@ fun NestroApp() {
                                     prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
                                     if ((activate || metadata.id == activeModelProfileId) && effectiveKey.isNotBlank()) {
                                         activeModelProfileId = metadata.id
+                                        activeRegistryModelId = "legacy-model-" + metadata.id
+                                        prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
                                         config = ModelConfig(metadata.baseUrl, metadata.model, effectiveKey)
                                         modelRepository.writeActiveConfig(config)
                                         prefs.edit().putString("active_model_profile_id", metadata.id).apply()
@@ -1166,6 +1173,71 @@ fun NestroApp() {
                                         status = if (effectiveKey.isBlank()) "模型配置已保存；请填写 API Key 后再启用" else "模型配置已保存：${metadata.name}"
                                     }
                                 }
+                            },
+                            registry = modelRegistry,
+                            activeRegistryModelId = activeRegistryModelId,
+                            loadApiKey = { id -> modelRepository.readApiKey(id) },
+                            onSaveProvider = { provider ->
+                                runCatching {
+                                    val updated = modelRegistry.upsertProvider(provider)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    status = "服务商已保存"
+                                }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
+                            },
+                            onSaveApiKey = { item, secret ->
+                                runCatching {
+                                    modelRepository.writeApiKey(item.id, secret)
+                                    val updated = modelRegistry.upsertApiKey(item)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    status = "API Key 已加密保存"
+                                }.onFailure {
+                                    modelRepository.deleteApiKey(item.id)
+                                    status = "API Key 保存失败：" + (it.message ?: "未知错误")
+                                }
+                            },
+                            onSaveRegistryModel = { item ->
+                                runCatching {
+                                    val updated = modelRegistry.upsertModel(item)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    status = "模型已保存：" + item.name
+                                }.onFailure { status = "模型保存失败：" + (it.message ?: "未知错误") }
+                            },
+                            onDeleteRegistryApiKey = { id ->
+                                modelRepository.deleteApiKey(id)
+                                val updated = modelRegistry.deleteApiKey(id)
+                                modelRepository.saveRegistry(updated)
+                                modelRegistry = updated
+                                if (activeRegistryModelId.isNotBlank() && updated.selectableModels().none { it.id == activeRegistryModelId }) {
+                                    activeRegistryModelId = ""
+                                    prefs.edit().remove("active_model_registry_id").apply()
+                                }
+                                status = "API Key 已删除，关联模型已重新计算可用性"
+                            },
+                            onDeleteRegistryModel = { id ->
+                                val updated = modelRegistry.deleteModel(id)
+                                modelRepository.saveRegistry(updated)
+                                modelRegistry = updated
+                                if (activeRegistryModelId == id) {
+                                    activeRegistryModelId = ""
+                                    prefs.edit().remove("active_model_registry_id").apply()
+                                }
+                                status = "模型已删除"
+                            },
+                            onActivateRegistryModel = { id ->
+                                val candidate = modelRegistry.models.firstOrNull { it.id == id }
+                                val provider = candidate?.let { item -> modelRegistry.providers.firstOrNull { it.id == item.providerId } }
+                                val secret = candidate?.apiKeyIds.orEmpty().asSequence().map(modelRepository::readApiKey).firstOrNull { it.isNotBlank() }
+                                if (candidate != null && provider?.enabled == true && candidate in modelRegistry.selectableModels() && !secret.isNullOrBlank()) {
+                                    activeRegistryModelId = id
+                                    activeModelProfileId = ""
+                                    config = ModelConfig(provider.baseUrl, candidate.modelCode, secret)
+                                    modelRepository.writeActiveConfig(config)
+                                    prefs.edit().putString("active_model_registry_id", id).remove("active_model_profile_id").apply()
+                                    status = "已切换模型：" + candidate.name
+                                } else status = "该模型没有可用的 API Key，无法启用"
                             },
                             onTestConnection = { candidate -> appRuntime.modelConnectionService.test(candidate) },
                             onDeleteKey = { id ->
