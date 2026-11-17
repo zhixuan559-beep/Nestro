@@ -163,7 +163,6 @@ internal fun ModelManager(
                     editingProviderId = ""
                     providerNameDraft = ""
                     providerUrlDraft = "https://"
-                    registryMessage = "服务商已保存"
                 }
             },
             enabled = providerNameDraft.isNotBlank() && providerUrlDraft.startsWith("https://"),
@@ -202,7 +201,6 @@ internal fun ModelManager(
                             providerNameDraft = ""
                             providerUrlDraft = "https://"
                         }
-                        registryMessage = "服务商及其关联配置已删除"
                     }) { Text("确认删除") }
                 },
                 dismissButton = {
@@ -248,7 +246,6 @@ internal fun ModelManager(
                     replacingApiKeyId = ""
                     apiKeyLabelDraft = ""
                     apiKeyDraft = ""
-                    registryMessage = "API Key 已加密保存"
                 },
                 enabled = apiKeyLabelDraft.isNotBlank() && apiKeyDraft.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
@@ -323,7 +320,6 @@ internal fun ModelManager(
                     modelInputPriceDraft = ""
                     modelOutputPriceDraft = ""
                     modelCurrencyDraft = "USD"
-                    registryMessage = "模型已保存"
                 },
                 enabled = modelNameDraft.isNotBlank() && modelCodeDraft.isNotBlank() &&
                     (modelInputPriceDraft.isBlank() || modelInputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
