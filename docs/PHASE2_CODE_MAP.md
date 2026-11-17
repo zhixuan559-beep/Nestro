@@ -196,3 +196,4 @@
 - Added provider edit/delete controls with stable IDs and explicit deletion confirmation; provider deletion also clears associated encrypted API Key material and refreshes active model state.
 - Added model editing for display name, model code, ordered API Key associations, input/output per-million-token prices, and currency; existing enabled state and other metadata are retained when editing.
 - Added a JVM regression test proving model identity, enabled state, key associations, prices, and currency survive a metadata edit.
+- Added JVM coverage for stable provider identity during edits and for disabled providers becoming unselectable without deleting their keys/models.
