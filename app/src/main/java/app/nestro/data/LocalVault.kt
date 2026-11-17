@@ -30,6 +30,7 @@ internal object LocalVault {
         val key = runCatching {
             if (packed.isNullOrBlank()) "" else {
                 val parts = packed.split(":")
+                require(parts.size == 2) { "旧版 API Key 密文格式无效" }
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
                 String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
