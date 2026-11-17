@@ -3,10 +3,12 @@ package app.nestro.ui
 import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 
@@ -74,6 +76,25 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
     }
 
+
+    @Test
+    fun modelConfigurationFormShowsValidationInsteadOfSavingIncompleteData() {
+        composeRule.onNodeWithContentDescription("模型设置").performClick()
+        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+
+        composeRule.onNodeWithText("保存模型配置").performScrollTo().performClick()
+
+        composeRule.onNodeWithText("配置名称需为 1 到 40 个字符").assertIsDisplayed()
+    }
+
+    @Test
+    fun modelConnectionTestStaysDisabledUntilRequiredFieldsAreProvided() {
+        composeRule.onNodeWithContentDescription("模型设置").performClick()
+
+        composeRule.onNodeWithText("测试当前编辑配置")
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
 
     @Test
     fun remainsNavigableAfterLandscapeWindowChange() {
