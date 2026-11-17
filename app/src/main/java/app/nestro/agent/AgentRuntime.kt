@@ -232,7 +232,7 @@ class DefaultAgentRuntime(
             states.put(latest.copy(
                 status = if (result.success) AgentTaskStatus.RUNNING else AgentTaskStatus.FAILED,
                 currentStep = latest.currentStep + if (result.success) 1 else 0,
-                lastError = result.error.take(2_000),
+                lastError = if (result.success) "" else result.error.ifBlank { result.output }.take(2_000),
                 updatedAt = System.currentTimeMillis()
             ))
             result
