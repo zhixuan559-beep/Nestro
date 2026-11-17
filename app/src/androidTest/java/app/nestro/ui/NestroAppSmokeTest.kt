@@ -43,4 +43,34 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("当前不内置语音合成或第三方语音插件。", substring = true).assertIsDisplayed()
     }
 
+
+    @Test
+    fun opensKnowledgeBaseAndReturnsToWorkspace() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("本地知识库", substring = true).performClick()
+
+        composeRule.onNodeWithText("本地知识库").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工作台", substring = true).performClick()
+        composeRule.onNodeWithText("Nestro").assertIsDisplayed()
+    }
+
+    @Test
+    fun opensWorkflowAndDataSettingsDestinations() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工作流", substring = true).performClick()
+        composeRule.onNodeWithText("工作流").assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("数据与设置", substring = true).performClick()
+        composeRule.onNodeWithText("数据与设置").assertIsDisplayed()
+        composeRule.onNodeWithText("本地数据备份").assertIsDisplayed()
+    }
+
+    @Test
+    fun modelSettingsCanBeOpenedFromTheTopBar() {
+        composeRule.onNodeWithContentDescription("模型设置").performClick()
+        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+    }
+
 }
