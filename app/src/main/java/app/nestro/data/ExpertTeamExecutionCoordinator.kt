@@ -32,9 +32,7 @@ class ExpertTeamExecutionCoordinator(
             teamDescription = teamDescription,
             task = task,
             members = members,
-            maxRetries = 1,
             timeoutMillis = 45_000,
-            maxParallel = 4,
             shouldStop = shouldStop,
             onMember = onMember,
             invoke = invokeMember

@@ -160,7 +160,8 @@ object ExpertTeamEngine {
 
         while (current != null && results.size < maxDelegations + 1) {
             if (shouldStop()) throw CancellationException("用户停止专家协作")
-            if (!visited.add(current.name)) break
+            val activeMember = current
+            if (!visited.add(activeMember.name)) break
             val memberStarted = System.currentTimeMillis()
             var attempts = 0
             var output = ""
@@ -168,11 +169,11 @@ object ExpertTeamEngine {
             while (attempts < 2 && output.isBlank()) {
                 if (shouldStop()) throw CancellationException("用户停止专家协作")
                 attempts++
-                onMember?.invoke(current.name, if (attempts == 1) "running" else "retrying")
+                onMember?.invoke(activeMember.name, if (attempts == 1) "running" else "retrying")
                 val candidates = members.map { it.name }.filter { it !in visited }
                 val prompt = buildString {
                     append("你是专家团队“").append(teamName).append("”中的成员“").append(current.name).append("”。\n")
-                    append("专业角色：").append(current.rolePrompt.take(3000)).append("\n")
+                    append("专业角色：").append(activeMember.rolePrompt.take(3000)).append("\n")
                     append("团队目标：").append(teamDescription).append("\n\n")
                     append("本轮子任务：\n").append(currentTask.take(5000)).append("\n\n")
                     if (handoff.isNotBlank()) append("前序专家交接（仅供参考）：\n").append(handoff.take(1800)).append("\n\n")
@@ -187,7 +188,7 @@ object ExpertTeamEngine {
                     append("回答控制在 1800 字符以内。")
                 }
                 try {
-                    output = withTimeout(timeoutMillis) { invoke(current, prompt).trim().take(2200) }
+                    output = withTimeout(timeoutMillis) { invoke(activeMember, prompt).trim().take(2200) }
                     require(output.isNotBlank()) { "模型返回空结果" }
                 } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
                     errorText = "成员执行超时（\${timeoutMillis / 1000} 秒）"
@@ -200,7 +201,7 @@ object ExpertTeamEngine {
             val delegation = DELEGATION_PATTERN.find(output)
             val cleanOutput = output.replace(DELEGATION_PATTERN, "").trim().take(2200)
             val memberResult = ExpertTeamMemberRun(
-                name = current.name,
+                name = activeMember.name,
                 status = if (cleanOutput.isNotBlank()) "success" else "failed",
                 attempts = attempts,
                 elapsedMillis = System.currentTimeMillis() - memberStarted,
@@ -208,7 +209,7 @@ object ExpertTeamEngine {
                 error = if (cleanOutput.isBlank()) errorText.ifBlank { "成员未返回有效结果" } else ""
             )
             results += memberResult
-            onMember?.invoke(current.name, memberResult.status)
+            onMember?.invoke(activeMember.name, memberResult.status)
             if (cleanOutput.isBlank()) break
 
             val request = delegation?.groupValues?.getOrNull(1)?.trim()
