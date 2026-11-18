@@ -111,6 +111,12 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
+    val reasoningEffort = prefs.getString("reasoning_effort_v1", "low") ?: "low"
+    require(reasoningEffort in setOf("none", "low", "medium", "high")) { "思考强度设置无效，已中止备份" }
+    val ttsSpeechRate = prefs.getFloat("tts_speech_rate", 1.0f)
+    require(ttsSpeechRate.isFinite() && ttsSpeechRate in 0.7f..1.3f) { "语音语速设置无效，已中止备份" }
+    root.put("reasoning_effort_v1", reasoningEffort)
+    root.put("tts_speech_rate", ttsSpeechRate.toDouble())
     root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
     val phoneAuditRaw = prefs.getString("phone_audit", "[]") ?: "[]"
     val phoneAudit = runCatching { JSONArray(phoneAuditRaw) }
