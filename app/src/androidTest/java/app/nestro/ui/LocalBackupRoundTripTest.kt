@@ -529,4 +529,32 @@ class LocalBackupRoundTripTest {
         }
     }
 
+    @Test fun backupExportRejectsCorruptLegacyConversationSnapshot() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "nestro_backup_corrupt_legacy_snapshot.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_corrupt_legacy_snapshot", Context.MODE_PRIVATE)
+        try {
+            val invalidMessage = JSONObject().put("id", "legacy-bad-m1").put("role", "assistant")
+                .put("content", "回答").put("versions", JSONArray().put(9)).put("active_version", 0)
+            val invalidConversation = JSONObject().put("id", "legacy-bad-c1").put("title", "旧会话")
+                .put("updated_at", 1L).put("project_id", "default").put("messages", JSONArray().put(invalidMessage))
+            val rawSnapshot = JSONArray().put(invalidConversation).toString()
+            prefs.edit().clear().putString("messages", "[]").putString("conversations_v1", rawSnapshot).commit()
+
+            val repository = LocalBackupRepository(context, database)
+            assertTrue("导出不得生成包含损坏回答版本的备份", runCatching { repository.createBackup(prefs) }.isFailure)
+            assertEquals(rawSnapshot, prefs.getString("conversations_v1", null))
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
 }
