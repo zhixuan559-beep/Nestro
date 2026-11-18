@@ -33,6 +33,9 @@ private suspend fun requireNoActivePhoneAgentTasks(database: NestroDatabase) {
     }
 }
 
+private fun JSONObject.arrayOrEmpty(key: String): JSONArray =
+    if (!has(key)) JSONArray() else opt(key) as? JSONArray ?: error("备份字段 $key 格式无效")
+
 private fun decodeBackupMessageVersions(item: JSONObject): Pair<String, Int> {
     val rawVersions = item.opt("versions")
     val versions = when {
@@ -416,7 +419,7 @@ private suspend fun applyLocalBackup(
         val conversation = conversations.getJSONObject(i)
         require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
         require(conversation.optString("title").length <= 80) { "会话标题过长" }
-        val items = conversation.optJSONArray("messages") ?: JSONArray()
+        val items = conversation.arrayOrEmpty("messages")
         require(items.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制（最多 $MAX_BACKUP_MESSAGES_PER_CONVERSATION 条）" }
         for (j in 0 until items.length()) {
             val item = items.getJSONObject(j)
@@ -447,7 +450,7 @@ private suspend fun applyLocalBackup(
     require(restoredReasoningEffort in setOf("none", "low", "medium", "high")) { "思考强度设置无效" }
     val restoredTtsSpeechRate = root.optDouble("tts_speech_rate", 1.0).toFloat()
     require(restoredTtsSpeechRate.isFinite() && restoredTtsSpeechRate in 0.7f..1.3f) { "语音语速设置无效" }
-    val auditRows = root.optJSONArray("phone_audit_v1") ?: JSONArray()
+    val auditRows = root.arrayOrEmpty("phone_audit_v1")
     require(auditRows.length() <= 100) { "Phone Agent 安全审计记录数量超出限制" }
     val restoredPhoneAudit = JSONArray()
     for (index in 0 until auditRows.length()) {
@@ -457,24 +460,25 @@ private suspend fun applyLocalBackup(
         require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 审计记录字段无效" }
         restoredPhoneAudit.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
     }
-    val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
+    val memoryRows = root.arrayOrEmpty("user_memories")
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
     val restoredProjects = when (val projectsValue = root.opt("projects")) {
         is JSONArray -> ProjectPreferencesStore.parseProjects(projectsValue)
         is String -> ProjectPreferencesStore.parseProjects(JSONArray(projectsValue))
-        else -> ProjectPreferencesStore.parseProjects(null)
+        else -> if (!root.has("projects")) ProjectPreferencesStore.parseProjects(null)
+            else error("备份项目空间字段格式无效")
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
     val hasArtifactBackup = root.has("artifacts_v1")
-    val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.optJSONArray("artifacts_v1") ?: JSONArray(), restoredProjectIds) else JSONArray()
-    val conversationRows = root.optJSONArray("conversations_v1") ?: JSONArray()
+    val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.arrayOrEmpty("artifacts_v1"), restoredProjectIds) else JSONArray()
+    val conversationRows = root.arrayOrEmpty("conversations_v1")
     require(conversationRows.length() <= 200) { "会话数量超出限制" }
     val restoredConversations = (0 until conversationRows.length()).map { index ->
         val item = conversationRows.getJSONObject(index)
         val id = item.optString("id"); val projectId = item.optString("project_id", "default"); val title = item.optString("title", "新对话")
         require(id.isNotBlank() && id.length <= 120 && projectId in restoredProjectIds && title.length <= 80) { "会话标识或项目归属无效" }
-        val rows = item.optJSONArray("messages") ?: JSONArray()
+        val rows = item.arrayOrEmpty("messages")
         require(rows.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制" }
         val restoredMessages = (0 until rows.length()).map { messageIndex ->
             val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
@@ -509,8 +513,8 @@ private suspend fun applyLocalBackup(
         require(completeRestoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
         restoredDrafts[id] = value
     }
-    val documentRows = root.optJSONArray("knowledge_documents_v1") ?: JSONArray()
-    val chunkRows = root.optJSONArray("knowledge_chunks_v1") ?: JSONArray()
+    val documentRows = root.arrayOrEmpty("knowledge_documents_v1")
+    val chunkRows = root.arrayOrEmpty("knowledge_chunks_v1")
     require(documentRows.length() <= 500 && chunkRows.length() <= 50_000) { "知识库备份数量超出限制" }
     val restoredKnowledgeDocuments = (0 until documentRows.length()).map { index ->
         val item = documentRows.getJSONObject(index); val id = item.optString("id"); val projectId = item.optString("projectId")
@@ -557,7 +561,7 @@ private suspend fun applyLocalBackup(
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
-    val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
+    val taskRows = root.arrayOrEmpty("phone_agent_tasks")
     require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
     val validTaskStatuses = setOf(
         PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING,
@@ -597,7 +601,7 @@ private suspend fun applyLocalBackup(
     }
     val restoredTaskIds = restoredTasks.map { it.id }.toSet()
     require(restoredTaskIds.size == restoredTasks.size) { "Phone Agent 任务 ID 重复" }
-    val taskLogRows = root.optJSONArray("phone_agent_task_logs") ?: JSONArray()
+    val taskLogRows = root.arrayOrEmpty("phone_agent_task_logs")
     require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
     val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
         val item = taskLogRows.getJSONObject(index)
