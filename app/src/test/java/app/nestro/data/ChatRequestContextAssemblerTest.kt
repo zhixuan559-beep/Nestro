@@ -98,3 +98,21 @@ class ChatExecutionModePolicyTest {
         assertFalse(ChatContextRetrievalPolicy.shouldRunExpertTeam(true, ""))
     }
 }
+
+
+class ChatExecutionAuthorizationTest {
+    @Test
+    fun ordinaryChatCannotPlanPhoneAgentOrRunSavedExpertTeam() {
+        val authorization = ChatExecutionAuthorization(false, "saved-team")
+        assertFalse(authorization.shouldPlanPhoneAgent())
+        assertFalse(authorization.shouldRunExpertTeam())
+    }
+
+    @Test
+    fun explicitTaskModeCanPlanAndRunOnlyTheCapturedTeam() {
+        val authorization = ChatExecutionAuthorization(true, "team-1")
+        assertTrue(authorization.shouldPlanPhoneAgent())
+        assertTrue(authorization.shouldRunExpertTeam())
+        assertFalse(ChatExecutionAuthorization(true, "").shouldRunExpertTeam())
+    }
+}

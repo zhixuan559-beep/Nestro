@@ -14,3 +14,12 @@ internal object ChatContextRetrievalPolicy {
     fun shouldRunExpertTeam(taskModeEnabled: Boolean, selectedTeamId: String): Boolean =
         taskModeEnabled && selectedTeamId.isNotBlank()
 }
+
+/** Immutable task authorization captured before a chat request is launched. */
+internal data class ChatExecutionAuthorization(
+    val taskModeEnabled: Boolean,
+    val selectedTeamId: String
+) {
+    fun shouldPlanPhoneAgent(): Boolean = taskModeEnabled
+    fun shouldRunExpertTeam(): Boolean = taskModeEnabled && selectedTeamId.isNotBlank()
+}

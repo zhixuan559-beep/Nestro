@@ -679,18 +679,24 @@ fun NestroApp() {
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
             val requestProjectId = activeProjectId
+            val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, selectedTeamId)
+            val requestExpertTeams = expertTeams.toList()
+            val requestExpertProfiles = expertProfiles.toMap()
+            val requestExpertPrompts = expertPrompts.toMap()
+            val requestSkills = skills.toMap()
+            val requestDisabledSkills = disabledSkills.toSet()
             val requestStartedAt = System.currentTimeMillis()
             prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
                 .put("request_id", assistantId).put("conversation_id", requestConversationId)
                 .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
                 .put("started_at", requestStartedAt).toString()).apply()
-            val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
+            val requestExpertProfile = requestExpertProfiles[selectedExpert]?.takeIf { it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
-                if (selectedTeamId.isBlank() && expertProfiles[selectedExpert]?.enabled != false) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
-                if (selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(expertProfiles[selectedExpert], skills, disabledSkills) else "",
+                if (requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[selectedExpert]?.enabled != false) requestExpertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[selectedExpert], requestSkills, requestDisabledSkills) else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
-                skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
+                requestSkills[selectedSkill].orEmpty().takeIf { selectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 try {
@@ -707,9 +713,9 @@ fun NestroApp() {
                 }
                 // Ordinary chat never runs Phone Agent intent planning. Task planning is
                 // reachable only after the user explicitly enables task mode in the composer.
-                if (taskModeEnabled) {
+                if (requestExecutionAuthorization.shouldPlanPhoneAgent()) {
                     val phonePlan = PhoneAgentPlanner.plan(prompt)
-                    if (PhoneAgentPlanner.shouldCreateTask(taskModeEnabled, phonePlan)) {
+                    if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
                         runCatchingCancellable {
                             withContext(Dispatchers.IO) {
                                 appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
@@ -730,18 +736,18 @@ fun NestroApp() {
                         prompt = prompt,
                         requestHistory = requestHistory,
                         baseSystemContext = baseSystemContext,
-                        taskModeEnabled = taskModeEnabled
+                        taskModeEnabled = requestExecutionAuthorization.taskModeEnabled
                     )
                     recalledCount = assembledContext.recalledCount
                     if (activeConversationId == requestConversationId) recallSources = assembledContext.recallSources
                     val requestSystemContext = assembledContext.systemContext
-                    val selectedTeam = if (ChatContextRetrievalPolicy.shouldRunExpertTeam(taskModeEnabled, selectedTeamId)) expertTeams.firstOrNull { it.id == selectedTeamId } else null
+                    val selectedTeam = if (requestExecutionAuthorization.shouldRunExpertTeam()) requestExpertTeams.firstOrNull { it.id == requestExecutionAuthorization.selectedTeamId } else null
                     val teamContext = if (selectedTeam != null) {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
-                        val memberTasks = selectedTeam.members.filter { it in experts && expertProfiles[it]?.enabled != false }.take(4).map { member ->
+                        val memberTasks = selectedTeam.members.filter { it in experts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
                             val role = expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
-                            val attached = ExpertProfileCodec.skillContext(expertProfiles[member], skills, disabledSkills)
+                            val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
                         check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
@@ -773,8 +779,8 @@ fun NestroApp() {
                                             .joinToString("\n\n").take(18000),
                                         connectTimeoutMillis = 15_000,
                                         readTimeoutMillis = 25_000,
-                                        temperature = expertProfiles[member.name]?.temperature,
-                                        maxTokens = expertProfiles[member.name]?.maxTokens,
+                                        temperature = requestExpertProfiles[member.name]?.temperature,
+                                        maxTokens = requestExpertProfiles[member.name]?.maxTokens,
                                         onUsage = recordModelUsage
                                     ).take(2200)
                                 }

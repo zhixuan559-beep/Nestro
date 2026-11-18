@@ -414,3 +414,9 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Added tests for registry backward compatibility and per-model reasoning-parameter selection.
 - The composer displays an explicit unsupported-capability marker when the active model has not declared four-level reasoning support; the user selection is retained, but the unsupported model receives no reasoning parameter.
 - Regression coverage checks all four values (`none`, `low`, `medium`, `high`) on a capable model and confirms unsupported failover models omit the parameter.
+
+## 2026-11-18 — Snapshot task authorization at send time
+
+- Capture task-mode state, selected team ID, team list, expert profiles/prompts, skills, and disabled-skill set before launching the request coroutine.
+- Phone Agent planning, expert-team execution, and request context assembly use only captured request values; later composer changes cannot silently upgrade or alter an in-flight request.
+- Added pure JVM coverage for ordinary-chat denial and explicit task-mode authorization.

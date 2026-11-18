@@ -299,3 +299,5 @@ The Phase 2 refactor must preserve a strict separation between ordinary conversa
 ## Explicit task-mode gate
 
 The chat composer exposes **普通聊天** as the default and a separate **任务执行** opt-in. Ordinary chat must not invoke Phone Agent planning or create task records based on keyword matches. Phone Agent planning is reachable only while task mode is explicitly enabled; a GENERAL classification still creates no task. A persisted expert-team selection also does not authorize team execution during ordinary chat.
+
+Task authorization and the related team/expert/skill selections are captured at message-send time. Composer changes after sending cannot retroactively turn an ordinary chat into a task or change the resources used by an in-flight request.
