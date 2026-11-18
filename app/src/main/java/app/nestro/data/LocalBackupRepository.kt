@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 
+private const val MAX_BACKUP_MESSAGES_PER_CONVERSATION = 2_000
+
 private val nonTerminalPhoneAgentStatuses = setOf(
     PhoneAgentTaskStore.STATUS_PLANNED,
     PhoneAgentTaskStore.STATUS_RUNNING,
@@ -168,7 +170,7 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         }
     }
     require(conversationPayloadChars <= 3_500_000L) { "会话历史内容超过备份安全容量，请先清理旧会话" }
-    roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
+    roomConversationRows.forEach { row -> require(row.messages.size <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息超过备份上限 $MAX_BACKUP_MESSAGES_PER_CONVERSATION" } }
     roomConversationRows.forEach { row ->
         val messages = JSONArray()
         row.messages.sortedBy { it.position }.forEach { message ->
@@ -400,7 +402,7 @@ private suspend fun applyLocalBackup(
         require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
         require(conversation.optString("title").length <= 80) { "会话标题过长" }
         val items = conversation.optJSONArray("messages") ?: JSONArray()
-        require(items.length() <= 500) { "单个会话消息数量超出限制" }
+        require(items.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制（最多 $MAX_BACKUP_MESSAGES_PER_CONVERSATION 条）" }
         for (j in 0 until items.length()) {
             val item = items.getJSONObject(j)
             require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
@@ -458,7 +460,7 @@ private suspend fun applyLocalBackup(
         val id = item.optString("id"); val projectId = item.optString("project_id", "default"); val title = item.optString("title", "新对话")
         require(id.isNotBlank() && id.length <= 120 && projectId in restoredProjectIds && title.length <= 80) { "会话标识或项目归属无效" }
         val rows = item.optJSONArray("messages") ?: JSONArray()
-        require(rows.length() <= 500) { "单个会话消息数量超出限制" }
+        require(rows.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制" }
         val restoredMessages = (0 until rows.length()).map { messageIndex ->
             val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
             val versions = message.optJSONArray("versions") ?: JSONArray()
