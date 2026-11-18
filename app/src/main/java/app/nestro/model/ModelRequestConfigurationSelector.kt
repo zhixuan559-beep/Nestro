@@ -44,6 +44,17 @@ internal object ModelRequestConfigurationSelector {
         }.distinctBy { "${it.baseUrl}|${it.model}" }
     }
 
+    /** Maps a successful request back to its registry model for usage accounting. */
+    fun usageStatsId(registry: ModelRegistry, config: ModelConfig): String? {
+        val model = registry.models.firstOrNull { candidate ->
+            candidate.modelCode == config.model &&
+                registry.providers.firstOrNull { it.id == candidate.providerId }?.baseUrl == config.baseUrl
+        } ?: return null
+        return if (model.id.startsWith("legacy-model-")) {
+            model.id.removePrefix("legacy-model-")
+        } else model.id
+    }
+
     /**
      * Builds request candidates from the independent provider/model/API-key registry.
      * Secrets are resolved by key ID at call time and are never stored in registry metadata.

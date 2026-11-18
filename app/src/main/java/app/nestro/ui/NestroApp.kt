@@ -584,12 +584,7 @@ fun NestroApp() {
     )
 
     val requestUsageModelIds = requestModelConfigs.associateWith { usedConfig ->
-        modelRegistry.models.firstOrNull { model ->
-            model.modelCode == usedConfig.model &&
-                modelRegistry.providers.firstOrNull { it.id == model.providerId }?.baseUrl == usedConfig.baseUrl
-        }?.id?.let { id ->
-            if (id.startsWith("legacy-model-")) id.removePrefix("legacy-model-") else id
-        }
+        ModelRequestConfigurationSelector.usageStatsId(modelRegistry, usedConfig)
     }
 
     fun usageProfileId(usedConfig: ModelConfig): String? =
