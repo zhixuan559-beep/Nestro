@@ -25,15 +25,19 @@ internal fun parsePendingChatRequest(raw: String?): PendingChatRequest? {
     if (pending.optString("status") != "running") return null
     val requestId = pending.optString("request_id")
     val conversationId = pending.optString("conversation_id")
-    if (requestId.isBlank() || conversationId.isBlank()) return null
+    val projectId = pending.optString("project_id", "default")
+    if (requestId.isBlank() || conversationId.isBlank() || projectId.isBlank()) return null
     return PendingChatRequest(
         requestId = requestId,
         conversationId = conversationId,
-        projectId = pending.optString("project_id", "default"),
+        projectId = projectId,
         prompt = pending.optString("prompt"),
         partialAnswer = pending.optString("partial_answer")
     )
 }
+
+internal fun PendingChatRequest.matches(record: ConversationRecord): Boolean =
+    record.id == conversationId && record.projectId == projectId
 
 internal class ChatRequestRecoveryCoordinator(
     private val persistence: ConversationPersistenceService
@@ -68,6 +72,7 @@ internal class ChatRequestRecoveryCoordinator(
         var activeMessages: List<ChatMessage>? = null
 
         val record = conversations.firstOrNull { it.id == conversationId }
+            ?.takeIf(pending::matches)
         if (record != null) {
             val existingMessages = if (databaseReady) {
                 persistence.loadMessages(conversationId).orEmpty()
@@ -84,11 +89,12 @@ internal class ChatRequestRecoveryCoordinator(
                 updatedConversations = ConversationPreferencesStore.saveConversationMessages(
                     preferences, conversationId, recovered, projectId, conversations
                 )
+                if (databaseReady) persistence.persistRecoveredMessages(conversationId, recovered)
                 if (activeConversationId == conversationId) activeMessages = recovered
             }
         }
 
-        val prompt = pending.restoredPromptFor(activeConversationId)
+        val prompt = record?.let { pending.restoredPromptFor(activeConversationId) }
         if (prompt != null) {
             preferences.edit().putString("draft_$conversationId", prompt).apply()
         }
