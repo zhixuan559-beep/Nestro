@@ -62,11 +62,12 @@ internal object PhoneAgentModelClient {
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
 """.trimIndent()
+        val budgeted = PhoneAgentPromptBudget.build(category, goal, visibleScreen, recentActions)
         val user = org.json.JSONObject()
             .put("goal", goal)
             .put("category", category)
-            .put("visibleScreenText", visibleScreen.take(7000))
-            .put("recentActionResults", recentActions.take(2500))
+            .put("visibleScreenText", budgeted.screenText)
+            .put("recentActionResults", budgeted.recentActions)
             .toString()
         val response = app.chatExecutionService.completeWithFallback(
             configs,
@@ -75,7 +76,7 @@ internal object PhoneAgentModelClient {
             connectTimeoutMillis = 15_000,
             readTimeoutMillis = 45_000,
             temperature = 0.1,
-            maxTokens = 4096
+            maxTokens = budgeted.maxOutputTokens
         )
         return PhoneAgentActionParser.parse(response)
     }
