@@ -31,6 +31,42 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalBackupRoundTripTest {
+    @Test fun backupExportPreservesLegacyConversationsWhenRoomIsEmpty() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "nestro_backup_legacy_conversations.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_legacy_conversations", Context.MODE_PRIVATE)
+        try {
+            val legacyMessages = JSONArray().put(
+                JSONObject().put("id", "legacy-m1").put("role", "user").put("content", "来自旧存储的消息")
+                    .put("versions", JSONArray()).put("active_version", 0)
+            )
+            val legacyConversations = JSONArray().put(
+                JSONObject().put("id", "legacy-c1").put("title", "旧存储会话")
+                    .put("updated_at", 10L).put("project_id", "default").put("messages", legacyMessages)
+            )
+            prefs.edit().clear().putString("messages", "[]")
+                .putString("conversations_v1", legacyConversations.toString()).commit()
+
+            val backup = LocalBackupRepository(context, database).createBackup(prefs)
+            val restoredConversations = JSONObject(backup).getJSONArray("conversations_v1")
+            assertEquals("legacy-c1", restoredConversations.getJSONObject(0).getString("id"))
+            assertEquals(
+                "来自旧存储的消息",
+                restoredConversations.getJSONObject(0).getJSONArray("messages").getJSONObject(0).getString("content")
+            )
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test fun backupExportRejectsCorruptRevisionAndAuditData() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "nestro_backup_corrupt_source.db"
