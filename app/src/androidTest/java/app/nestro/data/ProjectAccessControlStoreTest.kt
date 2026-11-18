@@ -75,6 +75,17 @@ class ProjectAccessControlStoreTest {
         ))
     }
 
+    @Test fun grantedWritableProjectsAreSeparateFromReadOnlyGrants() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("project_access_writable_projects_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().commit()
+            ProjectAccessControlStore.grant(prefs, "read-only", "target", setOf(ProjectAccessControlStore.Access.READ), 38L)
+            ProjectAccessControlStore.grant(prefs, "read-write", "target", setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE), 39L)
+            assertEquals(setOf("read-write"), ProjectAccessControlStore.grantedWritableSourceProjects(prefs, "target"))
+        } finally { prefs.edit().clear().commit() }
+    }
+
     @Test fun malformedGrantDataIsRejectedInsteadOfPartiallyAccepted() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             ProjectAccessControlStore.decodeGrants("""[{"source":"a","target":"b","access":["read","read"],"granted_at":1}]""")
