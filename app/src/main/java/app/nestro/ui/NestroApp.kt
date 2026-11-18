@@ -338,6 +338,7 @@ fun NestroApp() {
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
                 projects = ProjectPreferencesStore.loadProjects(prefs)
                 projectStorageReadOnly = false
+                projectResourceScopes = ProjectResourceScopeStore.load(prefs)
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: ConversationPreferencesStore.loadMessages(prefs)
@@ -2156,6 +2157,9 @@ fun NestroApp() {
                                                                         ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                         projects = projects.filterNot { it.id == project.id }
                                                                         ProjectPreferencesStore.saveProjects(prefs, projects)
+                                                                        val remainingScopes = ProjectResourceScopeStore.removeProjectScope(projectResourceScopes, project.id)
+                                                                        ProjectResourceScopeStore.save(prefs, remainingScopes)
+                                                                        projectResourceScopes = remainingScopes
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
