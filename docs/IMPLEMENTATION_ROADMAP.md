@@ -289,3 +289,8 @@
 - CI 成功只证明云端编译与打包通过。
 - 涉及键盘、麦克风、无障碍、后台任务、通知、耗电和厂商系统限制的功能，必须在实体设备验证。
 - 路线图中的未实现项只有在代码、测试和验收证据齐全后才能移入「已实现」。
+
+
+## Cross-cutting requirement: low-cost chat and on-demand task execution
+
+The Phase 2 refactor must preserve a strict separation between ordinary conversation and task execution. Ordinary chat defaults to Lightweight reasoning (with Off available where the provider supports it), does not automatically start Agents or load tools, and uses a compact context budget. Medium/Heavy reasoning and task-only capabilities are opt-in. For an explicit task, resolve the minimum required capability set and load only those tools; never enumerate or inject the full tool catalog on every turn. Task context must be scoped to the task and released afterward. See [the detailed architecture and acceptance gates](PHASE2_CODE_MAP.md#2026-11-18--lightweight-chat-controllable-reasoning-and-precision-tool-dispatch-product-wide-refactor-requirement).

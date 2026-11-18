@@ -341,3 +341,48 @@
 - Reconciliation now isolates synchronous enqueue failures per task: the failed task keeps its durable marker for the next startup, while other pending tasks continue through the same reconciliation pass. Coroutine cancellation still propagates.
 
 - Early user-stop handling now clears `chat_request_state_v1` after saving the stopped conversation. Previously, stopping during Phone Agent intent planning returned before the normal finalizer and left a stale `running` marker that could be misinterpreted as an interrupted request on next launch.
+
+
+## 2026-11-18 — Lightweight chat, controllable reasoning, and precision tool dispatch (product-wide refactor requirement)
+
+This is a cross-cutting architecture requirement for Phase 2, not a later polish item. Preserve it while extracting the chat pipeline and integrating the task/agent runtime.
+
+### 1. Separate ordinary chat from task execution
+
+- Ordinary chat is the default path. It must not implicitly start an Agent task, invoke Phone Agent planning, run an expert team, enumerate/initialize the full tool catalog, or load task-only context.
+- Task execution is a separate, explicit path. Enter it only when the user deliberately selects a task/action mode or clearly requests an action that requires execution. Keep task state, task history, and task-only context scoped to that task; do not carry them into subsequent ordinary chat.
+- A conversational mention of an action/tool is not, by itself, authorization to execute it. Ambiguous intent stays in chat or asks for clarification; never create a task merely because a keyword matched.
+
+### 2. User-controllable reasoning effort
+
+- Provide clear reasoning choices: **Off / Lightweight (default) / Medium / Heavy**. The UI may present Off and the three effort levels as compact controls; provider/model capability differences must be handled honestly.
+- Off means do not request optional extended reasoning when the selected model/provider exposes such a control. It does not promise that every provider internally performs zero reasoning.
+- Lightweight is the default for ordinary chat. Medium and Heavy are opt-in for complex questions or tasks. Do not silently escalate effort because a tool or expert is available.
+- If a provider does not expose a reasoning-effort parameter, omit it rather than sending invented or unsupported parameters.
+
+### 3. Precision, capability-scoped tool dispatch
+
+- Resolve the requested action to the minimum capability set required for that action, then load only those tool definitions and credentials. Never inject the entire MCP/plugin/tool catalog into every prompt or enumerate every tool on every turn.
+- Use a staged resolver: local intent/rule routing first where reliable; only request model-based planning when ambiguity or task complexity warrants it; then dispatch only the selected tools.
+- Tool calls must be justified by the current task plan and user authorization. No unrelated tools, broad discovery sweeps, speculative calls, or repeated initialization.
+- Reuse the task's selected tool context during that task where safe; release task-only context when it ends. Keep ordinary chat's prompt/history compact and independently budgeted.
+
+### 4. Token and context budgets
+
+- Define separate budgets for ordinary chat and task execution: recent-turn window, summary/compaction policy, memory retrieval, knowledge retrieval, expert context, tool schema, and output.
+- Ordinary chat should use a small recent context and only retrieve memory/knowledge when there is a concrete relevance signal. Do not attach the full conversation, all memories, all project instructions, or all skill definitions by default.
+- Task execution may spend more tokens, but context must be assembled incrementally for the current action and bounded by explicit limits. Record per-request input/output usage and, where available, tool/planner usage.
+- Add tests proving that an ordinary chat turn does not trigger Agent/Phone Agent task creation, expert execution, or tool catalog loading; task-mode tests should assert only the required tools are selected.
+
+### 5. Acceptance gates
+
+- A plain conversational message makes no task/Phone Agent scheduling call and does not load MCP/plugin definitions.
+- An explicit action selects only its required capabilities; unrelated tools are absent from the model context and are not initialized.
+- Ordinary chat defaults to Lightweight, supports Off where supported, and never silently escalates to Medium/Heavy.
+- Task context and tool schemas do not leak into the next ordinary chat turn.
+- Prompt/token usage is bounded and measured separately for chat and tasks; memory/knowledge retrieval is selective rather than unconditional.
+- Provider limitations are visible and safe: unsupported reasoning parameters are omitted, not guessed.
+
+### Implementation sequencing
+
+Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Phone Agent lifecycle refactor. Add routing and token-budget regression tests in the same batches as the implementation. Do not postpone this to Phase 3 or treat it as an optional optimization.
