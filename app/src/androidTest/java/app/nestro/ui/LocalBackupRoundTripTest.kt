@@ -11,6 +11,7 @@ import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.LocalBackupRepository
+import app.nestro.data.ChatRequestStateStore
 import app.nestro.data.persistLocalBackupRestoreJournal
 import app.nestro.data.LocalVault
 import app.nestro.data.ModelConfig
@@ -190,7 +191,9 @@ class LocalBackupRoundTripTest {
                 arrayOf(987654321L, "stale-chunk", "p1", "staleindexmarker")
             )
             prefs.edit().putBoolean("automatic_memory_enabled", false).putString("reasoning_effort_v1", "low")
-                .putFloat("tts_speech_rate", 1.0f).putString("phone_audit", "[]").commit()
+                .putFloat("tts_speech_rate", 1.0f).putString("phone_audit", "[]")
+                .putString("pending_project_delete_id", "stale-device-project").commit()
+            ChatRequestStateStore.save(prefs, "stale-request", "stale-conversation", "stale-project", "旧请求", "旧部分回答", 1L)
 
             backupRepository.restoreBackup(prefs, backup)
 
@@ -210,6 +213,8 @@ class LocalBackupRoundTripTest {
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
             assertTrue("备份应保留任务模式开关", prefs.getBoolean("chat_task_mode_enabled", false))
             assertEquals("legacy-model-backup-profile", prefs.getString("active_model_registry_id", ""))
+            assertEquals(null, ChatRequestStateStore.load(prefs))
+            assertTrue(!prefs.contains("pending_project_delete_id"))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
             assertEquals("恢复不能沿用旧 API Key", "", LocalVault.readApiKey(context, "old-key"))
