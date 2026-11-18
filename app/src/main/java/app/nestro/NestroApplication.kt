@@ -25,6 +25,7 @@ import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.data.ChatRequestContextAssembler
+import app.nestro.data.ChatRequestExecutionCoordinator
 import app.nestro.data.AutomaticMemoryExtractionCoordinator
 import app.nestro.data.CapabilityDraftCoordinator
 import app.nestro.data.CapabilityDraftTransport
@@ -131,6 +132,9 @@ class NestroApplication : Application() {
             retrieveKnowledge = conversationContextRepository::retrieveKnowledge,
             retrieveUserMemory = { projectId, prompt -> userMemoryRepository.recall(projectId, prompt).context }
         )
+    }
+    internal val chatRequestExecutionCoordinator: ChatRequestExecutionCoordinator by lazy {
+        ChatRequestExecutionCoordinator(chatRequestContextAssembler, chatStreamingCoordinator)
     }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
