@@ -428,6 +428,25 @@ class LocalBackupRoundTripTest {
                 ).toString())
             }
             assertTrue("恢复不得静默截断专家团队名称", runCatching { repository.restoreBackup(prefs, longTeamName) }.isFailure)
+
+            val nonStringMessageVersion = signedBackup { root ->
+                val rows = root.getJSONArray("conversations_v1")
+                rows.getJSONObject(0).put("messages", JSONArray().put(
+                    JSONObject().put("id", "version-type-m1").put("role", "assistant").put("content", "回答")
+                        .put("versions", JSONArray().put(7)).put("active_version", 0)
+                ))
+            }
+            assertTrue("恢复不得把非字符串回答版本强制转成文本", runCatching { repository.restoreBackup(prefs, nonStringMessageVersion) }.isFailure)
+
+            val wrongVersionFieldType = signedBackup { root ->
+                val rows = root.getJSONArray("conversations_v1")
+                rows.getJSONObject(0).put("messages", JSONArray().put(
+                    JSONObject().put("id", "version-field-m1").put("role", "assistant").put("content", "回答")
+                        .put("versions", "[\\"有效版本\\"]").put("active_version", 0)
+                ))
+            }
+            assertTrue("恢复不得忽略类型错误的回答版本字段", runCatching { repository.restoreBackup(prefs, wrongVersionFieldType) }.isFailure)
+
             assertEquals("有效标题", dao.loadConversations().single().conversation.title)
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
