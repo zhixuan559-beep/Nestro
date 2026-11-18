@@ -6,6 +6,8 @@ import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.nestro.data.ArtifactStore
+import app.nestro.data.AgentTaskStateEntity
+import app.nestro.data.AgentTaskTraceEntity
 import app.nestro.data.ConversationEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.KnowledgeDocumentEntity
