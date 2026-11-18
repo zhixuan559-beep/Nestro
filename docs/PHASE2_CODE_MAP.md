@@ -481,3 +481,10 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 
 - Added a regression test proving that an explicitly loaded `EXTERNAL_WRITE` tool remains blocked by the default permission router and transitions the task to `WAITING_FOR_USER`.
 - A task-scoped allow-list only controls what is discoverable/invokable; it never grants permission. Every invocation still passes through the permission router.
+
+
+## 2026-11-18 — Pin tool handlers to task-local leases
+
+- Fixed a registry race in task-scoped tool sessions: the session now captures the selected tool definitions and their exact handler references when the lease opens.
+- Re-registering the same tool ID while a task is running can no longer silently redirect that in-flight session to a different handler.
+- Added a JVM regression test proving that the session keeps its original definition/handler while the global catalog uses the replacement for newly opened calls.

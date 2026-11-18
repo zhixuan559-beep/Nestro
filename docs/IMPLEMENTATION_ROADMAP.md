@@ -327,3 +327,6 @@ Automatic-memory extraction now contributes its model usage to the same provider
 
 
 Security invariant: task-scoped capability selection is not authorization. Every selected tool still passes through AgentPermissionRouter; external writes, authentication, financial actions, and device actions remain subject to their separate confirmation/grant rules. Regression coverage verifies that loading an external-write capability does not execute it or bypass WAITING_FOR_USER.
+
+
+Tool sessions now snapshot the exact handler as well as the selected capability definition. A later registration using the same tool ID cannot retarget an already-open task lease; new sessions use the new registration. JVM regression coverage verifies this isolation. Explicit revocation of already-open leases and credential expiry remain separate follow-up work.
