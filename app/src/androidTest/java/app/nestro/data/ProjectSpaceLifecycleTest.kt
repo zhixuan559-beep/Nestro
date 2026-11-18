@@ -232,4 +232,60 @@ class ProjectSpaceLifecycleTest {
             prefs.edit().clear().commit()
         }
     }
-}
+
+    @Test fun duplicateProjectCopiesItsConversationsKnowledgeAndMemoriesWithoutSharingIds() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("default", "默认空间", "", 1L),
+                ProjectEntity("source", "原项目", "只属于原项目的指令", 2L)
+            ))
+            dao.putConversation(ConversationEntity("source-chat", "项目讨论", 3L, "source"))
+            dao.putMessages(listOf(
+                MessageEntity("source-message", "source-chat", 0, "user", "原项目独有内容")
+            ))
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity(
+                "source-doc", "source", "项目资料.txt", "text/plain", 12L, 4L, "source-content-hash"
+            ))
+            dao.insertKnowledgeChunks(listOf(
+                KnowledgeChunkEntity("source-chunk", "source-doc", "source", 0, "原项目知识片段")
+            ))
+            dao.insertKnowledgeChunkFts(listOf(
+                KnowledgeChunkFtsEntity("source-chunk".stableFtsRowId(), "source-chunk", "source", "原项目知识片段")
+            ))
+            dao.putUserMemory(UserMemoryEntity(
+                "source-memory", "source", "fact", "原项目长期记忆", "source-memory-fingerprint",
+                "source-chat", "source-message", 0.95, 5L, 5L
+            ))
+
+            assertTrue(dao.duplicateProject("source", "copy", "原项目 副本", 100L))
+
+            val copiedProject = dao.loadProjects().single { it.id == "copy" }
+            assertEquals("原项目 副本", copiedProject.name)
+            assertEquals("只属于原项目的指令", copiedProject.instructions)
+            val sourceChat = dao.loadConversations().single { it.conversation.id == "source-chat" }
+            val copiedChat = dao.loadConversations().single { it.conversation.projectId == "copy" }
+            assertEquals("原项目独有内容", sourceChat.messages.single().content)
+            assertEquals("原项目独有内容", copiedChat.messages.single().content)
+            assertFalse(sourceChat.conversation.id == copiedChat.conversation.id)
+            assertFalse(sourceChat.messages.single().id == copiedChat.messages.single().id)
+
+            val copiedDocument = dao.knowledgeDocuments("copy").single()
+            assertEquals("项目资料.txt", copiedDocument.name)
+            assertFalse("copy".equals(copiedDocument.projectId).not())
+            assertEquals(listOf("原项目知识片段"), dao.searchKnowledgeChunks("copy", "知识片段", 5).map { it.content })
+            assertEquals(listOf("原项目知识片段"), dao.searchKnowledgeChunks("source", "知识片段", 5).map { it.content })
+
+            val copiedMemory = dao.userMemories("copy").single()
+            assertEquals("原项目长期记忆", copiedMemory.content)
+            assertEquals(copiedChat.conversation.id, copiedMemory.sourceConversationId)
+            assertEquals(copiedChat.messages.single().id, copiedMemory.sourceMessageId)
+            assertFalse(copiedMemory.id == "source-memory")
+            assertFalse(copiedMemory.fingerprint == "source-memory-fingerprint")
+        } finally {
+            database.close()
+        }
+    }
+\n}\n
