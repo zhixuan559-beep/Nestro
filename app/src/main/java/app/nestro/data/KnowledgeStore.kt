@@ -66,7 +66,9 @@ object KnowledgeStore {
    if(terms.isEmpty()) return@withContext emptyList()
    val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
    terms.forEach { term ->
-    dao.searchKnowledgeChunks(projectId,term,12).forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
+    runCatching { dao.searchKnowledgeChunksFts(projectId, term + "*", 12) }
+     .getOrElse { dao.searchKnowledgeChunks(projectId, term, 12) }
+     .forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
    }
    if(candidates.isEmpty()) return@withContext emptyList()
    val documents=dao.knowledgeDocuments(projectId).associateBy { it.id }
