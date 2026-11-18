@@ -51,6 +51,32 @@ private fun decodeBackupMessageVersions(item: JSONObject): Pair<String, Int> {
     return JSONArray(decoded).toString() to activeVersion
 }
 
+private fun validateLegacyConversationBackup(conversations: JSONArray, allowedProjectIds: Set<String>) {
+    val conversationIds = mutableSetOf<String>()
+    val messageIds = mutableSetOf<String>()
+    for (index in 0 until conversations.length()) {
+        val conversation = conversations.getJSONObject(index)
+        val id = conversation.opt("id") as? String ?: error("旧会话 ID 字段无效")
+        val title = if (conversation.has("title")) conversation.opt("title") as? String
+            ?: error("旧会话标题字段无效") else "新对话"
+        val projectId = if (conversation.has("project_id")) conversation.opt("project_id") as? String
+            ?: error("旧会话项目字段无效") else "default"
+        require(id.isNotBlank() && id.length <= 120 && conversationIds.add(id)) { "旧会话 ID 缺失、过长或重复" }
+        require(title.length <= 80 && projectId in allowedProjectIds) { "旧会话标题或项目归属无效" }
+        val messages = conversation.arrayOrEmpty("messages")
+        require(messages.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "旧会话消息数量超出限制" }
+        for (messageIndex in 0 until messages.length()) {
+            val message = messages.getJSONObject(messageIndex)
+            val messageId = message.opt("id") as? String ?: error("旧消息 ID 字段无效")
+            val role = message.opt("role") as? String ?: error("旧消息角色字段无效")
+            val content = message.opt("content") as? String ?: error("旧消息内容字段无效")
+            require(messageId.isNotBlank() && messageIds.add(messageId)) { "旧消息 ID 缺失或重复" }
+            require(role in setOf("user", "assistant") && content.length <= 200_000) { "旧消息字段无效" }
+            decodeBackupMessageVersions(message)
+        }
+    }
+}
+
 internal class ActivePhoneAgentTasksException : IllegalStateException(
     "Phone Agent 仍有未结束的任务，请先完成或取消任务后再恢复备份"
 )
@@ -175,6 +201,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val roomConversationRows = snapshot.conversations
     val legacyConversationRaw = prefs.getString("conversations_v1", "[]") ?: "[]"
     val conversationArray = if (roomConversationRows.isEmpty()) JSONArray(legacyConversationRaw) else JSONArray()
+    if (roomConversationRows.isEmpty()) {
+        validateLegacyConversationBackup(conversationArray, backupProjects.map { it.id }.toSet() + "default")
+    }
     require(roomConversationRows.size <= 200 && conversationArray.length() <= 200) {
         "会话数量超过备份上限 200，请先清理旧会话"
     }
