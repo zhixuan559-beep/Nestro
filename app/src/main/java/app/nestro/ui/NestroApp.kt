@@ -887,7 +887,8 @@ fun NestroApp() {
         }
     }
 
-        LaunchedEffect(messages.size, busy) {
+        LaunchedEffect(messages.size, busy, page) {
+        if (page != "home" && page != "chat") return@LaunchedEffect
         val lastIndex = messages.lastIndex + if (busy) 1 else 0
         if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
     }
@@ -2219,10 +2220,15 @@ fun NestroApp() {
                             .clickable { showDrawer = false }
                             .zIndex(1f)
                     )
-                    NavigationDrawerContent(
+                    ModalDrawerSheet(
                         modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight().zIndex(2f),
-                        onNavigate = { destination -> page = destination; showDrawer = false }
-                    )
+                        drawerContainerColor = Card,
+                        drawerContentColor = Ink
+                    ) {
+                        NavigationDrawerContent(
+                            onNavigate = { destination -> page = destination; showDrawer = false }
+                        )
+                    }
                 }
             }
         }
