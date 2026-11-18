@@ -119,4 +119,32 @@ class AgentRuntimeTest {
         assertEquals(listOf("screen.read"), session.list().map { it.id })
         assertFalse(session.invoke("payments.transfer", emptyMap()).success)
     }
+
+    @Test
+    fun scopedCapabilityDoesNotGrantExternalWritePermission() = runBlocking {
+        var writes = 0
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("message.send", "发送消息", AgentToolPermission.EXTERNAL_WRITE)) {
+                writes++
+                AgentToolResult(true, "sent")
+            }
+        }
+        val session = catalog.openSession(setOf("message.send"))
+        val runtime = DefaultAgentRuntime(
+            session,
+            DefaultAgentPermissionRouter(),
+            InMemoryAgentTaskStateStore()
+        )
+
+        val result = runtime.execute(AgentToolRequest("task-permission-boundary", "message.send"))
+
+        assertFalse(result.success)
+        assertTrue(result.requiresUser)
+        assertEquals(0, writes)
+        assertEquals(AgentTaskStatus.WAITING_FOR_USER,
+            InMemoryAgentTaskStateStore().get("task-permission-boundary")?.status ?: AgentTaskStatus.CREATED)
+        session.close()
+    }
+
+
 }
