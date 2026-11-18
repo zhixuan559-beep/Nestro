@@ -177,4 +177,17 @@ class ProjectSpaceRulesTest {
             ProjectResourceScopeStore.decode("""{"skill:research":["*","project-a"]}""")
         }
     }
+\n}\
+    @Test fun projectDuplicationCarriesExplicitResourceAssociationsWithoutChangingGlobalResources() {
+        val initial = mapOf(
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer") to setOf("source"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "global-skill") to setOf("*"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, "hidden") to setOf("other")
+        )
+        val copied = ProjectResourceScopeStore.duplicateProjectScope(initial, "source", "copy")
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.EXPERT, "writer", "copy"))
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.EXPERT, "writer", "source"))
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.SKILL, "global-skill", "copy"))
+        assertFalse(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.WORKFLOW, "hidden", "copy"))
+    }
 \n}\n
