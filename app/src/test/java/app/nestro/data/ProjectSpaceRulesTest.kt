@@ -178,7 +178,6 @@ class ProjectSpaceRulesTest {
         }
     }
 
-}\
     @Test fun projectDuplicationCarriesExplicitResourceAssociationsWithoutChangingGlobalResources() {
         val initial = mapOf(
             ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer") to setOf("source"),
@@ -192,7 +191,6 @@ class ProjectSpaceRulesTest {
         assertFalse(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.WORKFLOW, "hidden", "copy"))
     }
 
-}\
     @Test fun deletingProjectRemovesItsResourceReferencesWithoutLeavingOrphans() {
         val scopes = mapOf(
             ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "only-here") to setOf("deleted"),
@@ -206,7 +204,6 @@ class ProjectSpaceRulesTest {
         assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.TEAM, "global", "other"))
     }
 
-}\
     @Test fun projectMemorySettingsDefaultOffOutsideLegacyDefaultAndPreserveExplicitChoices() {
         val settings = ProjectMemorySettingsStore.decode("""{"default":true,"research":false,"writing":true}""")
         assertTrue(settings["default"] == true)
@@ -223,5 +220,4 @@ class ProjectSpaceRulesTest {
             ProjectMemorySettingsStore.decode("""{"":[true]}""")
         }
     }
-
 }
