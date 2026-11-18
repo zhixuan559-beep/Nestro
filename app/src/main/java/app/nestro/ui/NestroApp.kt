@@ -2025,7 +2025,7 @@ fun NestroApp() {
                                     Text("＋ 创建项目空间")
                                 }
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(projects.filter { it.archivedAt == 0L }, key = { it.id }) { project ->
+                                    items(projects.filter { it.archivedAt == 0L }.sortedByDescending { prefs.getLong("project_last_opened_${it.id}", it.createdAt) }, key = { it.id }) { project ->
                                         val count = conversations.count { it.projectId == project.id }
                                         Surface(color = if (project.id == activeProjectId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2033,7 +2033,8 @@ fun NestroApp() {
                                                     Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
                                                         scope.launch {
                                                             activeProjectId = project.id
-                                                            prefs.edit().putString("active_project_id", project.id).apply()
+                                                            prefs.edit().putString("active_project_id", project.id)
+                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                                                             val target = conversations.firstOrNull { it.projectId == project.id }
                                                             if (target == null) {
                                                                 val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
@@ -2478,6 +2479,7 @@ fun NestroApp() {
                             val project = ProjectRecord(UUID.randomUUID().toString(), name, projectDraftInstructions.trim(), System.currentTimeMillis())
                             projects = listOf(project) + projects
                             activeProjectId = project.id
+                            prefs.edit().putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
                             activeConversationId = conversation.id
