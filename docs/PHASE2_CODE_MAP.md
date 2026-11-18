@@ -529,3 +529,14 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Removed the second redundant partial-request marker write from the UI callback; `ChatStreamingCoordinator` remains the single owner of per-chunk crash-recovery persistence.
 - Added `ChatRequestExecutionCoordinatorTest` for ordinary-chat planning denial, task-mode planning, expert-context/stream ordering, partial output after transport failure, and parent cancellation propagation.
 - Current verification target: PR #3 head `8d5efa289a0e5b876890fd2a35f0e58e37ce1c84`, Android CI run #988 (`44270476413`) in progress. This batch does not mark module 3 complete; remaining work is to inspect the full chat module boundary and close any uncovered lifecycle/data-integrity cases.
+
+
+## 2026-11-18 — Chat lifecycle and interrupted-response durability
+
+- Added `ChatRequestExecutionCoordinator` and wired it through `NestroApplication`; the request pipeline now owns the explicit task-mode planning gate, project-scoped context assembly, expert-team context handoff, bounded history, streaming, partial-answer forwarding, and final response precedence.
+- Removed the duplicate Phone Agent planning block that previously ran in `NestroApp` before the new coordinator, so one user request cannot schedule the same task twice.
+- Preserved task-planning scheduling failures in `ChatRequestExecutionResult`; a later successful chat response no longer overwrites the task-planning failure status. The assistant response still completes normally.
+- `ChatRequestRecoveryCoordinator` now verifies that the pending request's conversation belongs to the recorded project before restoring either partial output or its draft.
+- Added `ConversationPersistenceService.persistRecoveredMessages()`, which writes the recovered conversation metadata and messages in a Room transaction before recovery returns. A process death after recovery can no longer rely solely on a later Compose snapshot effect to persist the recovered answer.
+- Added JVM coverage for task-mode authorization, task-planning failure, stop-before-stream, partial-response preservation, cancellation propagation, and project ownership; added Android Room instrumentation coverage for durable recovery and cross-project isolation.
+- Latest source head `ddacdff2011462f289d4dbb1acf009a7c74d8f25`; CI #997 compiled production/test Kotlin and ran 268 JVM tests, with 267 passing. The sole failure is the paused fifth-module `ProjectSpaceRulesTest.projectSerializationPreservesEveryValidProjectAndFullInstructionText`: its test fixture supplies 8,000 characters against the current 4,000-character serialization limit. No chat-module test failed. Do not change module 5 while module 3 and 4 are being closed in order.
