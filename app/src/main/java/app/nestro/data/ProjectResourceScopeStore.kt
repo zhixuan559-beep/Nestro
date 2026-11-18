@@ -60,7 +60,8 @@ internal object ProjectResourceScopeStore {
             require(projects.all { it == GLOBAL || it.isNotBlank() }) { "项目资源范围 ID 无效" }
             require(projects.size == projects.distinct().size) { "项目资源范围存在重复项" }
             require(GLOBAL !in projects || projects.size == 1) { "全局资源不能同时声明项目范围" }
-            json.put(key, JSONArray(projects.sorted()))
+            val values = JSONArray().apply { projects.sorted().forEach { put(it) } }
+            json.put(key, values)
         }
         return json.toString()
     }
@@ -112,7 +113,7 @@ internal object ProjectResourceScopeStore {
         require(projectId.isNotBlank() && projectId != GLOBAL) { "待移除项目 ID 无效" }
         return scopes.mapValues { (_, projects) ->
             if (GLOBAL in projects || projectId !in projects) projects
-            else (projects - projectId).ifEmpty { setOf(GLOBAL) }
+            else projects - projectId
         }
     }
 
