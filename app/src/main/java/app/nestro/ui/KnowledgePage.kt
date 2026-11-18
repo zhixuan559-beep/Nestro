@@ -65,8 +65,8 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String) {
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
   Text("本地知识库",color=KnowledgeInk,style=MaterialTheme.typography.headlineSmall)
   Text("当前空间：$projectId。资料只存入本机 Room 数据库，回答时检索当前项目的相关片段。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
-  Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
-  Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX。单文件上限 2 MB，Office 文件解压后上限 8 MB。PDF 文本解析尚未接入。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
+  Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/pdf"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
+  Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。单文件上限 2 MB，Office 文件解压后上限 8 MB。PDF 按页提取文本后进入本地索引。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Text(status,color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   OutlinedTextField(
    value=searchQuery,
