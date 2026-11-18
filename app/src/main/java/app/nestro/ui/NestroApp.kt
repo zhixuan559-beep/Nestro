@@ -2032,6 +2032,9 @@ fun NestroApp() {
                                 if (projectStorageReadOnly) {
                                     Text("项目空间数据校验失败：原始数据已保留，当前仅允许查看和切换默认空间。请先导出备份并修复数据。", color = ColorStop)
                                 }
+                                if (projectResourceScopesReadOnly) {
+                                    Text("专家、团队、技能和工作流的项目归属数据校验失败，已停止加载这些资源以防跨项目泄漏。请恢复有效备份后再使用。", color = ColorStop)
+                                }
                                 Button(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
                                     editingProjectId = ""
                                     projectDraftName = ""
