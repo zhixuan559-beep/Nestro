@@ -172,6 +172,9 @@ fun NestroApp() {
     var readableProjectIds by remember(activeProjectId) {
         mutableStateOf(ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId))
     }
+    var writableProjectIds by remember(activeProjectId) {
+        mutableStateOf(ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId))
+    }
     var pendingAccessSourceProjectId by remember { mutableStateOf("") }
     var showProjectAccessDialog by remember { mutableStateOf(false) }
     var deletingProjectId by projectSpaceUiState.deletingProjectId
@@ -2322,7 +2325,7 @@ fun NestroApp() {
                                 Text("当前不内置语音合成或第三方语音插件。后续可通过独立 Provider 接口接入用户自行选择的 API 服务。", color = Muted)
                             }
                         }
-                        "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId)
+                        "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
@@ -2454,7 +2457,7 @@ fun NestroApp() {
                 Text(
                     "允许当前项目「" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: activeProjectId) +
                         "」访问「" + (sourceProject?.name ?: pendingAccessSourceProjectId) +
-                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入授权独立记录，不会改变资源原有归属。授权仅对这两个项目生效。",
+                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入权限当前用于管理该项目的知识库文档。授权仅对这两个项目生效。",
                     color = Muted
                 )
             },
@@ -2467,6 +2470,7 @@ fun NestroApp() {
                                 setOf(ProjectAccessControlStore.Access.READ)
                             )
                             readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                            writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
                             status = "已授权当前项目读取「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」的资源"
                         }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
                         showProjectAccessDialog = false
@@ -2479,6 +2483,7 @@ fun NestroApp() {
                                 setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE)
                             )
                             readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                            writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
                             status = "已授权当前项目读取和写入「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」"
                         }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
                         showProjectAccessDialog = false
@@ -2492,6 +2497,7 @@ fun NestroApp() {
                         runCatching { ProjectAccessControlStore.revoke(prefs, pendingAccessSourceProjectId, activeProjectId) }
                             .onSuccess {
                                 readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                                writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
                                 status = "已撤销跨项目授权"
                             }
                             .onFailure { status = "撤销失败：" + (it.message ?: "数据无效") }
