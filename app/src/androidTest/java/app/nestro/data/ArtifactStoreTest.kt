@@ -173,4 +173,5 @@ class ArtifactStoreTest {
         assertTrue(ArtifactStore.list(context, "project-a").isEmpty())
         assertEquals("B content", ArtifactStore.read(context, ArtifactStore.list(context, "project-b").single()))
     }
-\n}\n
+
+}
