@@ -32,7 +32,6 @@ class ContentPageInteractionTest {
             composeRule.onNodeWithText("测试知识库检索").assertIsNotEnabled()
             composeRule.onNodeWithText("＋ 导入文档").assertIsEnabled()
         } finally {
-            composeRule.setContent { }
             database.close()
         }
     }
