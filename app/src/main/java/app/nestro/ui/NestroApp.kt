@@ -739,22 +739,6 @@ fun NestroApp() {
                     stopRequested = false
                     return@launch
                 }
-                // Ordinary chat never runs Phone Agent intent planning. Task planning is
-                // reachable only after the user explicitly enables task mode in the composer.
-                if (requestExecutionAuthorization.shouldPlanPhoneAgent()) {
-                    val phonePlan = PhoneAgentPlanner.plan(prompt)
-                    if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
-                        runCatchingCancellable {
-                            withContext(Dispatchers.IO) {
-                                appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
-                                    requestProjectId,
-                                    requestConversationId,
-                                    phonePlan
-                                )
-                            }
-                        }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
-                    }
-                }
                 val execution = appRuntime.chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
                         requestId = assistantId,
@@ -777,15 +761,13 @@ fun NestroApp() {
                         if (requestExecutionAuthorization.shouldPlanPhoneAgent()) {
                             val phonePlan = PhoneAgentPlanner.plan(prompt)
                             if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
-                                runCatchingCancellable {
-                                    withContext(Dispatchers.IO) {
-                                        appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
-                                            requestProjectId,
-                                            requestConversationId,
-                                            phonePlan
-                                        )
-                                    }
-                                }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
+                                withContext(Dispatchers.IO) {
+                                    appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                        requestProjectId,
+                                        requestConversationId,
+                                        phonePlan
+                                    )
+                                }
                             }
                         }
                     },
@@ -872,7 +854,7 @@ fun NestroApp() {
                 }
                 busy = false
                 activeRequestId = ""
-                if (result.isSuccess && !stopRequested) {
+                if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
                         appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
                             enabled = requestAutomaticMemoryEnabled,
