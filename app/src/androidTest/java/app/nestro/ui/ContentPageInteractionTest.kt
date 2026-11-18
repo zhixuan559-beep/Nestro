@@ -28,7 +28,7 @@ class ContentPageInteractionTest {
             val repository = KnowledgeRepository(database)
             composeRule.setContent { KnowledgePage(repository, "interaction-test-project") }
             composeRule.onNodeWithText("测试知识库检索").assertIsNotEnabled()
-            composeRule.onNodeWithText("输入问题，查看实际命中的文档片段").performTextInput("项目隔离")
+            composeRule.onNodeWithText("检索测试").performTextInput("项目隔离")
             composeRule.onNodeWithText("测试知识库检索").assertIsNotEnabled()
             composeRule.onNodeWithText("＋ 导入文档").assertIsEnabled()
         } finally {
