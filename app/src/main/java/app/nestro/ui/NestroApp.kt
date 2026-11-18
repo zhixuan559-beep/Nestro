@@ -332,6 +332,7 @@ fun NestroApp() {
             }
             if (result.isSuccess) {
                 automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
+                // Re-resolve below after the restored active project ID is applied.
                 reasoningEffort = prefs.getString("reasoning_effort_v1", "low") ?: "low"
                 modelUiState.initialize()
                 persistedConversationVersions.clear()
@@ -340,6 +341,7 @@ fun NestroApp() {
                 projectStorageReadOnly = false
                 projectResourceScopes = ProjectResourceScopeStore.load(prefs)
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
+                automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: ConversationPreferencesStore.loadMessages(prefs)
                 draft = prefs.getString("draft_$activeConversationId", "") ?: ""
@@ -1934,7 +1936,7 @@ fun NestroApp() {
                                         checked = automaticMemoryEnabled,
                                         onCheckedChange = { enabled ->
                                             automaticMemoryEnabled = enabled
-                                            prefs.edit().putBoolean("automatic_memory_enabled", enabled).apply()
+                                            ProjectMemorySettingsStore.setEnabled(prefs, activeProjectId, enabled)
                                         }
                                     )
                                 }
@@ -2033,6 +2035,7 @@ fun NestroApp() {
                                                     Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
                                                         scope.launch {
                                                             activeProjectId = project.id
+                                                            automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
                                                             prefs.edit().putString("active_project_id", project.id)
                                                                 .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                                                             val target = conversations.firstOrNull { it.projectId == project.id }
@@ -2105,6 +2108,7 @@ fun NestroApp() {
                                                                     )
                                                                     ProjectResourceScopeStore.save(prefs, copiedScopes)
                                                                     projectResourceScopes = copiedScopes
+                                                                    ProjectMemorySettingsStore.duplicateProject(prefs, project.id, copyId)
                                                                     val restored = withContext(Dispatchers.IO) {
                                                                         appRuntime.conversationPersistenceService.restore(prefs)
                                                                     }
@@ -2176,6 +2180,7 @@ fun NestroApp() {
                                                                         val remainingScopes = ProjectResourceScopeStore.removeProjectScope(projectResourceScopes, project.id)
                                                                         ProjectResourceScopeStore.save(prefs, remainingScopes)
                                                                         projectResourceScopes = remainingScopes
+                                                                        ProjectMemorySettingsStore.removeProject(prefs, project.id)
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
@@ -2494,6 +2499,7 @@ fun NestroApp() {
                             val project = ProjectRecord(UUID.randomUUID().toString(), name, projectDraftInstructions.trim(), System.currentTimeMillis())
                             projects = listOf(project) + projects
                             activeProjectId = project.id
+                            automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
                             prefs.edit().putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
