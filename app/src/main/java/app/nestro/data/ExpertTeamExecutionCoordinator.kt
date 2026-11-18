@@ -2,7 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentCapabilityRegistry
-import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
@@ -26,7 +26,7 @@ class ExpertTeamExecutionCoordinator(
         onMember: suspend (String, String) -> Unit = { _, _ -> },
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
-        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolAccess?) -> String)? = null
+        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
     ): ExpertTeamRunResult = taskCoordinator.runInline(
         taskId = taskId,
         owner = "expert_team",
