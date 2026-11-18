@@ -52,6 +52,13 @@ class LocalBackupRoundTripTest {
             dao.putMessages(listOf(MessageEntity("corrupt-m1", "corrupt-c1", 0, "assistant", "回复", "[]", 0)))
             prefs.edit().putString("phone_audit", "{invalid").commit()
             assertTrue("损坏的安全审计记录不得被静默清空", runCatching { repository.createBackup(prefs) }.isFailure)
+
+            prefs.edit().putString("phone_audit", JSONArray().put("invalid-row").toString()).commit()
+            assertTrue("无效的审计条目不得被跳过", runCatching { repository.createBackup(prefs) }.isFailure)
+
+            prefs.edit().putString("phone_audit", "[]").commit()
+            dao.putMessages(listOf(MessageEntity("corrupt-m1", "corrupt-c1", 0, "assistant", "回复", "[1]", 0)))
+            assertTrue("非字符串回答版本不得被静默写入备份", runCatching { repository.createBackup(prefs) }.isFailure)
         } finally {
             database.close()
             prefs.edit().clear().commit()
