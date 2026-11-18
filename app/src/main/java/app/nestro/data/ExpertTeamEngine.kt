@@ -172,7 +172,7 @@ object ExpertTeamEngine {
                 onMember?.invoke(activeMember.name, if (attempts == 1) "running" else "retrying")
                 val candidates = members.map { it.name }.filter { it !in visited }
                 val prompt = buildString {
-                    append("你是专家团队“").append(teamName).append("”中的成员“").append(current.name).append("”。\n")
+                    append("你是专家团队“").append(teamName).append("”中的成员“").append(activeMember.name).append("”。\n")
                     append("专业角色：").append(activeMember.rolePrompt.take(3000)).append("\n")
                     append("团队目标：").append(teamDescription).append("\n\n")
                     append("本轮子任务：\n").append(currentTask.take(5000)).append("\n\n")
@@ -191,7 +191,7 @@ object ExpertTeamEngine {
                     output = withTimeout(timeoutMillis) { invoke(activeMember, prompt).trim().take(2200) }
                     require(output.isNotBlank()) { "模型返回空结果" }
                 } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
-                    errorText = "成员执行超时（\${timeoutMillis / 1000} 秒）"
+                    errorText = "成员执行超时（" + (timeoutMillis / 1000) + " 秒）"
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -217,7 +217,7 @@ object ExpertTeamEngine {
             val target = request?.let { byName[it] }
             if (target == null || target.name in visited || subtask.isNullOrBlank() || delegationCount >= maxDelegations) break
 
-            handoff = "【\${current.name}交接】\${cleanOutput.take(1200)}"
+            handoff = "【" + activeMember.name + "交接】" + cleanOutput.take(1200)
             currentTask = subtask.take(2000)
             current = target
             delegationCount++
