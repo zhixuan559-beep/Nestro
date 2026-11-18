@@ -501,7 +501,7 @@ private suspend fun applyLocalBackup(
     for (i in 0 until conversations.length()) {
         val conversation = conversations.getJSONObject(i)
         require(conversation.requiredString("id").isNotBlank()) { "会话 ID 缺失" }
-        require(conversation.requiredString("title").length <= 80) { "会话标题过长" }
+        require(conversation.stringOrDefault("title", "新对话").length <= 80) { "会话标题过长" }
         val items = conversation.arrayOrEmpty("messages")
         require(items.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制（最多 $MAX_BACKUP_MESSAGES_PER_CONVERSATION 条）" }
         for (j in 0 until items.length()) {
