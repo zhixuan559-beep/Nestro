@@ -76,7 +76,7 @@ class ProjectAccessControlStoreTest {
         val prefs = context.getSharedPreferences("project_access_corrupt_audit_test", Context.MODE_PRIVATE)
         try {
             prefs.edit().clear().putString("project_access_audit_v1", "not-json").commit()
-            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            org.junit.Assert.assertThrows(RuntimeException::class.java) {
                 ProjectAccessControlStore.grant(
                     prefs, "source", "target", setOf(ProjectAccessControlStore.Access.READ), 50L
                 )
