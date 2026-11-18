@@ -75,9 +75,9 @@ class NestroApplication : Application() {
     }
     internal val chatStreamingCoordinator: ChatStreamingCoordinator by lazy {
         ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop, onChunk ->
+            transport = ChatStreamingTransport { configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId, shouldStop, onChunk ->
                 chatExecutionService.streamWithFallback(
-                    configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop, onChunk
+                    configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId, shouldStop, onChunk
                 )
             },
             partialStateStore = SharedPreferencesChatPartialStateStore(
