@@ -152,4 +152,22 @@ class WorkflowEngineTest {
         assertEquals(listOf("B2", "C"), workflow.steps.map { it.title })
     }
 
+    @Test fun workflowConditionCanSkipAndApprovalCanReject() = kotlinx.coroutines.test.runTest {
+        val skipped = WorkflowDefinition("w1","条件","",listOf(
+            WorkflowStep(title="条件步",instruction="x",condition="contains:命中")
+        ))
+        val result = WorkflowEngine.run(skipped,"目标",{ _, _ -> "不会执行" })
+        assertEquals("skipped", result.stepRuns.single().status)
+
+        val gated = WorkflowDefinition("w2","审批","",listOf(
+            WorkflowStep(title="审批步",instruction="x",approvalRequired=true)
+        ))
+        try {
+            WorkflowEngine.run(gated,"目标",{ _, _ -> "不会执行" },requestApproval={ _, _ -> false })
+            throw AssertionError("expected rejection")
+        } catch (e: WorkflowExecutionException) {
+            assertEquals("approval_rejected", e.stepRuns.single().status)
+        }
+    }
+
 }
