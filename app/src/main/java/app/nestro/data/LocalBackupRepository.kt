@@ -907,9 +907,12 @@ private suspend fun applyLocalBackup(
         "专家团队"
     )
     val selectedTeam = root.stringOrDefault("selected_team_id", "")
-    val validSelectedTeam = selectedTeam.takeIf { id ->
-        (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).requiredString("id") == id }
-    } ?: ""
+    val selectedTeamExists = (0 until cleanTeams.length())
+        .any { cleanTeams.getJSONObject(it).requiredString("id") == selectedTeam }
+    require(selectedTeam.isBlank() || selectedTeamExists) {
+        "当前选中的专家团队不存在，拒绝恢复"
+    }
+    val validSelectedTeam = selectedTeam
     val skills = JSONObject(root.stringOrDefault("skills", "{}"))
     require(skills.length() <= 100) { "技能数量超出限制" }
     val skillMetadata = JSONObject(root.stringOrDefault("skill_metadata_v1", "{}"))
@@ -1026,7 +1029,9 @@ private suspend fun applyLocalBackup(
         val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
         require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
         val restoredActiveProfileId = root.stringOrDefault("active_model_profile_id", "")
-            .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
+        require(restoredActiveProfileId.isBlank() || restoredProfiles.any { it.id == restoredActiveProfileId }) {
+            "当前选中的模型配置不存在，拒绝恢复"
+        }
         val restoredModelUsageRaw = root.stringOrDefault("model_usage_v1", "{}")
         val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
         require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
