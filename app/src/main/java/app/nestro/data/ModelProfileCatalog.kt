@@ -7,7 +7,8 @@ data class ModelProfileMetadata(
     val id: String,
     val name: String,
     val baseUrl: String,
-    val model: String
+    val model: String,
+    val enabled: Boolean = true
 )
 
 object ModelProfileLifecycle {
@@ -58,7 +59,8 @@ object ModelProfileCatalogCodec {
                 .put("id", profile.id)
                 .put("name", profile.name)
                 .put("base_url", profile.baseUrl)
-                .put("model", profile.model))
+                .put("model", profile.model)
+                .put("enabled", profile.enabled))
         }
     }.toString()
 
@@ -71,7 +73,8 @@ object ModelProfileCatalogCodec {
                 id = item.getString("id"),
                 name = item.getString("name"),
                 baseUrl = item.getString("base_url"),
-                model = item.getString("model")
+                model = item.getString("model"),
+                enabled = item.optBoolean("enabled", true)
             )
         }.also { profiles ->
             require(validateCatalog(profiles) == null)
