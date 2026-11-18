@@ -251,4 +251,36 @@ class ModelRequestConfigurationSelectorTest {
             assertEquals(null, configs.last().reasoningEffort)
         }
     }
+
+    @Test
+    fun usageStatsResolveNewRegistryModelIdsAndKeepLegacyProfileIdsStable() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("key", "p", "Key")),
+            models = listOf(
+                ModelDefinition("custom-model-id", "p", "Custom", "custom-code", listOf("key")),
+                ModelDefinition("legacy-model-profile-7", "p", "Legacy", "legacy-code", listOf("key"))
+            )
+        )
+        assertEquals(
+            "custom-model-id",
+            ModelRequestConfigurationSelector.usageStatsId(
+                registry, ModelConfig("https://api.example.com", "custom-code", "secret")
+            )
+        )
+        assertEquals(
+            "profile-7",
+            ModelRequestConfigurationSelector.usageStatsId(
+                registry, ModelConfig("https://api.example.com", "legacy-code", "secret")
+            )
+        )
+        assertEquals(
+            null,
+            ModelRequestConfigurationSelector.usageStatsId(
+                registry, ModelConfig("https://other.example.com", "custom-code", "secret")
+            )
+        )
+    }
+
 }
