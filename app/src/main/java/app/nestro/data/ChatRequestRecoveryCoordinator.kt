@@ -39,6 +39,43 @@ internal fun parsePendingChatRequest(raw: String?): PendingChatRequest? {
 internal fun PendingChatRequest.matches(record: ConversationRecord): Boolean =
     record.id == conversationId && record.projectId == projectId
 
+internal fun recoverInterruptedAssistantMessage(
+    messages: List<ChatMessage>,
+    requestId: String,
+    partialAnswer: String
+): List<ChatMessage> {
+    val recoveredContent = if (partialAnswer.isBlank()) {
+        "请求在应用重建时中断，原始输入已恢复，可重新发送。"
+    } else {
+        partialAnswer + "\n\n[请求中断，已保留已接收内容]"
+    }
+    val existingIndex = messages.indexOfFirst { it.id == requestId && it.role == "assistant" }
+    if (existingIndex < 0) {
+        return messages + ChatMessage(requestId, "assistant", recoveredContent)
+    }
+
+    val existing = messages[existingIndex]
+    if (
+        existing.content == recoveredContent ||
+        (partialAnswer.isNotBlank() && existing.content == partialAnswer) ||
+        recoveredContent in existing.versions ||
+        (partialAnswer.isNotBlank() && partialAnswer in existing.versions)
+    ) {
+        return messages
+    }
+
+    val versions = (existing.allVersions() + recoveredContent)
+        .filter(String::isNotBlank)
+        .distinct()
+        .takeLast(20)
+    val recovered = existing.copy(
+        content = recoveredContent,
+        versions = versions,
+        activeVersion = versions.lastIndex
+    )
+    return messages.toMutableList().also { it[existingIndex] = recovered }
+}
+
 internal class ChatRequestRecoveryCoordinator(
     private val persistence: ConversationPersistenceService
 ) {
@@ -79,13 +116,8 @@ internal class ChatRequestRecoveryCoordinator(
             } else {
                 record.messages
             }
-            if (existingMessages.none { it.id == requestId }) {
-                val content = if (partial.isBlank()) {
-                    "请求在应用重建时中断，原始输入已恢复，可重新发送。"
-                } else {
-                    partial + "\n\n[请求中断，已保留已接收内容]"
-                }
-                val recovered = existingMessages + ChatMessage(requestId, "assistant", content)
+            val recovered = recoverInterruptedAssistantMessage(existingMessages, requestId, partial)
+            if (recovered != existingMessages) {
                 updatedConversations = ConversationPreferencesStore.saveConversationMessages(
                     preferences, conversationId, recovered, projectId, conversations
                 )
