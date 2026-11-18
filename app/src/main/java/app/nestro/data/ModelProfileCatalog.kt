@@ -10,6 +10,20 @@ data class ModelProfileMetadata(
     val model: String
 )
 
+object ModelProfileLifecycle {
+    fun remove(profiles: List<ModelProfileMetadata>, id: String): List<ModelProfileMetadata> =
+        profiles.filterNot { it.id == id }
+
+    fun disable(profiles: List<ModelProfileMetadata>, id: String): List<ModelProfileMetadata> =
+        profiles.map { if (it.id == id) it.copy(enabled = false) else it }
+
+    fun enable(profiles: List<ModelProfileMetadata>, id: String): List<ModelProfileMetadata> =
+        profiles.map { if (it.id == id) it.copy(enabled = true) else it }
+
+    fun selectable(profiles: List<ModelProfileMetadata>): List<ModelProfileMetadata> =
+        profiles.filter { it.enabled }.sortedBy { it.name.lowercase() }
+}
+
 object ModelProfileCatalogCodec {
     const val MAX_PROFILES = 20
 
