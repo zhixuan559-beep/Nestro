@@ -96,6 +96,13 @@ class LocalBackupRoundTripTest {
             prefs.edit().putString("phone_audit", JSONArray().put("invalid-row").toString()).commit()
             assertTrue("无效的审计条目不得被跳过", runCatching { repository.createBackup(prefs) }.isFailure)
 
+            val oversizedAudit = JSONArray()
+            repeat(101) { index ->
+                oversizedAudit.put(JSONObject().put("at", index.toLong()).put("action", "TASK_STEP").put("detail", "审计记录 $index"))
+            }
+            prefs.edit().putString("phone_audit", oversizedAudit.toString()).commit()
+            assertTrue("导出不得静默丢弃超过 100 条的旧审计记录", runCatching { repository.createBackup(prefs) }.isFailure)
+
             prefs.edit().putString("phone_audit", "[]").commit()
             dao.putMessages(listOf(MessageEntity("corrupt-m1", "corrupt-c1", 0, "assistant", "回复", "[1]", 0)))
             assertTrue("非字符串回答版本不得被静默写入备份", runCatching { repository.createBackup(prefs) }.isFailure)
