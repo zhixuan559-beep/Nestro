@@ -17,7 +17,10 @@ data class WorkflowStep(
     val timeoutSeconds:Int=120,
     val continueOnError:Boolean=false,
     val skipIfPreviousContains:String="",
-    val repeatCount:Int=1
+    val repeatCount:Int=1,
+    val condition:String="",
+    val approvalRequired:Boolean=false,
+    val parallelGroup:String=""
 )
 
 data class WorkflowDefinition(
@@ -142,7 +145,9 @@ object WorkflowDefinitionCodec {
                         .put("retries",step.retries).put("timeoutSeconds",step.timeoutSeconds)
                         .put("continueOnError",step.continueOnError)
                         .put("skipIfPreviousContains",step.skipIfPreviousContains)
-                        .put("repeatCount",step.repeatCount))
+                        .put("repeatCount",step.repeatCount)
+                        .put("condition",step.condition).put("approvalRequired",step.approvalRequired)
+                        .put("parallelGroup",step.parallelGroup))
                 } }))
         }
     }.toString()
@@ -169,7 +174,10 @@ object WorkflowDefinitionCodec {
                     timeoutSeconds=step.optInt("timeoutSeconds",120).coerceIn(15,300),
                     continueOnError=step.optBoolean("continueOnError",false),
                     skipIfPreviousContains=step.optString("skipIfPreviousContains").take(120),
-                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3)
+                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3),
+                    condition=step.optString("condition").take(200),
+                    approvalRequired=step.optBoolean("approvalRequired",false),
+                    parallelGroup=step.optString("parallelGroup").take(40)
                 )
             }.take(20)
             val name=item.optString("name").trim()
@@ -189,6 +197,8 @@ object WorkflowDefinitionCodec {
             require(it.timeoutSeconds in 15..300) { "单步超时必须在 15 到 300 秒之间" }
             require(it.skipIfPreviousContains.length<=120) { "条件文本不能超过 120 个字符" }
             require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
+            require(it.condition.length<=200) { "条件不能超过 200 个字符" }
+            require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
             if(it.kind != WorkflowStepKind.PROMPT) {
                 require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
             }
@@ -207,7 +217,8 @@ object WorkflowEngine {
         workflow:WorkflowDefinition,
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
-        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> }
+        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
+        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> true }
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
@@ -217,6 +228,15 @@ object WorkflowEngine {
         val active=workflow.steps.filter { it.enabled }
         require(active.isNotEmpty()) { "工作流没有启用的步骤" }
         active.forEachIndexed { index,step ->
+            if(step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput)) {
+                runs += WorkflowStepRun(step.id,step.title,"skipped",0,error="条件未满足")
+                outputs += previousOutput
+                return@forEachIndexed
+            }
+            if(step.approvalRequired && !requestApproval(step, previousOutput)) {
+                runs += WorkflowStepRun(step.id,step.title,"approval_rejected",0,error="审批未通过")
+                throw WorkflowExecutionException("步骤“${step.title}”未获批准", runs.toList())
+            }
             if(step.skipIfPreviousContains.isNotBlank() &&
                 previousOutput.contains(step.skipIfPreviousContains,ignoreCase=true)) {
                 runs += WorkflowStepRun(step.id,step.title,"skipped",0,output=previousOutput)
@@ -294,5 +314,13 @@ object WorkflowEngine {
             outputs += stepOutput
         }
         return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs)
+    }
+    private fun evaluateCondition(condition:String, previousOutput:String):Boolean {
+        val c=condition.trim()
+        if(c.equals("always",true)) return true
+        if(c.equals("nonblank",true)) return previousOutput.isNotBlank()
+        if(c.startsWith("contains:",true)) return previousOutput.contains(c.substringAfter(":").trim(),true)
+        if(c.startsWith("not_contains:",true)) return !previousOutput.contains(c.substringAfter(":").trim(),true)
+        return false
     }
 }
