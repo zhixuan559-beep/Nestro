@@ -20,6 +20,26 @@ data class ArtifactRecord(
     val version: Int
 )
 
+private fun JSONObject.artifactString(key: String): String =
+    opt(key) as? String ?: error("产物备份字段 $key 类型无效")
+
+private fun JSONObject.artifactInt(key: String): Int {
+    val value = opt(key) as? Number ?: error("产物备份字段 $key 必须是整数")
+    val number = value.toDouble()
+    require(number.isFinite() && number % 1.0 == 0.0 && number in 1.0..10_000.0) {
+        "产物备份字段 $key 数值无效"
+    }
+    return number.toInt()
+}
+
+private fun JSONObject.artifactLongOrDefault(key: String, default: Long): Long {
+    if (!has(key)) return default
+    val value = opt(key) as? Number ?: error("产物备份字段 $key 必须是整数")
+    val number = value.toDouble()
+    require(number.isFinite() && number % 1.0 == 0.0) { "产物备份字段 $key 数值无效" }
+    return value.toLong()
+}
+
 object ArtifactStore {
     private const val MAX_ARTIFACT_BYTES = 1_500_000
     private const val MAX_ITEMS = 200
@@ -118,16 +138,17 @@ object ArtifactStore {
         var totalBytes = 0L
         for (index in 0 until rows.length()) {
             val row = rows.optJSONObject(index) ?: error("产物索引包含无效条目，已中止备份")
-            val id = row.optString("id")
-            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && row.optString("projectId") in allowedProjectIds) { "产物索引包含无效 ID 或项目归属" }
+            val id = row.artifactString("id")
+            val projectId = row.artifactString("projectId")
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && projectId in allowedProjectIds) { "产物索引包含无效 ID 或项目归属" }
             val fileName = "$id.md"
-            require(row.optString("fileName") == fileName) { "产物索引文件引用无效" }
+            require(row.artifactString("fileName") == fileName) { "产物索引文件引用无效" }
             val file = File(root(context), fileName)
             require(file.isFile) { "产物文件缺失，已中止备份以避免静默丢失内容" }
-            require(file.length() == row.optLong("sizeBytes")) { "产物文件大小与索引不一致，已中止备份" }
+            require(file.length() == row.artifactLongOrDefault("sizeBytes", -1L)) { "产物文件大小与索引不一致，已中止备份" }
             require(file.length() <= MAX_ARTIFACT_BYTES) { "产物文件超出备份大小限制" }
-            val title = row.optString("title")
-            val version = row.optInt("version", 0)
+            val title = row.artifactString("title")
+            val version = row.artifactInt("version")
             require(title.isNotBlank() && title.length <= 100 && title == title.trim()) { "产物标题无效，已中止备份" }
             require(version in 1..10_000) { "产物版本号无效，已中止备份" }
             totalBytes += file.length()
@@ -137,7 +158,7 @@ object ArtifactStore {
                 .put("projectId", row.optString("projectId"))
                 .put("title", title)
                 .put("version", version)
-                .put("createdAt", row.optLong("createdAt"))
+                .put("createdAt", row.artifactLongOrDefault("createdAt", 0L))
                 .put("content", file.readText(Charsets.UTF_8)))
         }
         return output
@@ -150,12 +171,12 @@ object ArtifactStore {
         var totalBytes = 0L
         for (index in 0 until rows.length()) {
             val row = rows.getJSONObject(index)
-            val id = row.optString("id")
-            val projectId = row.optString("projectId")
-            val title = row.optString("title")
-            val content = row.optString("content")
+            val id = row.artifactString("id")
+            val projectId = row.artifactString("projectId")
+            val title = row.artifactString("title")
+            val content = row.artifactString("content")
             val bytes = content.toByteArray(Charsets.UTF_8)
-            val version = row.optInt("version", 0)
+            val version = row.artifactInt("version")
             require(id.matches(Regex("[0-9a-fA-F-]{36}")) && ids.add(id) && projectId in allowedProjectIds) { "产物项目归属、ID 无效或重复" }
             require(title.isNotBlank() && title.length <= 100 && title == title.trim() && version in 1..10000) { "产物元数据无效" }
             require(bytes.isNotEmpty() && bytes.size <= MAX_ARTIFACT_BYTES) { "产物内容为空或超出大小限制" }
