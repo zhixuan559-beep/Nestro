@@ -68,7 +68,7 @@ object PhoneAgentExecutor {
             return ExecutionResult(Outcome.CANCELLED, 0, emptyList(), "任务已取消")
         }
         val agentStates = RoomAgentTaskStateStore(dao)
-        val service = PhoneAgentService.activeService
+        val service = PhoneAgentExecutionEnvironmentProvider.active
         if (service == null) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "无障碍服务尚未连接"))
