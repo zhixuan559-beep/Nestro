@@ -2263,6 +2263,24 @@ fun NestroApp() {
                                                         }
                                                     }
                                                 }
+                                                if (project.id != activeProjectId) {
+                                                    val currentGrant = runCatching {
+                                                        ProjectAccessControlStore.loadGrants(prefs).firstOrNull {
+                                                            it.sourceProjectId == project.id && it.targetProjectId == activeProjectId
+                                                        }
+                                                    }.getOrNull()
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text(
+                                                            if (currentGrant == null) "当前项目尚未获得此空间的访问权限"
+                                                            else "当前项目权限：" + currentGrant.access.joinToString("、") { if (it == ProjectAccessControlStore.Access.READ) "读取" else "写入" },
+                                                            color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)
+                                                        )
+                                                        TextButton(enabled = !projectResourceScopesReadOnly, onClick = {
+                                                            pendingAccessSourceProjectId = project.id
+                                                            showProjectAccessDialog = true
+                                                        }) { Text("管理授权", color = Mint) }
+                                                    }
+                                                }
                                                 Text(project.instructions.ifBlank { "尚未设置项目指令" }.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                         }
@@ -2421,6 +2439,65 @@ fun NestroApp() {
                 }) { Text("覆盖并恢复", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
             },
             dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false; pendingBackupUri = null }) { Text("取消") } }
+        )
+    }
+
+    if (showProjectAccessDialog && pendingAccessSourceProjectId.isNotBlank()) {
+        val sourceProject = projects.firstOrNull { it.id == pendingAccessSourceProjectId }
+        AlertDialog(
+            onDismissRequest = { showProjectAccessDialog = false; pendingAccessSourceProjectId = "" },
+            title = { Text("跨项目访问授权") },
+            text = {
+                Text(
+                    "允许当前项目「" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: activeProjectId) +
+                        "」访问「" + (sourceProject?.name ?: pendingAccessSourceProjectId) +
+                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入权限用于后续跨项目修改。授权仅对这两个项目生效。",
+                    color = Muted
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        runCatching {
+                            ProjectAccessControlStore.grant(
+                                prefs, pendingAccessSourceProjectId, activeProjectId,
+                                setOf(ProjectAccessControlStore.Access.READ)
+                            )
+                            readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                            status = "已授权当前项目读取「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」的资源"
+                        }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("仅读取", color = Mint) }
+                    TextButton(onClick = {
+                        runCatching {
+                            ProjectAccessControlStore.grant(
+                                prefs, pendingAccessSourceProjectId, activeProjectId,
+                                setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE)
+                            )
+                            readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                            status = "已授权当前项目读取和写入「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」"
+                        }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("读取和写入", color = Mint) }
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        runCatching { ProjectAccessControlStore.revoke(prefs, pendingAccessSourceProjectId, activeProjectId) }
+                            .onSuccess {
+                                readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                                status = "已撤销跨项目授权"
+                            }
+                            .onFailure { status = "撤销失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("撤销授权", color = ColorStop) }
+                    TextButton(onClick = { showProjectAccessDialog = false; pendingAccessSourceProjectId = "" }) { Text("取消") }
+                }
+            }
         )
     }
 
