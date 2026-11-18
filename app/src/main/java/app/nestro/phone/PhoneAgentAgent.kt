@@ -12,6 +12,33 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 object PhoneAgentAgent {
+    enum class LoadPolicy { ON_DEMAND, EAGER }
+
+    data class AgentCapability(
+        val id: String,
+        val loadPolicy: LoadPolicy = LoadPolicy.ON_DEMAND,
+        val estimatedCost: Int = 1
+    )
+
+    /**
+     * Select only the capabilities required by the current task. Loading is declarative;
+     * execution and permissions remain in the existing Phone Agent service/executor.
+     */
+    fun selectCapabilities(task: String, available: List<AgentCapability>, maxCost: Int = 6): List<AgentCapability> {
+        val normalized = task.lowercase()
+        return available.asSequence()
+            .filter { it.id.isNotBlank() }
+            .distinctBy { it.id }
+            .filter { it.loadPolicy == LoadPolicy.EAGER || normalized.contains(it.id.lowercase()) }
+            .sortedBy { it.estimatedCost }
+            .runningFold(0 to emptyList<AgentCapability>()) { acc, capability ->
+                if (acc.first + capability.estimatedCost <= maxCost) {
+                    (acc.first + capability.estimatedCost) to (acc.second + capability)
+                } else acc
+            }.lastOrNull()?.second ?: emptyList()
+    }
+
+
     data class Result(val outcome: PhoneAgentExecutor.Outcome, val message: String)
 
     suspend fun run(
