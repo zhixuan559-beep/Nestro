@@ -24,7 +24,7 @@ class ConversationMessageVersionCodecTest {
             encodeMessageVersions(ChatMessage("m1", "assistant", "answer", List(21) { "v$it" }, 0))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            decodeMessageVersions(org.json.JSONArray(List(21) { "v$it" }.toString()).toString(), 0)
+            decodeMessageVersions(org.json.JSONArray().apply { repeat(21) { put("v$it") } }.toString(), 0)
         }
         assertThrows(IllegalArgumentException::class.java) {
             decodeMessageVersions(org.json.JSONArray().put("x".repeat(200_001)).toString(), 0)
