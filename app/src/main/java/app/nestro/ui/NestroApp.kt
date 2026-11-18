@@ -315,6 +315,7 @@ fun NestroApp() {
             }
             if (result.isSuccess) {
                 automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
+                reasoningEffort = prefs.getString("reasoning_effort_v1", "low") ?: "low"
                 modelUiState.initialize()
                 persistedConversationVersions.clear()
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
