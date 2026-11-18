@@ -155,6 +155,7 @@ fun NestroApp() {
     var conversations by conversationUiState.conversations
     val projectSpaceUiState = remember { ProjectSpaceUiState() }
     var projects by projectSpaceUiState.projects
+    var projectStorageReadOnly by remember { mutableStateOf(false) }
     var activeProjectId by projectSpaceUiState.activeProjectId
     var deletingProjectId by projectSpaceUiState.deletingProjectId
     var showProjectDialog by projectSpaceUiState.showProjectDialog
@@ -321,6 +322,7 @@ fun NestroApp() {
                 persistedConversationVersions.clear()
                 conversations = ConversationPreferencesStore.loadConversations(prefs)
                 projects = ProjectPreferencesStore.loadProjects(prefs)
+                projectStorageReadOnly = false
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
                 messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: ConversationPreferencesStore.loadMessages(prefs)
@@ -506,6 +508,7 @@ fun NestroApp() {
         val startup = appRuntime.conversationStartupCoordinator.restore(prefs)
         conversations = startup.conversations
         projects = startup.projects
+        projectStorageReadOnly = startup.projectStorageReadOnly
         activeProjectId = startup.activeProjectId
         activeConversationId = startup.activeConversationId
         messages = startup.messages
@@ -1963,7 +1966,10 @@ fun NestroApp() {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("项目空间", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("每个空间拥有独立会话与项目指令。切换空间不会把其他项目的聊天记录注入当前请求。", color = Muted)
-                                Button(enabled = deletingProjectId.isBlank(), onClick = {
+                                if (projectStorageReadOnly) {
+                                    Text("项目空间数据校验失败：原始数据已保留，当前仅允许查看和切换默认空间。请先导出备份并修复数据。", color = ColorStop)
+                                }
+                                Button(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
                                     editingProjectId = ""
                                     projectDraftName = ""
                                     projectDraftInstructions = ""
