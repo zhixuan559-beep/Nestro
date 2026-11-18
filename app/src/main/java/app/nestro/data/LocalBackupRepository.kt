@@ -161,8 +161,19 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         row.messages.sortedBy { it.position }.forEach { message ->
             val versions = runCatching { JSONArray(message.versionsJson) }
                 .getOrElse { error("会话回答版本记录损坏，已中止备份") }
+            require(message.id.isNotBlank() && message.role in setOf("user", "assistant") && message.content.length <= 200_000) {
+                "会话消息字段无效，已中止备份"
+            }
+            require(versions.length() <= 20) { "回答版本数量超过备份上限，已中止备份" }
+            val versionValues = (0 until versions.length()).map { versionIndex ->
+                require(versions.opt(versionIndex) is String) { "回答版本格式无效，已中止备份" }
+                versions.getString(versionIndex).also { require(it.length <= 200_000) { "回答版本内容过长，已中止备份" } }
+            }
+            require(message.activeVersion >= 0 && (versionValues.isEmpty() || message.activeVersion < versionValues.size)) {
+                "回答版本索引无效，已中止备份"
+            }
             messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", versions).put("active_version", message.activeVersion.coerceAtLeast(0)))
+                .put("versions", JSONArray(versionValues)).put("active_version", message.activeVersion))
         }
         conversationArray.put(JSONObject().put("id", row.conversation.id).put("title", row.conversation.title.take(80))
             .put("updated_at", row.conversation.updatedAt).put("project_id", row.conversation.projectId).put("messages", messages))
