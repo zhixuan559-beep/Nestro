@@ -96,4 +96,40 @@ class ArtifactStoreTest {
         }
         assertTrue("backup must fail when indexed artifact is missing", rejected)
     }
+    @Test
+    fun backupRejectsMalformedArtifactIndexInsteadOfSkippingOrClampingIt() {
+        val record = ArtifactStore.save(context, "project-a", "Valid", "content")
+        val indexFile = File(context.filesDir, "artifacts/index.json")
+        val rows = JSONArray(indexFile.readText(Charsets.UTF_8))
+        rows.getJSONObject(0).put("title", "x".repeat(101))
+        indexFile.writeText(rows.toString(), Charsets.UTF_8)
+
+        var rejectedLongTitle = false
+        try {
+            ArtifactStore.backupAll(context, setOf("project-a"))
+        } catch (_: IllegalArgumentException) {
+            rejectedLongTitle = true
+        }
+        assertTrue("backup must reject an overlong indexed title", rejectedLongTitle)
+
+        rows.getJSONObject(0).put("title", record.title).put("version", 0)
+        indexFile.writeText(rows.toString(), Charsets.UTF_8)
+        var rejectedVersion = false
+        try {
+            ArtifactStore.backupAll(context, setOf("project-a"))
+        } catch (_: IllegalArgumentException) {
+            rejectedVersion = true
+        }
+        assertTrue("backup must reject an invalid version instead of clamping it", rejectedVersion)
+
+        indexFile.writeText(JSONArray().put(JSONObject.NULL).toString(), Charsets.UTF_8)
+        var rejectedMalformedRow = false
+        try {
+            ArtifactStore.backupAll(context, setOf("project-a"))
+        } catch (_: IllegalArgumentException) {
+            rejectedMalformedRow = true
+        }
+        assertTrue("backup must reject malformed index rows instead of skipping them", rejectedMalformedRow)
+    }
+
 }
