@@ -19,7 +19,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-private fun String.stableFtsRowId(): Long = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8)).take(8).fold(0L) { acc, byte -> (acc shl 8) or (byte.toLong() and 0xff) } and Long.MAX_VALUE
+internal fun String.stableFtsRowId(): Long = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8)).take(8).fold(0L) { acc, byte -> (acc shl 8) or (byte.toLong() and 0xff) } and Long.MAX_VALUE
 
 @Entity(tableName = "conversations", indices = [Index(value = ["projectId", "updatedAt"])])
 data class ConversationEntity(
