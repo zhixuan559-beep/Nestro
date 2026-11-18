@@ -543,18 +543,26 @@ private suspend fun applyLocalBackup(
     require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
     val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
         val item = taskLogRows.getJSONObject(index)
+        val id = item.optString("id")
         val taskId = item.optString("taskId")
+        val actionIndex = item.optInt("actionIndex", 0)
+        val action = item.optString("action")
+        val detail = item.optString("detail")
         require(taskId in restoredTaskIds) { "任务审计记录缺少所属任务" }
+        require(actionIndex in 0..100 && action.length in 1..60 && detail.length <= 240) {
+            "任务审计记录字段无效"
+        }
         PhoneAgentTaskLogEntity(
-            id = item.getString("id"),
+            id = id,
             taskId = taskId,
-            actionIndex = item.optInt("actionIndex", 0).coerceIn(0, 100),
-            action = item.optString("action").take(60),
+            actionIndex = actionIndex,
+            action = action,
             success = item.optBoolean("success", false),
-            detail = item.optString("detail").take(240),
+            detail = detail,
             createdAt = item.optLong("createdAt", System.currentTimeMillis())
         )
     }
+    LocalBackupCompatibility.requireUniqueIds(restoredTaskLogs.map { it.id }, "任务日志")
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
