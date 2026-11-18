@@ -714,10 +714,7 @@ fun NestroApp() {
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
             val requestUserId = user.id
             val requestStartedAt = System.currentTimeMillis()
-            prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
-                .put("request_id", assistantId).put("conversation_id", requestConversationId)
-                .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
-                .put("started_at", requestStartedAt).toString()).apply()
+            ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, "", requestStartedAt)
             val requestExpertProfile = requestExpertProfiles[selectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
@@ -732,7 +729,7 @@ fun NestroApp() {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
                     conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId, conversations)
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
-                    prefs.edit().remove("chat_request_state_v1").apply()
+                    ChatRequestStateStore.clear(prefs)
                     status = "已停止生成"
                     busy = false
                     activeRequestId = ""
@@ -847,6 +844,7 @@ fun NestroApp() {
                                 if (activeConversationId == requestConversationId) {
                                     messages = requestHistory + ChatMessage(assistantId, "assistant", partial, previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
                                 }
+                                ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, partial, requestStartedAt)
                             }
                         }
                     )
