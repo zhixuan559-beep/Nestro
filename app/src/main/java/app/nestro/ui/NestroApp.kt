@@ -1130,7 +1130,7 @@ fun NestroApp() {
                                 if (error != null) {
                                     status = error
                                 } else {
-                                    modelProfiles = (modelProfiles.filterNot { it.id == metadata.id } + metadata)
+                                    modelProfiles = ModelProfileLifecycle.selectable(modelProfiles.filterNot { it.id == metadata.id } + metadata)
                                     val existingKey = modelRepository.readProfileKey(metadata.id)
                                     val effectiveKey = apiKey.trim().ifBlank { existingKey }
                                     if (apiKey.isNotBlank()) modelRepository.writeProfileKey(metadata.id, effectiveKey)
