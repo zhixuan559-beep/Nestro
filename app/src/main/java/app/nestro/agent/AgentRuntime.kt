@@ -72,9 +72,13 @@ sealed interface AgentAuthorization {
     data class RequireConfirmation(val reason: String) : AgentAuthorization
 }
 
-interface AgentToolAccess {
+interface AgentToolDiscovery {
     fun find(toolId: String): AgentToolSpec?
     fun list(): List<AgentToolSpec>
+}
+
+/** Invocation is reserved for AgentRuntime, which applies AgentPermissionRouter. */
+interface AgentToolAccess : AgentToolDiscovery {
     suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult
 }
 
