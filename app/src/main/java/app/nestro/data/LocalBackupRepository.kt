@@ -83,6 +83,36 @@ private fun decodeBackupMessageVersions(item: JSONObject): Pair<String, Int> {
     return JSONArray(decoded).toString() to activeVersion
 }
 
+private fun loadProjectsForBackup(prefs: android.content.SharedPreferences): List<ProjectRecord> {
+    val raw = prefs.getString("projects", "[]") ?: "[]"
+    val array = JSONArray(raw)
+    require(array.length() <= 100) { "旧版项目空间数量超过备份上限" }
+    val parsed = (0 until array.length()).map { index ->
+        val item = array.getJSONObject(index)
+        val id = item.requiredString("id")
+        val name = item.stringOrDefault("name", "项目")
+        val instructions = item.stringOrDefault("instructions", "")
+        require(id.isNotBlank() && name.isNotBlank() && name.length <= 40 && name == name.trim() &&
+            instructions.length <= 4_000) { "旧版项目空间字段无效，已中止备份" }
+        ProjectRecord(
+            id = id,
+            name = name,
+            instructions = instructions,
+            createdAt = item.longOrDefault("created_at", System.currentTimeMillis()),
+            archivedAt = item.longOrDefault("archived_at", 0L).also {
+                require(it >= 0L) { "旧版项目归档时间无效" }
+            }
+        )
+    }
+    val withDefault = if (parsed.any { it.id == "default" }) parsed
+        else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
+    require(withDefault.map { it.id }.distinct().size == withDefault.size) { "旧版项目空间 ID 重复" }
+    require(ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) == null) {
+        ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) ?: "旧版项目空间数据无效"
+    }
+    return withDefault
+}
+
 private fun validateLegacyConversationBackup(conversations: JSONArray, allowedProjectIds: Set<String>) {
     val conversationIds = mutableSetOf<String>()
     val messageIds = mutableSetOf<String>()
@@ -246,7 +276,7 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
     val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-    val backupProjects = if (roomProjects.isEmpty()) ProjectPreferencesStore.loadProjects(prefs) else roomProjects
+    val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else roomProjects
     root.put("projects", ProjectPreferencesStore.projectsToJson(backupProjects))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val roomConversationRows = snapshot.conversations
