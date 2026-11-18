@@ -240,6 +240,53 @@ object AgentCredentialLeaseRegistry {
         leases.values.count { it.taskId == taskId && it.isUsable() }
 }
 
+/**
+ * Central declaration point for the minimum tools required by one feature operation.
+ * Declarations are intentionally operation-scoped (expert member / workflow step),
+ * not a global list injected into every task or chat turn.
+ */
+object AgentCapabilityRegistry {
+    private data class Key(val owner: String, val operation: String)
+    private val declarations = ConcurrentHashMap<Key, Set<String>>()
+
+    fun register(owner: String, operation: String, toolIds: Set<String>) {
+        require(owner.matches(Regex("[a-zA-Z0-9_.-]{1,80}")))
+        require(operation.isNotBlank() && operation.length <= 120)
+        require(toolIds.size <= 32)
+        require(toolIds.all { it.matches(Regex("[a-zA-Z0-9_.-]{1,100}")) })
+        declarations[Key(owner, operation)] = toolIds.toSortedSet()
+    }
+
+    fun unregister(owner: String, operation: String): Boolean =
+        declarations.remove(Key(owner, operation)) != null
+
+    fun resolve(owner: String, operation: String): Set<String> =
+        declarations[Key(owner, operation)].orEmpty().toSet()
+
+    fun clearOwner(owner: String) {
+        declarations.keys.removeIf { it.owner == owner }
+    }
+
+    fun openLease(
+        taskId: String,
+        owner: String,
+        operation: String,
+        catalog: AgentToolCatalog?
+    ): AgentToolLeaseRegistry.Lease? {
+        val required = resolve(owner, operation)
+        if (required.isEmpty()) return null
+        requireNotNull(catalog) {
+            "操作 $owner/$operation 声明了工具能力，但当前没有可用的统一工具目录"
+        }
+        val available = catalog.list().map { it.id }.toSet()
+        val missing = required - available
+        require(missing.isEmpty()) {
+            "操作 $owner/$operation 所需工具尚未注册：" + missing.sorted().joinToString("、")
+        }
+        return AgentToolLeaseRegistry.open(taskId, catalog, required)
+    }
+}
+
 class InMemoryAgentToolCatalog : AgentToolCatalog {
     private data class Entry(
         val spec: AgentToolSpec,
