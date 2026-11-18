@@ -105,6 +105,17 @@ internal object ProjectResourceScopeStore {
         }
     }
 
+    fun removeProjectScope(
+        scopes: Map<String, Set<String>>,
+        projectId: String
+    ): Map<String, Set<String>> {
+        require(projectId.isNotBlank() && projectId != GLOBAL) { "待移除项目 ID 无效" }
+        return scopes.mapValues { (_, projects) ->
+            if (GLOBAL in projects || projectId !in projects) projects
+            else (projects - projectId).ifEmpty { setOf(GLOBAL) }
+        }
+    }
+
     fun save(preferences: SharedPreferences, scopes: Map<String, Set<String>>) {
         check(preferences.edit().putString(PREF_KEY, encode(scopes)).commit()) { "项目资源范围保存失败" }
     }
