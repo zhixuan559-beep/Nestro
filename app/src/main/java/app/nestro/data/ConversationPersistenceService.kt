@@ -136,6 +136,27 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         }
     }
 
+    /** Persist an interrupted chat recovery directly to Room before startup continues. */
+    internal suspend fun persistRecoveredMessages(conversationId: String, messages: List<ChatMessage>) = withContext(Dispatchers.IO) {
+        val dao = database.dao()
+        database.withTransaction {
+            val current = dao.conversationWithMessages(conversationId)?.conversation
+                ?: return@withTransaction
+            val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
+                ?.ifBlank { "新对话" } ?: current.title
+            val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
+            dao.putConversation(current.copy(title = title, updatedAt = System.currentTimeMillis()))
+            dao.clearMessages(conversationId)
+            val rows = messages.takeLast(500).mapIndexed { index, message ->
+                MessageEntity(
+                    message.id, conversationId, index, message.role, message.content,
+                    JSONArray(message.versions.take(20)).toString(), message.activeVersion.coerceAtLeast(0)
+                )
+            }
+            if (rows.isNotEmpty()) dao.putMessages(rows)
+        }
+    }
+
     private fun decodeVersions(raw: String): List<String> = runCatching {
         val values = JSONArray(raw)
         (0 until values.length()).mapNotNull { values.optString(it).takeIf(String::isNotBlank) }.take(20)
