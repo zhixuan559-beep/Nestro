@@ -44,13 +44,19 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compile Kotlin, run unit tests and lint
-        run: |
-          gradle --no-daemon --stacktrace compileDebugKotlin
-          gradle --no-daemon --stacktrace testDebugUnitTest
-          gradle --no-daemon --stacktrace lintDebug
-          # Compile Android tests without launching an emulator or producing an installable APK.
-          gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
+      - name: Compile production Kotlin
+        run: gradle --no-daemon --stacktrace compileDebugKotlin
+
+      - name: Run JVM unit tests
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Run Android lint
+        if: always()
+        run: gradle --no-daemon --stacktrace lintDebug
+
+      - name: Compile Android instrumentation test sources
+        if: always()
+        run: gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
 
       - name: Upload verification reports
         if: always()
