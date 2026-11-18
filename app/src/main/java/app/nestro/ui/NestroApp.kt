@@ -8,7 +8,7 @@ import app.nestro.data.runCatchingCancellable
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
 import app.nestro.data.allVersions
-import app.nestro.data.ChatResponseFinalizer
+import app.nestro.data.ChatRequestExecutionRequest
 import app.nestro.data.ChatResponseStatus
 import app.nestro.data.isCreationIntent
 import app.nestro.data.ConversationRecord
@@ -755,22 +755,44 @@ fun NestroApp() {
                         }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
                     }
                 }
-                val partialAnswer = StringBuilder()
-                var recalledCount = 0
-                val result = runCatchingCancellable {
-                    val assembledContext = appRuntime.chatRequestContextAssembler.assemble(
-                        projectId = requestProjectId,
+                val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                    request = ChatRequestExecutionRequest(
+                        requestId = assistantId,
                         conversationId = requestConversationId,
+                        projectId = requestProjectId,
                         prompt = prompt,
-                        requestHistory = requestHistory,
+                        startedAt = requestStartedAt,
+                        history = requestHistory,
+                        modelConfigs = requestModelConfigs,
                         baseSystemContext = baseSystemContext,
-                        taskModeEnabled = requestExecutionAuthorization.taskModeEnabled
-                    )
-                    recalledCount = assembledContext.recalledCount
-                    if (activeConversationId == requestConversationId) recallSources = assembledContext.recallSources
-                    val requestSystemContext = assembledContext.systemContext
+                        taskModeEnabled = requestExecutionAuthorization.taskModeEnabled,
+                        temperature = requestExpertProfile?.temperature,
+                        maxTokens = requestExpertProfile?.maxTokens,
+                        previousAssistant = previousAssistant,
+                        shouldStop = { stopRequested }
+                    ),
+                    onUsage = recordModelUsage,
+                    onProviderUsage = recordProviderModelUsage,
+                    planPhoneAgent = {
+                        if (requestExecutionAuthorization.shouldPlanPhoneAgent()) {
+                            val phonePlan = PhoneAgentPlanner.plan(prompt)
+                            if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
+                                runCatchingCancellable {
+                                    withContext(Dispatchers.IO) {
+                                        appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                            requestProjectId,
+                                            requestConversationId,
+                                            phonePlan
+                                        )
+                                    }
+                                }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
+                            }
+                        }
+                    },
+                    onTaskPlanningFailure = { status = "任务计划保存失败：${it.message ?: "未知错误"}" },
+                    runExpertTeam = { requestSystemContext ->
                     val selectedTeam = if (requestExecutionAuthorization.shouldRunExpertTeam()) requestExpertTeams.firstOrNull { it.id == requestExecutionAuthorization.selectedTeamId } else null
-                    val teamContext = if (selectedTeam != null) {
+                    if (selectedTeam != null) {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
                         val memberTasks = selectedTeam.members.filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
@@ -825,44 +847,19 @@ fun NestroApp() {
                         }
                         teamRun.toContext(10_000)
                     } else ""
-                    val finalSystemContext = listOf(requestSystemContext, teamContext)
-                        .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
-                    if (stopRequested) throw IllegalStateException("用户停止生成")
-                    val streamResult = appRuntime.chatStreamingCoordinator.execute(
-                        configs = requestModelConfigs,
-                        history = ChatRequestPolicy.boundedChatHistory(requestHistory, finalSystemContext),
-                        systemPrompt = finalSystemContext,
-                        temperature = requestExpertProfile?.temperature,
-                        maxTokens = requestExpertProfile?.maxTokens,
-                        onUsage = recordModelUsage,
-                        onProviderUsage = recordProviderModelUsage,
-                        requestId = assistantId,
-                        conversationId = requestConversationId,
-                        projectId = requestProjectId,
-                        prompt = prompt,
-                        startedAt = requestStartedAt,
-                        shouldStop = { stopRequested },
-                        onPartialAnswer = { partial ->
-                            withContext(Dispatchers.Main) {
-                                if (activeConversationId == requestConversationId) {
-                                    messages = requestHistory + ChatMessage(assistantId, "assistant", partial, previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
-                                }
-                                ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, partial, requestStartedAt)
+
+                    },
+                    onPartialAnswer = { partial ->
+                        withContext(Dispatchers.Main) {
+                            if (activeConversationId == requestConversationId) {
+                                messages = requestHistory + ChatMessage(assistantId, "assistant", partial, previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
                             }
                         }
-                    )
-                    partialAnswer.append(streamResult.partialAnswer)
-                    streamResult.failure?.let { throw it }
-                    streamResult.response.orEmpty()
-                }
-                val finalized = ChatResponseFinalizer.build(
-                    result = result,
-                    partialAnswer = partialAnswer.toString(),
-                    stopRequested = stopRequested,
-                    previousAssistant = previousAssistant,
-                    requestHistory = requestHistory,
-                    assistantId = assistantId
+                    }
                 )
+                val recalledCount = execution.recalledCount
+                if (activeConversationId == requestConversationId) recallSources = execution.recallSources
+                val finalized = execution.finalization
                 val finalText = finalized.finalText
                 val completedHistory = finalized.completedHistory
                 conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
