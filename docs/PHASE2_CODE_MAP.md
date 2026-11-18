@@ -435,3 +435,9 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The full conversation history remains intact for UI display and persistence; only the per-request model payload is trimmed to the configured context/output budget and the latest 40 messages.
 - Expert member prompts now use the immutable request-time expert prompt snapshot rather than reading mutable composer state.
 - Added regression coverage proving model history is bounded while the original persisted history remains unchanged.
+
+
+## 2026-11-18 — Complete request-time state snapshot
+
+- Captured active expert IDs, project instructions, automatic-memory preference, and user ID alongside task mode, team, expert profiles/prompts, skills, and disabled skills.
+- The in-flight chat and its post-response memory extraction no longer read these mutable UI values after launch.

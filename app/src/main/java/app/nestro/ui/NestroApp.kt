@@ -686,6 +686,10 @@ fun NestroApp() {
             val requestExpertPrompts = expertPrompts.toMap()
             val requestSkills = skills.toMap()
             val requestDisabledSkills = disabledSkills.toSet()
+            val requestExperts = experts.toSet()
+            val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
+            val requestAutomaticMemoryEnabled = automaticMemoryEnabled
+            val requestUserId = user.id
             val requestStartedAt = System.currentTimeMillis()
             prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
                 .put("request_id", assistantId).put("conversation_id", requestConversationId)
@@ -696,7 +700,7 @@ fun NestroApp() {
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[selectedExpert]?.enabled != false) requestExpertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[selectedExpert], requestSkills, requestDisabledSkills) else "",
-                projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
+                requestProjectInstructions,
                 requestSkills[selectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && selectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
@@ -746,7 +750,7 @@ fun NestroApp() {
                     val teamContext = if (selectedTeam != null) {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
-                        val memberTasks = selectedTeam.members.filter { it in experts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
+                        val memberTasks = selectedTeam.members.filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
                             val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
                             val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
@@ -847,12 +851,12 @@ fun NestroApp() {
                 if (result.isSuccess && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
                         appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
-                            enabled = automaticMemoryEnabled,
+                            enabled = requestAutomaticMemoryEnabled,
                             prompt = prompt,
                             modelConfigs = requestModelConfigs,
                             projectId = requestProjectId,
                             conversationId = requestConversationId,
-                            userId = user.id
+                            userId = requestUserId
                         )
                     }
                 }

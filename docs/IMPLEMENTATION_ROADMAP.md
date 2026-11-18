@@ -307,3 +307,6 @@ Ordinary chat must not inject selected expert role prompts, expert profile skill
 
 
 Every model invocation must receive a bounded history window sized against its system prompt and output reserve. Keep full conversation history for persistence/UI; trim only the request payload. Apply the same budget to each expert-team member call as to normal streaming.
+
+
+All request-affecting UI state—including active expert IDs, project instructions, automatic-memory preference, and user identity—is snapshotted before launching the chat coroutine. In-flight requests must not observe later UI changes.
