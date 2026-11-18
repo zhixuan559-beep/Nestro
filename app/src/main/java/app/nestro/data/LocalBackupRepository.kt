@@ -981,6 +981,9 @@ private suspend fun applyLocalBackup(
     // In-flight UI operations belong to the device/process being restored, not the backup.
     editor.remove("chat_request_state_v1")
         .remove("pending_project_delete_id")
+        .remove("phone_task_grant_until")
+        .remove("phone_single_grant")
+        .remove("phone_task_stop_requested")
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.requiredString("base_url")
         val restoredModel = root.requiredString("model")
