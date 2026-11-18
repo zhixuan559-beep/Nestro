@@ -462,6 +462,16 @@ class LocalBackupRoundTripTest {
             }
             assertTrue("恢复不得把类型错误的草稿映射当成空对象", runCatching { repository.restoreBackup(prefs, wrongDraftMapType) }.isFailure)
 
+            val wrongLegacyMessagesType = signedBackup { root ->
+                root.put("messages", JSONArray())
+            }
+            assertTrue("恢复不得把类型错误的旧消息字段强制转成文本", runCatching { repository.restoreBackup(prefs, wrongLegacyMessagesType) }.isFailure)
+
+            val wrongConversationCollectionType = signedBackup { root ->
+                root.put("conversations_v1", JSONObject().put("unexpected", true))
+            }
+            assertTrue("恢复不得把类型错误的会话清单当成空清单", runCatching { repository.restoreBackup(prefs, wrongConversationCollectionType) }.isFailure)
+
             assertEquals("有效标题", dao.loadConversations().single().conversation.title)
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
