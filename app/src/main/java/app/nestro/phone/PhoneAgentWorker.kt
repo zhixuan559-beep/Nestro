@@ -140,7 +140,7 @@ class PhoneAgentWorker(
         preferences.edit().remove("phone_task_stop_requested").apply()
         setForeground(PhoneAgentNotifications.foregroundInfo(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100)))
         PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100), true)
-        if (PhoneAgentService.activeService == null) {
+        if (PhoneAgentExecutionEnvironmentProvider.active == null) {
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
                 PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
