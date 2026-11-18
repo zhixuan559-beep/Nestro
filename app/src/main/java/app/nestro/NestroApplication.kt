@@ -27,6 +27,11 @@ import app.nestro.data.AutomaticMemoryExtractionCoordinator
 import app.nestro.data.CapabilityDraftCoordinator
 import app.nestro.data.CapabilityDraftTransport
 import app.nestro.data.extractMemoryCandidates
+import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelUsageStatsCodec
+import app.nestro.data.ModelConfig
+import app.nestro.model.ModelRequestConfigurationSelector
+import app.nestro.model.ModelRegistry
 import app.nestro.data.WorkflowExecutionCoordinator
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelConnectionService
@@ -93,7 +98,24 @@ class NestroApplication : Application() {
     }
     internal val automaticMemoryExtractionCoordinator: AutomaticMemoryExtractionCoordinator by lazy {
         AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { configs, messages -> extractMemoryCandidates(chatExecutionService, configs, messages) },
+            extractCandidates = { configs, messages ->
+                val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
+                val profiles = ModelProfileCatalogCodec.decode(
+                    preferences.getString("model_profiles_v1", "[]").orEmpty()
+                )
+                val registry = modelConfigurationRepository.loadRegistry(profiles)
+                extractMemoryCandidates(
+                    chatExecutionService,
+                    configs,
+                    messages,
+                    onUsage = { used, input, output ->
+                        recordBackgroundModelUsage(preferences, registry, used, input, output, providerReported = false)
+                    },
+                    onProviderUsage = { used, input, output ->
+                        recordBackgroundModelUsage(preferences, registry, used, input, output, providerReported = true)
+                    }
+                )
+            },
             saveCandidates = { projectId, conversationId, userId, candidates ->
                 userMemoryRepository.saveCandidates(projectId, conversationId, userId, candidates)
             }
@@ -180,4 +202,25 @@ class NestroApplication : Application() {
             PhoneAgentWorkScheduler.reconcilePending(this@NestroApplication, activePhoneTaskIds)
         }
     }
+    private fun recordBackgroundModelUsage(
+        preferences: android.content.SharedPreferences,
+        registry: ModelRegistry,
+        config: ModelConfig,
+        inputTokens: Int,
+        outputTokens: Int,
+        providerReported: Boolean
+    ) {
+        val usageId = ModelRequestConfigurationSelector.usageStatsId(registry, config) ?: return
+        val current = ModelUsageStatsCodec.decode(
+            preferences.getString("model_usage_v1", "{}").orEmpty()
+        )
+        val updated = if (providerReported) {
+            ModelUsageStatsCodec.recordProviderUsage(current, usageId, inputTokens, outputTokens)
+        } else {
+            ModelUsageStatsCodec.recordEstimatedTokens(current, usageId, inputTokens, outputTokens)
+        }
+        preferences.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(updated)).apply()
+    }
+
+
 }

@@ -598,8 +598,9 @@ fun NestroApp() {
         scope.launch {
             val usageId = usageProfileId(usedConfig)
             if (usageId != null) {
+                val latest = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}").orEmpty())
                 modelUsage = ModelUsageStatsCodec.recordEstimatedTokens(
-                    modelUsage, usageId, inputTokens, outputTokens
+                    latest, usageId, inputTokens, outputTokens
                 )
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }
@@ -610,8 +611,9 @@ fun NestroApp() {
         scope.launch {
             val usageId = usageProfileId(usedConfig)
             if (usageId != null) {
+                val latest = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}").orEmpty())
                 modelUsage = ModelUsageStatsCodec.recordProviderUsage(
-                    modelUsage, usageId, inputTokens, outputTokens
+                    latest, usageId, inputTokens, outputTokens
                 )
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }

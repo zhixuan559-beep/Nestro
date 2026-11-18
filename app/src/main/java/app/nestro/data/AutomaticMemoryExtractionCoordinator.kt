@@ -12,7 +12,9 @@ internal fun shouldExtractAutomaticMemory(prompt: String): Boolean {
 internal fun extractMemoryCandidates(
     chatExecutionService: ChatExecutionService,
     modelConfigs: List<ModelConfig>,
-    userMessages: List<String>
+    userMessages: List<String>,
+    onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+    onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> }
 ): List<MemoryCandidate> {
     val system = """
 你是本地记忆候选提取器。只返回 JSON 对象：{"memories":[{"category":"preference","content":"...","confidence":0.9}]}。
@@ -27,7 +29,9 @@ category 只能是 preference、workflow、project、constraint。
     val raw = chatExecutionService.completeWithFallback(
         modelConfigs,
         listOf(ChatMessage(UUID.randomUUID().toString(), "user", user)),
-        system
+        system,
+        onUsage = onUsage,
+        onProviderUsage = onProviderUsage
     )
     val start = raw.indexOf('{')
     val end = raw.lastIndexOf('}')
