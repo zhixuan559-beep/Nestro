@@ -2,6 +2,8 @@ package app.nestro
 
 import android.app.Application
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.RoomAgentTaskStateStore
 import app.nestro.agent.RoomAgentTaskTraceStore
@@ -90,6 +92,8 @@ class NestroApplication : Application() {
             )
         )
     }
+    /** One process-wide tool catalog shared by Phone Agent, experts, and workflows. */
+    val agentToolCatalog: AgentToolCatalog by lazy { InMemoryAgentToolCatalog() }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
@@ -153,7 +157,8 @@ class NestroApplication : Application() {
                     dao,
                     taskContext.taskId,
                     preferences.getBoolean(PhoneAgentWorkScheduler.afterHandoffKey(taskContext.taskId), false),
-                    preferences.getBoolean(PhoneAgentWorkScheduler.allowRetryKey(taskContext.taskId), false)
+                    preferences.getBoolean(PhoneAgentWorkScheduler.allowRetryKey(taskContext.taskId), false),
+                    toolCatalog = agentToolCatalog
                 )
                 val store = RoomAgentTaskStateStore(dao)
                 val current = store.get(taskContext.taskId)
