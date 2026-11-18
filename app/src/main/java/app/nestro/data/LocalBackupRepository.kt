@@ -235,6 +235,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("reasoning_effort_v1", reasoningEffort)
     root.put("tts_speech_rate", ttsSpeechRate.toDouble())
     root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
+    val projectMemorySettingsRaw = prefs.getString("project_memory_settings_v1", "{}") ?: "{}"
+    ProjectMemorySettingsStore.decode(projectMemorySettingsRaw)
+    root.put("project_memory_settings_v1", projectMemorySettingsRaw)
     val phoneAuditRaw = prefs.getString("phone_audit", "[]") ?: "[]"
     val phoneAudit = runCatching { JSONArray(phoneAuditRaw) }
         .getOrElse { error("Phone Agent 安全审计记录格式损坏，已中止备份") }
@@ -648,6 +651,10 @@ private suspend fun applyLocalBackup(
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
     val restoredResourceScopesRaw = root.stringOrDefault("project_resource_scopes_v1", "{}")
     val restoredResourceScopes = ProjectResourceScopeStore.decode(restoredResourceScopesRaw)
+    val restoredProjectMemorySettings = ProjectMemorySettingsStore.decode(root.stringOrDefault("project_memory_settings_v1", "{}"))
+    require(restoredProjectMemorySettings.keys.all { it in restoredProjectIds }) {
+        "项目记忆设置引用了不存在的项目，拒绝恢复"
+    }
     require(restoredResourceScopes.values.flatten().all { it == "*" || it in restoredProjectIds }) {
         "项目资源关联引用了不存在的项目，拒绝恢复"
     }
@@ -1013,6 +1020,7 @@ private suspend fun applyLocalBackup(
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
         .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(restoredResourceScopes))
+        .putString("project_memory_settings_v1", ProjectMemorySettingsStore.encode(restoredProjectMemorySettings))
         .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
         .putString("active_project_id", (if (root.has("active_project_id")) root.requiredString("active_project_id") else "default").also { id ->
             require(restoredProjects.any { it.id == id && it.archivedAt == 0L }) {
