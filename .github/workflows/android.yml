@@ -42,6 +42,7 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
+        id: setup_gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compile production Kotlin
@@ -51,11 +52,11 @@ jobs:
         run: gradle --no-daemon --stacktrace testDebugUnitTest
 
       - name: Run Android lint
-        if: always()
+        if: always() && steps.setup_gradle.outcome == 'success'
         run: gradle --no-daemon --stacktrace lintDebug
 
       - name: Compile Android instrumentation test sources
-        if: always()
+        if: always() && steps.setup_gradle.outcome == 'success'
         run: gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
 
       - name: Upload verification reports
