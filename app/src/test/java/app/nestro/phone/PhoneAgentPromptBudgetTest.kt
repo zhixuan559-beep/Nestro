@@ -6,7 +6,7 @@ import org.junit.Test
 
 class PhoneAgentPromptBudgetTest {
     @Test fun removesDuplicateScreenLinesAndRespectsLimits() {
-        val input = ("标题\\n重复内容\\n重复内容\\n" + "细节".repeat(1000))
+        val input = listOf("标题", "重复内容", "重复内容", "细节".repeat(1000)).joinToString("\n")
         val result = PhoneAgentPromptBudget.build("GENERAL", "查看页面", input, "")
         assertTrue(result.screenText.length <= 3_200)
         assertEquals(1, result.screenText.split("重复内容").size - 1)

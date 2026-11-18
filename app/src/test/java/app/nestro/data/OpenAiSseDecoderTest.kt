@@ -46,4 +46,14 @@ class OpenAiSseDecoderTest {
         decoder.acceptLine("""data: {"choices":[{"delta":{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}}]}""")
         assertEquals("AB", decoder.acceptLine(""))
     }
+
+    @Test
+    fun capturesProviderUsageFromFinalUsageChunk() {
+        val decoder = OpenAiSseDecoder()
+        decoder.acceptLine("""data: {"choices":[{"delta":{"content":"答"}}]}""")
+        assertEquals("答", decoder.acceptLine(""))
+        decoder.acceptLine("""data: {"choices":[],"usage":{"prompt_tokens":321,"completion_tokens":54}}""")
+        assertNull(decoder.acceptLine(""))
+        assertEquals(ProviderTokenUsage(321, 54), decoder.providerUsage)
+    }
 }

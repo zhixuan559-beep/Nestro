@@ -42,4 +42,27 @@ class ModelProfileCatalogTest {
         assertEquals(200L, stats.lastUsedAt)
         assertEquals(second, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(second)))
     }
+
+    @Test fun recordsProviderReportedUsageSeparatelyFromEstimates() {
+        val estimated = ModelUsageStatsCodec.record(emptyMap(), "a", 40, 20, 100L)
+        val mixed = ModelUsageStatsCodec.recordProviderUsage(estimated, "a", 11, 7, 200L)
+        val value = mixed.getValue("a")
+        assertEquals(2L, value.requests)
+        assertEquals(10L, value.estimatedInputTokens)
+        assertEquals(5L, value.estimatedOutputTokens)
+        assertEquals(11L, value.providerInputTokens)
+        assertEquals(7L, value.providerOutputTokens)
+        assertEquals(1L, value.providerUsageRequests)
+        assertEquals(1L, value.estimatedUsageRequests)
+        assertEquals(mixed, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(mixed)))
+    }
+
+    @Test fun decodesLegacyUsageAsEstimatedOnly() {
+        val decoded = ModelUsageStatsCodec.decode("""{"a":{"requests":3,"input_tokens":12,"output_tokens":8,"last_used_at":99}}""")
+        val value = decoded.getValue("a")
+        assertEquals(12L, value.estimatedInputTokens)
+        assertEquals(8L, value.estimatedOutputTokens)
+        assertEquals(0L, value.providerInputTokens)
+        assertEquals(0L, value.providerUsageRequests)
+    }
 }
