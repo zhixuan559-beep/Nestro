@@ -62,4 +62,12 @@ class PhoneAgentPlannerTest {
                 it.requiresUserConfirmation
         })
     }
+    @Test
+    fun replanningKeepsOnlyRemainingStepsAndMarksFirstForScreenVerification() {
+        val plan = PhoneAgentPlanner.plan("帮我比较并预订一个餐厅")
+        val replanned = PhoneAgentPlanner.replanFromCurrentState(plan, "当前页面显示餐厅列表", 1)
+        assertEquals(plan.steps.drop(1).size, replanned.steps.size)
+        if (replanned.steps.isNotEmpty()) assertTrue(replanned.steps.first().title.contains("重新核验"))
+    }
+
 }
