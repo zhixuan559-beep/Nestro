@@ -106,6 +106,14 @@ object PhoneAgentWorkScheduler {
         }
     }
 
+    /** Cancels the device-local queue before a full data restore replaces task rows. */
+    suspend fun cancelAll(context: Context) = withContext(Dispatchers.IO) {
+        WorkManager.getInstance(context.applicationContext)
+            .cancelUniqueWork(QUEUE_NAME)
+            .result
+            .get()
+    }
+
     fun cancel(context: Context, taskId: String, stopCurrent: Boolean = false) {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         // Persist cancellation even before this task reaches the head of the shared WorkManager chain.
