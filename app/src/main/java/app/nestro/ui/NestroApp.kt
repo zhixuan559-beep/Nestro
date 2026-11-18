@@ -814,7 +814,8 @@ fun NestroApp() {
                                         onProviderUsage = recordProviderModelUsage
                                     ).take(2200)
                                 }
-                            }
+                            },
+                            toolCatalog = appRuntime.agentToolCatalog
                         )
                         expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
                         prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
@@ -1410,7 +1411,8 @@ fun NestroApp() {
                                                                      workflowPauseGate?.await()
                                                                      if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                      workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
-                                                                 }
+                                                                 },
+                                                                 toolCatalog = appRuntime.agentToolCatalog
                                                              )
                                                          }
                                                          val assistantText = when {
