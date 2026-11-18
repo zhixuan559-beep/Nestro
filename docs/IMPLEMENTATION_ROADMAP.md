@@ -330,3 +330,12 @@ Security invariant: task-scoped capability selection is not authorization. Every
 
 
 Tool sessions now snapshot the exact handler as well as the selected capability definition. A later registration using the same tool ID cannot retarget an already-open task lease; new sessions use the new registration. JVM regression coverage verifies this isolation. Explicit revocation of already-open leases and credential expiry remain separate follow-up work.
+
+
+## 2026-11-18 — Phase 2 lease lifecycle closeout work
+
+- Implemented revocable task-owned capability leases and short-lived task credential lease primitives.
+- Task pause/cancel and handler exit now revoke leases; Phone Agent action execution uses the shared lease registry and releases each action lease in `finally`.
+- Added JVM tests for lease revocation and credential access expiry/revocation.
+- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. MCP discovery and remote provider adapters remain dependent on that shared contract and are not marked complete.
+- APK construction, installation, and device acceptance remain deferred until all feature code across the 19 modules is written and the final unified acceptance stage begins.
