@@ -225,6 +225,27 @@ object ExpertTeamEngine {
         return ExpertTeamRunResult(teamName, task.take(12_000), started, System.currentTimeMillis(), results)
     }
 
+    fun eligibleMembers(members: List<ExpertTeamMemberTask>, maxMembers: Int = 4): List<ExpertTeamMemberTask> =
+        members.filter { it.name.isNotBlank() && it.rolePrompt.isNotBlank() }
+            .distinctBy { it.name }.take(maxMembers.coerceIn(1, 4))
+
+    fun planInitialTeam(task: String, members: List<ExpertTeamMemberTask>): List<ExpertTeamMemberTask> {
+        val eligible = eligibleMembers(members)
+        if (eligible.isEmpty()) return emptyList()
+        val primary = selectPrimaryExpert(task, eligible)
+        val secondary = eligible.filter { it.name != primary.name }
+            .sortedByDescending { relevance(task, it) }
+            .take(2)
+        return listOf(primary) + secondary
+    }
+
+    private fun relevance(task: String, member: ExpertTeamMemberTask): Int {
+        val text = task.lowercase()
+        val role = (member.name + " " + member.rolePrompt).lowercase()
+        val terms = listOf("代码","开发","技术","安卓","接口","软件","运营","商业","销售","增长","内容","文案","写作","研究","数据","分析","调研")
+        return terms.count { text.contains(it) && role.contains(it) }
+    }
+
     private fun selectPrimaryExpert(task: String, members: List<ExpertTeamMemberTask>): ExpertTeamMemberTask {
         val text = task.lowercase()
         val domains = listOf(
