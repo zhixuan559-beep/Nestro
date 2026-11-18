@@ -194,4 +194,32 @@ class ProjectSpaceLifecycleTest {
             context.deleteDatabase(name)
         }
     }
+
+    @Test fun projectChangesMarkARecoverableSnapshotEvenAfterRoomInitialization() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("nestro_project_snapshot_dirty_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear()
+                .putBoolean("room_storage_initialized", true)
+                .putLong("room_synced_at", 10L)
+                .putLong("local_snapshot_saved_at", 10L)
+                .commit()
+
+            val projects = listOf(
+                ProjectRecord("default", "默认空间", "", 1L),
+                ProjectRecord("work", "工作空间", "必须在进程重启后保留", 2L)
+            )
+            ProjectPreferencesStore.saveProjects(prefs, projects)
+
+            val dirtyTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
+            assertTrue("Room 已初始化后，项目变更仍必须标记为待同步快照", dirtyTimestamp > 10L)
+            assertEquals(projects, ProjectPreferencesStore.loadProjects(prefs))
+
+            ProjectPreferencesStore.saveProjects(prefs, projects, markDirty = false)
+            assertEquals("Room 持久化完成后的内部快照写入不得重新标脏", dirtyTimestamp,
+                prefs.getLong("local_snapshot_saved_at", 0L))
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
 }
