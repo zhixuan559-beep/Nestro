@@ -105,6 +105,9 @@ class LocalBackupRoundTripTest {
             val backupRepository = LocalBackupRepository(context, database)
             val backup = backupRepository.createBackup(prefs)
             assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject(backup)))
+            assertTrue("外部备份不得包含任何 API Key 明文", !backup.contains("must-not-survive-restore"))
+            assertTrue("外部备份不得包含旧 Profile Key 明文", !backup.contains("legacy-secret-must-not-survive"))
+            assertTrue("外部备份不得包含活动模型 Key 明文", !backup.contains("active-secret-must-not-survive"))
             ArtifactStore.delete(context, savedArtifact)
 
             database.withTransaction {
