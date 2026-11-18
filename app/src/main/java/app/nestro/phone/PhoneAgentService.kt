@@ -7,10 +7,11 @@ import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
 
-class PhoneAgentService : AccessibilityService() {
+class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment {
     override fun onServiceConnected() {
         super.onServiceConnected()
         activeService = this
+        PhoneAgentExecutionEnvironmentProvider.attach(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -21,10 +22,11 @@ class PhoneAgentService : AccessibilityService() {
 
     override fun onDestroy() {
         if (activeService === this) activeService = null
+        PhoneAgentExecutionEnvironmentProvider.detach(this)
         super.onDestroy()
     }
 
-    fun captureVisibleText(): String {
+    override fun captureVisibleText(): String {
         val root = rootInActiveWindow ?: return "当前页面没有可读取的无障碍节点。"
         val lines = mutableListOf<String>()
         collect(root, lines, 0)
@@ -47,12 +49,12 @@ class PhoneAgentService : AccessibilityService() {
         }
     }
 
-    fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
-    fun isTaskStopped(): Boolean = getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean("phone_task_stop_requested", false)
+    override fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
+    override fun isTaskStopped(): Boolean = getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean("phone_task_stop_requested", false)
     fun clearTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().remove("phone_task_stop_requested").apply() }
-    fun requestTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean("phone_task_stop_requested", true).apply(); audit("TASK_STOP", "用户请求停止当前任务") }
+    override fun requestTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean("phone_task_stop_requested", true).apply(); audit("TASK_STOP", "用户请求停止当前任务") }
 
-    fun clickVisibleText(exactText: String): Boolean {
+    override fun clickVisibleText(exactText: String): Boolean {
         val normalized = exactText.trim()
         require(normalized.isNotBlank() && normalized.length <= 80) { "目标文本无效" }
         require(!isHighRisk(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
@@ -66,7 +68,7 @@ class PhoneAgentService : AccessibilityService() {
         return success
     }
 
-    fun setTextOnVisibleField(label: String, value: String): Boolean {
+    override fun setTextOnVisibleField(label: String, value: String): Boolean {
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
@@ -83,7 +85,7 @@ class PhoneAgentService : AccessibilityService() {
         return success
     }
 
-    fun scroll(direction: String): Boolean {
+    override fun scroll(direction: String): Boolean {
         require(direction == "forward" || direction == "backward") { "滚动方向无效" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
@@ -95,7 +97,7 @@ class PhoneAgentService : AccessibilityService() {
         return success
     }
 
-    fun openUrl(rawUrl: String): Boolean {
+    override fun openUrl(rawUrl: String): Boolean {
         val uri = android.net.Uri.parse(rawUrl.trim())
         require(uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) { "仅允许打开 HTTP/HTTPS 网页" }
         require(!uri.host.isNullOrBlank() && uri.userInfo == null) { "网址无效或包含嵌入式账号信息" }
@@ -106,7 +108,7 @@ class PhoneAgentService : AccessibilityService() {
         return true
     }
 
-    fun launchPackage(packageName: String): Boolean {
+    override fun launchPackage(packageName: String): Boolean {
         require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
@@ -116,7 +118,7 @@ class PhoneAgentService : AccessibilityService() {
         return true
     }
 
-    fun pressBack(): Boolean {
+    override fun pressBack(): Boolean {
         require(hasValidGrant()) { "没有有效的操作授权" }
         val success = performGlobalAction(GLOBAL_ACTION_BACK)
         consumeSingleGrantIfNeeded()
@@ -124,7 +126,7 @@ class PhoneAgentService : AccessibilityService() {
         return success
     }
 
-    fun verifyVisibleText(expected: String): Boolean {
+    override fun verifyVisibleText(expected: String): Boolean {
         val needle = expected.trim()
         if (needle.isBlank()) return false
         val root = rootInActiveWindow ?: return false
@@ -167,9 +169,9 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     fun hasActiveWindow(): Boolean = rootInActiveWindow != null
-    fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
+    override fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
 
-    fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
+    override fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
 
     private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isVisibleToUser && node.isScrollable) return node
