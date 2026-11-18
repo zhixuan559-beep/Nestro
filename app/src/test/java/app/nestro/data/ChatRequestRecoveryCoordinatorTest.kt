@@ -91,4 +91,16 @@ class ChatRequestRecoveryCoordinatorTest {
         assertTrue(recovered.last().content.startsWith("部分回复"))
     }
 
+    @Test
+    fun interruptedRegenerationWithoutOutputKeepsPreviousAssistantVersion() {
+        val previous = ChatMessage(
+            "assistant-1", "assistant", "旧回答",
+            versions = listOf("旧回答"), activeVersion = 0
+        )
+        assertEquals(
+            listOf(previous),
+            recoverInterruptedAssistantMessage(listOf(previous), "assistant-1", "")
+        )
+    }
+
 }
