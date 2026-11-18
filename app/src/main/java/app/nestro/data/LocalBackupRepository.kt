@@ -727,7 +727,12 @@ private suspend fun applyLocalBackup(
             if (rows.isNotEmpty()) dao.putMessages(rows)
         }
         if (restoredKnowledgeDocuments.isNotEmpty()) dao.insertKnowledgeDocuments(restoredKnowledgeDocuments)
-        if (restoredKnowledgeChunks.isNotEmpty()) dao.insertKnowledgeChunks(restoredKnowledgeChunks)
+        if (restoredKnowledgeChunks.isNotEmpty()) {
+            dao.insertKnowledgeChunks(restoredKnowledgeChunks)
+            dao.insertKnowledgeChunkFts(restoredKnowledgeChunks.map { chunk ->
+                KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content)
+            })
+        }
         restoredMemories.forEach { dao.putUserMemory(it) }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
