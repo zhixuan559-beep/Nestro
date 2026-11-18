@@ -4,6 +4,7 @@ import android.content.Context
 import app.nestro.NestroApplication
 import app.nestro.data.ChatMessage
 import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.model.ModelRequestConfigurationSelector
 import java.util.UUID
 
@@ -69,6 +70,18 @@ internal object PhoneAgentModelClient {
             .put("visibleScreenText", budgeted.screenText)
             .put("recentActionResults", budgeted.recentActions)
             .toString()
+        fun recordUsage(usedConfig: app.nestro.data.ModelConfig, inputTokens: Int, outputTokens: Int, providerReported: Boolean) {
+            val usageId = ModelRequestConfigurationSelector.usageStatsId(registry, usedConfig) ?: return
+            val current = ModelUsageStatsCodec.decode(
+                preferences.getString("model_usage_v1", "{}").orEmpty()
+            )
+            val updated = if (providerReported) {
+                ModelUsageStatsCodec.recordProviderUsage(current, usageId, inputTokens, outputTokens)
+            } else {
+                ModelUsageStatsCodec.recordEstimatedTokens(current, usageId, inputTokens, outputTokens)
+            }
+            preferences.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(updated)).apply()
+        }
         val response = app.chatExecutionService.completeWithFallback(
             configs,
             listOf(ChatMessage(UUID.randomUUID().toString(), "user", user)),
@@ -76,7 +89,9 @@ internal object PhoneAgentModelClient {
             connectTimeoutMillis = 15_000,
             readTimeoutMillis = 45_000,
             temperature = 0.1,
-            maxTokens = budgeted.maxOutputTokens
+            maxTokens = budgeted.maxOutputTokens,
+            onUsage = { used, input, output -> recordUsage(used, input, output, false) },
+            onProviderUsage = { used, input, output -> recordUsage(used, input, output, true) }
         )
         return PhoneAgentActionParser.parse(response)
     }
