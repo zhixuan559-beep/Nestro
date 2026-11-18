@@ -147,7 +147,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
             val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
             dao.putConversation(current.copy(title = title, updatedAt = System.currentTimeMillis()))
             dao.clearMessages(conversationId)
-            val rows = messages.takeLast(500).mapIndexed { index, message ->
+            val rows = messages.mapIndexed { index, message ->
                 MessageEntity(
                     message.id, conversationId, index, message.role, message.content,
                     JSONArray(message.versions.take(20)).toString(), message.activeVersion.coerceAtLeast(0)
