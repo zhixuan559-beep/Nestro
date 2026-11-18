@@ -79,6 +79,19 @@ internal object ProjectResourceScopeStore {
         return GLOBAL in allowedProjects || projectId in allowedProjects
     }
 
+    fun isVisibleFromProjects(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        resourceId: String,
+        activeProjectId: String,
+        additionallyReadableProjectIds: Set<String>
+    ): Boolean {
+        if (resourceId.isBlank() || activeProjectId.isBlank()) return false
+        val allowedProjects = scopes[resourceKey(kind, resourceId)] ?: return true
+        return GLOBAL in allowedProjects || activeProjectId in allowedProjects ||
+            allowedProjects.any { it in additionallyReadableProjectIds }
+    }
+
     fun setProjectScope(
         scopes: Map<String, Set<String>>,
         kind: ProjectResourceKind,
