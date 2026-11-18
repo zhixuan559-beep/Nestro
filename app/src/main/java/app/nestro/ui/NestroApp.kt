@@ -1434,12 +1434,24 @@ fun NestroApp() {
                                                                      val roleContext = when (step.kind) {
                                                                          WorkflowStepKind.EXPERT -> {
                                                                              val expertName = step.targetId.ifBlank { step.title }
+                                                                             check(!projectResourceScopesReadOnly &&
+                                                                                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId)) {
+                                                                                 "工作流引用的专家「$expertName」不属于当前项目，已阻止跨项目调用"
+                                                                             }
                                                                              val profile = expertProfiles[expertName]
                                                                              check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
-                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, skills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
+                                                                             val workflowSkills = skills.filterKeys { skillName ->
+                                                                                 !projectResourceScopesReadOnly &&
+                                                                                     ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId)
+                                                                             }
+                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
                                                                          }
                                                                          WorkflowStepKind.SKILL -> {
                                                                              val skillName = step.targetId.ifBlank { step.title }
+                                                                             check(!projectResourceScopesReadOnly &&
+                                                                                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId)) {
+                                                                                 "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
+                                                                             }
                                                                              check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
                                                                              skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
                                                                          }
