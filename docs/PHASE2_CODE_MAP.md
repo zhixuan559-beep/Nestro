@@ -427,3 +427,11 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The request snapshot gates selected expert role prompts, expert profile skill context, and selected skill prompt assets behind explicit task mode.
 - Ordinary chat still performs only prompt-triggered, bounded conversation/knowledge/user-memory retrieval; it does not inject expert or skill instructions merely because a prior selection persisted.
 - Added JVM coverage for the ordinary-chat/task-mode prompt-asset gate.
+
+
+## 2026-11-18 — Enforce a bounded model-history window
+
+- Existing token-aware history budgeting is now wired into both normal streaming requests and each expert-team member request.
+- The full conversation history remains intact for UI display and persistence; only the per-request model payload is trimmed to the configured context/output budget and the latest 40 messages.
+- Expert member prompts now use the immutable request-time expert prompt snapshot rather than reading mutable composer state.
+- Added regression coverage proving model history is bounded while the original persisted history remains unchanged.

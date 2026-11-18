@@ -304,3 +304,6 @@ Task authorization and the related team/expert/skill selections are captured at 
 
 
 Ordinary chat must not inject selected expert role prompts, expert profile skill context, or selected skill prompt assets solely because a prior selection persisted. Those prompt assets are eligible only after explicit task mode is enabled.
+
+
+Every model invocation must receive a bounded history window sized against its system prompt and output reserve. Keep full conversation history for persistence/UI; trim only the request payload. Apply the same budget to each expert-team member call as to normal streaming.

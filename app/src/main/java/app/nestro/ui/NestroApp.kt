@@ -747,7 +747,7 @@ fun NestroApp() {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
                         val memberTasks = selectedTeam.members.filter { it in experts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
-                            val role = expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
+                            val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
                             val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
                             ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
                         }
@@ -773,11 +773,12 @@ fun NestroApp() {
                             },
                             invokeMember = { member, memberPrompt ->
                                 withContext(Dispatchers.IO) {
+                                    val memberSystemContext = listOf(requestSystemContext, memberPrompt)
+                                        .filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
                                     appRuntime.chatExecutionService.completeWithFallback(
                                         requestModelConfigs,
-                                        requestHistory,
-                                        listOf(requestSystemContext, memberPrompt).filter { it.isNotBlank() }
-                                            .joinToString("\n\n").take(18000),
+                                        ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
+                                        memberSystemContext,
                                         connectTimeoutMillis = 15_000,
                                         readTimeoutMillis = 25_000,
                                         temperature = requestExpertProfiles[member.name]?.temperature,
@@ -800,7 +801,7 @@ fun NestroApp() {
                     if (stopRequested) throw IllegalStateException("用户停止生成")
                     val streamResult = appRuntime.chatStreamingCoordinator.execute(
                         configs = requestModelConfigs,
-                        history = requestHistory,
+                        history = ChatRequestPolicy.boundedChatHistory(requestHistory, finalSystemContext),
                         systemPrompt = finalSystemContext,
                         temperature = requestExpertProfile?.temperature,
                         maxTokens = requestExpertProfile?.maxTokens,

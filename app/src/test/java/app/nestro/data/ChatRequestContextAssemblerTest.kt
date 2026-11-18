@@ -129,3 +129,19 @@ class ChatOptionalContextPolicyTest {
         assertTrue(shouldLoadSelectedExpertContext(taskModeEnabled = true))
     }
 }
+
+
+class ChatRequestHistoryBudgetTest {
+    @Test
+    fun modelHistoryIsBoundedWithoutTruncatingPersistedConversationHistory() {
+        val fullHistory = (1..60).map { index ->
+            ChatMessage("message-$index", if (index % 2 == 0) "assistant" else "user", "历史消息$index " + "内容".repeat(1000))
+        }
+        val bounded = ChatRequestPolicy.boundedChatHistory(fullHistory, "系统上下文", contextWindowTokens = 4096, outputReserveTokens = 512)
+        assertTrue(bounded.size < fullHistory.size)
+        assertTrue(bounded.last().content.contains("历史消息60"))
+        assertFalse(bounded.any { it.content.contains("历史消息1 ") })
+        assertEquals(60, fullHistory.size)
+        assertTrue(bounded.sumOf { ChatRequestPolicy.estimateTokens(it.content) } <= 3584)
+    }
+}
