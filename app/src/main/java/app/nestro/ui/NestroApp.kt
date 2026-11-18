@@ -32,6 +32,8 @@ import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
 import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelProfileLifecycle
+import app.nestro.data.ChatRequestStateStore
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
