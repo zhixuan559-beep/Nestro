@@ -191,6 +191,8 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
     root.put("model_registry_v1", prefs.getString("model_registry_v1", "") ?: "")
     root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
+    root.put("active_model_registry_id", prefs.getString("active_model_registry_id", "") ?: "")
+    root.put("chat_task_mode_enabled", prefs.getBoolean("chat_task_mode_enabled", false))
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
     val reasoningEffort = prefs.getString("reasoning_effort_v1", "low") ?: "low"
@@ -958,10 +960,17 @@ private suspend fun applyLocalBackup(
                 require(registry.validate() == null && (registry.providers.isNotEmpty() || restoredProfiles.isEmpty())) { "模型目录备份无效" }
             }
         }
+        val restoredActiveRegistryId = root.stringOrDefault("active_model_registry_id", "")
+        require(restoredActiveRegistryId.isBlank() || restoredRegistry?.models?.any { it.id == restoredActiveRegistryId } == true) {
+            "当前模型选择引用了不存在的模型目录项"
+        }
         val restoredFailoverEnabled = root.booleanOrDefault("model_failover_enabled", false)
+        val restoredTaskModeEnabled = root.booleanOrDefault("chat_task_mode_enabled", false)
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
+            .putString("active_model_registry_id", restoredActiveRegistryId)
+            .putBoolean("chat_task_mode_enabled", restoredTaskModeEnabled)
             .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
             .putBoolean("model_failover_enabled", restoredFailoverEnabled)
         if (restoredRegistry != null) {
