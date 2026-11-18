@@ -2,6 +2,7 @@ package app.nestro.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatRequestRecoveryCoordinatorTest {
@@ -47,6 +48,47 @@ class ChatRequestRecoveryCoordinatorTest {
         val otherProject = original.copy(projectId = "project-b")
         assertEquals(true, pending.matches(original))
         assertEquals(false, pending.matches(otherProject))
+    }
+
+    @Test
+    fun interruptedRegenerationIsRecoveredAsANewAssistantVersion() {
+        val previous = ChatMessage(
+            "assistant-1", "assistant", "旧回答",
+            versions = listOf("旧回答一", "旧回答"), activeVersion = 1
+        )
+        val recovered = recoverInterruptedAssistantMessage(
+            listOf(ChatMessage("user-1", "user", "问题"), previous),
+            requestId = "assistant-1",
+            partialAnswer = "新回答的一部分"
+        )
+        val assistant = recovered.last()
+        assertEquals("新回答的一部分\\n\\n[请求中断，已保留已接收内容]", assistant.content)
+        assertEquals(listOf("旧回答一", "旧回答", assistant.content), assistant.versions)
+        assertEquals(2, assistant.activeVersion)
+    }
+
+    @Test
+    fun interruptedRegenerationDoesNotDuplicateAlreadyPersistedResponse() {
+        val existing = ChatMessage(
+            "assistant-1", "assistant", "已完成的回复",
+            versions = listOf("旧回复", "已完成的回复"), activeVersion = 1
+        )
+        assertEquals(
+            listOf(existing),
+            recoverInterruptedAssistantMessage(listOf(existing), "assistant-1", "已完成的回复")
+        )
+    }
+
+    @Test
+    fun interruptedNewMessageIsAddedWhenNoAssistantRevisionExists() {
+        val recovered = recoverInterruptedAssistantMessage(
+            listOf(ChatMessage("user-1", "user", "问题")),
+            requestId = "assistant-1",
+            partialAnswer = "部分回复"
+        )
+        assertEquals(2, recovered.size)
+        assertEquals("assistant-1", recovered.last().id)
+        assertTrue(recovered.last().content.startsWith("部分回复"))
     }
 
 }
