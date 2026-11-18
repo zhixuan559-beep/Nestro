@@ -132,4 +132,15 @@ class ArtifactStoreTest {
         assertTrue("backup must reject malformed index rows instead of skipping them", rejectedMalformedRow)
     }
 
+    @Test
+    fun saveRejectsOverlongArtifactTitleInsteadOfTruncatingIt() {
+        var rejected = false
+        try {
+            ArtifactStore.save(context, "project-a", "x".repeat(101), "content")
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue("artifact title must be rejected rather than truncated", rejected)
+    }
+
 }
