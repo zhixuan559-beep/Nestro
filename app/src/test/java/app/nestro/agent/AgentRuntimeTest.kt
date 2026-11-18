@@ -166,4 +166,39 @@ class AgentRuntimeTest {
         session.close()
     }
 
+    @Test
+    fun taskRevocationInvalidatesEveryOpenToolLease() = runBlocking {
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("screen.read", "读取当前页面", AgentToolPermission.READ_ONLY)) {
+                AgentToolResult(true, "页面")
+            }
+        }
+        val first = AgentToolLeaseRegistry.open("task-revoke", catalog, setOf("screen.read"))
+        val second = AgentToolLeaseRegistry.open("task-revoke", catalog, setOf("screen.read"))
+
+        assertEquals(2, AgentToolLeaseRegistry.activeLeaseCount("task-revoke"))
+        assertTrue(first.access.invoke("screen.read", emptyMap()).success)
+        assertEquals(2, AgentToolLeaseRegistry.revokeTask("task-revoke"))
+        assertEquals(0, AgentToolLeaseRegistry.activeLeaseCount("task-revoke"))
+        assertFalse(first.access.invoke("screen.read", emptyMap()).success)
+        assertFalse(second.access.invoke("screen.read", emptyMap()).success)
+    }
+
+    @Test
+    fun taskCredentialLeaseResolvesSecretOnDemandAndCanBeRevoked() {
+        var reads = 0
+        val lease = AgentCredentialLeaseRegistry.open("task-credential", ttlMillis = 5_000) {
+            reads++
+            "temporary-token"
+        }
+
+        assertEquals("temporary-token", lease.withSecret { it })
+        assertEquals(1, reads)
+        assertEquals(1, AgentCredentialLeaseRegistry.activeLeaseCount("task-credential"))
+        assertEquals(1, AgentCredentialLeaseRegistry.revokeTask("task-credential"))
+        assertEquals(null, lease.withSecret { it })
+        assertEquals(0, AgentCredentialLeaseRegistry.activeLeaseCount("task-credential"))
+        assertFalse(lease.isUsable(System.currentTimeMillis() + 10_000))
+    }
+
 }
