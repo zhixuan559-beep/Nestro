@@ -4,7 +4,7 @@ import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolPermission
 import app.nestro.agent.AgentToolSpec
-import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.AgentTaskStatus
@@ -61,7 +61,7 @@ class WorkflowExecutionCoordinatorTest {
                 app.nestro.agent.AgentToolResult(true, "已发送")
             }
         }
-        var captured: AgentToolAccess? = null
+        var captured: AgentToolDiscovery? = null
         AgentCapabilityRegistry.register("workflow", "step-research", setOf("knowledge.search"))
         try {
             val workflow = WorkflowDefinition(
