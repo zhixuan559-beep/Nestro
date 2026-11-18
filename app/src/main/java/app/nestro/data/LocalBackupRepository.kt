@@ -164,7 +164,9 @@ private data class LocalBackupDatabaseSnapshot(
     val chunks: List<KnowledgeChunkEntity>,
     val memories: List<UserMemoryEntity>,
     val tasks: List<PhoneAgentTaskEntity>,
-    val taskLogs: List<PhoneAgentTaskLogEntity>
+    val taskLogs: List<PhoneAgentTaskLogEntity>,
+    val agentTaskStates: List<AgentTaskStateEntity>,
+    val agentTaskTraces: List<AgentTaskTraceEntity>
 )
 
 internal suspend fun buildLocalBackup(context: Context, prefs: android.content.SharedPreferences, database: NestroDatabase): String {
@@ -175,7 +177,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             projects = dao.loadProjects(), conversations = dao.loadConversations(),
             documents = dao.allKnowledgeDocuments(), chunks = dao.allKnowledgeChunks(),
             memories = dao.allUserMemories(), tasks = tasks,
-            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) }
+            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) },
+            agentTaskStates = dao.allAgentTaskStates(),
+            agentTaskTraces = dao.allAgentTaskTraces()
         )
     }
     val root = JSONObject()
@@ -336,6 +340,42 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     }
     root.put("phone_agent_tasks", taskArray)
     root.put("phone_agent_task_logs", taskLogArray)
+
+    val validAgentTaskStatuses = app.nestro.agent.AgentTaskStatus.values().map { it.name }.toSet()
+    require(snapshot.agentTaskStates.size <= 1_000 && snapshot.agentTaskTraces.size <= 20_000) {
+        "Agent 任务状态或追踪记录数量超过备份上限"
+    }
+    val agentStateIds = mutableSetOf<String>()
+    val agentStateArray = JSONArray()
+    var agentPayloadChars = 0L
+    snapshot.agentTaskStates.forEach { state ->
+        require(state.taskId.isNotBlank() && state.taskId.length <= 120 && agentStateIds.add(state.taskId)) {
+            "Agent 任务状态 ID 缺失、过长或重复"
+        }
+        require(state.owner.isNotBlank() && state.owner.length <= 80 && state.status in validAgentTaskStatuses &&
+            state.currentStep >= 0 && state.checkpoint.length <= 64_000 && state.lastError.length <= 2_000) {
+            "Agent 任务状态字段无效"
+        }
+        agentPayloadChars += state.checkpoint.length.toLong() + state.lastError.length.toLong()
+        agentStateArray.put(JSONObject().put("taskId", state.taskId).put("owner", state.owner)
+            .put("status", state.status).put("currentStep", state.currentStep)
+            .put("checkpoint", state.checkpoint).put("lastError", state.lastError).put("updatedAt", state.updatedAt))
+    }
+    val agentTraceIds = mutableSetOf<String>()
+    val agentTraceArray = JSONArray()
+    snapshot.agentTaskTraces.forEach { trace ->
+        require(trace.id.isNotBlank() && trace.id.length <= 120 && agentTraceIds.add(trace.id) &&
+            trace.taskId.isNotBlank() && trace.taskId.length <= 120 &&
+            trace.event.isNotBlank() && trace.event.length <= 80 && trace.detail.length <= 2_000) {
+            "Agent 任务追踪记录字段无效"
+        }
+        agentPayloadChars += trace.event.length.toLong() + trace.detail.length.toLong()
+        agentTraceArray.put(JSONObject().put("id", trace.id).put("taskId", trace.taskId)
+            .put("event", trace.event).put("detail", trace.detail).put("createdAt", trace.createdAt))
+    }
+    require(agentPayloadChars <= 2_000_000L) { "Agent 任务状态与追踪记录超过备份安全容量" }
+    root.put("agent_task_states_v1", agentStateArray)
+    root.put("agent_task_traces_v1", agentTraceArray)
     root.put("artifacts_v1", app.nestro.data.ArtifactStore.backupAll(context, backupProjects.map { it.id }.toSet() + "default"))
     root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
     val encoded = root.toString(2)
