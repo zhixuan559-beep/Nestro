@@ -279,6 +279,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+    val resourceScopesRaw = prefs.getString("project_resource_scopes_v1", "{}") ?: "{}"
+    ProjectResourceScopeStore.decode(resourceScopesRaw)
+    root.put("project_resource_scopes_v1", resourceScopesRaw)
     val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
     val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else parseProjectsForBackup(
         JSONArray(ProjectPreferencesStore.projectsToJson(roomProjects))
@@ -643,6 +646,11 @@ private suspend fun applyLocalBackup(
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
+    val restoredResourceScopesRaw = root.stringOrDefault("project_resource_scopes_v1", "{}")
+    val restoredResourceScopes = ProjectResourceScopeStore.decode(restoredResourceScopesRaw)
+    require(restoredResourceScopes.values.flatten().all { it == "*" || it in restoredProjectIds }) {
+        "项目资源关联引用了不存在的项目，拒绝恢复"
+    }
     val hasArtifactBackup = root.has("artifacts_v1")
     val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.arrayOrEmpty("artifacts_v1"), restoredProjectIds) else JSONArray()
     // The legacy format stored this field as a JSON string; current backups store an array.
@@ -1004,6 +1012,7 @@ private suspend fun applyLocalBackup(
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
+        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(restoredResourceScopes))
         .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
         .putString("active_project_id", (if (root.has("active_project_id")) root.requiredString("active_project_id") else "default").also { id ->
             require(restoredProjects.any { it.id == id && it.archivedAt == 0L }) {
