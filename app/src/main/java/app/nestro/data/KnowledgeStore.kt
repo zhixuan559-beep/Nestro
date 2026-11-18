@@ -21,6 +21,7 @@ import org.w3c.dom.Element
 
 private fun extractPdfText(bytes: ByteArray): String {
     val raw = bytes.toString(Charsets.ISO_8859_1)
+    // Keep extraction intentionally conservative; full layout/scan OCR is outside this module.
     return Regex("""\(([^()]*)\)""").findAll(raw)
         .map { it.groupValues[1] }
         .filter { it.any(Char::isLetterOrDigit) }
