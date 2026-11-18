@@ -176,7 +176,20 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
     }
     root.put("phone_audit_v1", auditSnapshot)
-    root.put("messages", if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]")
+    val legacyMessagesRaw = if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]"
+    val legacyMessages = JSONArray(legacyMessagesRaw)
+    require(legacyMessages.length() <= 200) { "旧版消息数量超过备份上限" }
+    for (index in 0 until legacyMessages.length()) {
+        val message = legacyMessages.getJSONObject(index)
+        val id = message.opt("id") as? String ?: error("旧版消息 ID 字段无效")
+        val role = message.opt("role") as? String ?: error("旧版消息角色字段无效")
+        val content = message.opt("content") as? String ?: error("旧版消息内容字段无效")
+        require(id.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000) {
+            "旧版消息字段无效，已中止备份"
+        }
+        decodeBackupMessageVersions(message)
+    }
+    root.put("messages", legacyMessagesRaw)
     root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
     root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
     root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
