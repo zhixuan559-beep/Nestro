@@ -510,3 +510,12 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Added coordinator regression tests proving expert/workflow operations see only their declared tools and that the access view is invalid after the operation returns.
 - Current expert/workflow model adapters remain model-only and declare no tool sets by default. This is intentional: the shared boundary is ready, but model-native tool-call execution and MCP/plugin discovery are not marked complete.
 - Tool selection remains separate from authorization. Feature adapters receive only `AgentToolDiscovery`, not the invocation-capable `AgentToolAccess`; any actual invocation must pass through `AgentRuntime` and `AgentPermissionRouter`. Loading a tool does not grant permission.
+
+
+## 2026-11-18 — Phone Agent execution-environment boundary
+
+- Added `PhoneAgentExecutionEnvironment` to separate Phone Agent planning, task scheduling, and typed action execution from the current Android AccessibilityService host.
+- The current AccessibilityService implements the contract. PhoneAgentAgent, PhoneAgentExecutor, WorkManager, and the UI stop control now resolve the active environment through one provider rather than directly depending on `PhoneAgentService.activeService`.
+- The provider has one active target and deliberately performs no automatic fallback when the selected environment detaches; the task pauses instead of silently switching to the user's real screen.
+- This creates the Phase 2 architecture seam for an isolated VirtualDisplay adapter. The actual VirtualDisplay implementation and any Mika code reuse belong to the Phone Agent feature work after the exact source repository and license are verified; no unverified third-party code has been copied.
+- Added JVM tests for attach, detach, replacement, and no-fallback behavior.
