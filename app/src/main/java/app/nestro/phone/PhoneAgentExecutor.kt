@@ -90,60 +90,6 @@ object PhoneAgentExecutor {
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
         val catalog = InMemoryAgentToolCatalog()
-        catalog.register(
-            AgentToolSpec(
-                id = "phone.action",
-                description = "执行一个经过类型校验的手机动作",
-                permission = AgentToolPermission.DEVICE_ACTION
-            )
-        ) {
-            val executingAction = action
-            val attempt = runCatchingCancellable {
-                when (executingAction) {
-                    is Action.OpenUrl -> {
-                        val before = service.captureVisibleText()
-                        val opened = service.openUrl(executingAction.url)
-                        delay(1200)
-                        opened && service.screenTextChanged(before)
-                    }
-                    is Action.LaunchApp -> {
-                        val beforePackage = service.activePackageName()
-                        val beforeText = service.captureVisibleText()
-                        val launched = service.launchPackage(executingAction.packageName)
-                        delay(1000)
-                        launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
-                    }
-                    is Action.ClickText -> {
-                        val before = service.captureVisibleText()
-                        val clicked = service.clickVisibleText(executingAction.exactText)
-                        if (clicked) {
-                            delay(500)
-                            if (executingAction.expectedAfter != null) service.verifyVisibleText(executingAction.expectedAfter)
-                            else service.screenTextChanged(before)
-                        } else false
-                    }
-                    is Action.EnterText -> service.setTextOnVisibleField(executingAction.fieldLabel, executingAction.value)
-                    is Action.Scroll -> {
-                        val before = service.captureVisibleText()
-                        val scrolled = service.scroll(executingAction.direction)
-                        if (scrolled) { delay(350); service.screenTextChanged(before) } else false
-                    }
-                    is Action.Wait -> { delay(executingAction.millis.coerceIn(0, 10_000)); true }
-                    is Action.VerifyText -> service.verifyVisibleText(executingAction.expected)
-                    Action.Back -> {
-                        val beforePackage = service.activePackageName()
-                        val beforeText = service.captureVisibleText()
-                        val backed = service.pressBack()
-                        if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
-                    }
-                    is Action.ConfirmSensitive -> false
-                }
-            }
-            val failure = attempt.exceptionOrNull()
-            val success = attempt.getOrDefault(false)
-            val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
-            AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
-        }
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
                     service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
@@ -175,7 +121,62 @@ object PhoneAgentExecutor {
                 RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = action.description.take(2_000)))
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
-            val toolSession = catalog.openSession(setOf("phone.action"))
+            val toolId = toolIdFor(action)
+                    catalog.register(
+                        AgentToolSpec(
+                            id = toolIdFor(action),
+                            description = "执行当前步骤指定的手机动作：" + action.javaClass.simpleName,
+                            permission = AgentToolPermission.DEVICE_ACTION
+                        )
+                    ) {
+                        val executingAction = action
+                        val attempt = runCatchingCancellable {
+                            when (executingAction) {
+                                is Action.OpenUrl -> {
+                                    val before = service.captureVisibleText()
+                                    val opened = service.openUrl(executingAction.url)
+                                    delay(1200)
+                                    opened && service.screenTextChanged(before)
+                                }
+                                is Action.LaunchApp -> {
+                                    val beforePackage = service.activePackageName()
+                                    val beforeText = service.captureVisibleText()
+                                    val launched = service.launchPackage(executingAction.packageName)
+                                    delay(1000)
+                                    launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
+                                }
+                                is Action.ClickText -> {
+                                    val before = service.captureVisibleText()
+                                    val clicked = service.clickVisibleText(executingAction.exactText)
+                                    if (clicked) {
+                                        delay(500)
+                                        if (executingAction.expectedAfter != null) service.verifyVisibleText(executingAction.expectedAfter)
+                                        else service.screenTextChanged(before)
+                                    } else false
+                                }
+                                is Action.EnterText -> service.setTextOnVisibleField(executingAction.fieldLabel, executingAction.value)
+                                is Action.Scroll -> {
+                                    val before = service.captureVisibleText()
+                                    val scrolled = service.scroll(executingAction.direction)
+                                    if (scrolled) { delay(350); service.screenTextChanged(before) } else false
+                                }
+                                is Action.Wait -> { delay(executingAction.millis.coerceIn(0, 10_000)); true }
+                                is Action.VerifyText -> service.verifyVisibleText(executingAction.expected)
+                                Action.Back -> {
+                                    val beforePackage = service.activePackageName()
+                                    val beforeText = service.captureVisibleText()
+                                    val backed = service.pressBack()
+                                    if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
+                                }
+                                is Action.ConfirmSensitive -> false
+                            }
+                        }
+                        val failure = attempt.exceptionOrNull()
+                        val success = attempt.getOrDefault(false)
+                        val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
+                        AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
+                    }
+            val toolSession = catalog.openSession(setOf(toolId))
             val runtime: AgentRuntime = DefaultAgentRuntime(
                 catalog = toolSession,
                 permissions = toolPermissionRouter,
@@ -183,9 +184,10 @@ object PhoneAgentExecutor {
                 traces = RoomAgentTaskTraceStore(dao)
             )
             val toolResult = try {
-                runtime.execute(AgentToolRequest(taskId, "phone.action"))
+                runtime.execute(AgentToolRequest(taskId, toolId))
             } finally {
                 toolSession.close()
+                catalog.remove(toolId)
             }
             val success = toolResult.success
             val detail = if (success) toolResult.output.ifBlank { "动作已执行并核验" }
@@ -214,4 +216,16 @@ object PhoneAgentExecutor {
         )
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
+    private fun toolIdFor(action: Action): String = when (action) {
+        is Action.OpenUrl -> "phone.open_url"
+        is Action.LaunchApp -> "phone.launch_app"
+        is Action.ClickText -> "phone.click"
+        is Action.EnterText -> "phone.enter_text"
+        is Action.Scroll -> "phone.scroll"
+        is Action.Wait -> "phone.wait"
+        is Action.VerifyText -> "phone.verify"
+        Action.Back -> "phone.back"
+        is Action.ConfirmSensitive -> "phone.confirm_sensitive"
+    }
+
 }
