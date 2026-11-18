@@ -143,4 +143,34 @@ class ArtifactStoreTest {
         assertTrue("artifact title must be rejected rather than truncated", rejected)
     }
 
-}
+
+    @Test
+    fun projectDuplicationCopiesAllArtifactVersionsAndKeepsTheSourceIndependent() {
+        ArtifactStore.save(context, "source", "Plan", "# first version")
+        ArtifactStore.save(context, "source", "Plan", "# second version")
+        ArtifactStore.save(context, "source", "Notes", "# notes")
+
+        val copied = ArtifactStore.duplicateProject(context, "source", "copy")
+
+        assertEquals(3, copied.size)
+        assertEquals(2, ArtifactStore.list(context, "copy").count { it.title == "Plan" })
+        assertEquals(
+            listOf("# first version", "# second version"),
+            ArtifactStore.list(context, "copy").filter { it.title == "Plan" }.sortedBy { it.version }
+                .map { ArtifactStore.read(context, it) }
+        )
+        assertEquals(3, ArtifactStore.list(context, "source").size)
+        assertTrue(ArtifactStore.list(context, "other").isEmpty())
+    }
+
+    @Test
+    fun deletingProjectArtifactsDoesNotTouchOtherProjects() {
+        ArtifactStore.save(context, "project-a", "A", "A content")
+        ArtifactStore.save(context, "project-b", "B", "B content")
+
+        ArtifactStore.deleteProject(context, "project-a")
+
+        assertTrue(ArtifactStore.list(context, "project-a").isEmpty())
+        assertEquals("B content", ArtifactStore.read(context, ArtifactStore.list(context, "project-b").single()))
+    }
+\n}\n
