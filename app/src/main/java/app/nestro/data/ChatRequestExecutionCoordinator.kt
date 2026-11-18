@@ -21,7 +21,8 @@ internal data class ChatRequestExecutionRequest(
 internal data class ChatRequestExecutionResult(
     val finalization: ChatResponseFinalization,
     val recalledCount: Int,
-    val recallSources: List<ConversationRecallSource>
+    val recallSources: List<ConversationRecallSource>,
+    val taskPlanningFailure: Throwable?
 )
 
 /**
@@ -45,10 +46,14 @@ internal class ChatRequestExecutionCoordinator(
         var recalledCount = 0
         var recallSources: List<ConversationRecallSource> = emptyList()
         val partialAnswer = StringBuilder()
+        var taskPlanningFailure: Throwable? = null
         val result = runCatchingCancellable {
             if (request.taskModeEnabled) {
                 runCatchingCancellable { planPhoneAgent() }
-                    .onFailure(onTaskPlanningFailure)
+                    .onFailure {
+                        taskPlanningFailure = it
+                        onTaskPlanningFailure(it)
+                    }
             }
 
             val assembled = contextAssembler.assemble(
@@ -105,7 +110,8 @@ internal class ChatRequestExecutionCoordinator(
                 assistantId = request.requestId
             ),
             recalledCount = recalledCount,
-            recallSources = recallSources
+            recallSources = recallSources,
+            taskPlanningFailure = taskPlanningFailure
         )
     }
 }
