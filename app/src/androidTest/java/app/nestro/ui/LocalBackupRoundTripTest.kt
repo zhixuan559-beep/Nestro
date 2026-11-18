@@ -14,6 +14,9 @@ import app.nestro.data.LocalBackupRepository
 import app.nestro.data.persistLocalBackupRestoreJournal
 import app.nestro.data.LocalVault
 import app.nestro.data.ModelConfig
+import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelProfileMetadata
+import app.nestro.model.ModelRegistryCodec
 import app.nestro.data.MessageEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ProjectEntity
@@ -126,7 +129,18 @@ class LocalBackupRoundTripTest {
                 .putBoolean("automatic_memory_enabled", true)
                 .putString("reasoning_effort_v1", "high")
                 .putFloat("tts_speech_rate", 1.2f)
+                .putBoolean("chat_task_mode_enabled", true)
                 .putString("phone_audit", JSONArray().put(JSONObject().put("at", 123L).put("action", "TASK_START").put("detail", "round trip")).toString())
+                .commit()
+            val backupProfile = ModelProfileMetadata("backup-profile", "备份模型", "https://api.example/v1", "example-model")
+            val backupRegistry = ModelRegistryCodec.migrateLegacy(listOf(backupProfile))
+            prefs.edit()
+                .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(listOf(backupProfile)))
+                .putString("model_registry_v1", ModelRegistryCodec.encode(backupRegistry))
+                .putString("active_model_registry_id", "legacy-model-backup-profile")
+                .putString("active_model_profile_id", "")
+                .putString("base_url", "https://api.example/v1")
+                .putString("model", "example-model")
                 .commit()
 
             val dao = database.dao()
@@ -194,6 +208,8 @@ class LocalBackupRoundTripTest {
             assertEquals("high", prefs.getString("reasoning_effort_v1", "low"))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
+            assertTrue("备份应保留任务模式开关", prefs.getBoolean("chat_task_mode_enabled", false))
+            assertEquals("legacy-model-backup-profile", prefs.getString("active_model_registry_id", ""))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
             assertEquals("恢复不能沿用旧 API Key", "", LocalVault.readApiKey(context, "old-key"))
