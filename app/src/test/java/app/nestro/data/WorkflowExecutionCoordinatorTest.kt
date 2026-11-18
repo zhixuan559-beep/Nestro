@@ -1,6 +1,11 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentCapabilityRegistry
+import app.nestro.agent.AgentToolPermission
+import app.nestro.agent.AgentToolSpec
+import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.InMemoryAgentTaskStateStore
@@ -43,4 +48,47 @@ class WorkflowExecutionCoordinatorTest {
             coordinator.close()
         }
     }
+    @Test
+    fun workflowStepReceivesOnlyItsDeclaredToolsAndLeaseClosesAfterInvocation() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = WorkflowExecutionCoordinator(coordinator)
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("knowledge.search", "搜索知识库", AgentToolPermission.READ_ONLY)) {
+                app.nestro.agent.AgentToolResult(true, "结果")
+            }
+            register(AgentToolSpec("message.send", "发送消息", AgentToolPermission.EXTERNAL_WRITE)) {
+                app.nestro.agent.AgentToolResult(true, "已发送")
+            }
+        }
+        var captured: AgentToolAccess? = null
+        AgentCapabilityRegistry.register("workflow", "step-research", setOf("knowledge.search"))
+        try {
+            val workflow = WorkflowDefinition(
+                id = "workflow-tools",
+                name = "工具范围测试",
+                description = "按步骤加载工具",
+                steps = listOf(WorkflowStep(id = "step-research", title = "研究", instruction = "研究主题"))
+            )
+            val result = service.execute(
+                workflow = workflow,
+                input = "测试目标",
+                taskId = "workflow-tool-scope",
+                invokeModel = { _, _ -> error("应使用工具感知调用") },
+                toolCatalog = catalog,
+                invokeModelWithTools = { _, prompt, access ->
+                    captured = access
+                    assertEquals(listOf("knowledge.search"), access?.list()?.map { it.id })
+                    "已研究：$prompt"
+                }
+            )
+            assertEquals(1, result.completedSteps)
+            assertEquals(null, captured?.find("knowledge.search"))
+            assertEquals(null, captured?.find("message.send"))
+        } finally {
+            AgentCapabilityRegistry.unregister("workflow", "step-research")
+            coordinator.close()
+        }
+    }
+
 }
