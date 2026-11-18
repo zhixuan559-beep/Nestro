@@ -357,4 +357,86 @@ class LocalBackupRoundTripTest {
         }
     }
 
+    @Test fun backupRejectsSilentTruncationOfTitlesDraftsAndRestoredFields() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        File(context.filesDir, "artifacts").deleteRecursively()
+        File(context.filesDir, "backup-restore").deleteRecursively()
+        val databaseName = "nestro_backup_no_truncation.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_no_truncation", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]").commit()
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("backup-c1", "有效标题", 1L, "default"))
+            val repository = LocalBackupRepository(context, database)
+
+            dao.putConversation(ConversationEntity("backup-c1", "标题".repeat(41), 1L, "default"))
+            assertTrue("导出不得静默截断超长会话标题", runCatching { repository.createBackup(prefs) }.isFailure)
+            dao.putConversation(ConversationEntity("backup-c1", "有效标题", 1L, "default"))
+
+            prefs.edit().putString("draft_backup-c1", "x".repeat(100_001)).commit()
+            assertTrue("导出不得静默截断超长草稿", runCatching { repository.createBackup(prefs) }.isFailure)
+            prefs.edit().remove("draft_backup-c1").putString("draft_missing", "孤立草稿").commit()
+            assertTrue("导出不得静默丢弃孤立草稿", runCatching { repository.createBackup(prefs) }.isFailure)
+            prefs.edit().remove("draft_missing").commit()
+
+            val validBackup = repository.createBackup(prefs)
+            fun signedBackup(change: (JSONObject) -> Unit): String {
+                val root = JSONObject(validBackup)
+                change(root)
+                root.remove("checksum_sha256")
+                root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
+                return root.toString()
+            }
+
+            val longTaskConversationId = signedBackup { root ->
+                root.put("phone_agent_tasks", JSONArray().put(
+                    JSONObject().put("id", "task-long-conversation").put("projectId", "default")
+                        .put("conversationId", "c".repeat(121)).put("goal", "测试任务")
+                        .put("category", "GENERAL").put("status", PhoneAgentTaskStore.STATUS_COMPLETED)
+                        .put("planJson", "[]").put("currentStep", 0).put("createdAt", 1L).put("updatedAt", 1L)
+                ))
+            }
+            assertTrue("恢复不得静默截断 Phone Agent 会话 ID", runCatching { repository.restoreBackup(prefs, longTaskConversationId) }.isFailure)
+
+            val longMimeType = signedBackup { root ->
+                root.put("knowledge_documents_v1", JSONArray().put(
+                    JSONObject().put("id", "doc-long-mime").put("projectId", "default")
+                        .put("name", "文档").put("mimeType", "m".repeat(121)).put("sizeBytes", 0L)
+                        .put("importedAt", 1L).put("contentHash", "a".repeat(64))
+                ))
+                root.put("knowledge_chunks_v1", JSONArray())
+            }
+            assertTrue("恢复不得静默截断知识库 MIME 类型", runCatching { repository.restoreBackup(prefs, longMimeType) }.isFailure)
+
+            val unknownTeamMember = signedBackup { root ->
+                root.put("expert_teams_v1", JSONArray().put(
+                    JSONObject().put("id", "team-invalid-member").put("name", "无效团队")
+                        .put("description", "").put("members", JSONArray().put("文案官").put("不存在的专家"))
+                ).toString())
+            }
+            assertTrue("恢复不得静默过滤无效专家团队成员", runCatching { repository.restoreBackup(prefs, unknownTeamMember) }.isFailure)
+
+            val longTeamName = signedBackup { root ->
+                root.put("expert_teams_v1", JSONArray().put(
+                    JSONObject().put("id", "team-long-name").put("name", "团队".repeat(21))
+                        .put("description", "").put("members", JSONArray().put("文案官").put("选题狐"))
+                ).toString())
+            }
+            assertTrue("恢复不得静默截断专家团队名称", runCatching { repository.restoreBackup(prefs, longTeamName) }.isFailure)
+            assertEquals("有效标题", dao.loadConversations().single().conversation.title)
+            assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
 }
