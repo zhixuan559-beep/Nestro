@@ -235,8 +235,10 @@ object ExpertTeamEngine {
         )
         return members.maxByOrNull { member ->
             val role = (member.name + " " + member.rolePrompt).lowercase()
-            domains.sumOf { (taskTerms, roleTerms) ->
-                if (taskTerms.any { text.contains(it) } && roleTerms.any { role.contains(it) }) 1 else 0
+            domains.count { domain: Pair<List<String>, List<String>> ->
+                val taskTerms = domain.first
+                val roleTerms = domain.second
+                taskTerms.any { term -> text.contains(term) } && roleTerms.any { term -> role.contains(term) }
             }
         } ?: members.first()
     }
