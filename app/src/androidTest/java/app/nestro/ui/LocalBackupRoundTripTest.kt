@@ -457,6 +457,11 @@ class LocalBackupRoundTripTest {
             }
             assertTrue("恢复不得把类型错误的知识库清单当成空清单", runCatching { repository.restoreBackup(prefs, wrongKnowledgeCollectionType) }.isFailure)
 
+            val wrongDraftMapType = signedBackup { root ->
+                root.put("conversation_drafts_v1", JSONArray().put("not-a-draft-map"))
+            }
+            assertTrue("恢复不得把类型错误的草稿映射当成空对象", runCatching { repository.restoreBackup(prefs, wrongDraftMapType) }.isFailure)
+
             assertEquals("有效标题", dao.loadConversations().single().conversation.title)
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
