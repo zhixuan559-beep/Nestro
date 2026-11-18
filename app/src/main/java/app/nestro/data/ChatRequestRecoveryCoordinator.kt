@@ -56,12 +56,7 @@ internal fun recoverInterruptedAssistantMessage(
 
     val existing = messages[existingIndex]
     if (partialAnswer.isBlank()) return messages
-    if (
-        existing.content == recoveredContent ||
-        (partialAnswer.isNotBlank() && existing.content == partialAnswer) ||
-        recoveredContent in existing.versions ||
-        (partialAnswer.isNotBlank() && partialAnswer in existing.versions)
-    ) {
+    if (existing.content == recoveredContent || existing.content == partialAnswer) {
         return messages
     }
 
