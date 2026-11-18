@@ -62,7 +62,7 @@ class ChatRequestRecoveryCoordinatorTest {
             partialAnswer = "新回答的一部分"
         )
         val assistant = recovered.last()
-        assertEquals("新回答的一部分\\n\\n[请求中断，已保留已接收内容]", assistant.content)
+        assertEquals("新回答的一部分\n\n[请求中断，已保留已接收内容]", assistant.content)
         assertEquals(listOf("旧回答一", "旧回答", assistant.content), assistant.versions)
         assertEquals(2, assistant.activeVersion)
     }
