@@ -274,7 +274,7 @@ class ProjectSpaceLifecycleTest {
 
             val copiedDocument = dao.knowledgeDocuments("copy").single()
             assertEquals("项目资料.txt", copiedDocument.name)
-            assertFalse("copy".equals(copiedDocument.projectId).not())
+            assertEquals("copy", copiedDocument.projectId)
             assertEquals(listOf("原项目知识片段"), dao.searchKnowledgeChunks("copy", "知识片段", 5).map { it.content })
             assertEquals(listOf("原项目知识片段"), dao.searchKnowledgeChunks("source", "知识片段", 5).map { it.content })
 
