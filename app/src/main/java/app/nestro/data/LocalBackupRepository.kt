@@ -499,6 +499,7 @@ private suspend fun applyLocalBackup(
             updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
         )
     }
+    LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
     val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
     require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
     val validTaskStatuses = setOf(
