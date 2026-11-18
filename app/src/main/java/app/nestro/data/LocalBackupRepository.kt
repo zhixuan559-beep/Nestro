@@ -202,7 +202,7 @@ private data class LocalBackupDatabaseSnapshot(
     val agentTaskTraces: List<AgentTaskTraceEntity>
 )
 
-internal suspend fun buildLocalBackup(context: Context, prefs: android.content.SharedPreferences, database: NestroDatabase): String {
+internal suspend fun buildLocalBackup(context: Context, prefs: android.content.SharedPreferences, database: NestroDatabase, forRestoreJournal: Boolean = false): String {
     val dao = database.dao()
     val snapshot = database.withTransaction {
         val tasks = dao.allPhoneAgentTasks()
@@ -284,11 +284,22 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         JSONArray(ProjectPreferencesStore.projectsToJson(roomProjects))
     )
     val activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
-    require(backupProjects.any { it.id == activeProjectId && it.archivedAt == 0L }) {
-        "当前活动项目不存在或已归档，已中止备份"
+    // A restore journal is insurance for the restore itself, so it must stay writable
+    // even when the current state is inconsistent — that is exactly when a restore is
+    // needed. In journal mode, dangling references are neutralised in the journal copy
+    // only; the journal's verbatim preferences snapshot still restores the original
+    // values on rollback. User-facing exports stay strict.
+    val effectiveActiveProjectId = if (forRestoreJournal) {
+        if (backupProjects.any { it.id == activeProjectId && it.archivedAt == 0L }) activeProjectId
+        else backupProjects.firstOrNull { it.archivedAt == 0L }?.id ?: "default"
+    } else {
+        require(backupProjects.any { it.id == activeProjectId && it.archivedAt == 0L }) {
+            "当前活动项目不存在或已归档，已中止备份"
+        }
+        activeProjectId
     }
     root.put("projects", ProjectPreferencesStore.projectsToJson(backupProjects))
-    root.put("active_project_id", activeProjectId)
+    root.put("active_project_id", effectiveActiveProjectId)
     val roomConversationRows = snapshot.conversations
     val legacyConversationRaw = prefs.getString("conversations_v1", "[]") ?: "[]"
     val conversationArray = if (roomConversationRows.isEmpty()) JSONArray(legacyConversationRaw) else JSONArray()
@@ -336,21 +347,38 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val activeId = prefs.getString("active_conversation_id", "") ?: ""
     val backedUpConversationIdsForActive = (0 until conversationArray.length())
         .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
-    require(activeId.isBlank() || activeId in backedUpConversationIdsForActive) {
-        "当前活动会话不存在于备份数据中，已中止备份"
+    val effectiveActiveId = if (forRestoreJournal) {
+        if (activeId in backedUpConversationIdsForActive) activeId else ""
+    } else {
+        require(activeId.isBlank() || activeId in backedUpConversationIdsForActive) {
+            "当前活动会话不存在于备份数据中，已中止备份"
+        }
+        activeId
     }
-    root.put("active_conversation_id", activeId)
+    root.put("active_conversation_id", effectiveActiveId)
     val drafts = JSONObject()
     val backedUpConversationIds = (0 until conversationArray.length())
         .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
     prefs.all.forEach { (key, value) ->
         if (key.startsWith("draft_")) {
-            val draft = value as? String ?: error("会话草稿字段类型无效，已中止备份")
-            if (draft.isNotBlank()) {
+            if (forRestoreJournal) {
+                // Journal copy only: skip drafts that would fail export validation;
+                // the journal's verbatim preferences snapshot keeps the originals.
+                val draft = value as? String
                 val conversationId = key.removePrefix("draft_")
-                require(conversationId in backedUpConversationIds) { "草稿引用了不存在的会话，已中止备份" }
-                require(draft.length <= 100_000) { "会话草稿超过备份上限，已中止备份" }
-                drafts.put(conversationId, draft)
+                if (draft != null && draft.isNotBlank() && draft.length <= 100_000 &&
+                    conversationId in backedUpConversationIds
+                ) {
+                    drafts.put(conversationId, draft)
+                }
+            } else {
+                val draft = value as? String ?: error("会话草稿字段类型无效，已中止备份")
+                if (draft.isNotBlank()) {
+                    val conversationId = key.removePrefix("draft_")
+                    require(conversationId in backedUpConversationIds) { "草稿引用了不存在的会话，已中止备份" }
+                    require(draft.length <= 100_000) { "会话草稿超过备份上限，已中止备份" }
+                    drafts.put(conversationId, draft)
+                }
             }
         }
     }
@@ -463,7 +491,7 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferenc
 
 internal suspend fun persistLocalBackupRestoreJournal(context: Context, prefs: SharedPreferences, database: NestroDatabase) {
     val vaultPreferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-    val previousBackup = buildLocalBackup(context, prefs, database)
+    val previousBackup = buildLocalBackup(context, prefs, database, forRestoreJournal = true)
     val journal = JSONObject()
         .put("format", "nestro-restore-journal")
         .put("version", 1)
