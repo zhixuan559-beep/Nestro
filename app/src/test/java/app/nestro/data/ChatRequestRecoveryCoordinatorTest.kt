@@ -103,4 +103,18 @@ class ChatRequestRecoveryCoordinatorTest {
         )
     }
 
+    @Test
+    fun matchingOlderRevisionDoesNotSuppressNewInterruptedRegeneration() {
+        val previous = ChatMessage(
+            "assistant-1", "assistant", "当前回答",
+            versions = listOf("相同的旧版本", "当前回答"), activeVersion = 1
+        )
+        val recovered = recoverInterruptedAssistantMessage(
+            listOf(previous), "assistant-1", "相同的旧版本"
+        )
+        assertTrue(recovered.single().content.startsWith("相同的旧版本"))
+        assertEquals(2, recovered.single().activeVersion)
+        assertEquals(3, recovered.single().versions.size)
+    }
+
 }
