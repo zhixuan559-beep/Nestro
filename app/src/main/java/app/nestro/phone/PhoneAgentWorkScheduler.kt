@@ -16,11 +16,11 @@ object PhoneAgentWorkScheduler {
     private const val QUEUE_NAME = "nestro-phone-agent-queue"
 
     @Synchronized
-    fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false) {
+    fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, allowExistingMarker: Boolean = false) {
         require(taskId.isNotBlank())
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val pendingKey = pendingKey(taskId)
-        if (preferences.getBoolean(pendingKey, false)) return
+        if (preferences.getBoolean(pendingKey, false) && !allowExistingMarker) return
         val markerSaved = preferences.edit()
             .putBoolean(pendingKey, true)
             .putLong(pendingAtKey(taskId), System.currentTimeMillis())
@@ -42,14 +42,11 @@ object PhoneAgentWorkScheduler {
             )
             .addTag(uniqueName(taskId))
             .build()
-        try {
-            WorkManager.getInstance(context.applicationContext)
-                .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
-                .enqueue()
-        } catch (error: Throwable) {
-            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId)).remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).commit()
-            throw error
-        }
+        // Keep the durable marker if WorkManager rejects enqueueing. Startup reconciliation
+        // can retry after the grace window instead of orphaning a planned/running task.
+        WorkManager.getInstance(context.applicationContext)
+            .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+            .enqueue()
     }
 
     /**
@@ -84,11 +81,13 @@ object PhoneAgentWorkScheduler {
             if (!PhoneAgentPendingWorkPolicy.shouldReconcile(pendingAt, now, workExists = false)) return@forEach
             val afterHandoff = preferences.getBoolean(afterHandoffKey(taskId), false)
             val allowRetry = preferences.getBoolean(allowRetryKey(taskId), false)
-            preferences.edit().remove(pendingKey(taskId)).remove(pendingAtKey(taskId)).apply()
             if (taskId in activeTaskIds) {
-                enqueue(appContext, taskId, afterHandoff, allowRetry)
+                // Do not clear the marker before enqueue succeeds. If WorkManager throws,
+                // the marker remains durable and can be reconciled on the next startup.
+                enqueue(appContext, taskId, afterHandoff, allowRetry, allowExistingMarker = true)
             } else {
-                preferences.edit().remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
+                preferences.edit().remove(pendingKey(taskId)).remove(pendingAtKey(taskId))
+                    .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
             }
         }
     }

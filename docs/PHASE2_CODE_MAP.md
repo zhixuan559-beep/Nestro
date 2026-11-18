@@ -333,3 +333,5 @@
 - Backup restore replays any earlier interrupted journal, then rejects replacement while Phone Agent tasks are planned, running, paused, or waiting for user confirmation. The same check runs inside the Room transaction that replaces task rows, closing the preflight race.
 - If the transactional guard rejects before any database mutation, the just-created restore journal is deleted rather than replayed; this preserves any task created after the journal snapshot. Rollback recovery itself deliberately bypasses the active-task guard.
 - Instrumentation coverage checks all four non-terminal task states remain intact and no stale journal is left after rejection.
+
+- Phone Agent pending-marker reconciliation now keeps the durable marker until the Worker consumes it. A stale marker is no longer removed before retry enqueue; `enqueue()` may explicitly reuse the existing marker, and WorkManager enqueue exceptions leave it intact for a later startup retry. This closes the orphaned-task window when WorkManager rejects or fails an enqueue attempt.
