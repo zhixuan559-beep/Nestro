@@ -488,3 +488,13 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Fixed a registry race in task-scoped tool sessions: the session now captures the selected tool definitions and their exact handler references when the lease opens.
 - Re-registering the same tool ID while a task is running can no longer silently redirect that in-flight session to a different handler.
 - Added a JVM regression test proving that the session keeps its original definition/handler while the global catalog uses the replacement for newly opened calls.
+
+
+## 2026-11-18 — Revocable task capability and credential leases
+
+- Added a process-local `AgentToolLeaseRegistry` with lease IDs and task ownership. A task can release one lease or revoke every open capability lease associated with its task ID.
+- Added short-lived `AgentCredentialLease` / `AgentCredentialLeaseRegistry` primitives. Credentials are resolved on demand from their secure owner, are not copied into the registry or persisted by the lease layer, and are bounded to a maximum 15-minute TTL.
+- `AgentTaskCoordinator` now revokes task capability and credential leases before pause/cancel and again when a task handler exits, so a stale task cannot keep using a previously opened lease.
+- Phone Agent action execution now opens its one-action capability through the lease registry and releases it in `finally`.
+- Added JVM regression coverage for task-wide tool-lease revocation and task-scoped credential resolution/revocation.
+- This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that MCP/plugin discovery, remote-provider credential adapters, dynamic schemas, or expert/workflow per-step tool routing are complete. Those remain Phase 2 integration work.
