@@ -849,7 +849,11 @@ fun NestroApp() {
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 status = when (finalized.status) {
                     ChatResponseStatus.STOPPED -> "已停止生成"
-                    ChatResponseStatus.SUCCESS -> if (recalledCount > 0) "已连接 · 参考历史 ${recalledCount} 条 · 本地保存" else "已连接 · 本地保存"
+                    ChatResponseStatus.SUCCESS -> when {
+                        execution.taskPlanningFailure != null -> "已连接 · 任务计划保存失败：${execution.taskPlanningFailure.message ?: "未知错误"}"
+                        recalledCount > 0 -> "已连接 · 参考历史 ${recalledCount} 条 · 本地保存"
+                        else -> "已连接 · 本地保存"
+                    }
                     ChatResponseStatus.FAILURE -> "连接失败"
                 }
                 busy = false
