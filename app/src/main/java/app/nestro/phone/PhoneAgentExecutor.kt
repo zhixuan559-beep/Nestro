@@ -122,13 +122,13 @@ object PhoneAgentExecutor {
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
             val toolId = toolIdFor(action)
-                    catalog.register(
-                        AgentToolSpec(
-                            id = toolIdFor(action),
-                            description = "执行当前步骤指定的手机动作：" + action.javaClass.simpleName,
-                            permission = AgentToolPermission.DEVICE_ACTION
-                        )
-                    ) {
+            catalog.register(
+                AgentToolSpec(
+                    id = toolId,
+                    description = "执行当前步骤指定的手机动作：" + action.javaClass.simpleName,
+                    permission = AgentToolPermission.DEVICE_ACTION
+                )
+            ) {
                         val executingAction = action
                         val attempt = runCatchingCancellable {
                             when (executingAction) {
