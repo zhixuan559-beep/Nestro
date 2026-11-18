@@ -16,8 +16,6 @@ concurrency:
 
 jobs:
   verify:
-    # PR verification compiles Kotlin, runs JVM tests and Android lint.
-    # It deliberately does not assemble/install an APK before the integrated acceptance stage.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -109,45 +107,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none
           disable-animations: true
           emulator-boot-timeout: 600000
-          script: |
-            set -u
-            DIAG="app/build/reports/androidTests/connected/diagnostics"
-            mkdir -p "$DIAG"
-            adb wait-for-device
-
-            # adb wait-for-device only means the transport exists; wait for Android boot.
-            for attempt in $(seq 1 90); do
-              booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-              if [ "$booted" = "1" ]; then
-                break
-              fi
-              sleep 2
-            done
-            printf 'sys.boot_completed=%s\n' "${booted:-unavailable}" > "$DIAG/device-boot.txt"
-            adb shell getprop > "$DIAG/device-properties.txt" 2>&1 || true
-            adb shell pm list instrumentation -f > "$DIAG/instrumentation-list.txt" 2>&1 || true
-            adb shell pm list packages -3 > "$DIAG/third-party-packages.txt" 2>&1 || true
-
-            # Keep logcat streaming while Gradle/UTP launches instrumentation; do not
-            # rely on post-failure commands, which can be skipped by the runner shell.
-            adb logcat -c || true
-            adb logcat -b all -v threadtime > "$DIAG/emulator-logcat.txt" 2>&1 &
-            LOGCAT_PID=$!
-
-            test_exit_code=0
-            if gradle --no-daemon --stacktrace connectedDebugAndroidTest; then
-              test_exit_code=0
-            else
-              test_exit_code=$?
-            fi
-
-            adb shell dumpsys activity exit-info app.nestro > "$DIAG/app-exit-info.txt" 2>&1 || true
-            adb shell dumpsys activity exit-info app.nestro.test > "$DIAG/test-exit-info.txt" 2>&1 || true
-            adb shell dumpsys package app.nestro.test > "$DIAG/test-package.txt" 2>&1 || true
-            adb shell pm list instrumentation -f > "$DIAG/instrumentation-list-after.txt" 2>&1 || true
-            kill "$LOGCAT_PID" 2>/dev/null || true
-            wait "$LOGCAT_PID" 2>/dev/null || true
-            exit "$test_exit_code"
+          script: bash .github/scripts/run-android-instrumentation.sh
 
       - name: Upload Android instrumentation reports
         if: always()
