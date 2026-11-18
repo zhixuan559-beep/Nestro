@@ -25,9 +25,32 @@ internal object PhoneAgentPromptBudget {
         }
         return Context(
             screenText = compactLines(visibleScreen, screenLimit),
-            recentActions = compactLines(recentActions, 1_000),
+            recentActions = compactRecentActions(recentActions, 1_000),
             maxOutputTokens = outputBudget
         )
+    }
+
+
+    private fun compactRecentActions(source: String, maxChars: Int): String {
+        if (source.isBlank() || maxChars <= 0) return ""
+        val seen = HashSet<String>()
+        val recent = source.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+            .asReversed()
+            .filter { seen.add(it) }
+            .take(12)
+            .asReversed()
+        val output = StringBuilder()
+        for (line in recent) {
+            val separator = if (output.isEmpty()) 0 else 1
+            val remaining = maxChars - output.length - separator
+            if (remaining <= 0) break
+            if (separator == 1) output.append('\n')
+            output.append(line.take(remaining))
+        }
+        return output.toString()
     }
 
     private fun compactLines(source: String, maxChars: Int): String {

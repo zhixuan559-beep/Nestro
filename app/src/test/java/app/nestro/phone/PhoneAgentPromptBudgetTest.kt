@@ -25,4 +25,13 @@ class PhoneAgentPromptBudgetTest {
         assertTrue(result.recentActions.length <= 1_000)
         assertTrue(result.screenText.length <= 4_400)
     }
+
+    @Test fun keepsRecentActionsInsteadOfOldestHistory() {
+        val history = (1..30).joinToString("\n") { "动作$it：完成" }
+        val result = PhoneAgentPromptBudget.build("GENERAL", "查看页面", "页面", history)
+        assertTrue(result.recentActions.contains("动作30：完成"))
+        assertTrue(result.recentActions.contains("动作29：完成"))
+        assertTrue(!result.recentActions.contains("动作1：完成"))
+        assertTrue(result.recentActions.length <= 1_000)
+    }
 }
