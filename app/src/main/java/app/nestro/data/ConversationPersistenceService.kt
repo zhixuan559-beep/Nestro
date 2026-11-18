@@ -7,6 +7,28 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Strict message-version codec shared by Room persistence and restore paths. */
+internal fun encodeMessageVersions(message: ChatMessage): String {
+    require(message.versions.size <= 20) { "回答版本数量超过持久化上限" }
+    require(message.versions.all { it.length <= 200_000 }) { "回答版本内容超过持久化上限" }
+    require(message.activeVersion >= 0 && (message.versions.isEmpty() || message.activeVersion < message.versions.size)) {
+        "回答版本索引无效"
+    }
+    return JSONArray(message.versions).toString()
+}
+
+internal fun decodeMessageVersions(raw: String, activeVersion: Int): List<String> {
+    val values = JSONArray(raw)
+    require(values.length() <= 20) { "回答版本数量超过持久化上限" }
+    val versions = (0 until values.length()).map { index ->
+        require(values.opt(index) is String) { "回答版本格式无效" }
+        values.getString(index).also { require(it.length <= 200_000) { "回答版本内容超过持久化上限" } }
+    }
+    require(activeVersion >= 0 && (versions.isEmpty() || activeVersion < versions.size)) { "回答版本索引无效" }
+    return versions
+}
+
+
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
 class ConversationPersistenceService(private val database: NestroDatabase) {
     internal data class RestoreResult(
@@ -82,7 +104,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     val rows = record.messages.mapIndexed { index, message ->
                         MessageEntity(
                             message.id, record.id, index, message.role, message.content,
-                            JSONArray(message.versions.take(20)).toString(), message.activeVersion
+                            encodeMessageVersions(message)
                         )
                     }
                     if (rows.isNotEmpty()) dao.putMessages(rows)
@@ -131,7 +153,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         entity.messages.sortedBy { it.position }.map { message ->
             ChatMessage(
                 message.id, message.role, message.content,
-                decodeVersions(message.versionsJson), message.activeVersion
+                decodeMessageVersions(message.versionsJson, message.activeVersion), message.activeVersion
             )
         }
     }
@@ -150,17 +172,12 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
             val rows = messages.mapIndexed { index, message ->
                 MessageEntity(
                     message.id, conversationId, index, message.role, message.content,
-                    JSONArray(message.versions.take(20)).toString(), message.activeVersion.coerceAtLeast(0)
+                    encodeMessageVersions(message)
                 )
             }
             if (rows.isNotEmpty()) dao.putMessages(rows)
         }
     }
-
-    private fun decodeVersions(raw: String): List<String> = runCatching {
-        val values = JSONArray(raw)
-        (0 until values.length()).mapNotNull { values.optString(it).takeIf(String::isNotBlank) }.take(20)
-    }.getOrDefault(emptyList())
 
     internal suspend fun persist(
         prefs: SharedPreferences,
@@ -181,7 +198,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     val rows = record.messages.mapIndexed { index, message ->
                         MessageEntity(
                             message.id, record.id, index, message.role, message.content,
-                            JSONArray(message.versions.take(20)).toString(), message.activeVersion
+                            encodeMessageVersions(message)
                         )
                     }
                     if (rows.isNotEmpty()) dao.putMessages(rows)
