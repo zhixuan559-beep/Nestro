@@ -15,6 +15,20 @@ private fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: Stri
     return bounded.mapIndexed { index, item -> source[source.size - bounded.size + index].copy(content = item.content) }
 }
 
+private fun estimatedUsageInput(history: List<ChatMessage>, systemPrompt: String, maxTokens: Int?): Int {
+    val bounded = boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048)
+    val text = buildString {
+        append(systemPrompt)
+        bounded.forEach { message -> append("\\n").append(message.role).append(":").append(message.content) }
+    }
+    return ChatRequestPolicy.estimateTokens(text).coerceAtMost(Int.MAX_VALUE / 4) * 4
+}
+
+private fun estimatedUsageOutput(response: String): Int =
+    ChatRequestPolicy.estimateTokens(response).coerceAtMost(Int.MAX_VALUE / 4) * 4
+
+private fun supportsOpenAiStreamUsage(config: ModelConfig): Boolean =
+    runCatching { java.net.URI(config.baseUrl).host.equals("api.openai.com", ignoreCase = true) }.getOrDefault(false)
 internal object OpenAiClient {
     private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
     private val requestConnections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
@@ -42,7 +56,7 @@ internal object OpenAiClient {
                 var providerUsage: ProviderTokenUsage? = null
                 val response = complete(candidate, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, temperature, maxTokens) { providerUsage = it }
                 if (providerUsage != null) onProviderUsage(candidate, providerUsage!!.inputTokens, providerUsage!!.outputTokens)
-                else onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
+                else onUsage(candidate, estimatedUsageInput(history, systemPrompt, maxTokens), estimatedUsageOutput(response))
                 return response
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -160,6 +174,7 @@ internal object OpenAiClient {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
                 })
+                if (supportsOpenAiStreamUsage(config)) put("stream_options", JSONObject().put("include_usage", true))
                 put("stream", true)
             }
             val code = ChatHttpTransport.postJson(connection, body.toString())
