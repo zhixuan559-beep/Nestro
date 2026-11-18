@@ -583,15 +583,29 @@ fun NestroApp() {
         readKey = modelRepository::readApiKey
     )
 
+    val requestUsageModelIds = requestModelConfigs.associateWith { usedConfig ->
+        modelRegistry.models.firstOrNull { model ->
+            model.modelCode == usedConfig.model &&
+                modelRegistry.providers.firstOrNull { it.id == model.providerId }?.baseUrl == usedConfig.baseUrl
+        }?.id?.let { id ->
+            if (id.startsWith("legacy-model-")) id.removePrefix("legacy-model-") else id
+        }
+    }
+
+    fun usageProfileId(usedConfig: ModelConfig): String? =
+        requestUsageModelIds[usedConfig]
+            ?: modelProfiles.firstOrNull { profile ->
+                profile.baseUrl == usedConfig.baseUrl && profile.model == usedConfig.model &&
+                    modelRepository.readProfileKey(profile.id) == usedConfig.apiKey
+            }?.id
+
     val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
         scope.launch {
-            val profileId = modelProfiles.firstOrNull {
-                it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
-                    modelRepository.readProfileKey(it.id) == usedConfig.apiKey
-            }?.id
-                ?: activeModelProfileId.takeIf { it.isNotBlank() }
-            if (profileId != null) {
-                modelUsage = ModelUsageStatsCodec.recordEstimatedTokens(modelUsage, profileId, inputTokens, outputTokens)
+            val usageId = usageProfileId(usedConfig)
+            if (usageId != null) {
+                modelUsage = ModelUsageStatsCodec.recordEstimatedTokens(
+                    modelUsage, usageId, inputTokens, outputTokens
+                )
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }
         }
@@ -599,12 +613,11 @@ fun NestroApp() {
 
     val recordProviderModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
         scope.launch {
-            val profileId = modelProfiles.firstOrNull {
-                it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
-                    modelRepository.readProfileKey(it.id) == usedConfig.apiKey
-            }?.id ?: activeModelProfileId.takeIf { it.isNotBlank() }
-            if (profileId != null) {
-                modelUsage = ModelUsageStatsCodec.recordProviderUsage(modelUsage, profileId, inputTokens, outputTokens)
+            val usageId = usageProfileId(usedConfig)
+            if (usageId != null) {
+                modelUsage = ModelUsageStatsCodec.recordProviderUsage(
+                    modelUsage, usageId, inputTokens, outputTokens
+                )
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }
         }
