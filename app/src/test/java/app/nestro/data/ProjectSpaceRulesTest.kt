@@ -147,4 +147,34 @@ class ProjectSpaceRulesTest {
         assertFalse(canRecover(hasLocalConversationData = true))
         assertFalse(canRecover(hasLinkedData = true))
     }
-}
+
+    @Test fun projectResourceScopesPreserveLegacyGlobalDefaultsAndSupportProjectSharing() {
+        val kind = ProjectResourceKind.SKILL
+        val legacy = ProjectResourceScopeStore.decode("{}")
+        assertTrue(ProjectResourceScopeStore.isVisible(legacy, kind, "research", "project-a"))
+        assertTrue(ProjectResourceScopeStore.isVisible(legacy, kind, "research", "project-b"))
+
+        val scoped = ProjectResourceScopeStore.setProjectScope(
+            legacy, kind, "research", setOf("project-a", "project-b")
+        )
+        assertTrue(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-a"))
+        assertTrue(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-b"))
+        assertFalse(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-c"))
+
+        val global = ProjectResourceScopeStore.setGlobal(scoped, kind, "research")
+        assertTrue(ProjectResourceScopeStore.isVisible(global, kind, "research", "project-c"))
+        assertEquals(global, ProjectResourceScopeStore.decode(ProjectResourceScopeStore.encode(global)))
+    }
+
+    @Test fun projectResourceScopesRejectMalformedAndAmbiguousOwnership() {
+        assertThrows(IllegalStateException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":[123]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":["project-a","project-a"]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":["*","project-a"]}""")
+        }
+    }
+\n}\n
