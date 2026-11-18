@@ -113,7 +113,7 @@ object ArtifactStore {
     @Synchronized
     fun backupAll(context: Context, allowedProjectIds: Set<String>): JSONArray {
         val rows = readAll(context)
-        require(rows.length() <= MAX_ITEMS) { "产物版本数量超过备份上限" }
+        require(rows.length() <= MAX_BACKUP_ITEMS) { "产物版本数量超过备份上限" }
         val output = JSONArray()
         var totalBytes = 0L
         for (index in 0 until rows.length()) {
