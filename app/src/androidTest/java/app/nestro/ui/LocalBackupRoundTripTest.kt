@@ -155,11 +155,15 @@ class LocalBackupRoundTripTest {
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "资料.txt", "text/plain", 3L, 4L, hash))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容 restoreindexmarker")))
             dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
+            dao.putPhoneAgentTask(PhoneAgentTaskEntity(
+                "phone-task-1", "p1", "c1", "恢复后由用户手动继续", "GENERAL",
+                PhoneAgentTaskStore.STATUS_RUNNING, "[]", 0, 7L, 8L
+            ))
             dao.putAgentTaskState(AgentTaskStateEntity(
-                "agent-task-1", "workflow", "PAUSED", 2, "检查点数据", "等待用户确认", 7L
+                "phone-task-1", "phone_agent", "RUNNING", 0, "检查点数据", "", 7L
             ))
             dao.insertAgentTaskTrace(AgentTaskTraceEntity(
-                "agent-trace-1", "agent-task-1", "checkpoint_saved", "已保存检查点", 8L
+                "agent-trace-1", "phone-task-1", "checkpoint_saved", "已保存检查点", 8L
             ))
 
             LocalVault.writeApiKey(context, "old-key", "must-not-survive-restore")
@@ -212,9 +216,11 @@ class LocalBackupRoundTripTest {
             val ftsCount = database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
             assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
-            assertEquals("检查点数据", dao.agentTaskState("agent-task-1")?.checkpoint)
-            assertEquals("PAUSED", dao.agentTaskState("agent-task-1")?.status)
-            assertEquals("已保存检查点", dao.recentAgentTaskTraces("agent-task-1").single().detail)
+            assertEquals("检查点数据", dao.agentTaskState("phone-task-1")?.checkpoint)
+            assertEquals("PAUSED", dao.agentTaskState("phone-task-1")?.status)
+            assertTrue(dao.agentTaskState("phone-task-1")?.lastError?.contains("手动继续") == true)
+            assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, dao.phoneAgentTask("phone-task-1")?.status)
+            assertEquals("已保存检查点", dao.recentAgentTaskTraces("phone-task-1").single().detail)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals("high", prefs.getString("reasoning_effort_v1", "low"))
             assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
