@@ -519,3 +519,13 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The provider has one active target and deliberately performs no automatic fallback when the selected environment detaches; the task pauses instead of silently switching to the user's real screen.
 - This creates the Phase 2 architecture seam for an isolated VirtualDisplay adapter. The actual VirtualDisplay implementation and any Mika code reuse belong to the Phone Agent feature work after the exact source repository and license are verified; no unverified third-party code has been copied.
 - Added JVM tests for attach, detach, replacement, and no-fallback behavior.
+
+
+## 2026-11-18 — Chat request lifecycle consolidation
+
+- Added `ChatRequestExecutionCoordinator` to own the sequential request pipeline: explicit task-mode planning gate, project-scoped context assembly, expert-team context handoff, bounded model history, streaming execution, partial-answer propagation, and terminal response finalization.
+- `NestroApp` now delegates that pipeline to the coordinator and retains only UI-specific request snapshot capture, expert-team progress rendering, visible partial-message updates, conversation persistence, and background memory launch.
+- Removed the duplicate Phone Agent planning path from the Compose root. Task planning is now invoked once by the coordinator and only for the request-time explicit task-mode snapshot; scheduling failures are surfaced without aborting the ordinary chat response.
+- Removed the second redundant partial-request marker write from the UI callback; `ChatStreamingCoordinator` remains the single owner of per-chunk crash-recovery persistence.
+- Added `ChatRequestExecutionCoordinatorTest` for ordinary-chat planning denial, task-mode planning, expert-context/stream ordering, partial output after transport failure, and parent cancellation propagation.
+- Current verification target: PR #3 head `8d5efa289a0e5b876890fd2a35f0e58e37ce1c84`, Android CI run #988 (`44270476413`) in progress. This batch does not mark module 3 complete; remaining work is to inspect the full chat module boundary and close any uncovered lifecycle/data-integrity cases.
