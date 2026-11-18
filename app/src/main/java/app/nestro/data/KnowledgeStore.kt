@@ -18,6 +18,17 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 
+
+private fun extractPdfText(bytes: ByteArray): String {
+    val raw = bytes.toString(Charsets.ISO_8859_1)
+    return Regex("""\(([^()]*)\)""").findAll(raw)
+        .map { it.groupValues[1] }
+        .filter { it.any(Char::isLetterOrDigit) }
+        .joinToString("\n")
+        .replace("\\n", "\n").replace("\\(", "(").replace("\\)", ")")
+        .trim()
+}
+
 data class KnowledgeImportResult(val document: KnowledgeDocumentEntity, val duplicate: Boolean)
 data class KnowledgeSearchResult(
  val documentName: String,
