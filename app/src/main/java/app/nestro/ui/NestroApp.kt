@@ -185,6 +185,7 @@ fun NestroApp() {
     var busy by chatExecutionUiState.busy
     var stopRequested by chatExecutionUiState.stopRequested
     var activeRequestId by chatExecutionUiState.activeRequestId
+    var activeRequestConversationId by chatExecutionUiState.activeRequestConversationId
     var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
     var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
     var status by chatExecutionUiState.status
@@ -705,6 +706,7 @@ fun NestroApp() {
             pendingAssistantRevision = null
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
+            activeRequestConversationId = requestConversationId
             val requestProjectId = activeProjectId
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, selectedTeamId)
             val requestExpertTeams = expertTeams.toList()
@@ -736,6 +738,7 @@ fun NestroApp() {
                     status = "已停止生成"
                     busy = false
                     activeRequestId = ""
+                    activeRequestConversationId = ""
                     stopRequested = false
                     return@launch
                 }
@@ -858,6 +861,7 @@ fun NestroApp() {
                 }
                 busy = false
                 activeRequestId = ""
+                activeRequestConversationId = ""
                 if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
                         appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
@@ -875,6 +879,7 @@ fun NestroApp() {
                     if (activeRequestId == assistantId) {
                         busy = false
                         activeRequestId = ""
+                        activeRequestConversationId = ""
                         stopRequested = false
                     }
                 }
@@ -1784,6 +1789,10 @@ fun NestroApp() {
                                                 }) { Text("重命名", color = Mint) }
                                                 TextButton(onClick = {
                                                     scope.launch {
+                                                        if (!canDeleteConversation(record.id, activeRequestConversationId, busy)) {
+                                                            status = "该会话正在生成，请先停止生成后再删除"
+                                                            return@launch
+                                                        }
                                                         val remaining = conversations.filterNot { it.id == record.id }
                                                         if (activeConversationId == record.id) {
                                                             val next = remaining.firstOrNull { it.projectId == record.projectId }
