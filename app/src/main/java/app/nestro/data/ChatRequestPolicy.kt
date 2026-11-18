@@ -58,7 +58,7 @@ object ChatRequestPolicy {
         return boundedNewestFirst.asReversed()
     }
 
-    fun boundedChatHistory(
+    internal fun boundedChatHistory(
         history: List<ChatMessage>,
         systemPrompt: String,
         contextWindowTokens: Int = 16_384,
