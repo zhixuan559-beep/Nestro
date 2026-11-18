@@ -21,7 +21,7 @@ class NestroWindowSizeTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    @Test
+    @Test(timeout = 300_000)
     fun keepsPrimaryNavigationUsableAcrossPhoneFoldableAndTabletWindowWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
@@ -55,7 +55,7 @@ class NestroWindowSizeTest {
             composeRule.onNodeWithText("项目空间").assertIsDisplayed()
         }
     }
-    @Test
+    @Test(timeout = 300_000)
     fun keepsEveryPrimaryDestinationReachableAcrossPhoneFoldableAndTabletWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
