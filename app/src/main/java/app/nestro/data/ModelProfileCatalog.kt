@@ -28,6 +28,16 @@ object ModelProfileCatalogCodec {
         return profiles.firstNotNullOfOrNull(::validate)
     }
 
+
+    fun removeProfile(profiles: List<ModelProfileMetadata>, profileId: String): List<ModelProfileMetadata> =
+        profiles.filterNot { it.id == profileId }
+
+    fun setActiveProfileId(profiles: List<ModelProfileMetadata>, requestedId: String): String? =
+        profiles.firstOrNull { it.id == requestedId }?.id ?: profiles.firstOrNull()?.id
+
+    fun availableModels(profiles: List<ModelProfileMetadata>): List<ModelProfileMetadata> =
+        profiles.filter { validate(it) == null }
+
     fun encode(profiles: List<ModelProfileMetadata>): String = JSONArray().apply {
         profiles.take(MAX_PROFILES).forEach { profile ->
             put(JSONObject()
