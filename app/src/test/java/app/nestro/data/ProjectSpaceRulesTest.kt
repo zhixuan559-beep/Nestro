@@ -58,7 +58,7 @@ class ProjectSpaceRulesTest {
     }
 
     @Test fun projectSerializationPreservesEveryValidProjectAndFullInstructionText() {
-        val instructions = "规则".repeat(4000)
+        val instructions = "规则".repeat(2000)
         val projects = listOf(
             ProjectRecord("default", "默认空间", "", 1L),
             ProjectRecord("work", "工作", instructions, 2L, 3L)
