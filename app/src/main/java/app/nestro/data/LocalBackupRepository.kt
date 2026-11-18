@@ -409,6 +409,10 @@ private suspend fun applyLocalBackup(
     require(restoredTeamHistory.size==teamHistoryArray.length()) { "专家团队运行记录包含无效数据" }
     val globalMemory = root.optString("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
+    val restoredReasoningEffort = root.optString("reasoning_effort_v1", "low")
+    require(restoredReasoningEffort in setOf("none", "low", "medium", "high")) { "思考强度设置无效" }
+    val restoredTtsSpeechRate = root.optDouble("tts_speech_rate", 1.0).toFloat()
+    require(restoredTtsSpeechRate.isFinite() && restoredTtsSpeechRate in 0.7f..1.3f) { "语音语速设置无效" }
     val auditRows = root.optJSONArray("phone_audit_v1") ?: JSONArray()
     require(auditRows.length() <= 100) { "Phone Agent 安全审计记录数量超出限制" }
     val restoredPhoneAudit = JSONArray()
