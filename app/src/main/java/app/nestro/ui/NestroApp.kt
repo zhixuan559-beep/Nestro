@@ -742,11 +742,14 @@ fun NestroApp() {
             val requestExpertTeams = expertTeams.filter {
                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId)
             }
+            val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
             val requestExpertProfiles = expertProfiles.filterKeys {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
             }
             val requestExpertPrompts = expertPrompts.filterKeys {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
             }
             val requestSkills = skills.filterKeys {
                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
