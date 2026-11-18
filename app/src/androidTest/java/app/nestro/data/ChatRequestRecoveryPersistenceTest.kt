@@ -76,4 +76,24 @@ class ChatRequestRecoveryPersistenceTest {
             database.close()
         }
     }
+    @Test
+    fun recoveryPersistenceKeepsConversationHistoryBeyondFiveHundredMessages() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            database.dao().putConversation(ConversationEntity("long-conversation", "长对话", 1L, "project-1"))
+            val messages = (0..500).map { index ->
+                ChatMessage("message-$index", if (index % 2 == 0) "user" else "assistant", "内容-$index")
+            }
+            ConversationPersistenceService(database).persistRecoveredMessages("long-conversation", messages)
+
+            val restored = ConversationPersistenceService(database).loadMessages("long-conversation").orEmpty()
+            assertEquals(501, restored.size)
+            assertEquals("内容-0", restored.first().content)
+            assertEquals("内容-500", restored.last().content)
+        } finally {
+            database.close()
+        }
+    }
+
 }
