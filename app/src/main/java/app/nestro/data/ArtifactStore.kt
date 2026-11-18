@@ -140,7 +140,7 @@ object ArtifactStore {
     }
 
     fun validateBackup(rows: JSONArray, allowedProjectIds: Set<String>): JSONArray {
-        require(rows.length() <= MAX_ITEMS) { "备份中的产物版本数量超出限制" }
+        require(rows.length() <= MAX_BACKUP_ITEMS) { "备份中的产物版本数量超出限制" }
         val normalized = JSONArray()
         val ids = mutableSetOf<String>()
         var totalBytes = 0L
