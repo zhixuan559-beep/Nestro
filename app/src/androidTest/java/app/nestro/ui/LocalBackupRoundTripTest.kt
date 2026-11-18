@@ -447,6 +447,16 @@ class LocalBackupRoundTripTest {
             }
             assertTrue("恢复不得忽略类型错误的回答版本字段", runCatching { repository.restoreBackup(prefs, wrongVersionFieldType) }.isFailure)
 
+            val wrongArtifactCollectionType = signedBackup { root ->
+                root.put("artifacts_v1", "{}")
+            }
+            assertTrue("恢复不得把类型错误的产物清单当成空清单", runCatching { repository.restoreBackup(prefs, wrongArtifactCollectionType) }.isFailure)
+
+            val wrongKnowledgeCollectionType = signedBackup { root ->
+                root.put("knowledge_documents_v1", JSONObject().put("unexpected", true))
+            }
+            assertTrue("恢复不得把类型错误的知识库清单当成空清单", runCatching { repository.restoreBackup(prefs, wrongKnowledgeCollectionType) }.isFailure)
+
             assertEquals("有效标题", dao.loadConversations().single().conversation.title)
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
