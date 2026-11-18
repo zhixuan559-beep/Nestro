@@ -31,6 +31,36 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalBackupRoundTripTest {
+    @Test fun backupExportRejectsCorruptRevisionAndAuditData() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "nestro_backup_corrupt_source.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_corrupt_source", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]").commit()
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("corrupt-c1", "损坏数据测试", 1L, "default"))
+            dao.putMessages(listOf(MessageEntity("corrupt-m1", "corrupt-c1", 0, "assistant", "回复", "{invalid", 0)))
+            val repository = LocalBackupRepository(context, database)
+
+            assertTrue("损坏的回答版本记录不得被静默丢弃", runCatching { repository.createBackup(prefs) }.isFailure)
+
+            dao.putMessages(listOf(MessageEntity("corrupt-m1", "corrupt-c1", 0, "assistant", "回复", "[]", 0)))
+            prefs.edit().putString("phone_audit", "{invalid").commit()
+            assertTrue("损坏的安全审计记录不得被静默清空", runCatching { repository.createBackup(prefs) }.isFailure)
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test fun restoresRoomDataAndUserPreferencesFromVerifiedBackup() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // ArtifactStore uses app-private files shared by instrumentation tests. Start from a
