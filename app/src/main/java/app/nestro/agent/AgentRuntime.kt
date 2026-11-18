@@ -72,13 +72,54 @@ sealed interface AgentAuthorization {
     data class RequireConfirmation(val reason: String) : AgentAuthorization
 }
 
-interface AgentToolCatalog {
-    fun register(spec: AgentToolSpec, handler: suspend (Map<String, String>) -> AgentToolResult)
-    fun remove(toolId: String)
+interface AgentToolAccess {
     fun find(toolId: String): AgentToolSpec?
     fun list(): List<AgentToolSpec>
     suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult
 }
+
+interface AgentToolCatalog : AgentToolAccess {
+    fun register(spec: AgentToolSpec, handler: suspend (Map<String, String>) -> AgentToolResult)
+    fun remove(toolId: String)
+
+    /** Creates a task-local view that exposes only explicitly selected capabilities. */
+    fun openSession(toolIds: Set<String>): AgentToolSession = ScopedAgentToolSession(this, toolIds)
+}
+
+/**
+ * A capability lease for one task/step. Tool definitions outside the allow-list
+ * are invisible, invocation outside the allow-list is rejected, and close() makes
+ * the lease unusable. Sessions never grant permissions; AgentPermissionRouter still
+ * authorizes every invocation.
+ */
+class AgentToolSession internal constructor(
+    private val parent: AgentToolAccess,
+    allowedSpecs: List<AgentToolSpec>
+) : AgentToolAccess, AutoCloseable {
+    private val specs = allowedSpecs.associateBy { it.id }
+    @Volatile private var closed = false
+
+    override fun find(toolId: String): AgentToolSpec? =
+        if (closed) null else specs[toolId]
+
+    override fun list(): List<AgentToolSpec> =
+        if (closed) emptyList() else specs.values.sortedBy { it.id }
+
+    override suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult {
+        if (closed) return AgentToolResult(false, error = "工具会话已释放")
+        if (toolId !in specs) return AgentToolResult(false, error = "当前任务未加载该工具：$toolId")
+        return parent.invoke(toolId, arguments)
+    }
+
+    override fun close() {
+        closed = true
+    }
+}
+
+private class ScopedAgentToolSession(
+    private val parent: AgentToolAccess,
+    requestedToolIds: Set<String>
+) : AgentToolSession(parent, requestedToolIds.mapNotNull(parent::find))
 
 class InMemoryAgentToolCatalog : AgentToolCatalog {
     private data class Entry(
@@ -181,7 +222,7 @@ interface AgentRuntime {
 }
 
 class DefaultAgentRuntime(
-    private val catalog: AgentToolCatalog,
+    private val catalog: AgentToolAccess,
     private val permissions: AgentPermissionRouter,
     private val states: AgentTaskStateStore,
     private val traces: AgentTaskTraceStore? = null

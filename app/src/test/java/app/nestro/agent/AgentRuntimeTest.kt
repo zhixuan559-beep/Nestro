@@ -83,4 +83,40 @@ class AgentRuntimeTest {
         assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
     }
 
+
+    @Test
+    fun taskSessionExposesOnlySelectedToolsAndRejectsUnloadedInvocation() = runBlocking {
+        var unrelatedCalls = 0
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("screen.read", "读取当前页面", AgentToolPermission.READ_ONLY)) {
+                AgentToolResult(true, "页面")
+            }
+            register(AgentToolSpec("message.send", "发送消息", AgentToolPermission.EXTERNAL_WRITE)) {
+                unrelatedCalls++
+                AgentToolResult(true, "已发送")
+            }
+        }
+        val session = catalog.openSession(setOf("screen.read"))
+        assertEquals(listOf("screen.read"), session.list().map { it.id })
+        assertEquals(null, session.find("message.send"))
+        val denied = session.invoke("message.send", emptyMap())
+        assertFalse(denied.success)
+        assertEquals(0, unrelatedCalls)
+        assertTrue(session.invoke("screen.read", emptyMap()).success)
+        session.close()
+        assertTrue(session.list().isEmpty())
+        assertFalse(session.invoke("screen.read", emptyMap()).success)
+    }
+
+    @Test
+    fun unknownRequestedToolsAreNotAddedToTaskSession() = runBlocking {
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("screen.read", "读取当前页面", AgentToolPermission.READ_ONLY)) {
+                AgentToolResult(true)
+            }
+        }
+        val session = catalog.openSession(setOf("screen.read", "payments.transfer"))
+        assertEquals(listOf("screen.read"), session.list().map { it.id })
+        assertFalse(session.invoke("payments.transfer", emptyMap()).success)
+    }
 }

@@ -144,18 +144,13 @@ object PhoneAgentExecutor {
             val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
             AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
         }
-        val runtime: AgentRuntime = DefaultAgentRuntime(
-            catalog = catalog,
-            permissions = AgentPermissionRouter { _, _ ->
+        val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
                     service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
                     !service.hasValidGrant() -> AgentAuthorization.Deny("操作授权已失效")
                     else -> AgentAuthorization.Allow
                 }
-            },
-            states = agentStates,
-            traces = RoomAgentTaskTraceStore(dao)
-        )
+            }
         for (index in startIndex until actions.size) {
             val latestTask = dao.phoneAgentTask(taskId)
                 ?: return ExecutionResult(Outcome.FAILED, results.size, results, "任务不存在")
@@ -180,7 +175,18 @@ object PhoneAgentExecutor {
                 RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = action.description.take(2_000)))
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
             }
-            val toolResult = runtime.execute(AgentToolRequest(taskId, "phone.action"))
+            val toolSession = catalog.openSession(setOf("phone.action"))
+            val runtime: AgentRuntime = DefaultAgentRuntime(
+                catalog = toolSession,
+                permissions = toolPermissionRouter,
+                states = agentStates,
+                traces = RoomAgentTaskTraceStore(dao)
+            )
+            val toolResult = try {
+                runtime.execute(AgentToolRequest(taskId, "phone.action"))
+            } finally {
+                toolSession.close()
+            }
             val success = toolResult.success
             val detail = if (success) toolResult.output.ifBlank { "动作已执行并核验" }
                 else toolResult.error.ifBlank { "目标未匹配或动作未成功" }
