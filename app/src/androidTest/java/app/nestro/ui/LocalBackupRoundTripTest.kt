@@ -84,6 +84,11 @@ class LocalBackupRoundTripTest {
                 dao.deleteAllPhoneAgentTasks()
                 dao.deleteAllProjects()
             }
+            // Simulate an orphaned FTS row left by an older/partial restore.
+            database.openHelper.writableDatabase.execSQL(
+                "INSERT INTO knowledge_chunks_fts(rowid, chunkId, projectId, content) VALUES(?, ?, ?, ?)",
+                arrayOf(987654321L, "stale-chunk", "p1", "staleindexmarker")
+            )
             prefs.edit().putBoolean("automatic_memory_enabled", false).putString("phone_audit", "[]").commit()
 
             backupRepository.restoreBackup(prefs, backup)
@@ -92,6 +97,8 @@ class LocalBackupRoundTripTest {
             assertTrue("恢复必须保留非默认项目", dao.loadProjects().any { it.id == "p1" })
             assertEquals("这是需要恢复的知识库片段内容 restoreindexmarker", dao.allKnowledgeChunks().single().content)
             assertEquals("k1", dao.searchKnowledgeChunksFts("p1", "restoreindexmarker", 5).single().id)
+            val ftsCount = database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
+            assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
