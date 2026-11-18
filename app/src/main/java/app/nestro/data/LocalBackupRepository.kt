@@ -751,12 +751,15 @@ private suspend fun applyLocalBackup(
         val goal = item.requiredString("goal")
         require(conversationId.length <= 120) { "Phone Agent 任务会话 ID 过长" }
         val category = item.requiredString("category")
-        val status = item.requiredString("status")
+        val sourceStatus = item.requiredString("status")
+        val status = if (sourceStatus in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING)) {
+            PhoneAgentTaskStore.STATUS_PAUSED
+        } else sourceStatus
         val planJson = item.stringOrDefault("planJson", "[]")
         val currentStep = item.intOrDefault("currentStep", 0)
         require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
         require(conversationProjectById[conversationId]?.let { it == projectId } != false) { "Phone Agent 任务引用了其他项目空间的会话" }
-        require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
+        require(category in validTaskCategories && sourceStatus in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
         val planCount = PhoneAgentTaskStore.validatePlanJson(planJson)
         require(currentStep in 0..planCount) { "Phone Agent 任务步骤位置无效" }
         PhoneAgentTaskEntity(
@@ -809,12 +812,16 @@ private suspend fun applyLocalBackup(
         val item = agentStateRows.getJSONObject(index)
         val taskId = item.requiredString("taskId")
         val owner = item.requiredString("owner")
-        val status = item.requiredString("status")
+        val sourceStatus = item.requiredString("status")
+        val status = if (sourceStatus in setOf("QUEUED", "RUNNING")) "PAUSED" else sourceStatus
         val currentStep = item.intOrDefault("currentStep", 0)
         val checkpoint = item.stringOrDefault("checkpoint", "")
-        val lastError = item.stringOrDefault("lastError", "")
+        val sourceError = item.stringOrDefault("lastError", "")
+        val lastError = if (status != sourceStatus) {
+            listOf("备份恢复后任务已暂停，请核对状态后手动继续", sourceError).filter { it.isNotBlank() }.joinToString("；").take(2_000)
+        } else sourceError
         require(taskId.isNotBlank() && taskId.length <= 120 && owner.isNotBlank() && owner.length <= 80 &&
-            status in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && lastError.length <= 2_000) {
+            sourceStatus in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && sourceError.length <= 2_000) {
             "Agent 任务状态字段无效"
         }
         AgentTaskStateEntity(taskId, owner, status, currentStep, checkpoint, lastError,
