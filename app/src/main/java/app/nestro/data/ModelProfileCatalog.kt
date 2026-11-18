@@ -108,6 +108,24 @@ object ModelUsageStatsCodec {
         ))
     }
 
+    fun recordEstimatedTokens(
+        current: Map<String, ModelUsageStats>,
+        profileId: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        now: Long = System.currentTimeMillis()
+    ): Map<String, ModelUsageStats> {
+        require(profileId.isNotBlank() && profileId.length <= 80)
+        val old = current[profileId] ?: ModelUsageStats()
+        return current + (profileId to old.copy(
+            requests = old.requests + 1,
+            estimatedInputTokens = old.estimatedInputTokens + inputTokens.coerceAtLeast(0),
+            estimatedOutputTokens = old.estimatedOutputTokens + outputTokens.coerceAtLeast(0),
+            estimatedUsageRequests = old.estimatedUsageRequests + 1,
+            lastUsedAt = now
+        ))
+    }
+
     fun recordProviderUsage(current: Map<String, ModelUsageStats>, profileId: String, inputTokens: Int, outputTokens: Int, now: Long = System.currentTimeMillis()): Map<String, ModelUsageStats> {
         require(profileId.isNotBlank() && profileId.length <= 80)
         val old = current[profileId] ?: ModelUsageStats()

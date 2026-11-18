@@ -583,7 +583,7 @@ fun NestroApp() {
         readKey = modelRepository::readApiKey
     )
 
-    val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputChars, outputChars ->
+    val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
         scope.launch {
             val profileId = modelProfiles.firstOrNull {
                 it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
@@ -591,7 +591,7 @@ fun NestroApp() {
             }?.id
                 ?: activeModelProfileId.takeIf { it.isNotBlank() }
             if (profileId != null) {
-                modelUsage = ModelUsageStatsCodec.record(modelUsage, profileId, inputChars, outputChars)
+                modelUsage = ModelUsageStatsCodec.recordEstimatedTokens(modelUsage, profileId, inputTokens, outputTokens)
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }
         }

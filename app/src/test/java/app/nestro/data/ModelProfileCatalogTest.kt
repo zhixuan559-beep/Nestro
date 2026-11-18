@@ -43,6 +43,15 @@ class ModelProfileCatalogTest {
         assertEquals(second, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(second)))
     }
 
+
+    @Test fun recordsEstimatedTokenCountsWithoutTreatingThemAsCharacters() {
+        val stats = ModelUsageStatsCodec.recordEstimatedTokens(emptyMap(), "a", 123, 45, 300L)
+            .getValue("a")
+        assertEquals(123L, stats.estimatedInputTokens)
+        assertEquals(45L, stats.estimatedOutputTokens)
+        assertEquals(1L, stats.estimatedUsageRequests)
+    }
+
     @Test fun recordsProviderReportedUsageSeparatelyFromEstimates() {
         val estimated = ModelUsageStatsCodec.record(emptyMap(), "a", 40, 20, 100L)
         val mixed = ModelUsageStatsCodec.recordProviderUsage(estimated, "a", 11, 7, 200L)
