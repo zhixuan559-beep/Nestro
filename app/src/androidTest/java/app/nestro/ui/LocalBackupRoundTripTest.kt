@@ -131,7 +131,8 @@ class LocalBackupRoundTripTest {
                 "INSERT INTO knowledge_chunks_fts(rowid, chunkId, projectId, content) VALUES(?, ?, ?, ?)",
                 arrayOf(987654321L, "stale-chunk", "p1", "staleindexmarker")
             )
-            prefs.edit().putBoolean("automatic_memory_enabled", false).putString("phone_audit", "[]").commit()
+            prefs.edit().putBoolean("automatic_memory_enabled", false).putString("reasoning_effort_v1", "low")
+                .putFloat("tts_speech_rate", 1.0f).putString("phone_audit", "[]").commit()
 
             backupRepository.restoreBackup(prefs, backup)
 
