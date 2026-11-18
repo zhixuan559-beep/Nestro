@@ -528,6 +528,7 @@ fun NestroApp() {
         projects = startup.projects
         projectStorageReadOnly = startup.projectStorageReadOnly
         activeProjectId = startup.activeProjectId
+        automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
         activeConversationId = startup.activeConversationId
         messages = startup.messages
         persistedConversationVersions.clear()
