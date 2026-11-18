@@ -344,11 +344,14 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val backedUpConversationIds = (0 until conversationArray.length())
         .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
     prefs.all.forEach { (key, value) ->
-        if (key.startsWith("draft_") && value is String && value.isNotBlank()) {
-            val conversationId = key.removePrefix("draft_")
-            require(conversationId in backedUpConversationIds) { "草稿引用了不存在的会话，已中止备份" }
-            require(value.length <= 100_000) { "会话草稿超过备份上限，已中止备份" }
-            drafts.put(conversationId, value)
+        if (key.startsWith("draft_")) {
+            val draft = value as? String ?: error("会话草稿字段类型无效，已中止备份")
+            if (draft.isNotBlank()) {
+                val conversationId = key.removePrefix("draft_")
+                require(conversationId in backedUpConversationIds) { "草稿引用了不存在的会话，已中止备份" }
+                require(draft.length <= 100_000) { "会话草稿超过备份上限，已中止备份" }
+                drafts.put(conversationId, draft)
+            }
         }
     }
     root.put("conversation_drafts_v1", drafts)
