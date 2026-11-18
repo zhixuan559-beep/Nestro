@@ -26,6 +26,6 @@ class KnowledgeRepository(private val database: NestroDatabase) {
 
     suspend fun deleteDocument(documentId: String, projectId: String) =
         withContext(Dispatchers.IO) {
-            database.dao().deleteKnowledgeDocument(documentId, projectId)
+            database.dao().deleteKnowledgeDocumentAndIndex(documentId, projectId)
         }
 }
