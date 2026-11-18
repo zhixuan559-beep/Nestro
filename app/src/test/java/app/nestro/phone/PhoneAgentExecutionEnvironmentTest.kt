@@ -24,7 +24,7 @@ class PhoneAgentExecutionEnvironmentTest {
 
     @After
     fun tearDown() {
-        PhoneAgentExecutionEnvironmentProvider.active = null
+        PhoneAgentExecutionEnvironmentProvider.active?.let(PhoneAgentExecutionEnvironmentProvider::detach)
     }
 
     @Test
