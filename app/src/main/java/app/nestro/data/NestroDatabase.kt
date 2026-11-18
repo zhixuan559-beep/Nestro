@@ -383,6 +383,7 @@ interface NestroDao {
     @Query("DELETE FROM user_memories") suspend fun deleteAllUserMemories()
     @Query("DELETE FROM phone_agent_tasks") suspend fun deleteAllPhoneAgentTasks()
     @Query("DELETE FROM knowledge_documents") suspend fun deleteAllKnowledgeDocuments()
+    @Query("DELETE FROM knowledge_chunks_fts") suspend fun deleteAllKnowledgeChunkFts()
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertKnowledgeDocuments(documents: List<KnowledgeDocumentEntity>)
     @Query("SELECT * FROM knowledge_documents ORDER BY projectId, importedAt DESC") suspend fun allKnowledgeDocuments(): List<KnowledgeDocumentEntity>
     @Query("SELECT * FROM knowledge_chunks ORDER BY projectId, documentId, position") suspend fun allKnowledgeChunks(): List<KnowledgeChunkEntity>
