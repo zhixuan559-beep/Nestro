@@ -117,8 +117,11 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         .getOrElse { error("Phone Agent 安全审计记录格式损坏，已中止备份") }
     val auditSnapshot = JSONArray()
     for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
-        val item = phoneAudit.optJSONObject(index) ?: continue
-        auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", item.optString("action").take(60)).put("detail", item.optString("detail").take(180)))
+        val item = phoneAudit.optJSONObject(index) ?: error("Phone Agent 安全审计记录包含无效条目，已中止备份")
+        val action = item.optString("action")
+        val detail = item.optString("detail")
+        require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 安全审计记录字段无效，已中止备份" }
+        auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
     }
     root.put("phone_audit_v1", auditSnapshot)
     root.put("messages", if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]")
