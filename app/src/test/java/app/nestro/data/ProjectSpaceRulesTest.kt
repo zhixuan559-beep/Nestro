@@ -44,6 +44,30 @@ class ProjectSpaceRulesTest {
         assertEquals("项目空间数量无效，最多保留 100 个", ProjectSpaceRules.validateCollection(overLimit))
     }
 
+    @Test fun projectSerializationRejectsInvalidCollectionsInsteadOfSilentlyTruncating() {
+        val tooMany = listOf(ProjectRecord("default", "默认空间", "", 0L)) +
+            (1..100).map { ProjectRecord("p$it", "项目$it", "", it.toLong()) }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.projectsToJson(tooMany)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.projectsToJson(existing.map {
+                ProjectRecord(it.id, it.name, if (it.id == "work") "指令".repeat(4001) else "", 0L)
+            })
+        }
+    }
+
+    @Test fun projectSerializationPreservesEveryValidProjectAndFullInstructionText() {
+        val instructions = "规则".repeat(4000)
+        val projects = listOf(
+            ProjectRecord("default", "默认空间", "", 1L),
+            ProjectRecord("work", "工作", instructions, 2L, 3L)
+        )
+        val encoded = ProjectPreferencesStore.projectsToJson(projects)
+        val decoded = ProjectPreferencesStore.parseProjects(org.json.JSONArray(encoded))
+        assertEquals(projects, decoded)
+    }
+
     @Test fun protectsDefaultAndProjectsWithLinkedDataFromDeletion() {
         assertFalse(ProjectSpaceRules.canDelete("default", "work", emptySet()))
         assertFalse(ProjectSpaceRules.canDelete("work", "default", setOf("work")))
