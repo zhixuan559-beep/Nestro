@@ -103,6 +103,20 @@ internal object ProjectAccessControlStore {
         return allowed && persisted
     }
 
+    /** Returns source projects whose READ grant explicitly permits the target project to retrieve resources. */
+    fun readableSourceProjects(
+        preferences: SharedPreferences,
+        targetProjectId: String,
+        candidateSourceProjectIds: Set<String>,
+        at: Long = System.currentTimeMillis()
+    ): Set<String> {
+        require(targetProjectId.isNotBlank()) { "目标项目 ID 无效" }
+        return candidateSourceProjectIds.asSequence()
+            .filter { it.isNotBlank() && it != targetProjectId }
+            .filter { sourceProjectId -> authorize(preferences, sourceProjectId, targetProjectId, Access.READ, at) }
+            .toSet()
+    }
+
     fun loadAudit(preferences: SharedPreferences): List<AuditEntry> =
         decodeAudit(preferences.getString(AUDIT_KEY, "[]") ?: "[]")
 
