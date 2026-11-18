@@ -78,8 +78,9 @@ object ArtifactStore {
     @Synchronized
     fun save(context: Context, projectId: String, title: String, content: String): ArtifactRecord {
         require(projectId.isNotBlank()) { "项目空间无效" }
-        val cleanTitle = title.trim().take(100)
+        val cleanTitle = title.trim()
         require(cleanTitle.isNotBlank()) { "请输入产物名称" }
+        require(cleanTitle.length <= 100) { "产物名称不能超过 100 个字符" }
         val bytes = content.toByteArray(Charsets.UTF_8)
         require(bytes.isNotEmpty()) { "内容不能为空" }
         require(bytes.size <= MAX_ARTIFACT_BYTES) { "单个产物不能超过 1.5 MB" }
