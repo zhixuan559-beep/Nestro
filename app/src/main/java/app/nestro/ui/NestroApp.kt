@@ -756,7 +756,8 @@ fun NestroApp() {
             }
             val requestDisabledSkills = disabledSkills.toSet()
             val requestExperts = experts.filter {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
             }.toSet()
             val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
