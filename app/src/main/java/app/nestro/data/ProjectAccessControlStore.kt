@@ -57,28 +57,50 @@ internal object ProjectAccessControlStore {
     /** Caller must obtain an explicit user confirmation before invoking this method. */
     fun grant(preferences: SharedPreferences, sourceProjectId: String, targetProjectId: String, access: Set<Access>, at: Long = System.currentTimeMillis()) {
         require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId && access.isNotEmpty() && at >= 0L) { "跨项目授权参数无效" }
-        val current = loadGrants(preferences)
-        val next = current.filterNot { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId } +
+        val currentGrants = loadGrants(preferences)
+        val currentAudit = loadAudit(preferences)
+        val nextGrants = currentGrants.filterNot { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId } +
             Grant(sourceProjectId, targetProjectId, access, at)
-        check(preferences.edit().putString(GRANTS_KEY, encodeGrants(next)).commit()) { "跨项目授权保存失败" }
-        audit(preferences, AuditEntry(at, sourceProjectId, targetProjectId, Access.READ, true, "grant:" + access.map { it.key }.sorted().joinToString(",")))
+        val nextAudit = appendAuditEntries(currentAudit, access.sortedBy { it.key }.map { permission ->
+            AuditEntry(at, sourceProjectId, targetProjectId, permission, true, "grant")
+        })
+        // Persist the permission and its complete audit trail atomically. A grant
+        // must never become active if its audit record cannot be committed.
+        check(preferences.edit()
+            .putString(GRANTS_KEY, encodeGrants(nextGrants))
+            .putString(AUDIT_KEY, encodeAudit(nextAudit))
+            .commit()) { "跨项目授权及审计记录保存失败" }
     }
 
     fun revoke(preferences: SharedPreferences, sourceProjectId: String, targetProjectId: String, at: Long = System.currentTimeMillis()) {
-        require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId && at >= 0L) { "撤销授权参数无效" }
-        val next = loadGrants(preferences).filterNot { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId }
-        check(preferences.edit().putString(GRANTS_KEY, encodeGrants(next)).commit()) { "跨项目授权撤销失败" }
-        audit(preferences, AuditEntry(at, sourceProjectId, targetProjectId, Access.READ, true, "revoke"))
+        require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId && at >= 0L) { "跨项目授权参数无效" }
+        val currentGrants = loadGrants(preferences)
+        val currentAudit = loadAudit(preferences)
+        val existing = currentGrants.firstOrNull { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId }
+        val nextGrants = currentGrants.filterNot { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId }
+        val revokedPermissions = existing?.access?.sortedBy { it.key } ?: listOf(Access.READ)
+        val nextAudit = appendAuditEntries(currentAudit, revokedPermissions.map { permission ->
+            AuditEntry(at, sourceProjectId, targetProjectId, permission, true, if (existing == null) "revoke:no_existing_grant" else "revoke")
+        })
+        check(preferences.edit()
+            .putString(GRANTS_KEY, encodeGrants(nextGrants))
+            .putString(AUDIT_KEY, encodeAudit(nextAudit))
+            .commit()) { "跨项目授权撤销及审计记录保存失败" }
     }
 
-    /** Missing or malformed grants deny access; every decision is persisted to the audit log. */
+    /** Missing or malformed grants deny access; inability to persist the decision also denies access. */
     fun authorize(preferences: SharedPreferences, sourceProjectId: String, targetProjectId: String, access: Access, at: Long = System.currentTimeMillis()): Boolean {
         require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId && at >= 0L) { "跨项目访问参数无效" }
         val grants = runCatching { loadGrants(preferences) }
         val grant = grants.getOrNull()?.firstOrNull { it.sourceProjectId == sourceProjectId && it.targetProjectId == targetProjectId }
         val allowed = grant?.access?.contains(access) == true
-        audit(preferences, AuditEntry(at, sourceProjectId, targetProjectId, access, allowed, if (allowed) "explicit_grant" else "no_matching_grant_or_invalid_store"))
-        return allowed
+        val currentAudit = runCatching { loadAudit(preferences) }.getOrNull() ?: return false
+        val reason = if (grants.isFailure) "invalid_grant_store" else if (allowed) "explicit_grant" else "no_matching_grant"
+        val nextAudit = appendAuditEntries(currentAudit, listOf(AuditEntry(at, sourceProjectId, targetProjectId, access, allowed, reason)))
+        val persisted = runCatching {
+            preferences.edit().putString(AUDIT_KEY, encodeAudit(nextAudit)).commit()
+        }.getOrDefault(false)
+        return allowed && persisted
     }
 
     fun loadAudit(preferences: SharedPreferences): List<AuditEntry> =
@@ -101,13 +123,20 @@ internal object ProjectAccessControlStore {
         }
     }
 
-    private fun audit(preferences: SharedPreferences, entry: AuditEntry) {
-        val next = (loadAudit(preferences) + entry).takeLast(MAX_AUDIT)
+    private fun encodeAudit(entries: List<AuditEntry>): String {
+        require(entries.size <= MAX_AUDIT) { "跨项目审计记录数量超过上限" }
         val rows = JSONArray()
-        next.forEach { item ->
+        entries.forEach { item ->
+            require(item.at >= 0L && item.sourceProjectId.isNotBlank() && item.targetProjectId.isNotBlank() &&
+                item.sourceProjectId != item.targetProjectId && item.sourceProjectId.length <= MAX_ID &&
+                item.targetProjectId.length <= MAX_ID && item.reason.length <= 160) { "跨项目审计记录无效" }
             rows.put(JSONObject().put("at", item.at).put("source", item.sourceProjectId).put("target", item.targetProjectId)
                 .put("access", item.access.key).put("allowed", item.allowed).put("reason", item.reason))
         }
-        check(preferences.edit().putString(AUDIT_KEY, rows.toString()).commit()) { "跨项目审计记录写入失败" }
+        return rows.toString()
     }
+
+    private fun appendAuditEntries(current: List<AuditEntry>, additions: List<AuditEntry>): List<AuditEntry> =
+        (current + additions).takeLast(MAX_AUDIT)
+
 }
