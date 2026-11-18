@@ -337,3 +337,5 @@
 - Phone Agent pending-marker reconciliation now keeps the durable marker until the Worker consumes it. A stale marker is no longer removed before retry enqueue; `enqueue()` may explicitly reuse the existing marker, and WorkManager enqueue exceptions leave it intact for a later startup retry. This closes the orphaned-task window when WorkManager rejects or fails an enqueue attempt.
 
 - CI #829 compiled production Kotlin and completed its first Gradle build, then failed in `ChatStreamingCoordinatorTest`: one cancellation-path fake still implemented the old five-argument `ChatPartialStateStore` lambda after the timestamp parameter was added. Updated the remaining fake to the six-argument contract; no production-source compile errors were reported in this run. This test-only correction is included with the pending-marker retry fix.
+
+- Reconciliation now isolates synchronous enqueue failures per task: the failed task keeps its durable marker for the next startup, while other pending tasks continue through the same reconciliation pass. Coroutine cancellation still propagates.

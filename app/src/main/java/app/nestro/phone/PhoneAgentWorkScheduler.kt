@@ -84,7 +84,13 @@ object PhoneAgentWorkScheduler {
             if (taskId in activeTaskIds) {
                 // Do not clear the marker before enqueue succeeds. If WorkManager throws,
                 // the marker remains durable and can be reconciled on the next startup.
-                enqueue(appContext, taskId, afterHandoff, allowRetry, allowExistingMarker = true)
+                try {
+                    enqueue(appContext, taskId, afterHandoff, allowRetry, allowExistingMarker = true)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Keep this task's marker and continue reconciling other pending tasks.
+                }
             } else {
                 preferences.edit().remove(pendingKey(taskId)).remove(pendingAtKey(taskId))
                     .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).remove(cancelKey(taskId)).apply()
