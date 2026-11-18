@@ -136,4 +136,17 @@ class ExpertTeamEngineTest {
         assertEquals(1, calls.size)
         assertEquals(1, result.successfulMembers)
     }
+    @Test fun plansPrimaryAndRelevantSecondaryExpertsWithinBound() {
+        val members = listOf(
+            ExpertTeamMemberTask("代码佬", "负责技术开发、接口和软件实现"),
+            ExpertTeamMemberTask("文案官", "负责内容写作与表达"),
+            ExpertTeamMemberTask("选题狐", "负责研究、选题和用户洞察"),
+            ExpertTeamMemberTask("空角色", "")
+        )
+        val plan = ExpertTeamEngine.planInitialTeam("分析安卓接口开发方案", members)
+        assertEquals("代码佬", plan.first().name)
+        assertTrue(plan.size <= 3)
+        assertTrue(plan.none { it.name == "空角色" })
+    }
+
 }
