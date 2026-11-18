@@ -200,7 +200,7 @@ class ProjectSpaceRulesTest {
             ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, "global") to setOf("*")
         )
         val cleaned = ProjectResourceScopeStore.removeProjectScope(scopes, "deleted")
-        assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.EXPERT, "only-here", "any-project"))
+        assertFalse(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.EXPERT, "only-here", "any-project"))
         assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.SKILL, "shared", "kept"))
         assertFalse(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.SKILL, "shared", "other"))
         assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.TEAM, "global", "other"))
