@@ -13,9 +13,17 @@ internal class ChatExecutionUiState {
     val busy: MutableState<Boolean> = mutableStateOf(false)
     val stopRequested: MutableState<Boolean> = mutableStateOf(false)
     val activeRequestId: MutableState<String> = mutableStateOf("")
+    val activeRequestConversationId: MutableState<String> = mutableStateOf("")
     val reuseLastUserOnSend: MutableState<Boolean> = mutableStateOf(false)
     val pendingAssistantRevision: MutableState<ChatMessage?> = mutableStateOf(null)
     val status: MutableState<String> = mutableStateOf("尚未配置模型")
     val recallSources: MutableState<List<ConversationRecallSource>> = mutableStateOf(emptyList())
     val showRecallDialog: MutableState<Boolean> = mutableStateOf(false)
 }
+
+/** A conversation cannot be deleted while its request is still writing to it. */
+internal fun canDeleteConversation(
+    conversationId: String,
+    activeRequestConversationId: String,
+    busy: Boolean
+): Boolean = !busy || conversationId != activeRequestConversationId
