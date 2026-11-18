@@ -16,7 +16,7 @@ class ProjectAccessControlStoreTest {
             assertFalse(ProjectAccessControlStore.authorize(prefs, "source", "target", ProjectAccessControlStore.Access.READ, 10L))
             val audit = ProjectAccessControlStore.loadAudit(prefs).single()
             assertFalse(audit.allowed)
-            assertEquals("no_matching_grant_or_invalid_store", audit.reason)
+            assertEquals("no_matching_grant", audit.reason)
         } finally { prefs.edit().clear().commit() }
     }
 
