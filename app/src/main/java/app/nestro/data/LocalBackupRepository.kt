@@ -348,7 +348,7 @@ private suspend fun applyLocalBackup(
     database: NestroDatabase,
     refuseActivePhoneTasks: Boolean = false
 ) {
-    require(raw.length <= 10_000_000) { "备份文件过大" }
+    LocalBackupCompatibility.requireUtf8SizeWithin(raw, 10_000_000, "备份文件过大")
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
     require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
