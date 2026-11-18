@@ -168,12 +168,12 @@ fun NestroApp() {
     var projectResourceScopesReadOnly by remember(prefs) {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
+    var activeProjectId by projectSpaceUiState.activeProjectId
     var readableProjectIds by remember(activeProjectId) {
         mutableStateOf(ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId))
     }
     var pendingAccessSourceProjectId by remember { mutableStateOf("") }
     var showProjectAccessDialog by remember { mutableStateOf(false) }
-    var activeProjectId by projectSpaceUiState.activeProjectId
     var deletingProjectId by projectSpaceUiState.deletingProjectId
     var showProjectDialog by projectSpaceUiState.showProjectDialog
     var projectDraftName by projectSpaceUiState.projectDraftName
@@ -762,7 +762,7 @@ fun NestroApp() {
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
             val requestExpertTeams = expertTeams.filter {
                 !projectResourceScopesReadOnly &&
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId)
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId, requestReadableProjectIds)
             }
             val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
             val requestExpertProfiles = expertProfiles.filterKeys {
@@ -1424,6 +1424,9 @@ fun NestroApp() {
                                                      val input = workflowInputDraft.trim()
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
+                                                     val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+                                                         prefs, projectId, projects.map { it.id }.toSet()
+                                                     ) else emptySet()
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
                                                      val startedAt = System.currentTimeMillis()
                                                      runningWorkflowId = workflow.id
@@ -2451,7 +2454,7 @@ fun NestroApp() {
                 Text(
                     "允许当前项目「" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: activeProjectId) +
                         "」访问「" + (sourceProject?.name ?: pendingAccessSourceProjectId) +
-                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入权限用于后续跨项目修改。授权仅对这两个项目生效。",
+                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入授权独立记录，不会改变资源原有归属。授权仅对这两个项目生效。",
                     color = Muted
                 )
             },
