@@ -472,7 +472,9 @@ private suspend fun applyLocalBackup(
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
     val hasArtifactBackup = root.has("artifacts_v1")
     val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.arrayOrEmpty("artifacts_v1"), restoredProjectIds) else JSONArray()
-    val conversationRows = root.arrayOrEmpty("conversations_v1")
+    // The legacy format stored this field as a JSON string; current backups store an array.
+    // Reuse the already parsed value so both supported representations remain readable.
+    val conversationRows = conversations
     require(conversationRows.length() <= 200) { "会话数量超出限制" }
     val restoredConversations = (0 until conversationRows.length()).map { index ->
         val item = conversationRows.getJSONObject(index)
@@ -504,7 +506,11 @@ private suspend fun applyLocalBackup(
     }.toMap()
     val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
     require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
-    val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
+    val draftObject = when (val value = root.opt("conversation_drafts_v1")) {
+        null -> JSONObject()
+        is JSONObject -> value
+        else -> error("备份会话草稿字段格式无效")
+    }
     require(draftObject.length() <= 200) { "草稿数量超出限制" }
     val restoredDrafts = linkedMapOf<String, String>()
     val draftKeys = draftObject.keys()
