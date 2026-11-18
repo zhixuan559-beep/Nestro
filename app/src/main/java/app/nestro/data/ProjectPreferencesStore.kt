@@ -65,10 +65,14 @@ internal object ProjectPreferencesStore {
 
     fun saveProjects(prefs: SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
         val editor = prefs.edit().putString("projects", projectsToJson(projects))
-        if (markDirty && !prefs.getBoolean("room_storage_initialized", false)) {
+        // Mark every user-initiated change as a pending local snapshot, even after
+        // Room has been initialized. A process may die before the Compose snapshot
+        // effect commits the same change to Room; startup must then replay this newer
+        // preference snapshot instead of restoring the stale Room row.
+        if (markDirty) {
             editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
         }
-        editor.apply()
+        check(editor.commit()) { "项目空间保存失败，未确认本地快照已写入" }
     }
 
     private fun JSONObject.longOrDefault(key: String, default: Long): Long {
