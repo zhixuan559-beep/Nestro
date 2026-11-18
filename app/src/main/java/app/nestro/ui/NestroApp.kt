@@ -2070,7 +2070,6 @@ fun NestroApp() {
                                                             if (!projectResourceScopesReadOnly &&
                                                                 !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, selectedSkill, project.id)) {
                                                                 selectedSkill = ""
-                                                                prefs.edit().putString("selected_skill", "").apply()
                                                             }
                                                             prefs.edit().putString("active_project_id", project.id)
                                                                 .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
