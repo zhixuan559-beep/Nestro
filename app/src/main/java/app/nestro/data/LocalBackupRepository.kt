@@ -238,8 +238,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val phoneAuditRaw = prefs.getString("phone_audit", "[]") ?: "[]"
     val phoneAudit = runCatching { JSONArray(phoneAuditRaw) }
         .getOrElse { error("Phone Agent 安全审计记录格式损坏，已中止备份") }
+    require(phoneAudit.length() <= 100) { "Phone Agent 安全审计记录超过备份容量，拒绝静默丢弃旧记录" }
     val auditSnapshot = JSONArray()
-    for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
+    for (index in 0 until phoneAudit.length()) {
         val item = phoneAudit.optJSONObject(index) ?: error("Phone Agent 安全审计记录包含无效条目，已中止备份")
         val action = item.requiredString("action")
         val detail = item.requiredString("detail")
