@@ -90,7 +90,8 @@ class LocalBackupRoundTripTest {
 
             assertEquals("保留这条消息", dao.loadConversations().single().messages.single().content)
             assertTrue("恢复必须保留非默认项目", dao.loadProjects().any { it.id == "p1" })
-            assertEquals("这是需要恢复的知识库片段内容", dao.allKnowledgeChunks().single().content)
+            assertEquals("这是需要恢复的知识库片段内容 restoreindexmarker", dao.allKnowledgeChunks().single().content)
+            assertEquals("k1", dao.searchKnowledgeChunksFts("p1", "restoreindexmarker", 5).single().id)
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
