@@ -27,7 +27,7 @@ class ExpertTeamExecutionCoordinator(
         initialCheckpoint = "team:" + teamId + ":queued"
     ) { taskContext ->
         taskContext.checkpoint("team:" + teamId + ":running", 0)
-        val result = ExpertTeamEngine.run(
+        val result = ExpertTeamEngine.runCollaborative(
             teamName = teamName,
             teamDescription = teamDescription,
             task = task,

@@ -32,10 +32,10 @@ class ExpertTeamExecutionCoordinatorTest {
                 onMember = { name, state -> updates += name to state },
                 invokeMember = { member, _ -> "${member.name}的独立分析结论" }
             )
-            assertEquals(2, result.successfulMembers)
+            assertEquals(1, result.successfulMembers)
             assertEquals(0, result.failedMembers)
             assertTrue(updates.any { it.second == "running" })
-            assertEquals(2, updates.count { it.second == "success" })
+            assertEquals(1, updates.count { it.second == "success" })
             withTimeout(2_000) {
                 while (states.get("expert-team-lifecycle-test")?.status != AgentTaskStatus.COMPLETED) delay(10)
             }
