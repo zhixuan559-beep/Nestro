@@ -83,7 +83,7 @@ interface AgentToolCatalog : AgentToolAccess {
     fun remove(toolId: String)
 
     /** Creates a task-local view that exposes only explicitly selected capabilities. */
-    fun openSession(toolIds: Set<String>): AgentToolSession = ScopedAgentToolSession(this, toolIds)
+    fun openSession(toolIds: Set<String>): AgentToolSession = AgentToolSession(this, toolIds.mapNotNull(::find))
 }
 
 /**
@@ -116,10 +116,6 @@ class AgentToolSession internal constructor(
     }
 }
 
-private class ScopedAgentToolSession(
-    private val parent: AgentToolAccess,
-    requestedToolIds: Set<String>
-) : AgentToolSession(parent, requestedToolIds.mapNotNull(parent::find))
 
 class InMemoryAgentToolCatalog : AgentToolCatalog {
     private data class Entry(
