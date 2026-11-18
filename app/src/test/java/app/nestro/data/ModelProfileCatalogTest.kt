@@ -74,4 +74,12 @@ class ModelProfileCatalogTest {
         assertEquals(0L, value.providerInputTokens)
         assertEquals(0L, value.providerUsageRequests)
     }
+    @Test fun removingProfileAndSelectingActiveModelNeverLeavesStaleId() {
+        val profiles = listOf(profile(), profile("b", "备用模型").copy(model = "other-model"))
+        val remaining = ModelProfileCatalogCodec.removeProfile(profiles, "a")
+        assertEquals(listOf("b"), remaining.map { it.id })
+        assertEquals("b", ModelProfileCatalogCodec.setActiveProfileId(remaining, "a"))
+        assertEquals(null, ModelProfileCatalogCodec.setActiveProfileId(emptyList(), "a"))
+    }
+
 }
