@@ -188,14 +188,24 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
                 .put("versions", JSONArray(versionValues)).put("active_version", message.activeVersion))
         }
-        conversationArray.put(JSONObject().put("id", row.conversation.id).put("title", row.conversation.title.take(80))
+        require(row.conversation.title.length <= 80) { "会话标题超过备份上限，已中止备份" }
+        conversationArray.put(JSONObject().put("id", row.conversation.id).put("title", row.conversation.title)
             .put("updated_at", row.conversation.updatedAt).put("project_id", row.conversation.projectId).put("messages", messages))
     }
     root.put("conversations_v1", conversationArray)
     val activeId = prefs.getString("active_conversation_id", "") ?: ""
     root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).optString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
     val drafts = JSONObject()
-    prefs.all.forEach { (key, value) -> if (key.startsWith("draft_") && value is String && value.isNotBlank()) drafts.put(key.removePrefix("draft_"), value.take(100_000)) }
+    val backedUpConversationIds = (0 until conversationArray.length())
+        .map { conversationArray.getJSONObject(it).optString("id") }.toSet()
+    prefs.all.forEach { (key, value) ->
+        if (key.startsWith("draft_") && value is String && value.isNotBlank()) {
+            val conversationId = key.removePrefix("draft_")
+            require(conversationId in backedUpConversationIds) { "草稿引用了不存在的会话，已中止备份" }
+            require(value.length <= 100_000) { "会话草稿超过备份上限，已中止备份" }
+            drafts.put(conversationId, value)
+        }
+    }
     root.put("conversation_drafts_v1", drafts)
     val roomKnowledgeDocuments = snapshot.documents
     val roomKnowledgeChunks = snapshot.chunks
@@ -492,7 +502,9 @@ private suspend fun applyLocalBackup(
         val item = documentRows.getJSONObject(index); val id = item.optString("id"); val projectId = item.optString("projectId")
         val name = item.optString("name"); val hash = item.optString("contentHash"); val size = item.optLong("sizeBytes", 0L)
         require(id.isNotBlank() && projectId in restoredProjectIds && name.isNotBlank() && name.length <= 180 && hash.matches(Regex("[a-fA-F0-9]{64}")) && size in 0..2_097_152) { "知识库文档元数据无效" }
-        KnowledgeDocumentEntity(id, projectId, name, item.optString("mimeType", "text/plain").take(120), size, item.optLong("importedAt", System.currentTimeMillis()), hash.lowercase())
+        val mimeType = item.optString("mimeType", "text/plain")
+        require(mimeType.length <= 120) { "知识库文档 MIME 类型过长" }
+        KnowledgeDocumentEntity(id, projectId, name, mimeType, size, item.optLong("importedAt", System.currentTimeMillis()), hash.lowercase())
     }
     require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
     val docsById = restoredKnowledgeDocuments.associateBy { it.id }
@@ -544,8 +556,9 @@ private suspend fun applyLocalBackup(
         val item = taskRows.getJSONObject(index)
         val id = item.optString("id")
         val projectId = item.optString("projectId")
-        val conversationId = item.optString("conversationId").take(120)
+        val conversationId = item.optString("conversationId")
         val goal = item.optString("goal")
+        require(conversationId.length <= 120) { "Phone Agent 任务会话 ID 过长" }
         val category = item.optString("category")
         val status = item.optString("status")
         val planJson = item.optString("planJson", "[]")
@@ -627,13 +640,25 @@ private suspend fun applyLocalBackup(
     for (i in 0 until teamArray.length()) {
         val item = teamArray.getJSONObject(i)
         val members = item.optJSONArray("members") ?: JSONArray()
-        val validMembers = (0 until members.length()).map { members.getString(it) }.filter { it in expertNames }.distinct().take(4)
-        require(item.optString("id").isNotBlank() && item.optString("name").isNotBlank() && validMembers.size >= 2) { "专家团队配置无效" }
+        val teamId = item.optString("id")
+        val teamName = item.optString("name")
+        val teamDescription = item.optString("description")
+        val memberNames = (0 until members.length()).map { members.getString(it) }
+        require(teamId.isNotBlank() && teamName.isNotBlank() && teamName.length <= 40 && teamDescription.length <= 300) {
+            "专家团队标识或文本字段无效"
+        }
+        require(memberNames.size in 2..4 && memberNames.distinct().size == memberNames.size && memberNames.all { it in expertNames }) {
+            "专家团队成员缺失、重复或引用了不存在的专家"
+        }
         cleanTeams.put(
-            JSONObject().put("id", item.getString("id")).put("name", item.getString("name").take(40))
-                .put("description", item.optString("description").take(300)).put("members", JSONArray(validMembers))
+            JSONObject().put("id", teamId).put("name", teamName)
+                .put("description", teamDescription).put("members", JSONArray(memberNames))
         )
     }
+    LocalBackupCompatibility.requireUniqueIds(
+        (0 until cleanTeams.length()).map { cleanTeams.getJSONObject(it).getString("id") },
+        "专家团队"
+    )
     val selectedTeam = root.optString("selected_team_id", "")
     val validSelectedTeam = selectedTeam.takeIf { id ->
         (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).optString("id") == id }
