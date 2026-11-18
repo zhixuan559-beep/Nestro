@@ -410,10 +410,19 @@ private suspend fun applyLocalBackup(
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
     require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
     require(LocalBackupCompatibility.verifyChecksum(root)) { "备份完整性校验失败，文件可能已损坏或被修改" }
-    val messages = JSONArray(root.getString("messages"))
+    val rawMessages = root.opt("messages")
+    val messages = when {
+        rawMessages is String -> JSONArray(rawMessages)
+        !root.has("messages") -> JSONArray()
+        else -> error("备份旧版消息字段格式无效")
+    }
     require(messages.length() <= 200) { "对话记录数量超出限制" }
-    val conversationsRaw = root.optString("conversations_v1", "[]")
-    val conversations = JSONArray(conversationsRaw)
+    val conversations = when (val rawConversations = root.opt("conversations_v1")) {
+        null -> JSONArray()
+        is JSONArray -> rawConversations
+        is String -> JSONArray(rawConversations)
+        else -> error("备份会话列表字段格式无效")
+    }
     require(conversations.length() <= 200) { "会话数量超出限制" }
     for (i in 0 until conversations.length()) {
         val conversation = conversations.getJSONObject(i)
