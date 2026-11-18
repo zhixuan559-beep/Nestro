@@ -170,4 +170,14 @@ class WorkflowEngineTest {
         }
     }
 
+    @Test fun successfulRunExposesCheckpointForResume() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("w","恢复","",listOf(
+            WorkflowStep(title="A",instruction="a"),
+            WorkflowStep(title="B",instruction="b")
+        ))
+        val result = WorkflowEngine.run(workflow,"输入",{ _, step -> step.title })
+        assertEquals(2, result.checkpointIndex)
+        assertEquals(2, result.completedSteps)
+    }
+
 }
