@@ -310,3 +310,8 @@ Every model invocation must receive a bounded history window sized against its s
 
 
 All request-affecting UI state—including active expert IDs, project instructions, automatic-memory preference, and user identity—is snapshotted before launching the chat coroutine. In-flight requests must not observe later UI changes.
+
+
+## Task-scoped capability dispatch — implementation status
+
+The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation; it does not yet constitute full MCP/plugin discovery or per-provider credential leasing. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.

@@ -441,3 +441,12 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 
 - Captured active expert IDs, project instructions, automatic-memory preference, and user ID alongside task mode, team, expert profiles/prompts, skills, and disabled skills.
 - The in-flight chat and its post-response memory extraction no longer read these mutable UI values after launch.
+
+
+## 2026-11-18 — Task-scoped tool capability sessions
+
+- Added a narrow `AgentToolAccess` boundary and task-local `AgentToolSession` leases. A session snapshots only explicitly selected tool definitions, exposes no other catalog entries, rejects invocation outside its allow-list, and becomes unusable after `close()`.
+- `DefaultAgentRuntime` now accepts the narrow access interface rather than requiring the mutable global catalog.
+- Phone Agent now registers a typed capability for the current action only (open URL, launch app, click, enter text, scroll, wait, verify, back, or sensitive handoff). It opens a one-capability session for that step and releases the session and registration immediately afterward.
+- Added JVM tests for allow-list isolation, unknown tool rejection, and post-close invalidation.
+- This is the first executable slice of precision dispatch, not completion of the entire unified tool center. MCP/plugin discovery, per-tool schema loading, credential leasing, and cross-module expert/workflow tool routing remain outstanding.
