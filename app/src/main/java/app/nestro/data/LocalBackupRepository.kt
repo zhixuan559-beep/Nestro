@@ -208,7 +208,7 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("artifacts_v1", app.nestro.data.ArtifactStore.backupAll(context, backupProjects.map { it.id }.toSet() + "default"))
     root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
     val encoded = root.toString(2)
-    require(encoded.length <= 10_000_000) { "备份超过 10 MB，请减少历史数据或知识库文档后重试" }
+    LocalBackupCompatibility.requireUtf8SizeWithin(encoded, 10_000_000, "备份超过 10 MB，请减少历史数据或知识库文档后重试")
     return encoded
 }
 
