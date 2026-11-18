@@ -69,7 +69,7 @@ internal class ChatStreamingCoordinator(
         temperature: Double?,
         maxTokens: Int?,
         onUsage: (ModelConfig, Int, Int) -> Unit,
-        onProviderUsage: (ModelConfig, Int, Int) -> Unit,
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String,
         conversationId: String,
         projectId: String,

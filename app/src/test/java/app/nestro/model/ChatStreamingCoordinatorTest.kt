@@ -48,7 +48,7 @@ class ChatStreamingCoordinatorTest {
     @Test
     fun preservesPartialAnswerWhenTransportFails() = runBlocking {
         val coordinator = ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, onChunk ->
+            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, onChunk ->
                 onChunk("已生成部分")
                 error("网络断开")
             },
