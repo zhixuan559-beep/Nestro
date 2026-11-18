@@ -49,7 +49,11 @@ object PhoneAgentWorkScheduler {
         val current = runCatching { manager.getWorkInfosForUniqueWork(QUEUE_NAME).get() }
             .getOrDefault(emptyList())
             .count { !it.state.isFinished }
-        require(current < MAX_QUEUE_DEPTH) { "Phone Agent 调度队列已满，请等待当前任务完成后再提交。" }
+        if (current >= MAX_QUEUE_DEPTH) {
+            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
+                .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            error("Phone Agent 调度队列已满，请等待当前任务完成后再提交。")
+        }
         manager.beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request).enqueue()
     }
 
