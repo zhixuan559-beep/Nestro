@@ -433,6 +433,20 @@ class LocalBackupRoundTripTest {
             prefs.edit().remove("draft_missing").commit()
 
             val validBackup = repository.createBackup(prefs)
+
+            prefs.edit().putString("active_project_id", "missing-project").commit()
+            assertTrue("导出不得静默把不存在的活动项目写入备份", runCatching { repository.createBackup(prefs) }.isFailure)
+            prefs.edit().putString("active_project_id", "default").commit()
+
+            dao.putProjects(listOf(
+                ProjectEntity("default", "默认项目", "", 1L),
+                ProjectEntity("archived-project", "已归档项目", "", 2L, 3L)
+            ))
+            prefs.edit().putString("active_project_id", "archived-project").commit()
+            assertTrue("导出不得把已归档项目作为活动项目写入备份", runCatching { repository.createBackup(prefs) }.isFailure)
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            prefs.edit().putString("active_project_id", "default").commit()
+
             fun signedBackup(change: (JSONObject) -> Unit): String {
                 val root = JSONObject(validBackup)
                 change(root)
@@ -517,6 +531,19 @@ class LocalBackupRoundTripTest {
                 ).toString())
             }
             assertTrue("恢复不得静默截断项目空间指令", runCatching { repository.restoreBackup(prefs, oversizedProjectInstructions) }.isFailure)
+
+            val missingActiveProject = signedBackup { root ->
+                root.put("active_project_id", "missing-project")
+            }
+            assertTrue("恢复不得把不存在的活动项目静默重置为默认项目", runCatching { repository.restoreBackup(prefs, missingActiveProject) }.isFailure)
+
+            val archivedActiveProject = signedBackup { root ->
+                root.put("projects", JSONArray()
+                    .put(JSONObject().put("id", "default").put("name", "默认空间").put("instructions", "").put("created_at", 1L).put("archived_at", 0L))
+                    .put(JSONObject().put("id", "archived-project").put("name", "已归档项目").put("instructions", "").put("created_at", 2L).put("archived_at", 3L)).toString())
+                root.put("active_project_id", "archived-project")
+            }
+            assertTrue("恢复不得把已归档项目设为活动项目", runCatching { repository.restoreBackup(prefs, archivedActiveProject) }.isFailure)
 
             val duplicateMemoryFingerprint = signedBackup { root ->
                 val memory = JSONObject().put("projectId", "default").put("category", "preference")
