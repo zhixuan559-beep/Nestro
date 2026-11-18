@@ -14,6 +14,7 @@ object PhoneAgentWorkScheduler {
     const val KEY_AFTER_HANDOFF = "phone_agent_after_handoff"
     const val KEY_ALLOW_RETRY = "phone_agent_allow_retry"
     private const val QUEUE_NAME = "nestro-phone-agent-queue"
+    private const val MAX_QUEUE_DEPTH = 8
 
     @Synchronized
     fun enqueue(context: Context, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, allowExistingMarker: Boolean = false) {
@@ -44,9 +45,12 @@ object PhoneAgentWorkScheduler {
             .build()
         // Keep the durable marker if WorkManager rejects enqueueing. Startup reconciliation
         // can retry after the grace window instead of orphaning a planned/running task.
-        WorkManager.getInstance(context.applicationContext)
-            .beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
-            .enqueue()
+        val manager = WorkManager.getInstance(context.applicationContext)
+        val current = runCatching { manager.getWorkInfosForUniqueWork(QUEUE_NAME).get() }
+            .getOrDefault(emptyList())
+            .count { !it.state.isFinished }
+        require(current < MAX_QUEUE_DEPTH) { "Phone Agent 调度队列已满，请等待当前任务完成后再提交。" }
+        manager.beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request).enqueue()
     }
 
     /**
