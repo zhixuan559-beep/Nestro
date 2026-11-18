@@ -110,8 +110,18 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600000
           script: |
+            set +e
             adb wait-for-device
+            mkdir -p app/build/reports/androidTests/connected/diagnostics
+            adb logcat -c
+            adb shell pm list instrumentation > app/build/reports/androidTests/connected/diagnostics/instrumentation-list.txt 2>&1
             gradle --no-daemon --stacktrace connectedDebugAndroidTest
+            test_exit_code=$?
+            adb logcat -d -v threadtime > app/build/reports/androidTests/connected/diagnostics/emulator-logcat.txt 2>&1
+            adb shell dumpsys activity exit-info app.nestro > app/build/reports/androidTests/connected/diagnostics/app-exit-info.txt 2>&1
+            adb shell dumpsys activity exit-info app.nestro.test > app/build/reports/androidTests/connected/diagnostics/test-exit-info.txt 2>&1
+            adb shell dumpsys package app.nestro.test > app/build/reports/androidTests/connected/diagnostics/test-package.txt 2>&1
+            exit "$test_exit_code"
 
       - name: Upload Android instrumentation reports
         if: always()
