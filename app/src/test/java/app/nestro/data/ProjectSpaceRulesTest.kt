@@ -98,6 +98,16 @@ class ProjectSpaceRulesTest {
         }
     }
 
+    @Test fun loadingProjectsRejectsFractionalTimestampsInsteadOfCoercingThem() {
+        val fractionalTimestamp = JSONArray().put(
+            JSONObject().put("id", "default").put("name", "默认空间")
+                .put("created_at", 1.5)
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.parseProjects(fractionalTimestamp)
+        }
+    }
+
     @Test fun loadingLegacyProjectsAddsOnlyTheMissingDefaultWithoutDroppingRecords() {
         val legacy = JSONArray().put(
             JSONObject().put("id", "work").put("name", "工作")
