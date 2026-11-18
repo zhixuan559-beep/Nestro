@@ -27,7 +27,7 @@ object PhoneAgentAgent {
         if (isCancellationRequested(context, taskId, task.status)) {
             return Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
         }
-        val service = PhoneAgentService.activeService
+        val service = PhoneAgentExecutionEnvironmentProvider.active
             ?: return pause(dao, taskId, "无障碍服务尚未连接")
         if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
         val existingActions = try { PhoneAgentTaskStore.decodeActions(task.planJson) } catch (_: Exception) { null }
