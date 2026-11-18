@@ -82,4 +82,12 @@ class ModelProfileCatalogTest {
         assertEquals(null, ModelProfileCatalogCodec.setActiveProfileId(emptyList(), "a"))
     }
 
+    @Test fun lifecycleHidesDisabledAndCanRemoveProfiles() {
+        val a = profile("a","A")
+        val b = profile("b","B").copy(enabled = false)
+        assertEquals(listOf("A"), ModelProfileLifecycle.selectable(listOf(a,b)).map { it.name })
+        assertEquals(listOf("a"), ModelProfileLifecycle.remove(listOf(a,b),"b").map { it.id })
+        assertTrue(ModelProfileLifecycle.enable(listOf(b),"b").single().enabled)
+    }
+
 }
