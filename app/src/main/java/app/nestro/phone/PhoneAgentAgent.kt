@@ -5,6 +5,8 @@ import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.runCatchingCancellable
 import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -17,7 +19,8 @@ object PhoneAgentAgent {
         dao: NestroDao,
         taskId: String,
         afterUserHandoff: Boolean = false,
-        allowRetryCurrentAction: Boolean = false
+        allowRetryCurrentAction: Boolean = false,
+        toolCatalog: AgentToolCatalog = InMemoryAgentToolCatalog()
     ): Result {
         var task = dao.phoneAgentTask(taskId)
             ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
@@ -33,7 +36,8 @@ object PhoneAgentAgent {
                 dao = dao,
                 taskId = taskId,
                 afterUserHandoff = afterUserHandoff,
-                allowRetryCurrentAction = allowRetryCurrentAction
+                allowRetryCurrentAction = allowRetryCurrentAction,
+                catalog = toolCatalog
             )
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
@@ -116,7 +120,8 @@ object PhoneAgentAgent {
                 dao = dao,
                 taskId = taskId,
                 actions = plan.actions,
-                markTaskCompleted = false
+                markTaskCompleted = false,
+                catalog = toolCatalog
             ) { completed, result ->
                 actionHistory.append("#").append(completed).append(" ")
                     .append(result.action).append("：")
