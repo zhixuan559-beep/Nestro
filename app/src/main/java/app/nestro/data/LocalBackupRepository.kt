@@ -288,10 +288,10 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     }
     root.put("conversations_v1", conversationArray)
     val activeId = prefs.getString("active_conversation_id", "") ?: ""
-    root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).optString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
+    root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).requiredString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
     val drafts = JSONObject()
     val backedUpConversationIds = (0 until conversationArray.length())
-        .map { conversationArray.getJSONObject(it).optString("id") }.toSet()
+        .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
     prefs.all.forEach { (key, value) ->
         if (key.startsWith("draft_") && value is String && value.isNotBlank()) {
             val conversationId = key.removePrefix("draft_")
@@ -500,8 +500,8 @@ private suspend fun applyLocalBackup(
     require(conversations.length() <= 200) { "会话数量超出限制" }
     for (i in 0 until conversations.length()) {
         val conversation = conversations.getJSONObject(i)
-        require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
-        require(conversation.optString("title").length <= 80) { "会话标题过长" }
+        require(conversation.requiredString("id").isNotBlank()) { "会话 ID 缺失" }
+        require(conversation.requiredString("title").length <= 80) { "会话标题过长" }
         val items = conversation.arrayOrEmpty("messages")
         require(items.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制（最多 $MAX_BACKUP_MESSAGES_PER_CONVERSATION 条）" }
         for (j in 0 until items.length()) {
@@ -510,18 +510,18 @@ private suspend fun applyLocalBackup(
             require(item.has("id") && item.has("content")) { "消息字段缺失" }
         }
     }
-    val workflowRaw = root.optString("workflows_v1", "[]")
+    val workflowRaw = root.stringOrDefault("workflows_v1", "[]")
     val workflowArray = JSONArray(workflowRaw)
     require(workflowArray.length() <= 100) { "工作流数量超出限制" }
     val restoredWorkflows = WorkflowDefinitionCodec.decode(workflowRaw)
     require(restoredWorkflows.size == workflowArray.length()) { "工作流备份包含无效定义" }
     restoredWorkflows.forEach { WorkflowDefinitionCodec.validate(it) }
-    val workflowHistoryRaw = root.optString("workflow_runs_v1", "[]")
+    val workflowHistoryRaw = root.stringOrDefault("workflow_runs_v1", "[]")
     val workflowHistoryArray = JSONArray(workflowHistoryRaw)
     require(workflowHistoryArray.length() <= 50) { "工作流运行记录数量超出限制" }
     val restoredWorkflowHistory = WorkflowRunHistoryCodec.decode(workflowHistoryRaw)
     require(restoredWorkflowHistory.size == workflowHistoryArray.length()) { "工作流运行记录包含无效数据" }
-    val teamHistoryRaw = root.optString("expert_team_runs_v1", "[]")
+    val teamHistoryRaw = root.stringOrDefault("expert_team_runs_v1", "[]")
     require(teamHistoryRaw.length<=500_000) { "专家团队运行记录过大" }
     val teamHistoryArray = JSONArray(teamHistoryRaw)
     require(teamHistoryArray.length()<=30) { "专家团队运行记录数量超出限制" }
@@ -741,7 +741,7 @@ private suspend fun applyLocalBackup(
     val restoredExpertTemplates = ExpertTemplateCodec.decode(templateRaw)
     require(templateRaw == "[]" || restoredExpertTemplates.isNotEmpty()) { "专家模板格式无效" }
     require(restoredExpertTemplates.size <= 100) { "专家模板数量超出限制" }
-    val teamArray = JSONArray(root.optString("expert_teams_v1", "[]"))
+    val teamArray = JSONArray(root.stringOrDefault("expert_teams_v1", "[]"))
     require(teamArray.length() <= 50) { "专家团队数量超出限制" }
     val cleanTeams = JSONArray()
     for (i in 0 until teamArray.length()) {
@@ -768,7 +768,7 @@ private suspend fun applyLocalBackup(
     )
     val selectedTeam = root.stringOrDefault("selected_team_id", "")
     val validSelectedTeam = selectedTeam.takeIf { id ->
-        (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).optString("id") == id }
+        (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).requiredString("id") == id }
     } ?: ""
     val skills = JSONObject(root.stringOrDefault("skills", "{}"))
     require(skills.length() <= 100) { "技能数量超出限制" }
