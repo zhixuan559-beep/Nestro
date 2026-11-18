@@ -2082,10 +2082,22 @@ fun NestroApp() {
                                                             }
                                                             val copyId = UUID.randomUUID().toString()
                                                             scope.launch {
+                                                                val artifactCopy = runCatching {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        ArtifactStore.duplicateProject(context, project.id, copyId)
+                                                                    }
+                                                                }
+                                                                if (artifactCopy.isFailure) {
+                                                                    status = "项目复制中止：产物复制失败，未创建新项目。"
+                                                                    return@launch
+                                                                }
                                                                 val copied = withContext(Dispatchers.IO) {
                                                                     appRuntime.projectSpaceRepository.duplicate(
                                                                         project.id, copyId, copyName, System.currentTimeMillis()
                                                                     )
+                                                                }
+                                                                if (!copied) {
+                                                                    withContext(Dispatchers.IO) { ArtifactStore.deleteProject(context, copyId) }
                                                                 }
                                                                 if (copied) {
                                                                     val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
@@ -2132,6 +2144,9 @@ fun NestroApp() {
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val hasLocalConversationData = conversations.any {
                                                                                 it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
+                                                                            }
+                                                                            check(ArtifactStore.list(context, project.id).isEmpty()) {
+                                                                                "该空间还有项目产物，请先导出或删除产物后再删除项目"
                                                                             }
                                                                             val hasLinkedData = appRuntime.projectSpaceRepository.hasLinkedData(project.id)
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
