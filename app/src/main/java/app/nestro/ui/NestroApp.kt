@@ -569,11 +569,14 @@ fun NestroApp() {
 
     val selectableModelProfileIds =
         ModelRequestConfigurationSelector.selectableLegacyProfileIds(modelRegistry)
+    val activeReasoningModelId = activeRegistryModelId.ifBlank {
+        activeModelProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
+    }
+    val activeModelSupportsReasoningEffort = modelRegistry.models
+        .firstOrNull { it.id == activeReasoningModelId }?.supportsReasoningEffort == true
     val requestModelConfigs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
         registry = modelRegistry,
-        activeModelId = activeRegistryModelId.ifBlank {
-            activeModelProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
-        },
+        activeModelId = activeReasoningModelId,
         failoverEnabled = modelFailoverEnabled,
         reasoningEffort = reasoningEffort,
         readKey = modelRepository::readApiKey
@@ -1000,7 +1003,7 @@ fun NestroApp() {
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
                                     AssistChip(onClick = { taskModeEnabled = !taskModeEnabled; prefs.edit().putBoolean("chat_task_mode_enabled", taskModeEnabled).apply() }, label = { Text(if (taskModeEnabled) "任务执行：开启" else "普通聊天") })
                                     Box {
-                                        AssistChip(onClick = { showReasoningMenu = true }, label = { Text("思考：${when (reasoningEffort) { "none" -> "关闭"; "low" -> "轻量"; "medium" -> "中度"; else -> "重度" }}") })
+                                        AssistChip(onClick = { showReasoningMenu = true }, label = { Text("思考：${when (reasoningEffort) { "none" -> "关闭"; "low" -> "轻量"; "medium" -> "中度"; else -> "重度" }}${if (activeModelSupportsReasoningEffort) "" else "（当前模型不支持）"}") })
                                         DropdownMenu(expanded = showReasoningMenu, onDismissRequest = { showReasoningMenu = false }) {
                                             listOf("none" to "关闭思考", "low" to "轻量思考", "medium" to "中度思考", "high" to "重度思考").forEach { (value, label) ->
                                                 DropdownMenuItem(text = { Text(label) }, onClick = { reasoningEffort = value; prefs.edit().putString("reasoning_effort_v1", value).apply(); showReasoningMenu = false })

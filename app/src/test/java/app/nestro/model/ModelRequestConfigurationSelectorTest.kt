@@ -242,11 +242,13 @@ class ModelRequestConfigurationSelectorTest {
                 ModelDefinition("backup", "p", "Backup", "backup", listOf("k2"))
             )
         )
-        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
-            registry = registry, activeModelId = "active", failoverEnabled = true,
-            reasoningEffort = "medium", readKey = { "secret" }
-        )
-        assertEquals("medium", configs.first().reasoningEffort)
-        assertEquals(null, configs.last().reasoningEffort)
+        listOf("none", "low", "medium", "high").forEach { effort ->
+            val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+                registry = registry, activeModelId = "active", failoverEnabled = true,
+                reasoningEffort = effort, readKey = { "secret" }
+            )
+            assertEquals(effort, configs.first().reasoningEffort)
+            assertEquals(null, configs.last().reasoningEffort)
+        }
     }
 }

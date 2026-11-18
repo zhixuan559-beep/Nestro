@@ -412,3 +412,5 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The request selector attaches reasoning_effort only to models whose configuration explicitly declares support. Failover candidates are evaluated independently; unsupported backups receive no parameter.
 - Completion and streaming requests include the selected provider value (none, low, medium, high) only when the selected model has declared support. This avoids breaking generic OpenAI-compatible endpoints that reject unknown fields.
 - Added tests for registry backward compatibility and per-model reasoning-parameter selection.
+- The composer displays an explicit unsupported-capability marker when the active model has not declared four-level reasoning support; the user selection is retained, but the unsupported model receives no reasoning parameter.
+- Regression coverage checks all four values (`none`, `low`, `medium`, `high`) on a capable model and confirms unsupported failover models omit the parameter.
