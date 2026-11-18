@@ -650,6 +650,9 @@ private suspend fun applyLocalBackup(
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
+    require(restoredMemories.map { it.projectId to it.fingerprint }.distinct().size == restoredMemories.size) {
+        "同一项目空间内存在重复的记忆指纹"
+    }
     val taskRows = root.arrayOrEmpty("phone_agent_tasks")
     require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
     val validTaskStatuses = setOf(
