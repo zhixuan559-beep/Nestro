@@ -3,6 +3,10 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Html
+import android.content.Context
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -26,11 +30,11 @@ object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
 
- suspend fun importText(resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
+ suspend fun importText(resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao,context:Context?=null):KnowledgeImportResult=withContext(Dispatchers.IO) {
   val mime=resolver.getType(uri).orEmpty().lowercase()
   val name=resolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c -> if(c.moveToFirst()) c.getString(0) else null } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "导入文档"
   val ext=name.substringAfterLast('.',"").lowercase()
-  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx") || mime.startsWith("text/") || mime=="application/json") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX；PDF 文本解析暂未接入。" }
+  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/") || mime=="application/json" || mime=="application/pdf") { "当前不支持该文件格式。" }
   val bytes=resolver.openInputStream(uri)?.use { input ->
    val out=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0
    while(true) { val n=input.read(buffer); if(n<0) break; total+=n; require(total<=MAX_FILE_BYTES) { "文件超过 2 MB，请先拆分或压缩。" }; out.write(buffer,0,n) }
@@ -38,6 +42,7 @@ object KnowledgeStore {
   } ?: error("无法读取所选文件")
   val raw=bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
   val parsed=when {
+   ext=="pdf" || mime=="application/pdf" -> extractPdfText(bytes, context ?: error("PDF 导入需要 Android Context。"))
    ext in setOf("docx","xlsx","pptx") -> extractOfficeText(ext, bytes)
    ext in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(raw,Html.FROM_HTML_MODE_COMPACT).toString()
    else -> raw
@@ -92,7 +97,17 @@ object KnowledgeStore {
    return "以下内容来自当前项目空间的本地知识库，仅在相关时参考，并在回答中标注来源：\n$snippets"
   }
 
-  private fun extractOfficeText(ext:String,bytes:ByteArray):String {
+  private fun extractPdfText(bytes:ByteArray,context:Context):String {
+  PDFBoxResourceLoader.init(context.applicationContext)
+  PDDocument.load(bytes).use { document ->
+   require(document.numberOfPages <= 500) { "PDF 页数超过 500 页，请拆分后导入。" }
+   return PDFTextStripper().apply {
+    sortByPosition = true
+   }.getText(document)
+  }
+ }
+
+ private fun extractOfficeText(ext:String,bytes:ByteArray):String {
   val entries=linkedMapOf<String,ByteArray>()
   var expanded=0
   ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
