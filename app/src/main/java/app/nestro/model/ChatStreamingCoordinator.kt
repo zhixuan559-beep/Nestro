@@ -14,6 +14,7 @@ internal fun interface ChatStreamingTransport {
         temperature: Double?,
         maxTokens: Int?,
         onUsage: (ModelConfig, Int, Int) -> Unit,
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         requestId: String,
         shouldStop: () -> Boolean,
         onChunk: suspend (String) -> Unit
@@ -68,6 +69,7 @@ internal class ChatStreamingCoordinator(
         temperature: Double?,
         maxTokens: Int?,
         onUsage: (ModelConfig, Int, Int) -> Unit,
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         requestId: String,
         conversationId: String,
         projectId: String,
@@ -78,7 +80,7 @@ internal class ChatStreamingCoordinator(
     ): ChatStreamExecutionResult {
         val partial = StringBuilder()
         val result = runCatchingCancellable {
-            transport.stream(configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop) { chunk ->
+            transport.stream(configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId, shouldStop) { chunk ->
                 partial.append(chunk)
                 val current = partial.toString()
                 partialStateStore.persist(requestId, conversationId, projectId, prompt, current, startedAt)

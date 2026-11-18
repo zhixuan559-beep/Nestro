@@ -597,6 +597,19 @@ fun NestroApp() {
         }
     }
 
+    val recordProviderModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
+        scope.launch {
+            val profileId = modelProfiles.firstOrNull {
+                it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
+                    modelRepository.readProfileKey(it.id) == usedConfig.apiKey
+            }?.id ?: activeModelProfileId.takeIf { it.isNotBlank() }
+            if (profileId != null) {
+                modelUsage = ModelUsageStatsCodec.recordProviderUsage(modelUsage, profileId, inputTokens, outputTokens)
+                prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
+            }
+        }
+    }
+
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
@@ -787,7 +800,8 @@ fun NestroApp() {
                                         readTimeoutMillis = 25_000,
                                         temperature = requestExpertProfiles[member.name]?.temperature,
                                         maxTokens = requestExpertProfiles[member.name]?.maxTokens,
-                                        onUsage = recordModelUsage
+                                        onUsage = recordModelUsage,
+                                        onProviderUsage = recordProviderModelUsage
                                     ).take(2200)
                                 }
                             }
@@ -810,6 +824,7 @@ fun NestroApp() {
                         temperature = requestExpertProfile?.temperature,
                         maxTokens = requestExpertProfile?.maxTokens,
                         onUsage = recordModelUsage,
+                        onProviderUsage = recordProviderModelUsage,
                         requestId = assistantId,
                         conversationId = requestConversationId,
                         projectId = requestProjectId,
@@ -1375,7 +1390,8 @@ fun NestroApp() {
                                                                              listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
                                                                              temperature = expertOptions?.temperature,
                                                                              maxTokens = expertOptions?.maxTokens,
-                                                                             onUsage = recordModelUsage
+                                                                             onUsage = recordModelUsage,
+                                                                             onProviderUsage = recordProviderModelUsage
                                                                          )
                                                                      }
                                                                  },
