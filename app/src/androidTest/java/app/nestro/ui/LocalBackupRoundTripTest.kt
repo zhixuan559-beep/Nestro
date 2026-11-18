@@ -597,6 +597,14 @@ class LocalBackupRoundTripTest {
             prefs.edit().putString("conversations_v1", "[]")
                 .putString("messages", JSONArray().put(invalidLegacyMessage).toString()).commit()
             assertTrue("导出不得生成包含错误版本字段类型的旧消息备份", runCatching { repository.createBackup(prefs) }.isFailure)
+
+            val invalidLegacyProject = JSONArray().put(
+                JSONObject().put("id", "legacy-project").put("name", "旧项目")
+                    .put("instructions", "x".repeat(4_001)).put("created_at", 1L).put("archived_at", 0L)
+            )
+            prefs.edit().putString("messages", "[]").putString("conversations_v1", "[]")
+                .putString("projects", invalidLegacyProject.toString()).commit()
+            assertTrue("导出不得静默截断旧项目空间指令", runCatching { repository.createBackup(prefs) }.isFailure)
         } finally {
             database.close()
             prefs.edit().clear().commit()
