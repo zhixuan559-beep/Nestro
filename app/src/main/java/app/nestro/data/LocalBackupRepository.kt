@@ -828,8 +828,8 @@ private suspend fun applyLocalBackup(
         val currentStep = item.intOrDefault("currentStep", 0)
         val checkpoint = item.stringOrDefault("checkpoint", "")
         val sourceError = item.stringOrDefault("lastError", "")
-        val lastError = if (status != sourceStatus) {
-            listOf("备份恢复后任务已暂停，请核对状态后手动继续", sourceError).filter { it.isNotBlank() }.joinToString("；").take(2_000)
+        val lastError = if (status != sourceStatus && sourceError.isBlank()) {
+            "备份恢复后任务已暂停，请核对状态后手动继续"
         } else sourceError
         require(taskId.isNotBlank() && taskId.length <= 120 && owner.isNotBlank() && owner.length <= 80 &&
             sourceStatus in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && sourceError.length <= 2_000) {
