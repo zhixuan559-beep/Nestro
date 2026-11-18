@@ -65,12 +65,19 @@ internal object ProjectPreferencesStore {
 
     fun saveProjects(prefs: SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
         val editor = prefs.edit().putString("projects", projectsToJson(projects))
-        // Mark every user-initiated change as a pending local snapshot, even after
-        // Room has been initialized. A process may die before the Compose snapshot
-        // effect commits the same change to Room; startup must then replay this newer
-        // preference snapshot instead of restoring the stale Room row.
+        // The restore path treats local_snapshot_saved_at > room_synced_at as a
+        // pending snapshot. Keep that ordering strict even when two writes happen
+        // in the same millisecond or the device clock moves backwards.
         if (markDirty) {
-            editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
+            val latestSnapshot = maxOf(
+                prefs.getLong("local_snapshot_saved_at", 0L),
+                prefs.getLong("room_synced_at", 0L)
+            )
+            check(latestSnapshot < Long.MAX_VALUE) { "项目空间快照时间戳已达到上限，无法安全标记待同步状态" }
+            editor.putLong(
+                "local_snapshot_saved_at",
+                maxOf(System.currentTimeMillis(), latestSnapshot + 1L)
+            )
         }
         check(editor.commit()) { "项目空间保存失败，未确认本地快照已写入" }
     }
