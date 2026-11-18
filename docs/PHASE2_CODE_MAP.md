@@ -457,3 +457,13 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The bounded Phone Agent history previously retained the oldest action-result lines when the 1,000-character cap was reached, potentially dropping the most recent page transition evidence.
 - Changed the compactor to deduplicate and retain the latest 12 action results within the same fixed budget.
 - Added a JVM regression test proving recent actions survive while stale first actions are dropped.
+
+
+## 2026-11-18 — Correct token accounting and include Phone Agent calls
+
+- Streaming fallback estimates now use the same bounded-payload token estimator as non-streaming calls; the previous streaming fallback still counted raw characters.
+- Added a direct estimated-token recorder so estimated token counts are not divided by four a second time as though they were characters.
+- Usage attribution now resolves the actual selected Registry model ID (while preserving legacy profile IDs), rather than incorrectly assigning unknown/failover calls to the active profile.
+- Phone Agent planning calls now record provider-reported usage when available and bounded local estimates otherwise.
+- Added JVM coverage for direct estimated-token recording and Registry model usage attribution.
+- Provider-reported and estimated counts remain separate. Calls that return no provider usage are explicitly counted as estimates.

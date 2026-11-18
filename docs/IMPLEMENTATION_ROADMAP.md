@@ -318,3 +318,6 @@ The shared Agent runtime now supports short-lived allow-listed tool sessions. Ph
 
 
 Phone Agent's action-history compactor now retains the most recent 12 distinct action results within a fixed 1,000-character budget, rather than preserving only the oldest entries. This keeps the latest execution evidence available to the next planning call without growing the prompt.
+
+
+Usage accounting now stores estimated token counts directly, attributes each request to the actual selected Registry model (including failover), and includes Phone Agent planning calls. Streaming fallback estimates use the same bounded-history estimator as non-streaming calls. Provider-reported usage and estimates remain separate; background automatic-memory extraction still needs usage callback integration.
