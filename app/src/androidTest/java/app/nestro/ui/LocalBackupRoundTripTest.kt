@@ -304,6 +304,27 @@ class LocalBackupRoundTripTest {
                 runCatching { repository.restoreBackup(prefs, invalidActiveConversationBackup) }.isFailure)
             assertEquals("原会话必须保持不变", "active-c1", dao.loadConversations().single().conversation.id)
             assertEquals("原活动会话引用必须保持不变", "active-c1", prefs.getString("active_conversation_id", ""))
+
+            val invalidActiveProfileBackup = JSONObject(backup).apply {
+                remove("checksum_sha256")
+                put("active_model_profile_id", "missing-profile")
+                put("checksum_sha256", LocalBackupCompatibility.sha256(
+                    LocalBackupCompatibility.canonicalJson(this)
+                ))
+            }.toString()
+            assertTrue("恢复不得静默清空无效的活动模型配置",
+                runCatching { repository.restoreBackup(prefs, invalidActiveProfileBackup) }.isFailure)
+
+            val invalidSelectedTeamBackup = JSONObject(backup).apply {
+                remove("checksum_sha256")
+                put("selected_team_id", "missing-team")
+                put("checksum_sha256", LocalBackupCompatibility.sha256(
+                    LocalBackupCompatibility.canonicalJson(this)
+                ))
+            }.toString()
+            assertTrue("恢复不得静默清空无效的已选专家团队",
+                runCatching { repository.restoreBackup(prefs, invalidSelectedTeamBackup) }.isFailure)
+            assertEquals("引用校验失败不得破坏原会话", "active-c1", dao.loadConversations().single().conversation.id)
         } finally {
             database.close()
             prefs.edit().clear().commit()
