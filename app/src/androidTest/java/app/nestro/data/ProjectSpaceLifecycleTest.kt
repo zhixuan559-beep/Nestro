@@ -288,4 +288,5 @@ class ProjectSpaceLifecycleTest {
             database.close()
         }
     }
-\n}\n
+
+}
