@@ -37,7 +37,7 @@ internal object ProjectResourceScopeStore {
         while (keys.hasNext()) {
             val key = keys.next()
             require(key.length in 3..240 && key.contains(':')) { "项目资源标识无效" }
-            require(ProjectResourceKind.entries.any { it.key == key.substringBefore(':') } &&
+            require(ProjectResourceKind.values().any { it.key == key.substringBefore(':') } &&
                 key.substringAfter(':').isNotBlank() && key.substringAfter(':').length <= 200) { "项目资源类型或 ID 无效" }
             val kindKey = key.substringBefore(':')
             val resourceId = key.substringAfter(':')
