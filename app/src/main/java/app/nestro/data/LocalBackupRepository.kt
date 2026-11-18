@@ -334,7 +334,12 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     }
     root.put("conversations_v1", conversationArray)
     val activeId = prefs.getString("active_conversation_id", "") ?: ""
-    root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).requiredString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
+    val backedUpConversationIdsForActive = (0 until conversationArray.length())
+        .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
+    require(activeId.isBlank() || activeId in backedUpConversationIdsForActive) {
+        "当前活动会话不存在于备份数据中，已中止备份"
+    }
+    root.put("active_conversation_id", activeId)
     val drafts = JSONObject()
     val backedUpConversationIds = (0 until conversationArray.length())
         .map { conversationArray.getJSONObject(it).requiredString("id") }.toSet()
@@ -677,6 +682,11 @@ private suspend fun applyLocalBackup(
         else -> error("备份会话草稿字段格式无效")
     }
     require(draftObject.length() <= 200) { "草稿数量超出限制" }
+    val restoredActiveConversationId = root.stringOrDefault("active_conversation_id", "")
+    require(restoredActiveConversationId.isBlank() ||
+        completeRestoredConversations.any { it.first.id == restoredActiveConversationId }) {
+        "备份中的活动会话不存在，拒绝恢复"
+    }
     val restoredDrafts = linkedMapOf<String, String>()
     val draftKeys = draftObject.keys()
     while (draftKeys.hasNext()) {
@@ -963,7 +973,7 @@ private suspend fun applyLocalBackup(
     val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("conversations_v1", normalizedConversationBackup.toString())
-        .putString("active_conversation_id", root.stringOrDefault("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
+        .putString("active_conversation_id", restoredActiveConversationId)
         .putString("global_memory_v1", globalMemory)
         .putBoolean("automatic_memory_enabled", root.booleanOrDefault("automatic_memory_enabled", false))
         .putBoolean("chat_task_mode_enabled", root.booleanOrDefault("chat_task_mode_enabled", false))
