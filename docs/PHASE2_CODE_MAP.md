@@ -420,3 +420,10 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Capture task-mode state, selected team ID, team list, expert profiles/prompts, skills, and disabled-skill set before launching the request coroutine.
 - Phone Agent planning, expert-team execution, and request context assembly use only captured request values; later composer changes cannot silently upgrade or alter an in-flight request.
 - Added pure JVM coverage for ordinary-chat denial and explicit task-mode authorization.
+
+
+## 2026-11-18 — Keep selected expert/skill assets out of ordinary chat
+
+- The request snapshot gates selected expert role prompts, expert profile skill context, and selected skill prompt assets behind explicit task mode.
+- Ordinary chat still performs only prompt-triggered, bounded conversation/knowledge/user-memory retrieval; it does not inject expert or skill instructions merely because a prior selection persisted.
+- Added JVM coverage for the ordinary-chat/task-mode prompt-asset gate.

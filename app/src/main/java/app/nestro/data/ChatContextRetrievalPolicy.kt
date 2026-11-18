@@ -23,3 +23,7 @@ internal data class ChatExecutionAuthorization(
     fun shouldPlanPhoneAgent(): Boolean = taskModeEnabled
     fun shouldRunExpertTeam(): Boolean = taskModeEnabled && selectedTeamId.isNotBlank()
 }
+
+
+/** Ordinary chat never injects selected expert or skill prompt assets. */
+internal fun shouldLoadSelectedExpertContext(taskModeEnabled: Boolean): Boolean = taskModeEnabled

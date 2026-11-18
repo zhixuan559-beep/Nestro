@@ -36,6 +36,7 @@ import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
 import app.nestro.data.ChatContextRetrievalPolicy
+import app.nestro.data.ChatExecutionAuthorization
 import app.nestro.data.ChatEndpointPolicy
 import app.nestro.data.ChatHttpTransport
 import app.nestro.data.ChatHistoryItem
@@ -690,13 +691,13 @@ fun NestroApp() {
                 .put("request_id", assistantId).put("conversation_id", requestConversationId)
                 .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
                 .put("started_at", requestStartedAt).toString()).apply()
-            val requestExpertProfile = requestExpertProfiles[selectedExpert]?.takeIf { it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
+            val requestExpertProfile = requestExpertProfiles[selectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
-                if (requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[selectedExpert]?.enabled != false) requestExpertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
-                if (requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[selectedExpert], requestSkills, requestDisabledSkills) else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[selectedExpert]?.enabled != false) requestExpertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[selectedExpert], requestSkills, requestDisabledSkills) else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
-                requestSkills[selectedSkill].orEmpty().takeIf { selectedSkill !in requestDisabledSkills }.orEmpty()
+                requestSkills[selectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && selectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 try {

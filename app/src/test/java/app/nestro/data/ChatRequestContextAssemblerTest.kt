@@ -116,3 +116,16 @@ class ChatExecutionAuthorizationTest {
         assertFalse(ChatExecutionAuthorization(true, "").shouldRunExpertTeam())
     }
 }
+
+
+class ChatOptionalContextPolicyTest {
+    @Test
+    fun ordinaryChatDoesNotLoadExpertOrSkillPromptAssets() {
+        assertFalse(shouldLoadSelectedExpertContext(taskModeEnabled = false))
+    }
+
+    @Test
+    fun explicitTaskModeMayLoadSelectedExpertOrSkillPromptAssets() {
+        assertTrue(shouldLoadSelectedExpertContext(taskModeEnabled = true))
+    }
+}
