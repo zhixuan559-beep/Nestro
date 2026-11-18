@@ -147,4 +147,23 @@ class AgentRuntimeTest {
     }
 
 
+
+    @Test
+    fun activeSessionKeepsOriginalHandlerWhenCatalogEntryIsReplaced() = runBlocking {
+        val catalog = InMemoryAgentToolCatalog()
+        catalog.register(AgentToolSpec("screen.read", "读取页面", AgentToolPermission.READ_ONLY)) {
+            AgentToolResult(true, "original")
+        }
+        val session = catalog.openSession(setOf("screen.read"))
+
+        catalog.register(AgentToolSpec("screen.read", "读取页面的新版本", AgentToolPermission.READ_ONLY)) {
+            AgentToolResult(true, "replacement")
+        }
+
+        assertEquals("original", session.invoke("screen.read", emptyMap()).output)
+        assertEquals("replacement", catalog.invoke("screen.read", emptyMap()).output)
+        assertEquals("读取页面", session.find("screen.read")?.description)
+        session.close()
+    }
+
 }

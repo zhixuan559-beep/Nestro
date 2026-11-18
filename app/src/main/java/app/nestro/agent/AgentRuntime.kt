@@ -83,7 +83,10 @@ interface AgentToolCatalog : AgentToolAccess {
     fun remove(toolId: String)
 
     /** Creates a task-local view that exposes only explicitly selected capabilities. */
-    fun openSession(toolIds: Set<String>): AgentToolSession = AgentToolSession(this, toolIds.mapNotNull(::find))
+    fun openSession(toolIds: Set<String>): AgentToolSession {
+        val selected = toolIds.mapNotNull(::find).associateBy { it.id }
+        return AgentToolSession(selected) { toolId, arguments -> invoke(toolId, arguments) }
+    }
 }
 
 /**
@@ -93,10 +96,10 @@ interface AgentToolCatalog : AgentToolAccess {
  * authorizes every invocation.
  */
 class AgentToolSession internal constructor(
-    private val parent: AgentToolAccess,
-    allowedSpecs: List<AgentToolSpec>
+    allowedSpecs: Map<String, AgentToolSpec>,
+    private val invokeSelected: suspend (String, Map<String, String>) -> AgentToolResult
 ) : AgentToolAccess, AutoCloseable {
-    private val specs = allowedSpecs.associateBy { it.id }
+    private val specs = allowedSpecs.toMap()
     @Volatile private var closed = false
 
     override fun find(toolId: String): AgentToolSpec? =
@@ -108,7 +111,7 @@ class AgentToolSession internal constructor(
     override suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult {
         if (closed) return AgentToolResult(false, error = "工具会话已释放")
         if (toolId !in specs) return AgentToolResult(false, error = "当前任务未加载该工具：$toolId")
-        return parent.invoke(toolId, arguments)
+        return invokeSelected(toolId, arguments)
     }
 
     override fun close() {
@@ -141,6 +144,17 @@ class InMemoryAgentToolCatalog : AgentToolCatalog {
     override fun list(): List<AgentToolSpec> = entries.values
         .map { it.spec }
         .sortedBy { it.id }
+
+    /** Captures both definitions and handlers so later registry changes cannot retarget an active lease. */
+    override fun openSession(toolIds: Set<String>): AgentToolSession {
+        val selected = toolIds.mapNotNull { toolId ->
+            entries[toolId]?.let { toolId to it }
+        }.toMap()
+        return AgentToolSession(selected.mapValues { it.value.spec }) { toolId, arguments ->
+            selected[toolId]?.handler?.invoke(arguments)
+                ?: AgentToolResult(false, error = "当前任务的工具能力已失效：$toolId")
+        }
+    }
 
     override suspend fun invoke(
         toolId: String,
