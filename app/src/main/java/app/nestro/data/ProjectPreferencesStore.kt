@@ -77,10 +77,10 @@ internal object ProjectPreferencesStore {
 
     private fun JSONObject.longOrDefault(key: String, default: Long): Long {
         if (!has(key)) return default
-        val value = opt(key) as? Number ?: error("项目空间时间字段无效")
-        val numeric = value.toDouble()
-        require(numeric.isFinite() && numeric % 1.0 == 0.0 &&
-            numeric >= 0.0 && numeric <= Long.MAX_VALUE.toDouble()) { "项目空间时间字段无效" }
-        return numeric.toLong()
+        val value = opt(key)
+        require(value is Int || value is Long) { "项目空间时间字段必须为整数" }
+        return (value as Number).toLong().also {
+            require(it >= 0L) { "项目空间时间字段无效" }
+        }
     }
 }
