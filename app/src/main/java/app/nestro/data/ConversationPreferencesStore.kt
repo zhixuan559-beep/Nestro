@@ -74,14 +74,28 @@ fun saveConversationList(prefs: android.content.SharedPreferences, conversations
     // Room is authoritative after the one-time migration. Do not overwrite the complete
     // legacy fallback snapshot with the in-memory summary cache.
     if (prefs.getBoolean("room_storage_initialized", false)) return
-    val array = JSONArray()
-    conversations.take(100).forEach { conversation ->
-        val messages = JSONArray()
-        conversation.messages.takeLast(500).forEach { message ->
-            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", JSONArray(message.versions.take(20))).put("active_version", message.activeVersion.coerceAtLeast(0)))
+    require(conversations.size <= 200) { "本机会话数量超过持久化上限" }
+    val totalChars = conversations.sumOf { conversation ->
+        conversation.title.length.toLong() + conversation.messages.sumOf { message ->
+            message.content.length.toLong() + message.versions.sumOf { it.length.toLong() }
         }
-        array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
+    }
+    require(totalChars <= 3_500_000L) { "本机会话快照超过安全容量" }
+    val array = JSONArray()
+    conversations.forEach { conversation ->
+        require(conversation.id.isNotBlank() && conversation.title.length <= 80 && conversation.messages.size <= 2_000) {
+            "本机会话或消息数量超出持久化上限"
+        }
+        val messages = JSONArray()
+        conversation.messages.forEach { message ->
+            require(message.id.isNotBlank() && message.role in setOf("user", "assistant") && message.content.length <= 200_000) {
+                "本机消息字段无效"
+            }
+            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
+                .put("versions", JSONArray(message.versions).also { encodeMessageVersions(message) })
+                .put("active_version", message.activeVersion))
+        }
+        array.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
             .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messages))
     }
     val editor = prefs.edit().putString("conversations_v1", array.toString())
@@ -105,7 +119,7 @@ fun saveConversationMessages(
         ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList(), projectId)
     val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
     val updated = record.copy(title = if (record.title == "新对话" || record.title == "旧对话") firstPrompt else record.title,
-        updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500), messagesLoaded = true)
+        updatedAt = System.currentTimeMillis(), messages = messages, messagesLoaded = true)
     val next = listOf(updated) + existing.filterNot { it.id == updated.id }
     saveConversationList(prefs, next)
     prefs.edit().putString("active_conversation_id", updated.id).apply()
@@ -119,9 +133,15 @@ fun saveConversationMessages(
     }
 
     fun saveMessages(prefs: SharedPreferences, messages: List<ChatMessage>) {
+        require(messages.size <= 200) { "旧版消息快照超过持久化上限" }
         val array = JSONArray()
-        messages.takeLast(200).forEach { msg ->
-            array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content).put("versions", JSONArray(msg.versions.take(20))).put("active_version", msg.activeVersion.coerceAtLeast(0)))
+        messages.forEach { msg ->
+            require(msg.id.isNotBlank() && msg.role in setOf("user", "assistant") && msg.content.length <= 200_000) {
+                "旧版消息字段无效"
+            }
+            array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content)
+                .put("versions", JSONArray(msg.versions).also { encodeMessageVersions(msg) })
+                .put("active_version", msg.activeVersion))
         }
         prefs.edit().putString("messages", array.toString()).apply()
     }
