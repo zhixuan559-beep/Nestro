@@ -103,7 +103,7 @@ class NestroAppSmokeTest {
 
         composeRule.onNodeWithText("保存模型配置").performScrollTo().performClick()
 
-        composeRule.onNodeWithText("配置名称需为 1 到 40 个字符").assertIsDisplayed()
+        composeRule.onNodeWithText("配置名称需为 1 到 40 个字符").performScrollTo().assertIsDisplayed()
     }
 
     @Test
