@@ -137,6 +137,7 @@ class ChatRequestExecutionCoordinatorTest {
             onPartialAnswer = { }
         )
         assertEquals("scheduler unavailable", planningError)
+        assertEquals("scheduler unavailable", result.taskPlanningFailure?.message)
         assertEquals("reply", result.finalization.finalText)
         assertEquals(ChatResponseStatus.SUCCESS, result.finalization.status)
     }
