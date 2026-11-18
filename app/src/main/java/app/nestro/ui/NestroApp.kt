@@ -2115,13 +2115,18 @@ fun NestroApp() {
                                                                     status = "项目复制中止：产物复制失败，未创建新项目。"
                                                                     return@launch
                                                                 }
-                                                                val copied = withContext(Dispatchers.IO) {
-                                                                    appRuntime.projectSpaceRepository.duplicate(
-                                                                        project.id, copyId, copyName, System.currentTimeMillis()
-                                                                    )
+                                                                val copyAttempt = runCatching {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        appRuntime.projectSpaceRepository.duplicate(
+                                                                            project.id, copyId, copyName, System.currentTimeMillis()
+                                                                        )
+                                                                    }
                                                                 }
+                                                                val copied = copyAttempt.getOrDefault(false)
                                                                 if (!copied) {
-                                                                    withContext(Dispatchers.IO) { ArtifactStore.deleteProject(context, copyId) }
+                                                                    withContext(Dispatchers.IO) {
+                                                                        runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                    }
                                                                 }
                                                                 if (copied) {
                                                                     val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
