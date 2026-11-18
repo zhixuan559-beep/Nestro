@@ -153,15 +153,22 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("projects", ProjectPreferencesStore.projectsToJson(backupProjects))
     root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
     val roomConversationRows = snapshot.conversations
-    require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
-    val conversationPayloadChars = roomConversationRows.sumOf { row ->
-        row.conversation.title.length.toLong() + row.messages.sumOf { message ->
-            message.content.length.toLong() + message.versionsJson.length.toLong()
+    val legacyConversationRaw = prefs.getString("conversations_v1", "[]") ?: "[]"
+    val conversationArray = if (roomConversationRows.isEmpty()) JSONArray(legacyConversationRaw) else JSONArray()
+    require(roomConversationRows.size <= 200 && conversationArray.length() <= 200) {
+        "会话数量超过备份上限 200，请先清理旧会话"
+    }
+    val conversationPayloadChars = if (roomConversationRows.isEmpty()) {
+        legacyConversationRaw.length.toLong()
+    } else {
+        roomConversationRows.sumOf { row ->
+            row.conversation.title.length.toLong() + row.messages.sumOf { message ->
+                message.content.length.toLong() + message.versionsJson.length.toLong()
+            }
         }
     }
     require(conversationPayloadChars <= 3_500_000L) { "会话历史内容超过备份安全容量，请先清理旧会话" }
     roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
-    val conversationArray = JSONArray()
     roomConversationRows.forEach { row ->
         val messages = JSONArray()
         row.messages.sortedBy { it.position }.forEach { message ->
