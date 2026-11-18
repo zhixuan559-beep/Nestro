@@ -370,8 +370,7 @@ internal fun ModelManager(
                                 Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存 · 可用" else "API Key 已删除或未配置 · 此模型不可选择", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
                                 usage[profile.id]?.let { stats ->
-                                    Text("成功请求 ${stats.requests} 次 · 服务商实报 Token：输入 ${stats.providerInputTokens} / 输出 ${stats.providerOutputTokens}（${stats.providerUsageRequests} 次）", color = Muted, style = MaterialTheme.typography.labelSmall)
-                                    Text("本地估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}（${stats.estimatedUsageRequests} 次）", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                    Text("成功请求 ${stats.requests} 次 · 估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }

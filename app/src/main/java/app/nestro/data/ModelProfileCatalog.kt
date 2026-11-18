@@ -59,10 +59,6 @@ data class ModelUsageStats(
     val requests: Long = 0,
     val estimatedInputTokens: Long = 0,
     val estimatedOutputTokens: Long = 0,
-    val providerInputTokens: Long = 0,
-    val providerOutputTokens: Long = 0,
-    val providerUsageRequests: Long = 0,
-    val estimatedUsageRequests: Long = 0,
     val lastUsedAt: Long = 0
 )
 
@@ -79,10 +75,6 @@ object ModelUsageStatsCodec {
                     requests = item.optLong("requests", 0).coerceAtLeast(0),
                     estimatedInputTokens = item.optLong("input_tokens", 0).coerceAtLeast(0),
                     estimatedOutputTokens = item.optLong("output_tokens", 0).coerceAtLeast(0),
-                    providerInputTokens = item.optLong("provider_input_tokens", 0).coerceAtLeast(0),
-                    providerOutputTokens = item.optLong("provider_output_tokens", 0).coerceAtLeast(0),
-                    providerUsageRequests = item.optLong("provider_usage_requests", 0).coerceAtLeast(0),
-                    estimatedUsageRequests = item.optLong("estimated_usage_requests", 0).coerceAtLeast(0),
                     lastUsedAt = item.optLong("last_used_at", 0).coerceAtLeast(0)
                 )
             }
@@ -103,19 +95,6 @@ object ModelUsageStatsCodec {
             requests = old.requests + 1,
             estimatedInputTokens = old.estimatedInputTokens + ((inputChars.coerceAtLeast(0) + 3) / 4),
             estimatedOutputTokens = old.estimatedOutputTokens + ((outputChars.coerceAtLeast(0) + 3) / 4),
-            estimatedUsageRequests = old.estimatedUsageRequests + 1,
-            lastUsedAt = now
-        ))
-    }
-
-    fun recordProviderUsage(current: Map<String, ModelUsageStats>, profileId: String, inputTokens: Int, outputTokens: Int, now: Long = System.currentTimeMillis()): Map<String, ModelUsageStats> {
-        require(profileId.isNotBlank() && profileId.length <= 80)
-        val old = current[profileId] ?: ModelUsageStats()
-        return current + (profileId to old.copy(
-            requests = old.requests + 1,
-            providerInputTokens = old.providerInputTokens + inputTokens.coerceAtLeast(0),
-            providerOutputTokens = old.providerOutputTokens + outputTokens.coerceAtLeast(0),
-            providerUsageRequests = old.providerUsageRequests + 1,
             lastUsedAt = now
         ))
     }
@@ -126,10 +105,6 @@ object ModelUsageStatsCodec {
                 .put("requests", value.requests.coerceAtLeast(0))
                 .put("input_tokens", value.estimatedInputTokens.coerceAtLeast(0))
                 .put("output_tokens", value.estimatedOutputTokens.coerceAtLeast(0))
-                .put("provider_input_tokens", value.providerInputTokens.coerceAtLeast(0))
-                .put("provider_output_tokens", value.providerOutputTokens.coerceAtLeast(0))
-                .put("provider_usage_requests", value.providerUsageRequests.coerceAtLeast(0))
-                .put("estimated_usage_requests", value.estimatedUsageRequests.coerceAtLeast(0))
                 .put("last_used_at", value.lastUsedAt.coerceAtLeast(0)))
         }
     }.toString()
