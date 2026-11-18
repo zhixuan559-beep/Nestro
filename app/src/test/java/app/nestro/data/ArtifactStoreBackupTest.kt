@@ -60,4 +60,24 @@ class ArtifactStoreBackupTest {
             ArtifactStore.validateBackup(rows, setOf("project-a"))
         }
     }
+    @Test
+    fun rejectsStringVersionInsteadOfCoercingItToAnInteger() {
+        val rows = JSONArray().put(
+            row("123e4567-e89b-12d3-a456-426614174000").put("version", "3")
+        )
+        assertThrows(IllegalStateException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
+    @Test
+    fun rejectsWhitespacePaddedTitleInsteadOfSilentlyTrimmingIt() {
+        val rows = JSONArray().put(
+            row("123e4567-e89b-12d3-a456-426614174000").put("title", " 设计稿 ")
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
 }
