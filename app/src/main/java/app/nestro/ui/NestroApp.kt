@@ -17,6 +17,10 @@ import app.nestro.data.ProjectRecord
 import app.nestro.data.ProjectPreferencesStore
 import app.nestro.data.ConversationListItem
 import app.nestro.data.ProjectSpaceRules
+import app.nestro.data.ProjectResourceScopeStore
+import app.nestro.data.ProjectResourceKind
+import app.nestro.data.ProjectMemorySettingsStore
+import app.nestro.data.ArtifactStore
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.ConversationRecallSource
