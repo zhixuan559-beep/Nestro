@@ -156,11 +156,17 @@ fun NestroApp() {
     val projectSpaceUiState = remember { ProjectSpaceUiState() }
     var projects by projectSpaceUiState.projects
     var projectStorageReadOnly by remember { mutableStateOf(false) }
+    val initialProjectResourceScopes = remember(prefs) { runCatching { ProjectResourceScopeStore.load(prefs) } }
     var projectResourceScopes by remember(prefs) {
-        mutableStateOf(runCatching { ProjectResourceScopeStore.load(prefs) }.getOrDefault(emptyMap()))
+        mutableStateOf(initialProjectResourceScopes.getOrDefault(emptyMap()))
+    }
+    var projectResourceScopesReadOnly by remember(prefs) {
+        mutableStateOf(initialProjectResourceScopes.isFailure)
     }
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
-        runCatching {
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已锁定资源修改；请先恢复有效备份。"
+        } else runCatching {
             val next = if (makeGlobal) {
                 ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
             } else {
@@ -340,6 +346,7 @@ fun NestroApp() {
                 projects = ProjectPreferencesStore.loadProjects(prefs)
                 projectStorageReadOnly = false
                 projectResourceScopes = ProjectResourceScopeStore.load(prefs)
+                projectResourceScopesReadOnly = false
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
                 automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
@@ -731,13 +738,13 @@ fun NestroApp() {
             activeRequestConversationId = requestConversationId
             val requestProjectId = activeProjectId
             val requestSelectedTeamId = selectedTeamId.takeIf {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it, requestProjectId)
             }.orEmpty()
             val requestSelectedExpert = selectedExpert.takeIf {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
             } ?: "通用助手"
             val requestSelectedSkill = selectedSkill.takeIf {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
             }.orEmpty()
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
             val requestExpertTeams = expertTeams.filter {
@@ -1387,7 +1394,7 @@ fun NestroApp() {
                                          }) { Text("停止", color = ColorStop) }
                                      }
                                  }
-                                 workflows.filter { ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.WORKFLOW, it.id, activeProjectId) }.forEach { workflow ->
+                                 workflows.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.WORKFLOW, it.id, activeProjectId) }.forEach { workflow ->
                                      Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                              Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
@@ -1570,7 +1577,7 @@ fun NestroApp() {
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
 
-                                experts.filter { ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
+                                experts.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
@@ -1706,7 +1713,7 @@ fun NestroApp() {
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                expertTeams.filter { ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, activeProjectId) }.forEach { team ->
+                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, activeProjectId) }.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
@@ -2250,7 +2257,7 @@ fun NestroApp() {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("技能是可复用的工作指令。导入包只读取文本和元数据，不执行其中代码，也不会自动授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                skills.filter { (name, _) -> ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, name, activeProjectId) }.forEach { (name, prompt) ->
+                                skills.filter { (name, _) -> !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, name, activeProjectId) }.forEach { (name, prompt) ->
                                     val isDisabled = name in disabledSkills
                                     Surface(color = if (selectedSkill == name && !isDisabled) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
