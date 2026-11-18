@@ -339,3 +339,5 @@
 - CI #829 compiled production Kotlin and completed its first Gradle build, then failed in `ChatStreamingCoordinatorTest`: one cancellation-path fake still implemented the old five-argument `ChatPartialStateStore` lambda after the timestamp parameter was added. Updated the remaining fake to the six-argument contract; no production-source compile errors were reported in this run. This test-only correction is included with the pending-marker retry fix.
 
 - Reconciliation now isolates synchronous enqueue failures per task: the failed task keeps its durable marker for the next startup, while other pending tasks continue through the same reconciliation pass. Coroutine cancellation still propagates.
+
+- Early user-stop handling now clears `chat_request_state_v1` after saving the stopped conversation. Previously, stopping during Phone Agent intent planning returned before the normal finalizer and left a stale `running` marker that could be misinterpreted as an interrupted request on next launch.

@@ -691,6 +691,7 @@ fun NestroApp() {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
                     conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId, conversations)
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
+                    prefs.edit().remove("chat_request_state_v1").apply()
                     status = "已停止生成"
                     busy = false
                     activeRequestId = ""
