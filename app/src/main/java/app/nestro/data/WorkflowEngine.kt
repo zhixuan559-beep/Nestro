@@ -44,7 +44,8 @@ data class WorkflowRunResult(
     val output:String,
     val completedSteps:Int,
     val stepOutputs:List<String>,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val checkpointIndex:Int = 0
 )
 
 data class WorkflowRunRecord(
@@ -64,6 +65,7 @@ object WorkflowRunHistoryCodec {
             put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
                 .put("workflowName",record.workflowName).put("input",record.input.take(12000))
                 .put("startedAt",record.startedAt).put("status",record.status)
+                .put("checkpointIndex",record.stepRuns.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
                 .put("output",record.output.take(20000))
                 .put("stepRuns",JSONArray().apply {
                     record.stepRuns.take(20).forEach { step ->
@@ -313,7 +315,7 @@ object WorkflowEngine {
             previousOutput=stepOutput
             outputs += stepOutput
         }
-        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs)
+        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs,runs.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
     }
     private fun evaluateCondition(condition:String, previousOutput:String):Boolean {
         val c=condition.trim()
