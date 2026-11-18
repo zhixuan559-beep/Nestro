@@ -130,10 +130,11 @@ class AgentRuntimeTest {
             }
         }
         val session = catalog.openSession(setOf("message.send"))
+        val states = InMemoryAgentTaskStateStore()
         val runtime = DefaultAgentRuntime(
             session,
             DefaultAgentPermissionRouter(),
-            InMemoryAgentTaskStateStore()
+            states
         )
 
         val result = runtime.execute(AgentToolRequest("task-permission-boundary", "message.send"))
@@ -141,8 +142,7 @@ class AgentRuntimeTest {
         assertFalse(result.success)
         assertTrue(result.requiresUser)
         assertEquals(0, writes)
-        assertEquals(AgentTaskStatus.WAITING_FOR_USER,
-            InMemoryAgentTaskStateStore().get("task-permission-boundary")?.status ?: AgentTaskStatus.CREATED)
+        assertEquals(AgentTaskStatus.WAITING_FOR_USER, states.get("task-permission-boundary")?.status)
         session.close()
     }
 
