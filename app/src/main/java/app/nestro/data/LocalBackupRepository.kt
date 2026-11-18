@@ -83,35 +83,38 @@ private fun decodeBackupMessageVersions(item: JSONObject): Pair<String, Int> {
     return JSONArray(decoded).toString() to activeVersion
 }
 
-private fun loadProjectsForBackup(prefs: android.content.SharedPreferences): List<ProjectRecord> {
-    val raw = prefs.getString("projects", "[]") ?: "[]"
-    val array = JSONArray(raw)
-    require(array.length() <= 100) { "旧版项目空间数量超过备份上限" }
+private fun parseProjectsForBackup(array: JSONArray): List<ProjectRecord> {
+    require(array.length() <= 100) { "项目空间数量超过备份上限" }
     val parsed = (0 until array.length()).map { index ->
         val item = array.getJSONObject(index)
         val id = item.requiredString("id")
         val name = item.stringOrDefault("name", "项目")
         val instructions = item.stringOrDefault("instructions", "")
         require(id.isNotBlank() && name.isNotBlank() && name.length <= 40 && name == name.trim() &&
-            instructions.length <= 4_000) { "旧版项目空间字段无效，已中止备份" }
+            instructions.length <= 4_000) { "项目空间字段无效，已中止备份或恢复" }
         ProjectRecord(
             id = id,
             name = name,
             instructions = instructions,
             createdAt = item.longOrDefault("created_at", System.currentTimeMillis()),
             archivedAt = item.longOrDefault("archived_at", 0L).also {
-                require(it >= 0L) { "旧版项目归档时间无效" }
+                require(it >= 0L) { "项目归档时间无效" }
             }
         )
     }
     val withDefault = if (parsed.any { it.id == "default" }) parsed
         else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    require(withDefault.map { it.id }.distinct().size == withDefault.size) { "旧版项目空间 ID 重复" }
-    require(ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) == null) {
-        ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) ?: "旧版项目空间数据无效"
+    require(withDefault.size <= 100 && withDefault.map { it.id }.distinct().size == withDefault.size) {
+        "项目空间数量超限或 ID 重复"
     }
+    val validation = ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) })
+    require(validation == null) { validation ?: "项目空间数据无效" }
     return withDefault
 }
+
+private fun loadProjectsForBackup(prefs: android.content.SharedPreferences): List<ProjectRecord> =
+    parseProjectsForBackup(JSONArray(prefs.getString("projects", "[]") ?: "[]"))
+
 
 private fun validateLegacyConversationBackup(conversations: JSONArray, allowedProjectIds: Set<String>) {
     val conversationIds = mutableSetOf<String>()
@@ -618,9 +621,9 @@ private suspend fun applyLocalBackup(
     val memoryRows = root.arrayOrEmpty("user_memories")
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
     val restoredProjects = when (val projectsValue = root.opt("projects")) {
-        is JSONArray -> ProjectPreferencesStore.parseProjects(projectsValue)
-        is String -> ProjectPreferencesStore.parseProjects(JSONArray(projectsValue))
-        else -> if (!root.has("projects")) ProjectPreferencesStore.parseProjects(null)
+        is JSONArray -> parseProjectsForBackup(projectsValue)
+        is String -> parseProjectsForBackup(JSONArray(projectsValue))
+        else -> if (!root.has("projects")) parseProjectsForBackup(JSONArray())
             else error("备份项目空间字段格式无效")
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
