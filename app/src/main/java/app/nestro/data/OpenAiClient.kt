@@ -19,7 +19,7 @@ private fun estimatedUsageInput(history: List<ChatMessage>, systemPrompt: String
     val bounded = boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048)
     val text = buildString {
         append(systemPrompt)
-        bounded.forEach { message -> append("\\n").append(message.role).append(":").append(message.content) }
+        bounded.forEach { message -> append('\n').append(message.role).append(":").append(message.content) }
     }
     return ChatRequestPolicy.estimateTokens(text).coerceAtMost(Int.MAX_VALUE / 4) * 4
 }
@@ -96,7 +96,7 @@ internal object OpenAiClient {
                             onChunk(chunk)
                         }
                         if (providerUsage != null) onProviderUsage(candidate, providerUsage!!.inputTokens, providerUsage!!.outputTokens)
-                        else onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
+                        else onUsage(candidate, estimatedUsageInput(history, systemPrompt, maxTokens), estimatedUsageOutput(response))
                         return@withTimeout response
                     } catch (error: Throwable) {
                         if (error is kotlinx.coroutines.CancellationException) throw error
