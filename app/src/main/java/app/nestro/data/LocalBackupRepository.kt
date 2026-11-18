@@ -289,6 +289,15 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else parseProjectsForBackup(
         JSONArray(ProjectPreferencesStore.projectsToJson(roomProjects))
     )
+    val backupProjectIds = (backupProjects.map { it.id } + "default").toSet()
+    val backupResourceScopes = ProjectResourceScopeStore.decode(resourceScopesRaw)
+    require(backupResourceScopes.values.flatten().all { it == "*" || it in backupProjectIds }) {
+        "项目资源关联引用了不存在的项目，已中止备份"
+    }
+    val backupProjectMemorySettings = ProjectMemorySettingsStore.decode(projectMemorySettingsRaw)
+    require(backupProjectMemorySettings.keys.all { it in backupProjectIds }) {
+        "项目记忆设置引用了不存在的项目，已中止备份"
+    }
     val activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
     require(backupProjects.any { it.id == activeProjectId && it.archivedAt == 0L }) {
         "当前活动项目不存在或已归档，已中止备份"
