@@ -439,4 +439,50 @@ class LocalBackupRoundTripTest {
         }
     }
 
+    @Test fun backupRestorePreservesConversationHistoryBeyondFiveHundredMessages() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        File(context.filesDir, "artifacts").deleteRecursively()
+        File(context.filesDir, "backup-restore").deleteRecursively()
+        val databaseName = "nestro_backup_long_conversation.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_long_conversation", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]").commit()
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("long-backup-c1", "长会话", 1L, "default"))
+            dao.putMessages((0..500).map { index ->
+                MessageEntity(
+                    id = "long-backup-m$index",
+                    conversationId = "long-backup-c1",
+                    position = index,
+                    role = if (index % 2 == 0) "user" else "assistant",
+                    content = "历史消息内容-$index"
+                )
+            })
+            val repository = LocalBackupRepository(context, database)
+            val backup = repository.createBackup(prefs)
+            val backedUpMessages = JSONObject(backup).getJSONArray("conversations_v1")
+                .getJSONObject(0).getJSONArray("messages")
+            assertEquals(501, backedUpMessages.length())
+
+            dao.deleteAllConversations()
+            repository.restoreBackup(prefs, backup)
+
+            val restored = dao.loadConversations().single().messages.sortedBy { it.position }
+            assertEquals(501, restored.size)
+            assertEquals("历史消息内容-0", restored.first().content)
+            assertEquals("历史消息内容-500", restored.last().content)
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
 }
