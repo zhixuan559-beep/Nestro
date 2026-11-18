@@ -27,7 +27,7 @@ class ChatRequestExecutionCoordinatorTest {
         return ChatRequestExecutionCoordinator(assembler, streaming)
     }
 
-    private fun request(taskMode: Boolean = false) = ChatRequestExecutionRequest(
+    private fun request(taskMode: Boolean = false, shouldStop: () -> Boolean = { false }) = ChatRequestExecutionRequest(
         requestId = "request-1",
         conversationId = "conversation-1",
         projectId = "project-1",
@@ -40,7 +40,7 @@ class ChatRequestExecutionCoordinatorTest {
         temperature = null,
         maxTokens = null,
         previousAssistant = null,
-        shouldStop = { false }
+        shouldStop = shouldStop
     )
 
     @Test
@@ -124,4 +124,39 @@ class ChatRequestExecutionCoordinatorTest {
         }
         assertTrue(result.exceptionOrNull() is CancellationException)
     }
+    @Test
+    fun taskPlanningFailureIsReportedButDoesNotAbortChat() = runBlocking {
+        var planningError = ""
+        val coordinator = coordinator { _, _ -> "reply" }
+        val result = coordinator.execute(
+            request = request(taskMode = true),
+            onUsage = { _, _, _ -> },
+            onProviderUsage = { _, _, _ -> },
+            planPhoneAgent = { error("scheduler unavailable") },
+            onTaskPlanningFailure = { planningError = it.message.orEmpty() },
+            onPartialAnswer = { }
+        )
+        assertEquals("scheduler unavailable", planningError)
+        assertEquals("reply", result.finalization.finalText)
+        assertEquals(ChatResponseStatus.SUCCESS, result.finalization.status)
+    }
+
+    @Test
+    fun stopRequestedBeforeStreamingPreventsTransportCall() = runBlocking {
+        var streamCalls = 0
+        val coordinator = coordinator { _, _ ->
+            streamCalls++
+            "should not run"
+        }
+        val result = coordinator.execute(
+            request = request(shouldStop = { true }),
+            onUsage = { _, _, _ -> },
+            onProviderUsage = { _, _, _ -> },
+            onPartialAnswer = { }
+        )
+        assertEquals(0, streamCalls)
+        assertEquals(ChatResponseStatus.STOPPED, result.finalization.status)
+        assertEquals("已停止生成。", result.finalization.finalText)
+    }
+
 }
