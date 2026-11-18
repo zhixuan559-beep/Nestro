@@ -548,6 +548,12 @@ class LocalBackupRoundTripTest {
             val repository = LocalBackupRepository(context, database)
             assertTrue("导出不得生成包含损坏回答版本的备份", runCatching { repository.createBackup(prefs) }.isFailure)
             assertEquals(rawSnapshot, prefs.getString("conversations_v1", null))
+
+            val invalidLegacyMessage = JSONObject().put("id", "legacy-bad-m2").put("role", "assistant")
+                .put("content", "回答").put("versions", JSONObject().put("not", "an array")).put("active_version", 0)
+            prefs.edit().putString("conversations_v1", "[]")
+                .putString("messages", JSONArray().put(invalidLegacyMessage).toString()).commit()
+            assertTrue("导出不得生成包含错误版本字段类型的旧消息备份", runCatching { repository.createBackup(prefs) }.isFailure)
         } finally {
             database.close()
             prefs.edit().clear().commit()
