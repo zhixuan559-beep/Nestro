@@ -30,16 +30,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
-test_exit_code=0
-if gradle --no-daemon --stacktrace connectedDebugAndroidTest; then
-  test_exit_code=0
-else
-  test_exit_code=$?
+# Build APKs, then invoke AndroidJUnitRunner directly. This bypasses AGP's
+# UTP driver, whose additionalTestOutputDir is inaccessible on this emulator.
+if ! gradle --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest; then
+  exit 1
 fi
+
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+set +e
+adb shell am instrument -w -r app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
+instrumentation_exit=${PIPESTATUS[0]}
+set -e
 
 adb shell dumpsys activity exit-info app.nestro > "$DIAG/app-exit-info.txt" 2>&1 || true
 adb shell dumpsys activity exit-info app.nestro.test > "$DIAG/test-exit-info.txt" 2>&1 || true
 adb shell dumpsys package app.nestro.test > "$DIAG/test-package.txt" 2>&1 || true
+adb shell dumpsys activity lastanr > "$DIAG/last-anr.txt" 2>&1 || true
 adb shell pm list instrumentation -f > "$DIAG/instrumentation-list-after.txt" 2>&1 || true
 adb logcat -d -b all -v threadtime > "$DIAG/emulator-logcat-final.txt" 2>&1 || true
-exit "$test_exit_code"
+
+if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|Error:' "$DIAG/instrumentation-run.txt"; then
+  exit 1
+fi
+if [[ "$instrumentation_exit" -ne 0 ]] || ! grep -q 'OK (' "$DIAG/instrumentation-run.txt"; then
+  exit 1
+fi
