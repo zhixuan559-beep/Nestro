@@ -16,21 +16,30 @@ internal data class ConversationRecord(
 
 internal object ConversationPreferencesStore {
 fun loadConversations(prefs: android.content.SharedPreferences): List<ConversationRecord> {
-    val stored = runCatching {
-        val array = JSONArray(prefs.getString("conversations_v1", "[]"))
+    val rawSnapshot = prefs.getString("conversations_v1", null)
+    val stored = if (rawSnapshot == null) emptyList() else {
+        val array = try {
+            JSONArray(rawSnapshot)
+        } catch (failure: Throwable) {
+            throw IllegalStateException("本机会话快照格式损坏，已停止回退以保护历史数据", failure)
+        }
         (0 until array.length()).map { index ->
             val item = array.getJSONObject(index)
-            val messagesJson = item.optJSONArray("messages") ?: JSONArray()
-            val parsed = (0 until messagesJson.length()).map { i ->
-                val message = messagesJson.getJSONObject(i)
-                ChatMessage(message.getString("id"), message.getString("role"), message.getString("content"), jsonStringList(message.optJSONArray("versions")), message.optInt("active_version", 0))
+            val messagesJson = when (val value = item.opt("messages")) {
+                null, JSONObject.NULL -> JSONArray()
+                is JSONArray -> value
+                else -> error("本机会话消息列表格式无效")
+            }
+            val parsed = (0 until messagesJson.length()).map { messageIndex ->
+                parseStoredChatMessage(messagesJson.getJSONObject(messageIndex))
             }
             ConversationRecord(
                 item.getString("id"), item.optString("title", "对话"),
-                item.optLong("updated_at", System.currentTimeMillis()), parsed, item.optString("project_id", "default").ifBlank { "default" }
+                item.optLong("updated_at", System.currentTimeMillis()), parsed,
+                item.optString("project_id", "default").ifBlank { "default" }
             )
         }
-    }.getOrDefault(emptyList())
+    }
     if (stored.isNotEmpty()) return stored
     val legacy = loadMessages(prefs)
     val migrated = ConversationRecord(
@@ -42,6 +51,23 @@ fun loadConversations(prefs: android.content.SharedPreferences): List<Conversati
     saveConversationList(prefs, result)
     prefs.edit().putString("active_conversation_id", migrated.id).apply()
     return result
+}
+
+private fun parseStoredChatMessage(item: JSONObject): ChatMessage {
+    val versions = when (val value = item.opt("versions")) {
+        null, JSONObject.NULL -> JSONArray()
+        is JSONArray -> value
+        else -> error("本机回答版本字段格式无效")
+    }
+    val activeValue = if (item.has("active_version")) item.opt("active_version") else 0
+    val activeVersion = (activeValue as? Number)?.toDouble()?.let { value ->
+        if (value.isFinite() && value % 1.0 == 0.0 && value in 0.0..Int.MAX_VALUE.toDouble()) value.toInt() else null
+    } ?: error("本机回答版本索引类型无效")
+    val decodedVersions = decodeMessageVersions(versions.toString(), activeVersion)
+    return ChatMessage(
+        item.getString("id"), item.getString("role"), item.getString("content"),
+        decodedVersions, activeVersion
+    )
 }
 
 fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>, markDirty: Boolean = true) {
@@ -85,13 +111,12 @@ fun saveConversationMessages(
     prefs.edit().putString("active_conversation_id", updated.id).apply()
     return next
 }
-    fun loadMessages(prefs: SharedPreferences): List<ChatMessage> = runCatching {
-        val array = JSONArray(prefs.getString("messages", "[]"))
-        (0 until array.length()).map { i ->
-            val item = array.getJSONObject(i)
-            ChatMessage(item.getString("id"), item.getString("role"), item.getString("content"), jsonStringList(item.optJSONArray("versions")), item.optInt("active_version", 0))
+    fun loadMessages(prefs: SharedPreferences): List<ChatMessage> {
+        val array = JSONArray(prefs.getString("messages", "[]") ?: "[]")
+        return (0 until array.length()).map { index ->
+            parseStoredChatMessage(array.getJSONObject(index))
         }
-    }.getOrDefault(emptyList())
+    }
 
     fun saveMessages(prefs: SharedPreferences, messages: List<ChatMessage>) {
         val array = JSONArray()
@@ -100,8 +125,5 @@ fun saveConversationMessages(
         }
         prefs.edit().putString("messages", array.toString()).apply()
     }
-
-    private fun jsonStringList(array: JSONArray?): List<String> =
-        array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
 
 }
