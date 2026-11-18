@@ -18,6 +18,7 @@ import app.nestro.data.ProjectPreferencesStore
 import app.nestro.data.ConversationListItem
 import app.nestro.data.ProjectSpaceRules
 import app.nestro.data.ProjectResourceScopeStore
+import app.nestro.data.ProjectAccessControlStore
 import app.nestro.data.ProjectResourceKind
 import app.nestro.data.ProjectMemorySettingsStore
 import app.nestro.data.ArtifactStore
@@ -167,6 +168,11 @@ fun NestroApp() {
     var projectResourceScopesReadOnly by remember(prefs) {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
+    var readableProjectIds by remember(activeProjectId) {
+        mutableStateOf(ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId))
+    }
+    var pendingAccessSourceProjectId by remember { mutableStateOf("") }
+    var showProjectAccessDialog by remember { mutableStateOf(false) }
     var activeProjectId by projectSpaceUiState.activeProjectId
     var deletingProjectId by projectSpaceUiState.deletingProjectId
     var showProjectDialog by projectSpaceUiState.showProjectDialog
@@ -741,14 +747,17 @@ fun NestroApp() {
             activeRequestId = assistantId
             activeRequestConversationId = requestConversationId
             val requestProjectId = activeProjectId
+            val requestReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+                prefs, requestProjectId, projects.map { it.id }.toSet()
+            ) else emptySet()
             val requestSelectedTeamId = selectedTeamId.takeIf {
-                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, it, requestProjectId, requestReadableProjectIds)
             }.orEmpty()
             val requestSelectedExpert = selectedExpert.takeIf {
-                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds)
             } ?: "通用助手"
             val requestSelectedSkill = selectedSkill.takeIf {
-                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
             }.orEmpty()
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
             val requestExpertTeams = expertTeams.filter {
@@ -758,20 +767,20 @@ fun NestroApp() {
             val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
             val requestExpertProfiles = expertProfiles.filterKeys {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
             }
             val requestExpertPrompts = expertPrompts.filterKeys {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
             }
             val requestSkills = skills.filterKeys {
                 !projectResourceScopesReadOnly &&
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
             }
             val requestDisabledSkills = disabledSkills.toSet()
             val requestExperts = experts.filter {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
             }.toSet()
             val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
@@ -1400,7 +1409,7 @@ fun NestroApp() {
                                          }) { Text("停止", color = ColorStop) }
                                      }
                                  }
-                                 workflows.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.WORKFLOW, it.id, activeProjectId) }.forEach { workflow ->
+                                 workflows.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.WORKFLOW, it.id, activeProjectId, readableProjectIds) }.forEach { workflow ->
                                      Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                              Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
@@ -1435,21 +1444,21 @@ fun NestroApp() {
                                                                          WorkflowStepKind.EXPERT -> {
                                                                              val expertName = step.targetId.ifBlank { step.title }
                                                                              check(!projectResourceScopesReadOnly &&
-                                                                                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId)) {
+                                                                                 ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId, workflowReadableProjectIds)) {
                                                                                  "工作流引用的专家「$expertName」不属于当前项目，已阻止跨项目调用"
                                                                              }
                                                                              val profile = expertProfiles[expertName]
                                                                              check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
                                                                              val workflowSkills = skills.filterKeys { skillName ->
                                                                                  !projectResourceScopesReadOnly &&
-                                                                                     ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId)
+                                                                                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
                                                                              }
                                                                              listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
                                                                          }
                                                                          WorkflowStepKind.SKILL -> {
                                                                              val skillName = step.targetId.ifBlank { step.title }
                                                                              check(!projectResourceScopesReadOnly &&
-                                                                                 ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId)) {
+                                                                                 ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)) {
                                                                                  "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
                                                                              }
                                                                              check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
@@ -1731,7 +1740,7 @@ fun NestroApp() {
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, activeProjectId) }.forEach { team ->
+                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, it.id, activeProjectId, readableProjectIds) }.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
@@ -2297,7 +2306,7 @@ fun NestroApp() {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("技能是可复用的工作指令。导入包只读取文本和元数据，不执行其中代码，也不会自动授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                skills.filter { (name, _) -> !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, name, activeProjectId) }.forEach { (name, prompt) ->
+                                skills.filter { (name, _) -> !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, name, activeProjectId, readableProjectIds) }.forEach { (name, prompt) ->
                                     val isDisabled = name in disabledSkills
                                     Surface(color = if (selectedSkill == name && !isDisabled) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
