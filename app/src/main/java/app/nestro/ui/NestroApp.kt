@@ -1365,6 +1365,10 @@ fun NestroApp() {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                              Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                                              Text(workflow.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                             val workflowIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, workflow.id)]?.contains("*") ?: true
+                                             TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, workflowIsGlobal.not()) }) {
+                                                 Text(if (workflowIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                             }
                                              workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}", color = Mint, style = MaterialTheme.typography.bodySmall) }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
@@ -1550,6 +1554,10 @@ fun NestroApp() {
                                                 Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 expertProfiles[name]?.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                                                val expertIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, name)]?.contains("*") ?: true
+                                                TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.EXPERT, name, expertIsGlobal.not()) }) {
+                                                    Text(if (expertIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                                }
                                                 Text(expertPrompts[name]?.take(100)?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(name).ifBlank { "尚未设置角色指令" }.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                             TextButton(onClick = {
@@ -1677,6 +1685,10 @@ fun NestroApp() {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                             Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            val teamIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, team.id)]?.contains("*") ?: true
+                                            TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, teamIsGlobal.not()) }) {
+                                                Text(if (teamIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                            }
                                             TextButton(onClick = {
                                                 val memberBundles = team.members.mapNotNull { member ->
                                                     (expertPrompts[member]?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(member))
@@ -2192,6 +2204,10 @@ fun NestroApp() {
                                                 Column(Modifier.weight(1f)) {
                                                     Text(name, color = if (isDisabled) Muted else if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                     Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    val skillIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, name)]?.contains("*") ?: true
+                                                    TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.SKILL, name, skillIsGlobal.not()) }) {
+                                                        Text(if (skillIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                                    }
                                                     skillMetadata[name]?.let { raw ->
                                                         val metadata = runCatching { JSONObject(raw) }.getOrNull()
                                                         if (metadata != null) Text("v${metadata.optString("version")} · ${metadata.optString("source")}", color = Muted, style = MaterialTheme.typography.labelSmall)
