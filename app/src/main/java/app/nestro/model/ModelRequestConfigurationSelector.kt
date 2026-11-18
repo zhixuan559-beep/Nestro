@@ -52,6 +52,7 @@ internal object ModelRequestConfigurationSelector {
         registry: ModelRegistry,
         activeModelId: String,
         failoverEnabled: Boolean,
+        reasoningEffort: String? = null,
         readKey: (keyId: String) -> String
     ): List<ModelConfig> {
         val providers = registry.providers.associateBy { it.id }
@@ -64,7 +65,7 @@ internal object ModelRequestConfigurationSelector {
                 val key = keys[keyId] ?: return@mapNotNull null
                 if (!key.enabled || key.providerId != provider.id) return@mapNotNull null
                 val secret = readKey(keyId).takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                ModelConfig(provider.baseUrl, model.modelCode, secret)
+                ModelConfig(provider.baseUrl, model.modelCode, secret, reasoningEffort.takeIf { model.supportsReasoningEffort })
             }
         }
 

@@ -404,3 +404,11 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Removed unconditional full global-memory injection. Personal global memory is included only for prompts that explicitly refer to the user’s preferences, background, habits, or remembered details, and is capped at 1,600 characters.
 - Reduced the assembled optional context ceiling from 16,000 to 8,000 characters; the ordinary-chat path can remain at only its base context when no retrieval signal is present.
 - Added JVM tests asserting an action-keyword ordinary chat causes zero optional retrieval calls and receives no Phone Agent instructions, while explicit task mode adds the task-only instructions.
+
+## 2026-11-18 — Four-level reasoning control wired to model capabilities
+
+- Added four composer choices: Off (关闭思考), Light (轻量思考, default), Medium (中度思考), and Heavy (重度思考). The choice is persisted locally.
+- Added an explicit per-model capability flag in the model registry. It defaults to false for existing/legacy models and is preserved across registry edits and legacy reconciliation.
+- The request selector attaches reasoning_effort only to models whose configuration explicitly declares support. Failover candidates are evaluated independently; unsupported backups receive no parameter.
+- Completion and streaming requests include the selected provider value (none, low, medium, high) only when the selected model has declared support. This avoids breaking generic OpenAI-compatible endpoints that reject unknown fields.
+- Added tests for registry backward compatibility and per-model reasoning-parameter selection.

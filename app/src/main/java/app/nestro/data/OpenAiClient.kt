@@ -107,6 +107,7 @@ internal object OpenAiClient {
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
+                config.reasoningEffort?.let { put("reasoning_effort", it) }
                 if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
@@ -141,6 +142,7 @@ internal object OpenAiClient {
         try {
             val body = JSONObject().apply {
                 put("model", config.model)
+                config.reasoningEffort?.let { put("reasoning_effort", it) }
                 if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {

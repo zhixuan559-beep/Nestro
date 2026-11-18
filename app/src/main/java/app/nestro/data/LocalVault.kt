@@ -9,7 +9,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
+internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String, val reasoningEffort: String? = null)
 
 internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"

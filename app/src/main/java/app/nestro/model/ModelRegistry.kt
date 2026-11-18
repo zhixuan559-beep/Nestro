@@ -28,7 +28,8 @@ data class ModelDefinition(
     val enabled: Boolean = true,
     val inputPricePerMillion: Double? = null,
     val outputPricePerMillion: Double? = null,
-    val currency: String = "USD"
+    val currency: String = "USD",
+    val supportsReasoningEffort: Boolean = false
 )
 
 data class ModelRegistry(
@@ -134,7 +135,8 @@ data class ModelRegistry(
             enabled = previousModel?.enabled ?: true,
             inputPricePerMillion = previousModel?.inputPricePerMillion,
             outputPricePerMillion = previousModel?.outputPricePerMillion,
-            currency = previousModel?.currency ?: "USD"
+            currency = previousModel?.currency ?: "USD",
+            supportsReasoningEffort = previousModel?.supportsReasoningEffort ?: false
         )
         val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
         return copy(
@@ -179,7 +181,8 @@ data class ModelRegistry(
                 enabled = old?.enabled ?: model.enabled,
                 inputPricePerMillion = old?.inputPricePerMillion,
                 outputPricePerMillion = old?.outputPricePerMillion,
-                currency = old?.currency ?: model.currency
+                currency = old?.currency ?: model.currency,
+                supportsReasoningEffort = old?.supportsReasoningEffort ?: model.supportsReasoningEffort
             )
         }
         return ModelRegistry(
@@ -245,7 +248,8 @@ object ModelRegistryCodec {
                         .put("enabled", item.enabled)
                         .put("inputPricePerMillion", item.inputPricePerMillion ?: JSONObject.NULL)
                         .put("outputPricePerMillion", item.outputPricePerMillion ?: JSONObject.NULL)
-                        .put("currency", item.currency))
+                        .put("currency", item.currency)
+                        .put("supportsReasoningEffort", item.supportsReasoningEffort))
                 }
             })
         }.toString()
@@ -281,7 +285,8 @@ object ModelRegistryCodec {
                     enabled = item.optBoolean("enabled", true),
                     inputPricePerMillion = if (item.isNull("inputPricePerMillion")) null else item.optDouble("inputPricePerMillion"),
                     outputPricePerMillion = if (item.isNull("outputPricePerMillion")) null else item.optDouble("outputPricePerMillion"),
-                    currency = item.optString("currency", "USD")
+                    currency = item.optString("currency", "USD"),
+                    supportsReasoningEffort = item.optBoolean("supportsReasoningEffort", false)
                 )
             }
         }

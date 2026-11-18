@@ -24,7 +24,7 @@ class ChatRequestContextAssemblerTest {
             },
             retrieveUserMemory = { projectId, query ->
                 assertEquals("project-1", projectId)
-                assertEquals("当前问题", query)
+                assertEquals("根据知识库和我的偏好，回忆我们之前讨论的当前问题", query)
                 "用户记忆上下文"
             }
         )

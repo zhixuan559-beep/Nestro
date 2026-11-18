@@ -230,4 +230,23 @@ class ModelRequestConfigurationSelectorTest {
 
         assertEquals(listOf("valid-secret"), configs.map { it.apiKey })
     }
+
+    @Test
+    fun registryReasoningEffortIsPassedOnlyForModelsThatDeclareSupport() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("k1", "p", "K1"), ModelApiKey("k2", "p", "K2")),
+            models = listOf(
+                ModelDefinition("active", "p", "Active", "active", listOf("k1"), supportsReasoningEffort = true),
+                ModelDefinition("backup", "p", "Backup", "backup", listOf("k2"))
+            )
+        )
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry = registry, activeModelId = "active", failoverEnabled = true,
+            reasoningEffort = "medium", readKey = { "secret" }
+        )
+        assertEquals("medium", configs.first().reasoningEffort)
+        assertEquals(null, configs.last().reasoningEffort)
+    }
 }

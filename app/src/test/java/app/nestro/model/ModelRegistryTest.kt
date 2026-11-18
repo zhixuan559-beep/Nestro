@@ -312,4 +312,19 @@ class ModelRegistryTest {
         assertEquals("CNY", saved.currency)
         assertNull(edited.validate())
     }
+
+    @Test
+    fun reasoningCapabilityRoundTripsAndDefaultsOffForOlderRegistryPayloads() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            apiKeys = listOf(ModelApiKey("k", "p", "Key")),
+            models = listOf(ModelDefinition("m", "p", "Model", "model", listOf("k"), supportsReasoningEffort = true))
+        )
+        val encoded = ModelRegistryCodec.encode(registry)
+        val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
+        assertTrue(decoded.models.single().supportsReasoningEffort)
+        val oldPayload = encoded.replace(",\"supportsReasoningEffort\":true", "")
+        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
+        assertFalse(oldDecoded.models.single().supportsReasoningEffort)
+    }
 }

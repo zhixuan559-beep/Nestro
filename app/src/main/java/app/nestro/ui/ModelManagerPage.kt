@@ -77,6 +77,7 @@ internal fun ModelManager(
     var modelInputPriceDraft by remember { mutableStateOf("") }
     var modelOutputPriceDraft by remember { mutableStateOf("") }
     var modelCurrencyDraft by remember { mutableStateOf("USD") }
+    var supportsReasoningEffortDraft by remember { mutableStateOf(false) }
     var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
     var replacingApiKeyId by remember { mutableStateOf("") }
     var registryMessage by remember { mutableStateOf("") }
@@ -125,6 +126,7 @@ internal fun ModelManager(
                     modelInputPriceDraft = ""
                     modelOutputPriceDraft = ""
                     modelCurrencyDraft = "USD"
+                    supportsReasoningEffortDraft = false
                 })
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, color = Ink)
@@ -284,6 +286,7 @@ internal fun ModelManager(
                             modelInputPriceDraft = item.inputPricePerMillion?.toString().orEmpty()
                             modelOutputPriceDraft = item.outputPricePerMillion?.toString().orEmpty()
                             modelCurrencyDraft = item.currency
+                            supportsReasoningEffortDraft = item.supportsReasoningEffort
                         }) { Text("编辑", color = Mint) }
                         TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("设为当前", color = Mint) }
                         TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
@@ -296,6 +299,11 @@ internal fun ModelManager(
             OutlinedTextField(modelOutputPriceDraft, { modelOutputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输出价格 / 百万 Token（可留空）") }, singleLine = true)
             OutlinedTextField(modelCurrencyDraft, { modelCurrencyDraft = it.take(3).uppercase() }, modifier = Modifier.fillMaxWidth(), label = { Text("价格币种（3 位代码）") }, singleLine = true)
             Text("编辑时会保留模型启停状态及原有价格等目录元数据；API Key 关联按当前勾选保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = supportsReasoningEffortDraft, onCheckedChange = { supportsReasoningEffortDraft = it })
+                Text("该模型明确支持 reasoning_effort（四档参数）", color = Ink, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("只有服务商确认支持 Off/Low/Medium/High 四档时才勾选；否则不发送该参数。", color = Muted, style = MaterialTheme.typography.bodySmall)
             Text("关联 API Key（可多选，按顺序故障切换）", color = Muted, style = MaterialTheme.typography.bodySmall)
             registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -319,7 +327,8 @@ internal fun ModelManager(
                         enabled = existing?.enabled ?: true,
                         inputPricePerMillion = inputPrice,
                         outputPricePerMillion = outputPrice,
-                        currency = modelCurrencyDraft.trim().uppercase()
+                        currency = modelCurrencyDraft.trim().uppercase(),
+                        supportsReasoningEffort = supportsReasoningEffortDraft
                     )
                     onSaveRegistryModel(model)
                     editingRegistryModelId = ""
