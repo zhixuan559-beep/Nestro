@@ -318,6 +318,9 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_states WHERE taskId = :taskId LIMIT 1")
     suspend fun agentTaskState(taskId: String): AgentTaskStateEntity?
 
+    @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
+    suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
+
     @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'FAILED') ORDER BY updatedAt ASC")
     suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
 
@@ -327,8 +330,17 @@ interface NestroDao {
     @Query("DELETE FROM agent_task_states WHERE taskId = :taskId")
     suspend fun deleteAgentTaskState(taskId: String)
 
+    @Query("DELETE FROM agent_task_states")
+    suspend fun deleteAllAgentTaskStates()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAgentTaskTrace(trace: AgentTaskTraceEntity)
+
+    @Query("SELECT * FROM agent_task_traces ORDER BY createdAt ASC")
+    suspend fun allAgentTaskTraces(): List<AgentTaskTraceEntity>
+
+    @Query("DELETE FROM agent_task_traces")
+    suspend fun deleteAllAgentTaskTraces()
 
     @Query("SELECT * FROM agent_task_traces WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :limit")
     suspend fun recentAgentTaskTraces(taskId: String, limit: Int = 100): List<AgentTaskTraceEntity>
