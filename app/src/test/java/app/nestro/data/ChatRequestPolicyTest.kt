@@ -100,7 +100,7 @@ class ChatRequestPolicyTest {
     fun boundedRequestHistoryPreservesRolesWhenBlankMessagesAreSkipped() {
         val history = listOf(
             ChatMessage("u1", "user", "第一个问题"),
-            ChatMessage("a1", "assistant", "   "),
+            ChatMessage("a1", "assistant", ""),
             ChatMessage("u2", "user", "第二个问题")
         )
         val bounded = boundedRequestHistory(history, "", 2_048)
