@@ -940,6 +940,9 @@ private suspend fun applyLocalBackup(
         .putString("active_project_id", root.stringOrDefault("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
+    // In-flight UI operations belong to the device/process being restored, not the backup.
+    editor.remove("chat_request_state_v1")
+        .remove("pending_project_delete_id")
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.requiredString("base_url")
         val restoredModel = root.requiredString("model")
