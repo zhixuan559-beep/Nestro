@@ -61,7 +61,7 @@ class ExpertTeamExecutionCoordinatorTest {
                 app.nestro.agent.AgentToolResult(true, "已点击")
             }
         }
-        var captured: app.nestro.agent.AgentToolAccess? = null
+        var captured: app.nestro.agent.AgentToolDiscovery? = null
         AgentCapabilityRegistry.register("expert_team", "选题", setOf("knowledge.search"))
         AgentCapabilityRegistry.register("expert_team", "文案", setOf("knowledge.search"))
         try {
