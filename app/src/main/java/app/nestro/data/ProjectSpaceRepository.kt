@@ -10,4 +10,11 @@ class ProjectSpaceRepository(private val database: NestroDatabase) {
 
     suspend fun deleteIfEmpty(projectId: String, activeProjectId: String): Boolean =
         database.dao().deleteProjectIfEmpty(projectId, activeProjectId)
+
+    suspend fun duplicate(
+        sourceProjectId: String,
+        newProjectId: String,
+        newName: String,
+        createdAt: Long
+    ): Boolean = database.dao().duplicateProject(sourceProjectId, newProjectId, newName, createdAt)
 }
