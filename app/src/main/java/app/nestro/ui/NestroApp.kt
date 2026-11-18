@@ -729,7 +729,7 @@ fun NestroApp() {
                     recalledCount = assembledContext.recalledCount
                     if (activeConversationId == requestConversationId) recallSources = assembledContext.recallSources
                     val requestSystemContext = assembledContext.systemContext
-                    val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
+                    val selectedTeam = if (ChatContextRetrievalPolicy.shouldRunExpertTeam(taskModeEnabled, selectedTeamId)) expertTeams.firstOrNull { it.id == selectedTeamId } else null
                     val teamContext = if (selectedTeam != null) {
                         teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
                         teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }

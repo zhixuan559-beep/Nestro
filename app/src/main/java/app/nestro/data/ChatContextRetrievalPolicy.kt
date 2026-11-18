@@ -9,4 +9,8 @@ internal object ChatContextRetrievalPolicy {
     fun shouldRetrieveConversation(prompt: String): Boolean = conversationSignals.any(prompt::contains)
     fun shouldRetrieveKnowledge(prompt: String): Boolean = knowledgeSignals.any(prompt::contains)
     fun shouldRetrieveUserMemory(prompt: String): Boolean = userMemorySignals.any(prompt::contains)
+
+    /** A saved team selection is not authorization; team execution requires explicit task mode. */
+    fun shouldRunExpertTeam(taskModeEnabled: Boolean, selectedTeamId: String): Boolean =
+        taskModeEnabled && selectedTeamId.isNotBlank()
 }

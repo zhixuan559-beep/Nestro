@@ -377,6 +377,7 @@ This is a cross-cutting architecture requirement for Phase 2, not a later polish
 ### 5. Acceptance gates
 
 - A plain conversational message makes no task/Phone Agent scheduling call and does not load MCP/plugin definitions.
+- A previously selected expert team must not execute during ordinary chat; team execution requires the explicit task-execution mode. Merely persisting a selected team is not per-message authorization.
 - An explicit action selects only its required capabilities; unrelated tools are absent from the model context and are not initialized.
 - Ordinary chat defaults to Light (轻量思考); users can select Off (关闭思考), Medium (中度思考), or Heavy (重度思考). Never silently escalate from the selected level.
 - Task context and tool schemas do not leak into the next ordinary chat turn.

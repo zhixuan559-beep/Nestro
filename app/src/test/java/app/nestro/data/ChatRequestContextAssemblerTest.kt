@@ -84,3 +84,17 @@ class ChatRequestContextAssemblerLightweightTest {
         assertTrue(task.systemContext.contains("Phone Agent 目标执行约束"))
     }
 }
+
+class ChatExecutionModePolicyTest {
+    @Test
+    fun persistedTeamSelectionDoesNotAuthorizeOrdinaryChat() {
+        assertFalse(ChatContextRetrievalPolicy.shouldRunExpertTeam(false, "team-1"))
+        assertFalse(ChatContextRetrievalPolicy.shouldRunExpertTeam(false, ""))
+    }
+
+    @Test
+    fun explicitTaskModeAllowsOnlyAnExplicitlySelectedTeam() {
+        assertTrue(ChatContextRetrievalPolicy.shouldRunExpertTeam(true, "team-1"))
+        assertFalse(ChatContextRetrievalPolicy.shouldRunExpertTeam(true, ""))
+    }
+}
