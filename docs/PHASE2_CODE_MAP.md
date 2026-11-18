@@ -467,3 +467,11 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Phone Agent planning calls now record provider-reported usage when available and bounded local estimates otherwise.
 - Added JVM coverage for direct estimated-token recording and Registry model usage attribution.
 - Provider-reported and estimated counts remain separate. Calls that return no provider usage are explicitly counted as estimates.
+
+
+## 2026-11-18 — Include background model calls in usage accounting
+
+- Automatic-memory candidate extraction now forwards both provider-reported usage and local estimated usage to the same per-model accounting path.
+- The background extraction path resolves the actual Registry model ID and persists the usage separately as provider-reported or estimated.
+- Chat usage callbacks now reload the latest persisted usage map before applying each increment, reducing stale Compose-state overwrites when background Phone Agent/memory calls run concurrently.
+- Added regression coverage for mapping both custom Registry model IDs and legacy profile IDs to stable usage-stat keys.
