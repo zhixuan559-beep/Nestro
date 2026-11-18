@@ -2086,6 +2086,11 @@ fun NestroApp() {
                                                                     )
                                                                 }
                                                                 if (copied) {
+                                                                    val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
+                                                                        projectResourceScopes, project.id, copyId
+                                                                    )
+                                                                    ProjectResourceScopeStore.save(prefs, copiedScopes)
+                                                                    projectResourceScopes = copiedScopes
                                                                     val restored = withContext(Dispatchers.IO) {
                                                                         appRuntime.conversationPersistenceService.restore(prefs)
                                                                     }
