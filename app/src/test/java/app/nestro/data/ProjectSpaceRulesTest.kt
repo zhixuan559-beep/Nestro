@@ -203,4 +203,21 @@ class ProjectSpaceRulesTest {
         assertFalse(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.SKILL, "shared", "other"))
         assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.TEAM, "global", "other"))
     }
+\n}\
+    @Test fun projectMemorySettingsDefaultOffOutsideLegacyDefaultAndPreserveExplicitChoices() {
+        val settings = ProjectMemorySettingsStore.decode("""{"default":true,"research":false,"writing":true}""")
+        assertTrue(settings["default"] == true)
+        assertFalse(settings["research"] == true)
+        assertTrue(settings["writing"] == true)
+        assertEquals(settings, ProjectMemorySettingsStore.decode(ProjectMemorySettingsStore.encode(settings)))
+    }
+
+    @Test fun projectMemorySettingsRejectInvalidTypesAndProjectIds() {
+        assertThrows(IllegalStateException::class.java) {
+            ProjectMemorySettingsStore.decode("""{"research":"enabled"}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectMemorySettingsStore.decode("""{"":[true]}""")
+        }
+    }
 \n}\n
