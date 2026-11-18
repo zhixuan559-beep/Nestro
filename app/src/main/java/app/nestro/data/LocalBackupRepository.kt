@@ -279,9 +279,15 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
     val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-    val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else roomProjects
+    val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else parseProjectsForBackup(
+        JSONArray(ProjectPreferencesStore.projectsToJson(roomProjects))
+    )
+    val activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
+    require(backupProjects.any { it.id == activeProjectId && it.archivedAt == 0L }) {
+        "当前活动项目不存在或已归档，已中止备份"
+    }
     root.put("projects", ProjectPreferencesStore.projectsToJson(backupProjects))
-    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
+    root.put("active_project_id", activeProjectId)
     val roomConversationRows = snapshot.conversations
     val legacyConversationRaw = prefs.getString("conversations_v1", "[]") ?: "[]"
     val conversationArray = if (roomConversationRows.isEmpty()) JSONArray(legacyConversationRaw) else JSONArray()
@@ -975,7 +981,11 @@ private suspend fun applyLocalBackup(
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
         .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
-        .putString("active_project_id", root.stringOrDefault("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
+        .putString("active_project_id", (if (root.has("active_project_id")) root.requiredString("active_project_id") else "default").also { id ->
+            require(restoredProjects.any { it.id == id && it.archivedAt == 0L }) {
+                "备份中的活动项目不存在或已归档，拒绝恢复"
+            }
+        })
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
     // In-flight UI operations belong to the device/process being restored, not the backup.
