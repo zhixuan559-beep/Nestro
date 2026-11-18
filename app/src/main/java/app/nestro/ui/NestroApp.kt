@@ -2014,7 +2014,7 @@ fun NestroApp() {
                                                         Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                         Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
-                                                    TextButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                                    TextButton(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
                                                         editingProjectId = project.id
                                                         projectDraftName = project.name
                                                         projectDraftInstructions = project.instructions
@@ -2022,7 +2022,7 @@ fun NestroApp() {
                                                     }) { Text("编辑", color = Mint) }
                                                     if (project.id != "default") {
                                                         TextButton(
-                                                            enabled = deletingProjectId.isBlank() && ProjectSpaceRules.canArchive(project.id, activeProjectId),
+                                                            enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && ProjectSpaceRules.canArchive(project.id, activeProjectId),
                                                             onClick = {
                                                                 val archivedAt = System.currentTimeMillis()
                                                                 projects = projects.map { if (it.id == project.id) it.copy(archivedAt = archivedAt) else it }
@@ -2089,7 +2089,7 @@ fun NestroApp() {
                                                                     }
                                                                 }
                                                             }
-                                                        }, enabled = deletingProjectId.isBlank()) {
+                                                        }, enabled = deletingProjectId.isBlank() && !projectStorageReadOnly) {
                                                             Text(if (deletingProjectId == project.id) "删除中…" else "删除", color = ColorStop)
                                                         }
                                                     }
@@ -2108,7 +2108,7 @@ fun NestroApp() {
                                                         Text("已归档 · ${conversations.count { it.projectId == project.id }} 个对话 · 数据保留在本机", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
                                                     TextButton(
-                                                        enabled = deletingProjectId.isBlank() && ProjectSpaceRules.canRestore(project.id),
+                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && ProjectSpaceRules.canRestore(project.id),
                                                         onClick = {
                                                             projects = projects.map { if (it.id == project.id) it.copy(archivedAt = 0L) else it }
                                                             ProjectPreferencesStore.saveProjects(prefs, projects)
