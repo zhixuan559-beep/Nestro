@@ -349,3 +349,11 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Added tests for member/step tool isolation and lease release.
 - The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation, MCP/plugin discovery and remote credential adapters remain follow-up integration work; do not mark them complete based on the registry foundation alone.
 - APK generation, installation and real-device acceptance remain deferred until all feature code for all 19 modules is complete, followed by one unified final acceptance.
+
+
+## 2026-11-18 — Phone Agent host-independent execution environment
+
+- Phone Agent now depends on a host-independent `PhoneAgentExecutionEnvironment` contract; the current AccessibilityService is the existing adapter.
+- Agent execution, WorkManager availability checks, and UI stop requests use one active-environment provider. Detaching the selected environment leaves no implicit fallback to the user's real screen.
+- Phase 2 provides the architecture seam only. A concrete isolated VirtualDisplay adapter is a Phone Agent feature implementation; reuse from Mika requires the exact repository and license to be checked before copying code.
+- This does not change the unified final-acceptance rule: no APK build or device acceptance until all 19 modules' feature code is complete.
