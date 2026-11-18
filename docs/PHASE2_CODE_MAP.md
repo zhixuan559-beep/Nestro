@@ -475,3 +475,9 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - The background extraction path resolves the actual Registry model ID and persists the usage separately as provider-reported or estimated.
 - Chat usage callbacks now reload the latest persisted usage map before applying each increment, reducing stale Compose-state overwrites when background Phone Agent/memory calls run concurrently.
 - Added regression coverage for mapping both custom Registry model IDs and legacy profile IDs to stable usage-stat keys.
+
+
+## 2026-11-18 — Keep capability selection separate from authorization
+
+- Added a regression test proving that an explicitly loaded `EXTERNAL_WRITE` tool remains blocked by the default permission router and transitions the task to `WAITING_FOR_USER`.
+- A task-scoped allow-list only controls what is discoverable/invokable; it never grants permission. Every invocation still passes through the permission router.

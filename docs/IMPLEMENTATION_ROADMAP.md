@@ -324,3 +324,6 @@ Usage accounting now stores estimated token counts directly, attributes each req
 
 
 Automatic-memory extraction now contributes its model usage to the same provider-vs-estimate accounting as chat, experts, workflows, and Phone Agent. Usage attribution uses the selected Registry model ID while retaining legacy profile identifiers. Chat callbacks merge against the latest persisted stats rather than stale UI state.
+
+
+Security invariant: task-scoped capability selection is not authorization. Every selected tool still passes through AgentPermissionRouter; external writes, authentication, financial actions, and device actions remain subject to their separate confirmation/grant rules. Regression coverage verifies that loading an external-write capability does not execute it or bypass WAITING_FOR_USER.
