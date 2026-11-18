@@ -984,6 +984,12 @@ private suspend fun applyLocalBackup(
         .remove("phone_task_grant_until")
         .remove("phone_single_grant")
         .remove("phone_task_stop_requested")
+    prefs.all.keys.filter { key ->
+        key.startsWith("phone_agent_work_pending_") ||
+            key.startsWith("phone_agent_cancel_requested_") ||
+            key.startsWith("phone_agent_after_handoff_") ||
+            key.startsWith("phone_agent_allow_retry_")
+    }.forEach { editor.remove(it) }
     if (root.has("base_url") && root.has("model")) {
         val restoredBaseUrl = root.requiredString("base_url")
         val restoredModel = root.requiredString("model")
@@ -1021,6 +1027,9 @@ private suspend fun applyLocalBackup(
             editor.remove("model_registry_v1")
         }
     }
+    // A queued worker belongs to the device state being replaced. Stop the old queue
+    // before swapping task rows so a stale worker cannot execute against restored data.
+    app.nestro.phone.PhoneAgentWorkScheduler.cancelAll(context)
     val dao = database.dao()
     database.withTransaction {
         if (refuseActivePhoneTasks) requireNoActivePhoneAgentTasks(database)
