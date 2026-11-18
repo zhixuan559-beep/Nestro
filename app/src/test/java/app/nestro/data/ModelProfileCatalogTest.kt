@@ -90,4 +90,11 @@ class ModelProfileCatalogTest {
         assertTrue(ModelProfileLifecycle.enable(listOf(b),"b").single().enabled)
     }
 
+    @Test fun disabledStateRoundTrips() {
+        val disabled = profile("x","Disabled").copy(enabled = false)
+        val decoded = ModelProfileCatalogCodec.decode(ModelProfileCatalogCodec.encode(listOf(disabled)))
+        assertFalse(decoded.single().enabled)
+        assertTrue(ModelProfileLifecycle.selectable(decoded).isEmpty())
+    }
+
 }
