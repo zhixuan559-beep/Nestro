@@ -33,6 +33,38 @@ private suspend fun requireNoActivePhoneAgentTasks(database: NestroDatabase) {
     }
 }
 
+private fun JSONObject.requiredString(key: String): String =
+    opt(key) as? String ?: error("备份字段 $key 必须是文本")
+
+private fun JSONObject.stringOrDefault(key: String, default: String): String =
+    if (!has(key)) default else requiredString(key)
+
+private fun JSONObject.intOrDefault(key: String, default: Int): Int {
+    if (!has(key)) return default
+    val value = opt(key) as? Number ?: error("备份字段 $key 必须是整数")
+    val number = value.toDouble()
+    require(number.isFinite() && number % 1.0 == 0.0 && number in Int.MIN_VALUE.toDouble()..Int.MAX_VALUE.toDouble()) {
+        "备份字段 $key 整数值无效"
+    }
+    return number.toInt()
+}
+
+private fun JSONObject.longOrDefault(key: String, default: Long): Long {
+    if (!has(key)) return default
+    val value = opt(key) as? Number ?: error("备份字段 $key 必须是整数")
+    val number = value.toDouble()
+    require(number.isFinite() && number % 1.0 == 0.0 && number >= Long.MIN_VALUE.toDouble() && number <= Long.MAX_VALUE.toDouble()) {
+        "备份字段 $key 整数值无效"
+    }
+    return value.toLong()
+}
+
+private fun JSONObject.booleanOrDefault(key: String, default: Boolean): Boolean =
+    if (!has(key)) default else opt(key) as? Boolean ?: error("备份字段 $key 必须是布尔值")
+
+private fun JSONObject.doubleOrDefault(key: String, default: Double): Double =
+    if (!has(key)) default else (opt(key) as? Number)?.toDouble() ?: error("备份字段 $key 必须是数字")
+
 private fun JSONObject.arrayOrEmpty(key: String): JSONArray =
     if (!has(key)) JSONArray() else opt(key) as? JSONArray ?: error("备份字段 $key 格式无效")
 
@@ -170,10 +202,10 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     val auditSnapshot = JSONArray()
     for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
         val item = phoneAudit.optJSONObject(index) ?: error("Phone Agent 安全审计记录包含无效条目，已中止备份")
-        val action = item.optString("action")
-        val detail = item.optString("detail")
+        val action = item.requiredString("action")
+        val detail = item.requiredString("detail")
         require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 安全审计记录字段无效，已中止备份" }
-        auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
+        auditSnapshot.put(JSONObject().put("at", item.longOrDefault("at", 0L)).put("action", action).put("detail", detail))
     }
     root.put("phone_audit_v1", auditSnapshot)
     val legacyMessagesRaw = if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]"
@@ -449,8 +481,8 @@ private suspend fun applyLocalBackup(
 ) {
     LocalBackupCompatibility.requireUtf8SizeWithin(raw, 10_000_000, "备份文件过大")
     val root = JSONObject(raw)
-    require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
+    require(root.requiredString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
+    require(LocalBackupCompatibility.isSupported(root.intOrDefault("version", 0))) { "暂不支持此备份版本" }
     require(LocalBackupCompatibility.verifyChecksum(root)) { "备份完整性校验失败，文件可能已损坏或被修改" }
     val rawMessages = root.opt("messages")
     val messages = when {
@@ -474,7 +506,7 @@ private suspend fun applyLocalBackup(
         require(items.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制（最多 $MAX_BACKUP_MESSAGES_PER_CONVERSATION 条）" }
         for (j in 0 until items.length()) {
             val item = items.getJSONObject(j)
-            require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
+            require(item.requiredString("role") in setOf("user", "assistant")) { "消息角色无效" }
             require(item.has("id") && item.has("content")) { "消息字段缺失" }
         }
     }
@@ -495,21 +527,21 @@ private suspend fun applyLocalBackup(
     require(teamHistoryArray.length()<=30) { "专家团队运行记录数量超出限制" }
     val restoredTeamHistory = ExpertTeamRunHistoryCodec.decode(teamHistoryRaw)
     require(restoredTeamHistory.size==teamHistoryArray.length()) { "专家团队运行记录包含无效数据" }
-    val globalMemory = root.optString("global_memory_v1", "")
+    val globalMemory = root.stringOrDefault("global_memory_v1", "")
     require(globalMemory.length <= 12000) { "全局记忆超出限制" }
-    val restoredReasoningEffort = root.optString("reasoning_effort_v1", "low")
+    val restoredReasoningEffort = root.stringOrDefault("reasoning_effort_v1", "low")
     require(restoredReasoningEffort in setOf("none", "low", "medium", "high")) { "思考强度设置无效" }
-    val restoredTtsSpeechRate = root.optDouble("tts_speech_rate", 1.0).toFloat()
+    val restoredTtsSpeechRate = root.doubleOrDefault("tts_speech_rate", 1.0).toFloat()
     require(restoredTtsSpeechRate.isFinite() && restoredTtsSpeechRate in 0.7f..1.3f) { "语音语速设置无效" }
     val auditRows = root.arrayOrEmpty("phone_audit_v1")
     require(auditRows.length() <= 100) { "Phone Agent 安全审计记录数量超出限制" }
     val restoredPhoneAudit = JSONArray()
     for (index in 0 until auditRows.length()) {
         val item = auditRows.getJSONObject(index)
-        val action = item.optString("action")
-        val detail = item.optString("detail")
+        val action = item.requiredString("action")
+        val detail = item.requiredString("detail")
         require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 审计记录字段无效" }
-        restoredPhoneAudit.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
+        restoredPhoneAudit.put(JSONObject().put("at", item.longOrDefault("at", 0L)).put("action", action).put("detail", detail))
     }
     val memoryRows = root.arrayOrEmpty("user_memories")
     require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
@@ -529,17 +561,17 @@ private suspend fun applyLocalBackup(
     require(conversationRows.length() <= 200) { "会话数量超出限制" }
     val restoredConversations = (0 until conversationRows.length()).map { index ->
         val item = conversationRows.getJSONObject(index)
-        val id = item.optString("id"); val projectId = item.optString("project_id", "default"); val title = item.optString("title", "新对话")
+        val id = item.requiredString("id"); val projectId = item.stringOrDefault("project_id", "default"); val title = item.stringOrDefault("title", "新对话")
         require(id.isNotBlank() && id.length <= 120 && projectId in restoredProjectIds && title.length <= 80) { "会话标识或项目归属无效" }
         val rows = item.arrayOrEmpty("messages")
         require(rows.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制" }
         val restoredMessages = (0 until rows.length()).map { messageIndex ->
-            val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
+            val message = rows.getJSONObject(messageIndex); val messageId = message.requiredString("id"); val role = message.requiredString("role"); val content = message.requiredString("content")
             require(messageId.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000) { "会话消息字段无效" }
             val (versionsJson, activeVersion) = decodeBackupMessageVersions(message)
             MessageEntity(messageId, id, messageIndex, role, content, versionsJson, activeVersion)
         }
-        ConversationEntity(id, title, item.optLong("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
+        ConversationEntity(id, title, item.longOrDefault("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
     }
     val completeRestoredConversations = if (restoredConversations.isNotEmpty()) restoredConversations else if (messages.length() > 0) {
         val legacyMessages = (0 until messages.length()).mapIndexed { index, messageIndex ->
@@ -566,7 +598,7 @@ private suspend fun applyLocalBackup(
     val restoredDrafts = linkedMapOf<String, String>()
     val draftKeys = draftObject.keys()
     while (draftKeys.hasNext()) {
-        val id = draftKeys.next(); val value = draftObject.optString(id)
+        val id = draftKeys.next(); val value = draftObject.requiredString(id)
         require(completeRestoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
         restoredDrafts[id] = value
     }
@@ -574,35 +606,35 @@ private suspend fun applyLocalBackup(
     val chunkRows = root.arrayOrEmpty("knowledge_chunks_v1")
     require(documentRows.length() <= 500 && chunkRows.length() <= 50_000) { "知识库备份数量超出限制" }
     val restoredKnowledgeDocuments = (0 until documentRows.length()).map { index ->
-        val item = documentRows.getJSONObject(index); val id = item.optString("id"); val projectId = item.optString("projectId")
-        val name = item.optString("name"); val hash = item.optString("contentHash"); val size = item.optLong("sizeBytes", 0L)
+        val item = documentRows.getJSONObject(index); val id = item.requiredString("id"); val projectId = item.requiredString("projectId")
+        val name = item.requiredString("name"); val hash = item.requiredString("contentHash"); val size = item.longOrDefault("sizeBytes", 0L)
         require(id.isNotBlank() && projectId in restoredProjectIds && name.isNotBlank() && name.length <= 180 && hash.matches(Regex("[a-fA-F0-9]{64}")) && size in 0..2_097_152) { "知识库文档元数据无效" }
-        val mimeType = item.optString("mimeType", "text/plain")
+        val mimeType = item.stringOrDefault("mimeType", "text/plain")
         require(mimeType.length <= 120) { "知识库文档 MIME 类型过长" }
-        KnowledgeDocumentEntity(id, projectId, name, mimeType, size, item.optLong("importedAt", System.currentTimeMillis()), hash.lowercase())
+        KnowledgeDocumentEntity(id, projectId, name, mimeType, size, item.longOrDefault("importedAt", System.currentTimeMillis()), hash.lowercase())
     }
     require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
     val docsById = restoredKnowledgeDocuments.associateBy { it.id }
     val restoredKnowledgeChunks = (0 until chunkRows.length()).map { index ->
-        val item = chunkRows.getJSONObject(index); val id = item.optString("id"); val documentId = item.optString("documentId")
-        val projectId = item.optString("projectId"); val position = item.optInt("position", -1); val content = item.optString("content")
+        val item = chunkRows.getJSONObject(index); val id = item.requiredString("id"); val documentId = item.requiredString("documentId")
+        val projectId = item.requiredString("projectId"); val position = item.intOrDefault("position", -1); val content = item.requiredString("content")
         require(id.isNotBlank() && docsById[documentId]?.projectId == projectId && position >= 0 && content.isNotBlank() && content.length <= 6000) { "知识库文本片段无效或缺少所属文档" }
         KnowledgeChunkEntity(id, documentId, projectId, position, content)
     }
     require(restoredKnowledgeChunks.map { it.id }.distinct().size == restoredKnowledgeChunks.size) { "知识库片段 ID 重复" }
     val restoredMemories = (0 until memoryRows.length()).map { index ->
         val item = memoryRows.getJSONObject(index)
-        val category = item.optString("category")
-        val content = item.optString("content")
-        val projectId = item.optString("projectId")
-        val sourceConversationId = item.optString("sourceConversationId")
-        val sourceMessageId = item.optString("sourceMessageId")
-        require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
+        val category = item.requiredString("category")
+        val content = item.requiredString("content")
+        val projectId = item.requiredString("projectId")
+        val sourceConversationId = item.requiredString("sourceConversationId")
+        val sourceMessageId = item.requiredString("sourceMessageId")
+        require(item.requiredString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
         require(conversationProjectById[sourceConversationId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的会话" }
         require(messageProjectById[sourceMessageId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的消息" }
         require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
-        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
-        val confidence = item.optDouble("confidence", 0.0)
+        require(content.length in 8..180 && item.requiredString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
+        val confidence = item.doubleOrDefault("confidence", 0.0)
         require(confidence in 0.8..1.0) { "记忆置信度无效" }
         UserMemoryEntity(
             id = item.getString("id"),
@@ -613,8 +645,8 @@ private suspend fun applyLocalBackup(
             sourceConversationId = sourceConversationId,
             sourceMessageId = sourceMessageId,
             confidence = confidence,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+            createdAt = item.longOrDefault("createdAt", System.currentTimeMillis()),
+            updatedAt = item.longOrDefault("updatedAt", System.currentTimeMillis())
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
@@ -629,15 +661,15 @@ private suspend fun applyLocalBackup(
     val validTaskCategories = PhoneAgentPlanner.Category.values().map { it.name }.toSet()
     val restoredTasks = (0 until taskRows.length()).map { index ->
         val item = taskRows.getJSONObject(index)
-        val id = item.optString("id")
-        val projectId = item.optString("projectId")
-        val conversationId = item.optString("conversationId")
-        val goal = item.optString("goal")
+        val id = item.requiredString("id")
+        val projectId = item.requiredString("projectId")
+        val conversationId = item.requiredString("conversationId")
+        val goal = item.requiredString("goal")
         require(conversationId.length <= 120) { "Phone Agent 任务会话 ID 过长" }
-        val category = item.optString("category")
-        val status = item.optString("status")
-        val planJson = item.optString("planJson", "[]")
-        val currentStep = item.optInt("currentStep", 0)
+        val category = item.requiredString("category")
+        val status = item.requiredString("status")
+        val planJson = item.stringOrDefault("planJson", "[]")
+        val currentStep = item.intOrDefault("currentStep", 0)
         require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
         require(conversationProjectById[conversationId]?.let { it == projectId } != false) { "Phone Agent 任务引用了其他项目空间的会话" }
         require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
@@ -652,8 +684,8 @@ private suspend fun applyLocalBackup(
             status = status,
             planJson = planJson,
             currentStep = currentStep,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+            createdAt = item.longOrDefault("createdAt", System.currentTimeMillis()),
+            updatedAt = item.longOrDefault("updatedAt", System.currentTimeMillis())
         )
     }
     val restoredTaskIds = restoredTasks.map { it.id }.toSet()
@@ -662,11 +694,11 @@ private suspend fun applyLocalBackup(
     require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
     val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
         val item = taskLogRows.getJSONObject(index)
-        val id = item.optString("id")
-        val taskId = item.optString("taskId")
-        val actionIndex = item.optInt("actionIndex", 0)
-        val action = item.optString("action")
-        val detail = item.optString("detail")
+        val id = item.requiredString("id")
+        val taskId = item.requiredString("taskId")
+        val actionIndex = item.intOrDefault("actionIndex", 0)
+        val action = item.requiredString("action")
+        val detail = item.requiredString("detail")
         require(taskId in restoredTaskIds) { "任务审计记录缺少所属任务" }
         require(actionIndex in 0..100 && action.length in 1..60 && detail.length <= 240) {
             "任务审计记录字段无效"
@@ -676,16 +708,16 @@ private suspend fun applyLocalBackup(
             taskId = taskId,
             actionIndex = actionIndex,
             action = action,
-            success = item.optBoolean("success", false),
+            success = item.booleanOrDefault("success", false),
             detail = detail,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis())
+            createdAt = item.longOrDefault("createdAt", System.currentTimeMillis())
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredTaskLogs.map { it.id }, "任务日志")
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
-        require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
-        require(item.has("content") && item.has("id") && item.optString("id").isNotBlank() && item.optString("content").length <= 200_000) { "消息字段缺失或内容过长" }
+        require(item.requiredString("role") in setOf("user", "assistant")) { "消息角色无效" }
+        require(item.has("content") && item.has("id") && item.requiredString("id").isNotBlank() && item.requiredString("content").length <= 200_000) { "消息字段缺失或内容过长" }
     }
     val experts = JSONArray(root.getString("experts"))
     require(experts.length() <= 100) { "专家数量超出限制" }
@@ -693,18 +725,18 @@ private suspend fun applyLocalBackup(
     val expertNames = (0 until experts.length()).map { experts.getString(it) }.toSet()
     require(expertNames.size == experts.length()) { "专家名称重复" }
     val prompts = JSONObject(root.getString("expert_prompts"))
-    val profileRaw = root.optString("expert_profiles_v1", "{}")
+    val profileRaw = root.stringOrDefault("expert_profiles_v1", "{}")
     require(profileRaw.length <= 100_000) { "专家配置元数据过大" }
     val restoredExpertProfiles = ExpertProfileCodec.decode(profileRaw)
     require(profileRaw == "{}" || restoredExpertProfiles.isNotEmpty()) { "专家配置元数据格式无效" }
     require(restoredExpertProfiles.size <= 100 && restoredExpertProfiles.keys.all { it in expertNames }) { "专家配置元数据引用无效" }
-    val restoredSelectedExpertRaw = root.optString("selected_expert", "通用助手")
-    val revisionRaw = root.optString("expert_versions_v1", "{}")
+    val restoredSelectedExpertRaw = root.stringOrDefault("selected_expert", "通用助手")
+    val revisionRaw = root.stringOrDefault("expert_versions_v1", "{}")
     require(revisionRaw.length <= 500_000) { "专家版本历史过大" }
     val restoredExpertRevisions = ExpertRevisionCodec.decode(revisionRaw)
     require(revisionRaw == "{}" || restoredExpertRevisions.isNotEmpty()) { "专家版本历史格式无效" }
     require(restoredExpertRevisions.size <= 100 && restoredExpertRevisions.keys.all { it in expertNames }) { "专家版本历史引用无效" }
-    val templateRaw = root.optString("expert_templates_v1", "[]")
+    val templateRaw = root.stringOrDefault("expert_templates_v1", "[]")
     require(templateRaw.length <= 300_000) { "专家模板数据过大" }
     val restoredExpertTemplates = ExpertTemplateCodec.decode(templateRaw)
     require(templateRaw == "[]" || restoredExpertTemplates.isNotEmpty()) { "专家模板格式无效" }
@@ -714,10 +746,10 @@ private suspend fun applyLocalBackup(
     val cleanTeams = JSONArray()
     for (i in 0 until teamArray.length()) {
         val item = teamArray.getJSONObject(i)
-        val members = item.optJSONArray("members") ?: JSONArray()
-        val teamId = item.optString("id")
-        val teamName = item.optString("name")
-        val teamDescription = item.optString("description")
+        val members = item.arrayOrEmpty("members")
+        val teamId = item.requiredString("id")
+        val teamName = item.requiredString("name")
+        val teamDescription = item.stringOrDefault("description", "")
         val memberNames = (0 until members.length()).map { members.getString(it) }
         require(teamId.isNotBlank() && teamName.isNotBlank() && teamName.length <= 40 && teamDescription.length <= 300) {
             "专家团队标识或文本字段无效"
@@ -734,22 +766,22 @@ private suspend fun applyLocalBackup(
         (0 until cleanTeams.length()).map { cleanTeams.getJSONObject(it).getString("id") },
         "专家团队"
     )
-    val selectedTeam = root.optString("selected_team_id", "")
+    val selectedTeam = root.stringOrDefault("selected_team_id", "")
     val validSelectedTeam = selectedTeam.takeIf { id ->
         (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).optString("id") == id }
     } ?: ""
-    val skills = JSONObject(root.optString("skills", "{}"))
+    val skills = JSONObject(root.stringOrDefault("skills", "{}"))
     require(skills.length() <= 100) { "技能数量超出限制" }
-    val skillMetadata = JSONObject(root.optString("skill_metadata_v1", "{}"))
+    val skillMetadata = JSONObject(root.stringOrDefault("skill_metadata_v1", "{}"))
     require(skillMetadata.length() <= 100) { "技能元数据数量超出限制" }
-    val disabledSkillArray = JSONArray(root.optString("disabled_skills_v1", "[]"))
+    val disabledSkillArray = JSONArray(root.stringOrDefault("disabled_skills_v1", "[]"))
     require(disabledSkillArray.length()<=100) { "停用技能数量超出限制" }
     val disabledSkillNames = (0 until disabledSkillArray.length()).map { disabledSkillArray.getString(it) }.toSet()
     val cleanSkillMetadata = JSONObject()
     val metadataKeys = skillMetadata.keys()
     while (metadataKeys.hasNext()) {
         val name = metadataKeys.next()
-        val metadata = skillMetadata.optString(name)
+        val metadata = skillMetadata.requiredString(name)
         require(name.length <= 40 && metadata.length <= 4000) { "技能元数据无效" }
         runCatching { JSONObject(metadata) }.getOrElse { error("技能元数据格式无效") }
         cleanSkillMetadata.put(name, metadata)
@@ -758,7 +790,7 @@ private suspend fun applyLocalBackup(
     val skillKeys = skills.keys()
     while (skillKeys.hasNext()) {
         val name = skillKeys.next()
-        val prompt = skills.optString(name)
+        val prompt = skills.requiredString(name)
         require(name.length <= 40 && prompt.length <= 8000) { "技能内容超出限制" }
         cleanSkills.put(name, prompt)
     }
@@ -783,7 +815,7 @@ private suspend fun applyLocalBackup(
     val keys = prompts.keys()
     while (keys.hasNext()) {
         val name = keys.next()
-        val prompt = prompts.optString(name)
+        val prompt = prompts.requiredString(name)
         require(prompt.length <= 8_000) { "专家提示词过长" }
         cleanPrompts.put(name, prompt)
     }
@@ -801,9 +833,9 @@ private suspend fun applyLocalBackup(
     val editor = prefs.edit()
         .putString("messages", messages.toString())
         .putString("conversations_v1", normalizedConversationBackup.toString())
-        .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
+        .putString("active_conversation_id", root.stringOrDefault("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
-        .putBoolean("automatic_memory_enabled", root.optBoolean("automatic_memory_enabled", false))
+        .putBoolean("automatic_memory_enabled", root.booleanOrDefault("automatic_memory_enabled", false))
         .putString("reasoning_effort_v1", restoredReasoningEffort)
         .putFloat("tts_speech_rate", restoredTtsSpeechRate)
         .putString("phone_audit", restoredPhoneAudit.toString())
@@ -822,22 +854,22 @@ private suspend fun applyLocalBackup(
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
         .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
-        .putString("active_project_id", root.optString("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
+        .putString("active_project_id", root.stringOrDefault("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
     if (root.has("base_url") && root.has("model")) {
-        val restoredBaseUrl = root.optString("base_url")
-        val restoredModel = root.optString("model")
+        val restoredBaseUrl = root.requiredString("base_url")
+        val restoredModel = root.requiredString("model")
         require(restoredBaseUrl.length <= 2048 && restoredModel.length <= 200) { "模型配置字段过长" }
-        val restoredProfilesRaw = root.optString("model_profiles_v1", "[]")
+        val restoredProfilesRaw = root.stringOrDefault("model_profiles_v1", "[]")
         val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
         require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
-        val restoredActiveProfileId = root.optString("active_model_profile_id", "")
+        val restoredActiveProfileId = root.stringOrDefault("active_model_profile_id", "")
             .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
-        val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
+        val restoredModelUsageRaw = root.stringOrDefault("model_usage_v1", "{}")
         val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
         require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
-        val restoredRegistryRaw = root.optString("model_registry_v1", "")
+        val restoredRegistryRaw = root.stringOrDefault("model_registry_v1", "")
         val restoredRegistry = if (restoredRegistryRaw.isBlank()) null else {
             require(restoredRegistryRaw.length <= 100_000) { "模型目录备份过大" }
             (ModelRegistryCodec.decodeOrNull(restoredRegistryRaw)
@@ -845,7 +877,7 @@ private suspend fun applyLocalBackup(
                 require(registry.validate() == null && (registry.providers.isNotEmpty() || restoredProfiles.isEmpty())) { "模型目录备份无效" }
             }
         }
-        val restoredFailoverEnabled = root.optBoolean("model_failover_enabled", false)
+        val restoredFailoverEnabled = root.booleanOrDefault("model_failover_enabled", false)
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
