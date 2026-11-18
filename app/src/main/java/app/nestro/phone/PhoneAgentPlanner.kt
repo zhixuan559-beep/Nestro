@@ -8,6 +8,9 @@ object PhoneAgentPlanner {
     data class Step(val kind: StepKind, val title: String, val risk: Risk = Risk.LOW, val requiresUserConfirmation: Boolean = false)
     data class Plan(val category: Category, val goal: String, val steps: List<Step>, val requiresHumanAtCommit: Boolean = true)
 
+    fun shouldCreateTask(taskModeEnabled: Boolean, plan: Plan): Boolean =
+        taskModeEnabled && plan.category != Category.GENERAL
+
     fun plan(prompt: String): Plan {
         val text = prompt.trim()
         val normalized = text.lowercase()

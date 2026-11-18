@@ -39,6 +39,21 @@ class PhoneAgentPlannerTest {
     }
 
     @Test
+    fun ordinaryChatNeverCreatesPhoneAgentTaskEvenWhenPromptContainsActionKeywords() {
+        val plan = PhoneAgentPlanner.plan("帮我搜索咖啡价格")
+        assertEquals(PhoneAgentPlanner.Category.SHOPPING, plan.category)
+        assertTrue(!PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = false, plan = plan))
+    }
+
+    @Test
+    fun explicitTaskModeCreatesOnlyNonGeneralTasks() {
+        val actionPlan = PhoneAgentPlanner.plan("帮我预约明天的餐厅")
+        val chatPlan = PhoneAgentPlanner.plan("解释 Kotlin 协程")
+        assertTrue(PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = actionPlan))
+        assertTrue(!PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = chatPlan))
+    }
+
+    @Test
     fun formTaskHandsSensitiveSubmissionBackToUser() {
         val plan = PhoneAgentPlanner.plan("帮我填写并提交报名表")
         assertEquals(PhoneAgentPlanner.Category.FORM, plan.category)

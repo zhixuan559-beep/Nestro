@@ -355,8 +355,8 @@ This is a cross-cutting architecture requirement for Phase 2, not a later polish
 
 ### 2. User-controllable reasoning effort
 
-- Provide clear reasoning choices: **Off / Lightweight (default) / Medium / Heavy**. The UI may present Off and the three effort levels as compact controls; provider/model capability differences must be handled honestly.
-- Off means do not request optional extended reasoning when the selected model/provider exposes such a control. It does not promise that every provider internally performs zero reasoning.
+- Provide four clear reasoning choices: **Off (关闭思考) / Light (轻量思考, default) / Medium (中度思考) / Heavy (重度思考)**. The UI may present Off and the three effort levels as compact controls; provider/model capability differences must be handled honestly.
+- Off means request the provider’s explicit no-reasoning/none setting only when the selected model/provider documents support for it; otherwise omit the parameter and clearly expose that the provider cannot guarantee this mode. It does not promise that every provider internally performs zero reasoning.
 - Lightweight is the default for ordinary chat. Medium and Heavy are opt-in for complex questions or tasks. Do not silently escalate effort because a tool or expert is available.
 - If a provider does not expose a reasoning-effort parameter, omit it rather than sending invented or unsupported parameters.
 
@@ -378,7 +378,7 @@ This is a cross-cutting architecture requirement for Phase 2, not a later polish
 
 - A plain conversational message makes no task/Phone Agent scheduling call and does not load MCP/plugin definitions.
 - An explicit action selects only its required capabilities; unrelated tools are absent from the model context and are not initialized.
-- Ordinary chat defaults to Lightweight, supports Off where supported, and never silently escalates to Medium/Heavy.
+- Ordinary chat defaults to Light (轻量思考); users can select Off (关闭思考), Medium (中度思考), or Heavy (重度思考). Never silently escalate from the selected level.
 - Task context and tool schemas do not leak into the next ordinary chat turn.
 - Prompt/token usage is bounded and measured separately for chat and tasks; memory/knowledge retrieval is selective rather than unconditional.
 - Provider limitations are visible and safe: unsupported reasoning parameters are omitted, not guessed.
@@ -386,3 +386,12 @@ This is a cross-cutting architecture requirement for Phase 2, not a later polish
 ### Implementation sequencing
 
 Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Phone Agent lifecycle refactor. Add routing and token-budget regression tests in the same batches as the implementation. Do not postpone this to Phase 3 or treat it as an optional optimization.
+
+
+## 2026-11-18 — Explicit task-mode gate for Phone Agent
+
+- Added a persistent composer switch with two states: **普通聊天** (default) and **任务执行** (explicit opt-in).
+- Removed unconditional Phone Agent planning from every chat send. Ordinary chat now skips Phone Agent planning entirely, even if the text contains keywords such as 搜索、咖啡 or 预约.
+- Phone Agent planning/task creation runs only while the user has explicitly enabled task mode. A GENERAL plan still does not create a task.
+- Added JVM regression tests proving action-like wording in ordinary chat does not create a task, while explicit task mode can create a non-GENERAL task.
+- The switch is persisted locally so the selected mode survives app restarts; the visible composer label always shows which mode is active.

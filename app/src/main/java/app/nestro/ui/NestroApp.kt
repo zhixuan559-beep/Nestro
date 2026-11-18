@@ -137,6 +137,7 @@ fun NestroApp() {
         ModelManagementUiState(prefs, modelRepository)
     }
     var config by modelUiState.config
+    var taskModeEnabled by remember(prefs) { mutableStateOf(prefs.getBoolean("chat_task_mode_enabled", false)) }
     var modelProfiles by modelUiState.modelProfiles
     var modelRegistry by modelUiState.modelRegistry
     var activeModelProfileId by modelUiState.activeModelProfileId
@@ -686,7 +687,6 @@ fun NestroApp() {
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 try {
-                val phonePlan = PhoneAgentPlanner.plan(prompt)
                 if (stopRequested) {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
                     conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId, conversations)
@@ -698,16 +698,21 @@ fun NestroApp() {
                     stopRequested = false
                     return@launch
                 }
-                if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
-                    runCatchingCancellable {
-                        withContext(Dispatchers.IO) {
-                            appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
-                                requestProjectId,
-                                requestConversationId,
-                                phonePlan
-                            )
-                        }
-                    }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
+                // Ordinary chat never runs Phone Agent intent planning. Task planning is
+                // reachable only after the user explicitly enables task mode in the composer.
+                if (taskModeEnabled) {
+                    val phonePlan = PhoneAgentPlanner.plan(prompt)
+                    if (PhoneAgentPlanner.shouldCreateTask(taskModeEnabled, phonePlan)) {
+                        runCatchingCancellable {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                    requestProjectId,
+                                    requestConversationId,
+                                    phonePlan
+                                )
+                            }
+                        }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
+                    }
                 }
                 val partialAnswer = StringBuilder()
                 var recalledCount = 0
@@ -988,6 +993,7 @@ fun NestroApp() {
                                 ) {
                                     AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
+                                    AssistChip(onClick = { taskModeEnabled = !taskModeEnabled; prefs.edit().putBoolean("chat_task_mode_enabled", taskModeEnabled).apply() }, label = { Text(if (taskModeEnabled) "任务执行：开启" else "普通聊天") })
                                     AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
                                     AssistChip(onClick = { page = "teams" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })

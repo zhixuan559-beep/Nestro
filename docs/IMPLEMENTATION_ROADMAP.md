@@ -293,4 +293,9 @@
 
 ## Cross-cutting requirement: low-cost chat and on-demand task execution
 
-The Phase 2 refactor must preserve a strict separation between ordinary conversation and task execution. Ordinary chat defaults to Lightweight reasoning (with Off available where the provider supports it), does not automatically start Agents or load tools, and uses a compact context budget. Medium/Heavy reasoning and task-only capabilities are opt-in. For an explicit task, resolve the minimum required capability set and load only those tools; never enumerate or inject the full tool catalog on every turn. Task context must be scoped to the task and released afterward. See [the detailed architecture and acceptance gates](PHASE2_CODE_MAP.md#2026-11-18--lightweight-chat-controllable-reasoning-and-precision-tool-dispatch-product-wide-refactor-requirement).
+The Phase 2 refactor must preserve a strict separation between ordinary conversation and task execution. Ordinary chat defaults to Light (轻量思考), with four user-selectable levels: Off (关闭思考), Light (轻量思考), Medium (中度思考), and Heavy (重度思考), does not automatically start Agents or load tools, and uses a compact context budget. Medium/Heavy reasoning and task-only capabilities are opt-in. For an explicit task, resolve the minimum required capability set and load only those tools; never enumerate or inject the full tool catalog on every turn. Task context must be scoped to the task and released afterward. See [the detailed architecture and acceptance gates](PHASE2_CODE_MAP.md#2026-11-18--lightweight-chat-controllable-reasoning-and-precision-tool-dispatch-product-wide-refactor-requirement).
+
+
+## Explicit task-mode gate
+
+The chat composer exposes **普通聊天** as the default and a separate **任务执行** opt-in. Ordinary chat must not invoke Phone Agent planning or create task records based on keyword matches. Phone Agent planning is reachable only while task mode is explicitly enabled; a GENERAL classification still creates no task.
