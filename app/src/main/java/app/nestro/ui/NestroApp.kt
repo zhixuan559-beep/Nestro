@@ -726,25 +726,44 @@ fun NestroApp() {
             activeRequestId = assistantId
             activeRequestConversationId = requestConversationId
             val requestProjectId = activeProjectId
-            val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, selectedTeamId)
-            val requestExpertTeams = expertTeams.toList()
-            val requestExpertProfiles = expertProfiles.toMap()
-            val requestExpertPrompts = expertPrompts.toMap()
-            val requestSkills = skills.toMap()
+            val requestSelectedTeamId = selectedTeamId.takeIf {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it, requestProjectId)
+            }.orEmpty()
+            val requestSelectedExpert = selectedExpert.takeIf {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+            } ?: "通用助手"
+            val requestSelectedSkill = selectedSkill.takeIf {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+            }.orEmpty()
+            val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
+            val requestExpertTeams = expertTeams.filter {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId)
+            }
+            val requestExpertProfiles = expertProfiles.filterKeys {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+            }
+            val requestExpertPrompts = expertPrompts.filterKeys {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+            }
+            val requestSkills = skills.filterKeys {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+            }
             val requestDisabledSkills = disabledSkills.toSet()
-            val requestExperts = experts.toSet()
+            val requestExperts = experts.filter {
+                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+            }.toSet()
             val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
             val requestUserId = user.id
             val requestStartedAt = System.currentTimeMillis()
             ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, "", requestStartedAt)
-            val requestExpertProfile = requestExpertProfiles[selectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
+            val requestExpertProfile = requestExpertProfiles[requestSelectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
-                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[selectedExpert]?.enabled != false) requestExpertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
-                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[selectedExpert], requestSkills, requestDisabledSkills) else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[requestSelectedExpert]?.enabled != false) requestExpertPrompts[requestSelectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills) else "",
                 requestProjectInstructions,
-                requestSkills[selectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && selectedSkill !in requestDisabledSkills }.orEmpty()
+                requestSkills[requestSelectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && requestSelectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
                 try {
