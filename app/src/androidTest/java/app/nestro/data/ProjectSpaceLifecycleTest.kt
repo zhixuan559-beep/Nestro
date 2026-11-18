@@ -195,14 +195,18 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
-    @Test fun projectChangesMarkARecoverableSnapshotEvenAfterRoomInitialization() {
+    @Test fun projectChangesAlwaysCreateASnapshotNewerThanTheRoomSyncMarker() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = context.getSharedPreferences("nestro_project_snapshot_dirty_test", Context.MODE_PRIVATE)
         try {
+            // Simulate two writes in the same millisecond and a device clock that
+            // has not advanced: equality would make the restore predicate miss the
+            // user change because it uses local_snapshot_saved_at > room_synced_at.
+            val syncedTimestamp = System.currentTimeMillis() + 60_000L
             prefs.edit().clear()
                 .putBoolean("room_storage_initialized", true)
-                .putLong("room_synced_at", 10L)
-                .putLong("local_snapshot_saved_at", 10L)
+                .putLong("room_synced_at", syncedTimestamp)
+                .putLong("local_snapshot_saved_at", syncedTimestamp)
                 .commit()
 
             val projects = listOf(
@@ -212,12 +216,18 @@ class ProjectSpaceLifecycleTest {
             ProjectPreferencesStore.saveProjects(prefs, projects)
 
             val dirtyTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
-            assertTrue("Room 已初始化后，项目变更仍必须标记为待同步快照", dirtyTimestamp > 10L)
+            assertTrue(
+                "项目变更快照必须严格晚于 Room 同步标记，不能依赖系统时钟刚好前进",
+                dirtyTimestamp > syncedTimestamp
+            )
             assertEquals(projects, ProjectPreferencesStore.loadProjects(prefs))
 
             ProjectPreferencesStore.saveProjects(prefs, projects, markDirty = false)
-            assertEquals("Room 持久化完成后的内部快照写入不得重新标脏", dirtyTimestamp,
-                prefs.getLong("local_snapshot_saved_at", 0L))
+            assertEquals(
+                "Room 持久化完成后的内部快照写入不得重新标脏",
+                dirtyTimestamp,
+                prefs.getLong("local_snapshot_saved_at", 0L)
+            )
         } finally {
             prefs.edit().clear().commit()
         }
