@@ -2057,6 +2057,21 @@ fun NestroApp() {
                                                         scope.launch {
                                                             activeProjectId = project.id
                                                             automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, selectedExpert, project.id)) {
+                                                                selectedExpert = "通用助手"
+                                                                prefs.edit().putString("selected_expert", selectedExpert).apply()
+                                                            }
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, selectedTeamId, project.id)) {
+                                                                selectedTeamId = ""
+                                                                prefs.edit().putString("selected_team_id", "").apply()
+                                                            }
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, selectedSkill, project.id)) {
+                                                                selectedSkill = ""
+                                                                prefs.edit().putString("selected_skill", "").apply()
+                                                            }
                                                             prefs.edit().putString("active_project_id", project.id)
                                                                 .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                                                             val target = conversations.firstOrNull { it.projectId == project.id }
