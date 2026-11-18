@@ -490,6 +490,82 @@ interface NestroDao {
         return true
     }
 
+    @Transaction
+    suspend fun duplicateProject(
+        sourceProjectId: String,
+        newProjectId: String,
+        newName: String,
+        createdAt: Long
+    ): Boolean {
+        if (sourceProjectId.isBlank() || newProjectId.isBlank() || sourceProjectId == newProjectId ||
+            createdAt < 0L || projectExists(newProjectId)) return false
+        val currentProjects = loadProjects()
+        val source = currentProjects.firstOrNull { it.id == sourceProjectId } ?: return false
+        val validation = ProjectSpaceRules.validate(
+            newName, "", currentProjects.map { ProjectSpaceRules.Entry(it.id, it.name) }
+        )
+        if (validation != null) return false
+
+        val sourceConversations = loadConversations().filter { it.conversation.projectId == sourceProjectId }
+        val conversationIds = sourceConversations.associate { it.conversation.id to java.util.UUID.randomUUID().toString() }
+        val messageIds = sourceConversations.flatMap { it.messages }.associate { it.id to java.util.UUID.randomUUID().toString() }
+
+        val sourceDocuments = knowledgeDocuments(sourceProjectId)
+        val documentIds = sourceDocuments.associate { it.id to java.util.UUID.randomUUID().toString() }
+        val sourceChunks = knowledgeChunksForProject(sourceProjectId)
+
+        putProjects(listOf(ProjectEntity(newProjectId, newName.trim(), source.instructions, createdAt, 0L)))
+        sourceConversations.forEach { row ->
+            val newConversationId = conversationIds.getValue(row.conversation.id)
+            putConversation(row.conversation.copy(id = newConversationId, projectId = newProjectId, updatedAt = createdAt))
+            val copiedMessages = row.messages.map { message ->
+                message.copy(
+                    id = messageIds.getValue(message.id),
+                    conversationId = newConversationId
+                )
+            }
+            if (copiedMessages.isNotEmpty()) putMessages(copiedMessages)
+        }
+
+        val copiedDocuments = sourceDocuments.map { document ->
+            val saltedHash = java.security.MessageDigest.getInstance("SHA-256")
+                .digest("$newProjectId:${document.contentHash}".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            document.copy(
+                id = documentIds.getValue(document.id),
+                projectId = newProjectId,
+                importedAt = createdAt,
+                contentHash = saltedHash
+            )
+        }
+        if (copiedDocuments.isNotEmpty()) insertKnowledgeDocuments(copiedDocuments)
+        val copiedChunks = sourceChunks.map { chunk ->
+            chunk.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                documentId = documentIds[chunk.documentId] ?: error("项目知识片段缺少所属文档"),
+                projectId = newProjectId
+            )
+        }
+        if (copiedChunks.isNotEmpty()) {
+            insertKnowledgeChunks(copiedChunks)
+            insertKnowledgeChunkFts(copiedChunks.map { chunk ->
+                KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, newProjectId, chunk.content)
+            })
+        }
+
+        userMemories(sourceProjectId).forEach { memory ->
+            putUserMemory(memory.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                projectId = newProjectId,
+                sourceConversationId = conversationIds[memory.sourceConversationId].orEmpty(),
+                sourceMessageId = messageIds[memory.sourceMessageId].orEmpty(),
+                createdAt = createdAt,
+                updatedAt = createdAt
+            ))
+        }
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 
@@ -497,6 +573,8 @@ interface NestroDao {
     suspend fun deleteProjects(ids: List<String>)
     @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId ORDER BY importedAt DESC")
     suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
+    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId, position")
+    suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
     @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
     suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT)
