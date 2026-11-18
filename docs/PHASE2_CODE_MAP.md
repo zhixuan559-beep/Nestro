@@ -450,3 +450,10 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Phone Agent now registers a typed capability for the current action only (open URL, launch app, click, enter text, scroll, wait, verify, back, or sensitive handoff). It opens a one-capability session for that step and releases the session and registration immediately afterward.
 - Added JVM tests for allow-list isolation, unknown tool rejection, and post-close invalidation.
 - This is the first executable slice of precision dispatch, not completion of the entire unified tool center. MCP/plugin discovery, per-tool schema loading, credential leasing, and cross-module expert/workflow tool routing remain outstanding.
+
+
+## 2026-11-18 — Keep the newest Phone Agent action context
+
+- The bounded Phone Agent history previously retained the oldest action-result lines when the 1,000-character cap was reached, potentially dropping the most recent page transition evidence.
+- Changed the compactor to deduplicate and retain the latest 12 action results within the same fixed budget.
+- Added a JVM regression test proving recent actions survive while stale first actions are dropped.

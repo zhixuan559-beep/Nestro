@@ -315,3 +315,6 @@ All request-affecting UI state—including active expert IDs, project instructio
 ## Task-scoped capability dispatch — implementation status
 
 The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation; it does not yet constitute full MCP/plugin discovery or per-provider credential leasing. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
+
+
+Phone Agent's action-history compactor now retains the most recent 12 distinct action results within a fixed 1,000-character budget, rather than preserving only the oldest entries. This keeps the latest execution evidence available to the next planning call without growing the prompt.
