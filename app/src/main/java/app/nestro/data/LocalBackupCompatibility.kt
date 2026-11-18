@@ -12,6 +12,10 @@ object LocalBackupCompatibility {
         require(ids.all { it.isNotBlank() } && ids.distinct().size == ids.size) { "$label ID 缺失或重复" }
     }
 
+    internal fun requireUtf8SizeWithin(value: String, maxBytes: Int, message: String) {
+        require(maxBytes >= 0 && value.toByteArray(Charsets.UTF_8).size <= maxBytes) { message }
+    }
+
     fun sha256(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
