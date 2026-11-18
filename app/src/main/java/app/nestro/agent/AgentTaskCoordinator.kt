@@ -302,6 +302,9 @@ class AgentTaskCoordinator(
     }
 
     private suspend fun stop(taskId: String, status: AgentTaskStatus) {
+        // Revoke task-scoped capabilities and credentials before the task can continue.
+        AgentToolLeaseRegistry.revokeTask(taskId)
+        AgentCredentialLeaseRegistry.revokeTask(taskId)
         withTransitionLock {
             val state = states.get(taskId) ?: return@withTransitionLock
             if (state.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return@withTransitionLock
@@ -428,6 +431,8 @@ class AgentTaskCoordinator(
                     trace(taskId, "failed", message)
                 }
             } finally {
+                AgentToolLeaseRegistry.revokeTask(taskId)
+                AgentCredentialLeaseRegistry.revokeTask(taskId)
                 withTransitionLock { activeJobs.remove(taskId, job) }
             }
         }
