@@ -496,7 +496,7 @@ interface NestroDao {
     @Query("DELETE FROM knowledge_chunks_fts WHERE chunkId IN (:chunkIds)")
     suspend fun deleteKnowledgeChunkFts(chunkIds: List<String>)
 
-    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY f.rank LIMIT :limit")
+    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY rank LIMIT :limit")
     suspend fun searchKnowledgeChunksFts(projectId: String, query: String, limit: Int = 12): List<KnowledgeChunkEntity>
 
     @Transaction
