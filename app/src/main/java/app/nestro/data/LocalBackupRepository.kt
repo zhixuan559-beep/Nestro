@@ -919,6 +919,11 @@ private suspend fun applyLocalBackup(
         .putString("active_conversation_id", root.stringOrDefault("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
         .putBoolean("automatic_memory_enabled", root.booleanOrDefault("automatic_memory_enabled", false))
+        .putBoolean("chat_task_mode_enabled", root.booleanOrDefault("chat_task_mode_enabled", false))
+        .putString("active_model_registry_id", "")
+        .remove("base_url").remove("model").remove("model_profiles_v1")
+        .remove("model_registry_v1").remove("active_model_profile_id")
+        .remove("model_usage_v1").putBoolean("model_failover_enabled", false)
         .putString("reasoning_effort_v1", restoredReasoningEffort)
         .putFloat("tts_speech_rate", restoredTtsSpeechRate)
         .putString("phone_audit", restoredPhoneAudit.toString())
@@ -968,12 +973,10 @@ private suspend fun applyLocalBackup(
             "当前模型选择引用了不存在的模型目录项"
         }
         val restoredFailoverEnabled = root.booleanOrDefault("model_failover_enabled", false)
-        val restoredTaskModeEnabled = root.booleanOrDefault("chat_task_mode_enabled", false)
         editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
             .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
             .putString("active_model_profile_id", restoredActiveProfileId)
             .putString("active_model_registry_id", restoredActiveRegistryId)
-            .putBoolean("chat_task_mode_enabled", restoredTaskModeEnabled)
             .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
             .putBoolean("model_failover_enabled", restoredFailoverEnabled)
         if (restoredRegistry != null) {
