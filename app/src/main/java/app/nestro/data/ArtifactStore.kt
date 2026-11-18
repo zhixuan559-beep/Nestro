@@ -23,6 +23,7 @@ data class ArtifactRecord(
 object ArtifactStore {
     private const val MAX_ARTIFACT_BYTES = 1_500_000
     private const val MAX_ITEMS = 200
+    private const val MAX_BACKUP_ITEMS = MAX_ITEMS * 100 // up to 100 project spaces
 
     private fun root(context: Context): File =
         File(context.applicationContext.filesDir, "artifacts").apply { mkdirs() }
