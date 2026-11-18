@@ -153,14 +153,14 @@ object ExpertTeamEngine {
         val byName = members.associateBy { it.name }
         val visited = linkedSetOf<String>()
         val results = mutableListOf<ExpertTeamMemberRun>()
-        var current = selectPrimaryExpert(task, members)
+        var current: ExpertTeamMemberTask? = selectPrimaryExpert(task, members)
         var currentTask = task
         var handoff = ""
         var delegationCount = 0
 
         while (current != null && results.size < maxDelegations + 1) {
             if (shouldStop()) throw CancellationException("用户停止专家协作")
-            val activeMember = current
+            val activeMember = current ?: break
             if (!visited.add(activeMember.name)) break
             val memberStarted = System.currentTimeMillis()
             var attempts = 0
