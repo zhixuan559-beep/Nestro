@@ -462,6 +462,17 @@ class LocalBackupRoundTripTest {
             }
             assertTrue("恢复不得把类型错误的草稿映射当成空对象", runCatching { repository.restoreBackup(prefs, wrongDraftMapType) }.isFailure)
 
+            val duplicateMemoryFingerprint = signedBackup { root ->
+                val memory = JSONObject().put("projectId", "default").put("category", "preference")
+                    .put("content", "偏好使用简洁中文表达").put("fingerprint", "duplicate-fingerprint")
+                    .put("sourceConversationId", "").put("sourceMessageId", "")
+                    .put("confidence", 0.9).put("createdAt", 1L).put("updatedAt", 1L)
+                root.put("user_memories", JSONArray()
+                    .put(JSONObject(memory.toString()).put("id", "memory-a"))
+                    .put(JSONObject(memory.toString()).put("id", "memory-b")))
+            }
+            assertTrue("恢复不得让重复记忆指纹触发 Room REPLACE 并静默覆盖", runCatching { repository.restoreBackup(prefs, duplicateMemoryFingerprint) }.isFailure)
+
             val wrongLegacyMessagesType = signedBackup { root ->
                 root.put("messages", JSONArray())
             }
