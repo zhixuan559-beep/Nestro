@@ -53,6 +53,13 @@ class LocalBackupCompatibilityTest {
         org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
     }
 
+    @Test fun enforcesBackupSizeByUtf8BytesRatherThanCharacterCount() {
+        LocalBackupCompatibility.requireUtf8SizeWithin("abcd", 4, "too large")
+        assertTrue(runCatching {
+            LocalBackupCompatibility.requireUtf8SizeWithin("中文", 4, "too large")
+        }.isFailure)
+    }
+
     @Test fun requiresUniqueNonBlankRecordIds() {
         LocalBackupCompatibility.requireUniqueIds(listOf("a", "b", "c"), "测试")
         assertTrue(runCatching { LocalBackupCompatibility.requireUniqueIds(listOf("a", "a"), "测试") }.isFailure)
