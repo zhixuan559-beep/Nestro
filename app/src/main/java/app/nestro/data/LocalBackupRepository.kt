@@ -757,6 +757,44 @@ private suspend fun applyLocalBackup(
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredTaskLogs.map { it.id }, "任务日志")
+
+    val agentStateRows = root.arrayOrEmpty("agent_task_states_v1")
+    val agentTraceRows = root.arrayOrEmpty("agent_task_traces_v1")
+    require(agentStateRows.length() <= 1_000 && agentTraceRows.length() <= 20_000) {
+        "Agent 任务状态或追踪记录数量超过恢复上限"
+    }
+    val validAgentTaskStatuses = app.nestro.agent.AgentTaskStatus.values().map { it.name }.toSet()
+    val restoredAgentTaskStates = (0 until agentStateRows.length()).map { index ->
+        val item = agentStateRows.getJSONObject(index)
+        val taskId = item.requiredString("taskId")
+        val owner = item.requiredString("owner")
+        val status = item.requiredString("status")
+        val currentStep = item.intOrDefault("currentStep", 0)
+        val checkpoint = item.stringOrDefault("checkpoint", "")
+        val lastError = item.stringOrDefault("lastError", "")
+        require(taskId.isNotBlank() && taskId.length <= 120 && owner.isNotBlank() && owner.length <= 80 &&
+            status in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && lastError.length <= 2_000) {
+            "Agent 任务状态字段无效"
+        }
+        AgentTaskStateEntity(taskId, owner, status, currentStep, checkpoint, lastError,
+            item.longOrDefault("updatedAt", System.currentTimeMillis()))
+    }
+    LocalBackupCompatibility.requireUniqueIds(restoredAgentTaskStates.map { it.taskId }, "Agent 任务状态")
+    val restoredAgentTaskTraces = (0 until agentTraceRows.length()).map { index ->
+        val item = agentTraceRows.getJSONObject(index)
+        val id = item.requiredString("id")
+        val taskId = item.requiredString("taskId")
+        val event = item.requiredString("event")
+        val detail = item.stringOrDefault("detail", "")
+        require(id.isNotBlank() && id.length <= 120 && taskId.isNotBlank() && taskId.length <= 120 &&
+            event.isNotBlank() && event.length <= 80 && detail.length <= 2_000) {
+            "Agent 任务追踪记录字段无效"
+        }
+        AgentTaskTraceEntity(id, taskId, event, detail,
+            item.longOrDefault("createdAt", System.currentTimeMillis()))
+    }
+    LocalBackupCompatibility.requireUniqueIds(restoredAgentTaskTraces.map { it.id }, "Agent 任务追踪")
+
     for (i in 0 until messages.length()) {
         val item = messages.getJSONObject(i)
         require(item.requiredString("role") in setOf("user", "assistant")) { "消息角色无效" }
@@ -940,6 +978,8 @@ private suspend fun applyLocalBackup(
         dao.deleteAllKnowledgeDocuments()
         dao.deleteAllUserMemories()
         dao.deleteAllPhoneAgentTasks()
+        dao.deleteAllAgentTaskStates()
+        dao.deleteAllAgentTaskTraces()
         dao.deleteAllProjects()
         if (restoredProjects.isNotEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
         completeRestoredConversations.forEach { (conversation, rows) ->
@@ -956,6 +996,8 @@ private suspend fun applyLocalBackup(
         restoredMemories.forEach { dao.putUserMemory(it) }
         restoredTasks.forEach { dao.putPhoneAgentTask(it) }
         restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
+        restoredAgentTaskStates.forEach { dao.putAgentTaskState(it) }
+        restoredAgentTaskTraces.forEach { dao.insertAgentTaskTrace(it) }
         prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
