@@ -100,11 +100,11 @@ jobs:
       - name: Run Android instrumentation tests on emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 30
           target: default
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none -memory 4096 -cores 4
           disable-animations: true
           emulator-boot-timeout: 600000
           script: bash .github/scripts/run-android-instrumentation.sh
