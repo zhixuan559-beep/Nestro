@@ -37,6 +37,13 @@ internal object ProjectResourceScopeStore {
         while (keys.hasNext()) {
             val key = keys.next()
             require(key.length in 3..240 && key.contains(':')) { "项目资源标识无效" }
+            require(ProjectResourceKind.entries.any { it.key == key.substringBefore(':') } &&
+                key.substringAfter(':').isNotBlank() && key.substringAfter(':').length <= 200) { "项目资源类型或 ID 无效" }
+            val kindKey = key.substringBefore(':')
+            val resourceId = key.substringAfter(':')
+            require(ProjectResourceKind.entries.any { it.key == kindKey } && resourceId.isNotBlank() && resourceId.length <= 200) {
+                "项目资源类型或 ID 无效"
+            }
             val values = json.opt(key) as? JSONArray ?: error("项目资源范围格式无效")
             require(values.length() <= MAX_PROJECTS_PER_RESOURCE) { "单项资源关联项目过多" }
             val scopes = (0 until values.length()).map { index ->
