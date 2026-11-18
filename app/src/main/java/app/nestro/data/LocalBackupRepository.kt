@@ -33,6 +33,21 @@ private suspend fun requireNoActivePhoneAgentTasks(database: NestroDatabase) {
     }
 }
 
+private fun decodeBackupMessageVersions(item: JSONObject): Pair<String, Int> {
+    val rawVersions = item.opt("versions")
+    val versions = when {
+        !item.has("versions") -> JSONArray()
+        rawVersions is JSONArray -> rawVersions
+        else -> error("回答版本字段格式无效")
+    }
+    val activeVersionValue = if (item.has("active_version")) item.opt("active_version") else 0
+    val activeVersion = (activeVersionValue as? Number)?.toDouble()?.let { value ->
+        if (value.isFinite() && value % 1.0 == 0.0 && value in 0.0..Int.MAX_VALUE.toDouble()) value.toInt() else null
+    } ?: error("回答版本索引类型无效")
+    val decoded = decodeMessageVersions(versions.toString(), activeVersion)
+    return JSONArray(decoded).toString() to activeVersion
+}
+
 internal class ActivePhoneAgentTasksException : IllegalStateException(
     "Phone Agent 仍有未结束的任务，请先完成或取消任务后再恢复备份"
 )
@@ -463,21 +478,18 @@ private suspend fun applyLocalBackup(
         require(rows.length() <= MAX_BACKUP_MESSAGES_PER_CONVERSATION) { "单个会话消息数量超出限制" }
         val restoredMessages = (0 until rows.length()).map { messageIndex ->
             val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
-            val versions = message.optJSONArray("versions") ?: JSONArray()
-            require(messageId.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000 && versions.length() <= 20) { "会话消息字段无效" }
-            val versionList = (0 until versions.length()).map { versions.getString(it) }
-            require(versionList.all { it.length <= 200_000 }) { "回答版本内容过长" }
-            val activeVersion = message.optInt("active_version", 0)
-            require(activeVersion >= 0 && (versionList.isEmpty() || activeVersion < versionList.size)) { "回答版本索引无效" }
-            MessageEntity(messageId, id, messageIndex, role, content, JSONArray(versionList).toString(), activeVersion)
+            require(messageId.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000) { "会话消息字段无效" }
+            val (versionsJson, activeVersion) = decodeBackupMessageVersions(message)
+            MessageEntity(messageId, id, messageIndex, role, content, versionsJson, activeVersion)
         }
         ConversationEntity(id, title, item.optLong("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
     }
     val completeRestoredConversations = if (restoredConversations.isNotEmpty()) restoredConversations else if (messages.length() > 0) {
         val legacyMessages = (0 until messages.length()).mapIndexed { index, messageIndex ->
             val item = messages.getJSONObject(messageIndex)
+            val (versionsJson, activeVersion) = decodeBackupMessageVersions(item)
             MessageEntity(item.getString("id"), "legacy-restored", index, item.getString("role"), item.getString("content"),
-                (item.optJSONArray("versions") ?: JSONArray()).toString(), item.optInt("active_version", 0))
+                versionsJson, activeVersion)
         }
         listOf(ConversationEntity("legacy-restored", "恢复的旧对话", System.currentTimeMillis(), "default") to legacyMessages)
     } else emptyList()
