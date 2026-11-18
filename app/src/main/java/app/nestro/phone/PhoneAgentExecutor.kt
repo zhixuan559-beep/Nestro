@@ -13,6 +13,7 @@ import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolResult
 import app.nestro.agent.AgentToolSpec
 import app.nestro.agent.AgentToolLeaseRegistry
+import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.RoomAgentTaskStateStore
@@ -37,14 +38,14 @@ object PhoneAgentExecutor {
     data class ActionResult(val index: Int, val action: String, val success: Boolean, val detail: String)
     data class ExecutionResult(val outcome: Outcome, val completedActions: Int, val results: List<ActionResult>, val handoffReason: String = "")
 
-    suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, markTaskCompleted: Boolean = true, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, markTaskCompleted: Boolean = true, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         require(actions.size in 1..80) { "任务动作数量必须为 1 到 80" }
         PhoneAgentTaskStore.persistActions(dao, taskId, actions)
-        return runFrom(dao, taskId, actions, 0, markTaskCompleted, onProgress)
+        return runFrom(dao, taskId, actions, 0, markTaskCompleted, catalog, onProgress)
     }
 
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
-    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         val actionCount = try { PhoneAgentTaskStore.decodeActions(task.planJson).size } catch (_: Exception) { 0 }
         if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < actionCount && !allowRetryCurrentAction) {
@@ -58,10 +59,10 @@ object PhoneAgentExecutor {
         }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
             actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
-        return runFrom(dao, taskId, actions, start, true, onProgress)
+        return runFrom(dao, taskId, actions, start, true, catalog, onProgress)
     }
 
-    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
+    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, catalog: AgentToolCatalog, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
             return ExecutionResult(Outcome.CANCELLED, 0, emptyList(), "任务已取消")
@@ -90,7 +91,6 @@ object PhoneAgentExecutor {
         )
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
-        val catalog = InMemoryAgentToolCatalog()
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
                     service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
