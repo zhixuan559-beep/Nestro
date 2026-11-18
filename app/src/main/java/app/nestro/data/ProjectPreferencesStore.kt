@@ -47,10 +47,16 @@ fun parseProjects(array: JSONArray?): List<ProjectRecord> {
 }
 
 fun projectsToJson(projects: List<ProjectRecord>): String {
+    val validation = ProjectSpaceRules.validateCollection(
+        projects.map { ProjectSpaceRules.Entry(it.id, it.name) }
+    )
+    require(validation == null) { validation ?: "项目空间数据无效" }
+    require(projects.all { it.instructions.length <= 4000 }) { "项目空间指令过长" }
+
     val array = JSONArray()
-    projects.take(100).forEach { project ->
-        array.put(JSONObject().put("id", project.id).put("name", project.name.take(40))
-            .put("instructions", project.instructions.take(4000)).put("created_at", project.createdAt)
+    projects.forEach { project ->
+        array.put(JSONObject().put("id", project.id).put("name", project.name.trim())
+            .put("instructions", project.instructions).put("created_at", project.createdAt)
             .put("archived_at", project.archivedAt.coerceAtLeast(0L)))
     }
     return array.toString()
