@@ -33,4 +33,20 @@ class ChatRequestRecoveryCoordinatorTest {
         assertNull(parsePendingChatRequest("""{"status":"running","request_id":"","conversation_id":"c"}"""))
         assertNull(parsePendingChatRequest("""{"status":"running","request_id":"r","conversation_id":""}"""))
     }
+    @Test
+    fun blankProjectIdentifierIsRejected() {
+        assertNull(parsePendingChatRequest("""{"status":"running","request_id":"r","conversation_id":"c","project_id":""}"""))
+    }
+
+    @Test
+    fun interruptedRequestMustMatchItsOriginalProject() {
+        val pending = parsePendingChatRequest(
+            """{"status":"running","request_id":"r","conversation_id":"c","project_id":"project-a","prompt":"继续"}"""
+        )!!
+        val original = ConversationRecord("c", "对话", 1L, emptyList(), "project-a")
+        val otherProject = original.copy(projectId = "project-b")
+        assertEquals(true, pending.matches(original))
+        assertEquals(false, pending.matches(otherProject))
+    }
+
 }
