@@ -2020,6 +2020,38 @@ fun NestroApp() {
                                                         projectDraftInstructions = project.instructions
                                                         showProjectDialog = true
                                                     }) { Text("编辑", color = Mint) }
+                                                    TextButton(
+                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && projects.size < 100,
+                                                        onClick = {
+                                                            val baseName = "${project.name} 副本".take(40)
+                                                            val existingNames = projects.map { it.name.trim().lowercase() }.toSet()
+                                                            var copyName = baseName
+                                                            var suffix = 2
+                                                            while (copyName.trim().lowercase() in existingNames && suffix <= 100) {
+                                                                val tail = " 副本$suffix"
+                                                                copyName = project.name.take((40 - tail.length).coerceAtLeast(1)) + tail
+                                                                suffix++
+                                                            }
+                                                            val copyId = UUID.randomUUID().toString()
+                                                            scope.launch {
+                                                                val copied = withContext(Dispatchers.IO) {
+                                                                    appRuntime.projectSpaceRepository.duplicate(
+                                                                        project.id, copyId, copyName, System.currentTimeMillis()
+                                                                    )
+                                                                }
+                                                                if (copied) {
+                                                                    val restored = withContext(Dispatchers.IO) {
+                                                                        appRuntime.conversationPersistenceService.restore(prefs)
+                                                                    }
+                                                                    projects = restored.projects
+                                                                    conversations = restored.conversations
+                                                                    status = "已复制「${project.name}」及其会话、知识库和项目记忆。"
+                                                                } else {
+                                                                    status = "复制失败：项目不存在、名称重复或项目空间数量已达上限。"
+                                                                }
+                                                            }
+                                                        }
+                                                    ) { Text("复制", color = Mint) }
                                                     if (project.id != "default") {
                                                         TextButton(
                                                             enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && ProjectSpaceRules.canArchive(project.id, activeProjectId),
