@@ -1,7 +1,9 @@
 package app.nestro.ui
+import android.content.Context
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeSearchResult
 import app.nestro.data.KnowledgeRepository
+import app.nestro.data.ProjectAccessControlStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -27,6 +29,7 @@ private val KnowledgeMint=androidx.compose.ui.graphics.Color(0xFF34D399)
 @Composable
 fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjectIds:Set<String> = emptySet(),writableProjectIds:Set<String> = emptySet()) {
  val context=LocalContext.current; val scope=rememberCoroutineScope()
+ val prefs=remember { context.getSharedPreferences("nestro_local",Context.MODE_PRIVATE) }
  val latestProjectId by rememberUpdatedState(projectId)
  val documents=remember { mutableStateListOf<KnowledgeDocumentEntity>() }
  var status by remember { mutableStateOf("文档保存在本机，并按项目空间隔离。") }
@@ -35,8 +38,14 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
  var searchQuery by remember { mutableStateOf("") }
  var searching by remember { mutableStateOf(false) }
  val searchResults=remember { mutableStateListOf<KnowledgeSearchResult>() }
+ suspend fun accessibleProjectIds():List<String> {
+  val granted=readableProjectIds.filter { sourceProjectId ->
+   ProjectAccessControlStore.authorize(prefs,sourceProjectId,projectId,ProjectAccessControlStore.Access.READ)
+  }
+  return (listOf(projectId)+granted).distinct()
+ }
  suspend fun refresh(targetProjectId:String=projectId) {
-  val projectIds=(listOf(targetProjectId)+if(targetProjectId==projectId) readableProjectIds else emptySet()).distinct()
+  val projectIds=if(targetProjectId==projectId) accessibleProjectIds() else listOf(targetProjectId)
   val rows=projectIds.flatMap { repository.documents(it) }
   if(latestProjectId!=targetProjectId) return
   documents.clear(); documents.addAll(rows)
@@ -85,7 +94,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
     val requestedQuery=searchQuery
     scope.launch {
      val result=runCatching {
-      (listOf(requestedProjectId)+readableProjectIds).distinct()
+      accessibleProjectIds()
        .flatMap { sourceProjectId -> repository.search(sourceProjectId,requestedQuery,6) }
        .take(6)
      }
@@ -140,7 +149,14 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
      pendingDelete=null
      val requestedProjectId=projectId
      scope.launch {
-      val result=runCatching { repository.deleteDocument(target.id,target.projectId) }
+      val result=runCatching {
+       if(target.projectId!=requestedProjectId) {
+        check(ProjectAccessControlStore.authorize(prefs,target.projectId,requestedProjectId,ProjectAccessControlStore.Access.WRITE)) {
+         "当前项目没有该空间的写入授权，已阻止删除"
+        }
+       }
+       repository.deleteDocument(target.id,target.projectId)
+      }
       if(latestProjectId==requestedProjectId) {
        result.onSuccess {
         documents.removeAll { it.id==target.id }
