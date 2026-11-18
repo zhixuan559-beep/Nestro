@@ -106,6 +106,32 @@ object WorkflowRunHistoryCodec {
     }.getOrDefault(emptyList())
 }
 
+object WorkflowDefinitionEditor {
+    fun insertStep(workflow: WorkflowDefinition, index: Int, step: WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.size < 20) { "工作流最多支持 20 个步骤" }
+        val target = index.coerceIn(0, workflow.steps.size)
+        return workflow.copy(steps = workflow.steps.toMutableList().apply { add(target, step) })
+    }
+    fun removeStep(workflow: WorkflowDefinition, stepId: String): WorkflowDefinition {
+        require(workflow.steps.size > 1) { "工作流至少保留 1 个步骤" }
+        val remaining = workflow.steps.filterNot { it.id == stepId }
+        require(remaining.size < workflow.steps.size) { "未找到要删除的步骤" }
+        return workflow.copy(steps = remaining)
+    }
+    fun moveStep(workflow: WorkflowDefinition, stepId: String, targetIndex: Int): WorkflowDefinition {
+        val currentIndex = workflow.steps.indexOfFirst { it.id == stepId }
+        require(currentIndex >= 0) { "未找到要移动的步骤" }
+        val items = workflow.steps.toMutableList()
+        val item = items.removeAt(currentIndex)
+        items.add(targetIndex.coerceIn(0, items.size), item)
+        return workflow.copy(steps = items)
+    }
+    fun updateStep(workflow: WorkflowDefinition, stepId: String, transform: (WorkflowStep) -> WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.any { it.id == stepId }) { "未找到要编辑的步骤" }
+        return workflow.copy(steps = workflow.steps.map { if (it.id == stepId) transform(it) else it })
+    }
+}
+
 object WorkflowDefinitionCodec {
     fun encode(items:List<WorkflowDefinition>):String = JSONArray().apply {
         items.take(100).forEach { workflow ->
