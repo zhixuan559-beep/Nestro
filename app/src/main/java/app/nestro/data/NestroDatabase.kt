@@ -512,8 +512,18 @@ interface NestroDao {
         insertKnowledgeChunkFts(chunks.map { chunk -> KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content) })
         return document
     }
+    @Query("SELECT id FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId")
+    suspend fun knowledgeChunkIdsForDocument(documentId: String, projectId: String): List<String>
+
     @Query("DELETE FROM knowledge_documents WHERE id = :documentId AND projectId = :projectId")
     suspend fun deleteKnowledgeDocument(documentId: String, projectId: String)
+
+    @Transaction
+    suspend fun deleteKnowledgeDocumentAndIndex(documentId: String, projectId: String) {
+        val chunkIds = knowledgeChunkIdsForDocument(documentId, projectId)
+        if (chunkIds.isNotEmpty()) deleteKnowledgeChunkFts(chunkIds)
+        deleteKnowledgeDocument(documentId, projectId)
+    }
     @Query("DELETE FROM knowledge_documents WHERE projectId = :projectId")
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
     @Query("DELETE FROM knowledge_chunks_fts WHERE projectId = :projectId")
