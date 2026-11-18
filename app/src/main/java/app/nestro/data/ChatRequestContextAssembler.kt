@@ -19,21 +19,31 @@ internal class ChatRequestContextAssembler(
         conversationId: String,
         prompt: String,
         requestHistory: List<ChatMessage>,
-        baseSystemContext: String
+        baseSystemContext: String,
+        taskModeEnabled: Boolean = false
     ): ChatRequestContextAssembly {
-        val recallQuery = requestHistory.takeLast(8)
-            .joinToString("\n") { it.content.take(500) }
-            .take(2400)
-        val recall = retrieveMemory(projectId, conversationId, recallQuery)
-        val knowledgeContext = retrieveKnowledge(projectId, prompt)
-        val memoryContext = retrieveUserMemory(projectId, prompt)
+        val recall = if (ChatContextRetrievalPolicy.shouldRetrieveConversation(prompt)) {
+            val recallQuery = requestHistory.takeLast(8)
+                .joinToString("\n") { it.content.take(500) }
+                .take(2400)
+            retrieveMemory(projectId, conversationId, recallQuery)
+        } else {
+            ConversationRecallResult("", emptyList())
+        }
+        val knowledgeContext = if (ChatContextRetrievalPolicy.shouldRetrieveKnowledge(prompt)) {
+            retrieveKnowledge(projectId, prompt)
+        } else ""
+        val memoryContext = if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) {
+            retrieveUserMemory(projectId, prompt)
+        } else ""
+        val taskContext = if (taskModeEnabled) PhoneAgentPlanner.contextFor(prompt) else ""
         val systemContext = listOf(
             baseSystemContext,
-            PhoneAgentPlanner.contextFor(prompt),
+            taskContext,
             recall.context,
             knowledgeContext,
             memoryContext
-        ).filter { it.isNotBlank() }.joinToString("\n\n").take(16_000)
+        ).filter { it.isNotBlank() }.joinToString("\n\n").take(8_000)
         return ChatRequestContextAssembly(
             recalledCount = recall.hitCount,
             recallSources = recall.sources,

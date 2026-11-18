@@ -35,6 +35,7 @@ import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.ChatContextRetrievalPolicy
 import app.nestro.data.ChatEndpointPolicy
 import app.nestro.data.ChatHttpTransport
 import app.nestro.data.ChatHistoryItem
@@ -679,7 +680,7 @@ fun NestroApp() {
                 .put("started_at", requestStartedAt).toString()).apply()
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
-                "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
+                if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
                 if (selectedTeamId.isBlank() && expertProfiles[selectedExpert]?.enabled != false) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 if (selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(expertProfiles[selectedExpert], skills, disabledSkills) else "",
                 projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
@@ -722,7 +723,8 @@ fun NestroApp() {
                         conversationId = requestConversationId,
                         prompt = prompt,
                         requestHistory = requestHistory,
-                        baseSystemContext = baseSystemContext
+                        baseSystemContext = baseSystemContext,
+                        taskModeEnabled = taskModeEnabled
                     )
                     recalledCount = assembledContext.recalledCount
                     if (activeConversationId == requestConversationId) recallSources = assembledContext.recallSources

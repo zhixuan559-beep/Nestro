@@ -19,7 +19,7 @@ class ChatRequestContextAssemblerTest {
             },
             retrieveKnowledge = { projectId, query ->
                 assertEquals("project-1", projectId)
-                assertEquals("当前问题", query)
+                assertEquals("根据知识库和我的偏好，回忆我们之前讨论的当前问题", query)
                 "知识库上下文"
             },
             retrieveUserMemory = { projectId, query ->
@@ -33,7 +33,7 @@ class ChatRequestContextAssemblerTest {
         val result = assembler.assemble(
             projectId = "project-1",
             conversationId = "current-conversation",
-            prompt = "当前问题",
+            prompt = "根据知识库和我的偏好，回忆我们之前讨论的当前问题",
             requestHistory = history,
             baseSystemContext = "基础上下文"
         )
@@ -47,5 +47,40 @@ class ChatRequestContextAssemblerTest {
         assertTrue(result.systemContext.contains("知识库上下文"))
         assertTrue(result.systemContext.contains("用户记忆上下文"))
         assertTrue(result.systemContext.length <= 16_000)
+    }
+}
+
+
+class ChatRequestContextAssemblerLightweightTest {
+    @Test
+    fun ordinaryChatSkipsAllOptionalRetrievalAndPhoneAgentContext() = kotlinx.coroutines.runBlocking {
+        var retrievalCalls = 0
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> retrievalCalls++; ConversationRecallResult("旧对话", emptyList()) },
+            retrieveKnowledge = { _, _ -> retrievalCalls++; "知识库" },
+            retrieveUserMemory = { _, _ -> retrievalCalls++; "个人记忆" }
+        )
+        val result = assembler.assemble(
+            projectId = "p", conversationId = "c", prompt = "帮我搜索咖啡价格",
+            requestHistory = emptyList(), baseSystemContext = "轻量基础上下文", taskModeEnabled = false
+        )
+        assertEquals(0, retrievalCalls)
+        assertEquals(0, result.recalledCount)
+        assertTrue(result.recallSources.isEmpty())
+        assertEquals("轻量基础上下文", result.systemContext)
+    }
+
+    @Test
+    fun explicitTaskModeAddsPhoneAgentInstructionsButOrdinaryChatDoesNot() = kotlinx.coroutines.runBlocking {
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
+            retrieveKnowledge = { _, _ -> "" },
+            retrieveUserMemory = { _, _ -> "" }
+        )
+        val prompt = "帮我预约明天的餐厅"
+        val ordinary = assembler.assemble("p", "c", prompt, emptyList(), "", taskModeEnabled = false)
+        val task = assembler.assemble("p", "c", prompt, emptyList(), "", taskModeEnabled = true)
+        assertFalse(ordinary.systemContext.contains("Phone Agent 目标执行约束"))
+        assertTrue(task.systemContext.contains("Phone Agent 目标执行约束"))
     }
 }

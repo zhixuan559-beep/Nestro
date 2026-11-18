@@ -395,3 +395,11 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Phone Agent planning/task creation runs only while the user has explicitly enabled task mode. A GENERAL plan still does not create a task.
 - Added JVM regression tests proving action-like wording in ordinary chat does not create a task, while explicit task mode can create a non-GENERAL task.
 - The switch is persisted locally so the selected mode survives app restarts; the visible composer label always shows which mode is active.
+
+## 2026-11-18 — Selective context retrieval for low-cost ordinary chat
+
+- Added a local, zero-model-call retrieval policy for conversation history, project knowledge, and personal memory. Each source is queried only when the current prompt contains a relevant reference signal.
+- Ordinary chat no longer receives Phone Agent planning instructions. Those instructions are included only when explicit task mode is enabled.
+- Removed unconditional full global-memory injection. Personal global memory is included only for prompts that explicitly refer to the user’s preferences, background, habits, or remembered details, and is capped at 1,600 characters.
+- Reduced the assembled optional context ceiling from 16,000 to 8,000 characters; the ordinary-chat path can remain at only its base context when no retrieval signal is present.
+- Added JVM tests asserting an action-keyword ordinary chat causes zero optional retrieval calls and receives no Phone Agent instructions, while explicit task mode adds the task-only instructions.
