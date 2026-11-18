@@ -17,6 +17,8 @@ import app.nestro.data.ModelConfig
 import app.nestro.data.MessageEntity
 import app.nestro.data.NestroDatabase
 import app.nestro.data.ProjectEntity
+import app.nestro.data.PhoneAgentTaskEntity
+import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.UserMemoryEntity
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -206,6 +208,56 @@ class LocalBackupRoundTripTest {
             )
             assertEquals("原始消息", dao.loadConversations().single().messages.single().content)
             assertEquals("导出前应保留的原始记忆", prefs.getString("global_memory_v1", ""))
+            assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+
+    @Test fun restoreIsRejectedWhilePhoneAgentTaskIsNonTerminal() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        File(context.filesDir, "artifacts").deleteRecursively()
+        File(context.filesDir, "backup-restore").deleteRecursively()
+        val databaseName = "nestro_backup_active_phone_task.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_active_phone_task", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]").commit()
+            database.dao().putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            val repository = LocalBackupRepository(context, database)
+            val backup = repository.createBackup(prefs)
+            val activeStatuses = listOf(
+                "planned" to PhoneAgentTaskStore.STATUS_PLANNED,
+                "running" to PhoneAgentTaskStore.STATUS_RUNNING,
+                "paused" to PhoneAgentTaskStore.STATUS_PAUSED,
+                "waiting" to PhoneAgentTaskStore.STATUS_WAITING_USER
+            )
+            activeStatuses.forEach { (id, status) ->
+                database.dao().putPhoneAgentTask(
+                    PhoneAgentTaskEntity(
+                        id = id,
+                        projectId = "default",
+                        conversationId = "",
+                        goal = "未结束的设备任务",
+                        category = "GENERAL",
+                        status = status,
+                        planJson = "[]",
+                        currentStep = 0,
+                        createdAt = 1L,
+                        updatedAt = 1L
+                    )
+                )
+            }
+            assertTrue(runCatching { repository.restoreBackup(prefs, backup) }.isFailure)
+            assertEquals(4, database.dao().allPhoneAgentTasks().size)
             assertTrue(!File(context.filesDir, "backup-restore/restore-journal.json").exists())
         } finally {
             database.close()

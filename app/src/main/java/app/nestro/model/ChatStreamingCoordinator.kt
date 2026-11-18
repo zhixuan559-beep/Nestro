@@ -21,16 +21,16 @@ internal fun interface ChatStreamingTransport {
 }
 
 internal fun interface ChatPartialStateStore {
-    fun persist(requestId: String, conversationId: String, projectId: String, prompt: String, partialAnswer: String)
+    fun persist(requestId: String, conversationId: String, projectId: String, prompt: String, partialAnswer: String, startedAt: Long)
 }
 
 internal class SharedPreferencesChatPartialStateStore(
     private val preferences: SharedPreferences
 ) : ChatPartialStateStore {
-    override fun persist(requestId: String, conversationId: String, projectId: String, prompt: String, partialAnswer: String) {
+    override fun persist(requestId: String, conversationId: String, projectId: String, prompt: String, partialAnswer: String, startedAt: Long) {
         preferences.edit().putString(
             "chat_request_state_v1",
-            encodeChatRequestState(requestId, conversationId, projectId, prompt, partialAnswer)
+            encodeChatRequestState(requestId, conversationId, projectId, prompt, partialAnswer, startedAt)
         ).apply()
     }
 }
@@ -40,14 +40,15 @@ internal fun encodeChatRequestState(
     conversationId: String,
     projectId: String,
     prompt: String,
-    partialAnswer: String
+    partialAnswer: String,
+    startedAt: Long
 ): String = JSONObject().put("status", "running")
     .put("request_id", requestId)
     .put("conversation_id", conversationId)
     .put("project_id", projectId)
     .put("prompt", prompt)
     .put("partial_answer", partialAnswer.take(24_000))
-    .put("started_at", System.currentTimeMillis())
+    .put("started_at", startedAt)
     .toString()
 internal data class ChatStreamExecutionResult(
     val response: String?,
@@ -71,6 +72,7 @@ internal class ChatStreamingCoordinator(
         conversationId: String,
         projectId: String,
         prompt: String,
+        startedAt: Long,
         shouldStop: () -> Boolean,
         onPartialAnswer: suspend (String) -> Unit
     ): ChatStreamExecutionResult {
@@ -79,7 +81,7 @@ internal class ChatStreamingCoordinator(
             transport.stream(configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId, shouldStop) { chunk ->
                 partial.append(chunk)
                 val current = partial.toString()
-                partialStateStore.persist(requestId, conversationId, projectId, prompt, current)
+                partialStateStore.persist(requestId, conversationId, projectId, prompt, current, startedAt)
                 onPartialAnswer(current)
             }
         }

@@ -7,6 +7,7 @@ import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
 import app.nestro.data.ModelConfig
 import app.nestro.data.ChatMessage
+import app.nestro.data.allVersions
 import app.nestro.data.ChatResponseFinalizer
 import app.nestro.data.ChatResponseStatus
 import app.nestro.data.isCreationIntent
@@ -670,10 +671,11 @@ fun NestroApp() {
             val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
             activeRequestId = assistantId
             val requestProjectId = activeProjectId
+            val requestStartedAt = System.currentTimeMillis()
             prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
                 .put("request_id", assistantId).put("conversation_id", requestConversationId)
                 .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
-                .put("started_at", System.currentTimeMillis()).toString()).apply()
+                .put("started_at", requestStartedAt).toString()).apply()
             val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
                 "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
@@ -786,6 +788,7 @@ fun NestroApp() {
                         conversationId = requestConversationId,
                         projectId = requestProjectId,
                         prompt = prompt,
+                        startedAt = requestStartedAt,
                         shouldStop = { stopRequested },
                         onPartialAnswer = { partial ->
                             withContext(Dispatchers.Main) {

@@ -18,6 +18,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 
+private val nonTerminalPhoneAgentStatuses = setOf(
+    PhoneAgentTaskStore.STATUS_PLANNED,
+    PhoneAgentTaskStore.STATUS_RUNNING,
+    PhoneAgentTaskStore.STATUS_PAUSED,
+    PhoneAgentTaskStore.STATUS_WAITING_USER
+)
+
+private suspend fun requireNoActivePhoneAgentTasks(database: NestroDatabase) {
+    if (database.dao().allPhoneAgentTasks().any { it.status in nonTerminalPhoneAgentStatuses }) {
+        throw ActivePhoneAgentTasksException()
+    }
+}
+
+internal class ActivePhoneAgentTasksException : IllegalStateException(
+    "Phone Agent 仍有未结束的任务，请先完成或取消任务后再恢复备份"
+)
+
 /** Application-facing backup boundary; UI never owns Room access. */
 class LocalBackupRepository(context: Context, private val database: NestroDatabase) {
     private val appContext = context.applicationContext
@@ -32,6 +49,8 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
     }
 
     suspend fun restoreBackup(prefs: SharedPreferences, raw: String) = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        requireNoActivePhoneAgentTasks(database)
         restoreLocalBackup(appContext, prefs, raw, database)
     }
 
@@ -194,9 +213,15 @@ internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferenc
     recoverInterruptedLocalBackupRestore(context, prefs, database)
     persistLocalBackupRestoreJournal(context, prefs, database)
     try {
-        applyLocalBackup(context, prefs, raw, database)
+        applyLocalBackup(context, prefs, raw, database, refuseActivePhoneTasks = true)
         deleteLocalBackupRestoreJournal(context)
     } catch (failure: Throwable) {
+        if (failure is ActivePhoneAgentTasksException) {
+            // No database rows were mutated: discard the journal instead of replaying
+            // its earlier snapshot, which could erase a task created after journaling.
+            deleteLocalBackupRestoreJournal(context)
+            throw failure
+        }
         try {
             withContext(NonCancellable) {
                 recoverInterruptedLocalBackupRestore(context, prefs, database)
@@ -313,7 +338,13 @@ private fun deleteLocalBackupRestoreJournal(context: Context) {
     check(!file.exists()) { "本机恢复日志清理失败" }
 }
 
-private suspend fun applyLocalBackup(context: Context, prefs: SharedPreferences, raw: String, database: NestroDatabase) {
+private suspend fun applyLocalBackup(
+    context: Context,
+    prefs: SharedPreferences,
+    raw: String,
+    database: NestroDatabase,
+    refuseActivePhoneTasks: Boolean = false
+) {
     require(raw.length <= 10_000_000) { "备份文件过大" }
     val root = JSONObject(raw)
     require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
@@ -683,6 +714,7 @@ private suspend fun applyLocalBackup(context: Context, prefs: SharedPreferences,
     }
     val dao = database.dao()
     database.withTransaction {
+        if (refuseActivePhoneTasks) requireNoActivePhoneAgentTasks(database)
         dao.deleteAllConversations()
         dao.deleteAllKnowledgeDocuments()
         dao.deleteAllUserMemories()

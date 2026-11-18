@@ -326,3 +326,10 @@
 
 - CI #827 found that `ChatMessage.allVersions()` had been a private extension in NestroApp and was not visible to the extracted `ChatResponseFinalizer` data-layer service.
 - Moved the exact revision-history rule into an internal data-layer extension and added a regression test covering an active version beyond the stored version list and appending the new response.
+
+## 2026-11-18 — Chat request timestamp and active-task restore protection
+
+- The chat request start timestamp is captured once at send time and reused for every persisted partial answer; streaming chunks no longer reset `started_at`. JVM coverage checks timestamp stability.
+- Backup restore replays any earlier interrupted journal, then rejects replacement while Phone Agent tasks are planned, running, paused, or waiting for user confirmation. The same check runs inside the Room transaction that replaces task rows, closing the preflight race.
+- If the transactional guard rejects before any database mutation, the just-created restore journal is deleted rather than replayed; this preserves any task created after the journal snapshot. Rollback recovery itself deliberately bypasses the active-task guard.
+- Instrumentation coverage checks all four non-terminal task states remain intact and no stale journal is left after rejection.
