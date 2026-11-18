@@ -118,8 +118,10 @@ internal object ProjectAccessControlStore {
         at: Long = System.currentTimeMillis()
     ): Set<String> {
         require(targetProjectId.isNotBlank()) { "目标项目 ID 无效" }
-        return candidateSourceProjectIds.asSequence()
-            .filter { it.isNotBlank() && it != targetProjectId }
+        val grants = runCatching { loadGrants(preferences) }.getOrDefault(emptyList())
+        return grants.asSequence()
+            .filter { it.sourceProjectId in candidateSourceProjectIds && it.targetProjectId == targetProjectId && Access.READ in it.access }
+            .map { it.sourceProjectId }
             .filter { sourceProjectId -> authorize(preferences, sourceProjectId, targetProjectId, Access.READ, at) }
             .toSet()
     }
