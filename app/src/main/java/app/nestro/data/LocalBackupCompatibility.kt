@@ -8,6 +8,10 @@ object LocalBackupCompatibility {
 
     fun isSupported(version: Int): Boolean = version in 1..CURRENT_VERSION
 
+    internal fun requireUniqueIds(ids: List<String>, label: String) {
+        require(ids.all { it.isNotBlank() } && ids.distinct().size == ids.size) { "$label ID 缺失或重复" }
+    }
+
     fun sha256(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
