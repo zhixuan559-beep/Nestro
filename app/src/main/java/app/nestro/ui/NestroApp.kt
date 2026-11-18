@@ -748,24 +748,26 @@ fun NestroApp() {
             }.orEmpty()
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
             val requestExpertTeams = expertTeams.filter {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId)
+                !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, it.id, requestProjectId)
             }
             val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
             val requestExpertProfiles = expertProfiles.filterKeys {
-                it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
             }
             val requestExpertPrompts = expertPrompts.filterKeys {
-                it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
             }
             val requestSkills = skills.filterKeys {
-                ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
+                !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId)
             }
             val requestDisabledSkills = disabledSkills.toSet()
             val requestExperts = experts.filter {
-                it in requestTeamMemberNames ||
-                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId)
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId))
             }.toSet()
             val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
