@@ -584,7 +584,7 @@ class LocalBackupRoundTripTest {
                 val rows = root.getJSONArray("conversations_v1")
                 rows.getJSONObject(0).put("messages", JSONArray().put(
                     JSONObject().put("id", "version-field-m1").put("role", "assistant").put("content", "回答")
-                        .put("versions", "[\\"有效版本\\"]").put("active_version", 0)
+                        .put("versions", "[\"有效版本\"]").put("active_version", 0)
                 ))
             }
             assertTrue("恢复不得忽略类型错误的回答版本字段", runCatching { repository.restoreBackup(prefs, wrongVersionFieldType) }.isFailure)
