@@ -14,7 +14,7 @@ internal fun interface ChatStreamingTransport {
         temperature: Double?,
         maxTokens: Int?,
         onUsage: (ModelConfig, Int, Int) -> Unit,
-        onProviderUsage: (ModelConfig, Int, Int) -> Unit,
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String,
         shouldStop: () -> Boolean,
         onChunk: suspend (String) -> Unit

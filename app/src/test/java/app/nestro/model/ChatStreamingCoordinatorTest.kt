@@ -15,7 +15,7 @@ class ChatStreamingCoordinatorTest {
         val persistedStarts = mutableListOf<Long>()
         val visible = mutableListOf<String>()
         val coordinator = ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, onChunk ->
+            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, onChunk ->
                 onChunk("第一段")
                 onChunk("第二段")
                 "完整回复"
@@ -68,7 +68,7 @@ class ChatStreamingCoordinatorTest {
     @Test
     fun propagatesCallerCancellationInsteadOfReturningFailure() = runBlocking {
         val coordinator = ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _ ->
+            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, _ ->
                 throw CancellationException("caller cancelled")
             },
             partialStateStore = ChatPartialStateStore { _, _, _, _, _, _ -> }
