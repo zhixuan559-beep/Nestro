@@ -697,6 +697,8 @@ private suspend fun applyLocalBackup(
         .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
         .putString("global_memory_v1", globalMemory)
         .putBoolean("automatic_memory_enabled", root.optBoolean("automatic_memory_enabled", false))
+        .putString("reasoning_effort_v1", restoredReasoningEffort)
+        .putFloat("tts_speech_rate", restoredTtsSpeechRate)
         .putString("phone_audit", restoredPhoneAudit.toString())
         .putString("experts", experts.toString())
         .putString("expert_prompts", cleanPrompts.toString())
