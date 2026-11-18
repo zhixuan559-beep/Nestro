@@ -112,7 +112,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
     root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
     root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
-    val phoneAudit = runCatching { JSONArray(prefs.getString("phone_audit", "[]") ?: "[]") }.getOrDefault(JSONArray())
+    val phoneAuditRaw = prefs.getString("phone_audit", "[]") ?: "[]"
+    val phoneAudit = runCatching { JSONArray(phoneAuditRaw) }
+        .getOrElse { error("Phone Agent 安全审计记录格式损坏，已中止备份") }
     val auditSnapshot = JSONArray()
     for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
         val item = phoneAudit.optJSONObject(index) ?: continue
