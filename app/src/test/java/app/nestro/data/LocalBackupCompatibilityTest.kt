@@ -53,6 +53,12 @@ class LocalBackupCompatibilityTest {
         org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
     }
 
+    @Test fun requiresUniqueNonBlankRecordIds() {
+        LocalBackupCompatibility.requireUniqueIds(listOf("a", "b", "c"), "测试")
+        assertTrue(runCatching { LocalBackupCompatibility.requireUniqueIds(listOf("a", "a"), "测试") }.isFailure)
+        assertTrue(runCatching { LocalBackupCompatibility.requireUniqueIds(listOf("a", ""), "测试") }.isFailure)
+    }
+
     @Test fun acceptsLegacyBackupWithoutChecksumOnlyBeforeVersionTen() {
         assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":9}""")))
         assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":10}""")))
