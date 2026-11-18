@@ -21,6 +21,8 @@ import app.nestro.data.ConversationStartupCoordinator
 import app.nestro.data.UserMemoryRepository
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
+import app.nestro.data.ProjectAccessControlStore
+import app.nestro.data.ProjectPreferencesStore
 import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
@@ -127,10 +129,32 @@ class NestroApplication : Application() {
         )
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
+        val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
+        suspend fun readableProjectsFor(targetProjectId: String): List<String> {
+            val candidates = runCatching {
+                ProjectPreferencesStore.loadProjects(preferences)
+                    .filter { it.archivedAt == 0L }
+                    .map { it.id }
+                    .toSet()
+            }.getOrDefault(emptySet())
+            val granted = runCatching {
+                ProjectAccessControlStore.readableSourceProjects(preferences, targetProjectId, candidates)
+            }.getOrDefault(emptySet())
+            return (listOf(targetProjectId) + granted.sorted()).distinct()
+        }
         ChatRequestContextAssembler(
             retrieveMemory = conversationContextRepository::retrieveMemory,
-            retrieveKnowledge = conversationContextRepository::retrieveKnowledge,
-            retrieveUserMemory = { projectId, prompt -> userMemoryRepository.recall(projectId, prompt).context }
+            retrieveKnowledge = { projectId, prompt ->
+                readableProjectsFor(projectId).mapNotNull { sourceProjectId ->
+                    conversationContextRepository.retrieveKnowledge(sourceProjectId, prompt)
+                        .takeIf { it.isNotBlank() }
+                }.joinToString("\n\n")
+            },
+            retrieveUserMemory = { projectId, prompt ->
+                readableProjectsFor(projectId).mapNotNull { sourceProjectId ->
+                    userMemoryRepository.recall(sourceProjectId, prompt).context.takeIf { it.isNotBlank() }
+                }.joinToString("\n\n")
+            }
         )
     }
     internal val chatRequestExecutionCoordinator: ChatRequestExecutionCoordinator by lazy {
