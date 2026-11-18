@@ -88,6 +88,8 @@ class LocalBackupRoundTripTest {
                 .putString("draft_c1", "恢复后继续写的草稿")
                 .putString("global_memory_v1", "始终使用简洁中文")
                 .putBoolean("automatic_memory_enabled", true)
+                .putString("reasoning_effort_v1", "high")
+                .putFloat("tts_speech_rate", 1.2f)
                 .putString("phone_audit", JSONArray().put(JSONObject().put("at", 123L).put("action", "TASK_START").put("detail", "round trip")).toString())
                 .commit()
 
