@@ -144,6 +144,8 @@ class LocalBackupRoundTripTest {
             assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
+            assertEquals("high", prefs.getString("reasoning_effort_v1", "low"))
+            assertEquals(1.2f, prefs.getFloat("tts_speech_rate", 1.0f), 0.001f)
             assertEquals("TASK_START", JSONArray(prefs.getString("phone_audit", "[]")).getJSONObject(0).getString("action"))
             assertEquals("恢复后继续写的草稿", prefs.getString("draft_c1", ""))
             assertEquals("始终使用简洁中文", prefs.getString("global_memory_v1", ""))
