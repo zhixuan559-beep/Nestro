@@ -270,6 +270,49 @@ class LocalBackupRoundTripTest {
             context.deleteDatabase(databaseName)
         }
     }
+    @Test fun backupAndRestoreRejectMissingActiveConversationReference() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "nestro_backup_active_conversation.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, NestroDatabase::class.java, databaseName)
+            .addMigrations(*NestroDatabase.ALL_MIGRATIONS)
+            .build()
+        val prefs = context.getSharedPreferences("nestro_backup_active_conversation", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putString("messages", "[]")
+                .putString("active_conversation_id", "active-c1").commit()
+            val dao = database.dao()
+            dao.putProjects(listOf(ProjectEntity("default", "默认项目", "", 1L)))
+            dao.putConversation(ConversationEntity("active-c1", "活动会话", 1L, "default"))
+            dao.putMessages(listOf(MessageEntity("active-m1", "active-c1", 0, "user", "原始消息", "[]", 0)))
+            val repository = LocalBackupRepository(context, database)
+
+            val backup = repository.createBackup(prefs)
+            prefs.edit().putString("active_conversation_id", "missing-c1").commit()
+            assertTrue("导出不得把无效活动会话静默切换到第一条会话",
+                runCatching { repository.createBackup(prefs) }.isFailure)
+
+            prefs.edit().putString("active_conversation_id", "active-c1").commit()
+            val invalidActiveConversationBackup = JSONObject(backup).apply {
+                remove("checksum_sha256")
+                put("active_conversation_id", "missing-c1")
+                put("checksum_sha256", LocalBackupCompatibility.sha256(
+                    LocalBackupCompatibility.canonicalJson(this)
+                ))
+            }.toString()
+            assertTrue("恢复不得把无效活动会话静默切换到第一条会话",
+                runCatching { repository.restoreBackup(prefs, invalidActiveConversationBackup) }.isFailure)
+            assertEquals("原会话必须保持不变", "active-c1", dao.loadConversations().single().conversation.id)
+            assertEquals("原活动会话引用必须保持不变", "active-c1", prefs.getString("active_conversation_id", ""))
+        } finally {
+            database.close()
+            prefs.edit().clear().commit()
+            File(context.filesDir, "artifacts").deleteRecursively()
+            File(context.filesDir, "backup-restore").deleteRecursively()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     @Test fun interruptedRestoreJournalRecoversRoomPreferencesAndEncryptedKeys() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         File(context.filesDir, "artifacts").deleteRecursively()
