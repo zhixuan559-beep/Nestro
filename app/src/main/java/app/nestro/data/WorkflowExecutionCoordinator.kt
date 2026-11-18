@@ -2,7 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentCapabilityRegistry
-import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
@@ -18,7 +18,7 @@ class WorkflowExecutionCoordinator(
         invokeModel: suspend (WorkflowStep, String) -> String,
         onStep: suspend (Int, WorkflowStep) -> Unit = { _, _ -> },
         toolCatalog: AgentToolCatalog? = null,
-        invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolAccess?) -> String)? = null
+        invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolDiscovery?) -> String)? = null
     ): WorkflowRunResult = taskCoordinator.runInline(
         taskId = taskId,
         owner = "workflow",
