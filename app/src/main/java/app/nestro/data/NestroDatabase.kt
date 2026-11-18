@@ -1,3 +1,5 @@
+private fun String.stableFtsRowId(): Long = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8)).take(8).fold(0L) { acc, byte -> (acc shl 8) or (byte.toLong() and 0xff) } and Long.MAX_VALUE
+
 package app.nestro.data
 
 import android.content.Context
@@ -5,6 +7,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -55,6 +58,15 @@ data class KnowledgeDocumentEntity(
 )
 @Entity(tableName = "knowledge_chunks", foreignKeys = [ForeignKey(entity = KnowledgeDocumentEntity::class, parentColumns = ["id"], childColumns = ["documentId"], onDelete = ForeignKey.CASCADE)], indices = [Index(value = ["documentId"]), Index(value = ["projectId"])])
 data class KnowledgeChunkEntity(@PrimaryKey val id: String, val documentId: String, val projectId: String, val position: Int, val content: String)
+
+@Fts4(tokenizer = androidx.room.FtsOptions.TOKENIZER_UNICODE61)
+@Entity(tableName = "knowledge_chunks_fts")
+data class KnowledgeChunkFtsEntity(
+    @PrimaryKey @ColumnInfo(name = "rowid") val rowId: Long,
+    val chunkId: String,
+    val projectId: String,
+    val content: String
+)
 @Entity(
     tableName = "phone_agent_task_logs",
     foreignKeys = [ForeignKey(entity = PhoneAgentTaskEntity::class, parentColumns = ["id"], childColumns = ["taskId"], onDelete = ForeignKey.CASCADE)],
@@ -478,6 +490,15 @@ interface NestroDao {
     suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKnowledgeChunks(chunks: List<KnowledgeChunkEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKnowledgeChunkFts(rows: List<KnowledgeChunkFtsEntity>)
+
+    @Query("DELETE FROM knowledge_chunks_fts WHERE chunkId IN (:chunkIds)")
+    suspend fun deleteKnowledgeChunkFts(chunkIds: List<String>)
+
+    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY rank LIMIT :limit")
+    suspend fun searchKnowledgeChunksFts(projectId: String, query: String, limit: Int = 12): List<KnowledgeChunkEntity>
+
     @Transaction
     suspend fun insertKnowledgeBundleIfAbsent(
         document: KnowledgeDocumentEntity,
@@ -487,16 +508,20 @@ interface NestroDao {
         if (existing != null) return existing
         insertKnowledgeDocument(document)
         insertKnowledgeChunks(chunks)
+        insertKnowledgeChunkFts(chunks.map { chunk -> KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content) })
         return document
     }
     @Query("DELETE FROM knowledge_documents WHERE id = :documentId AND projectId = :projectId")
     suspend fun deleteKnowledgeDocument(documentId: String, projectId: String)
     @Query("DELETE FROM knowledge_documents WHERE projectId = :projectId")
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
+    @Query("DELETE FROM knowledge_chunks_fts WHERE projectId = :projectId")
+    suspend fun deleteKnowledgeChunkFtsForProject(projectId: String)
     @Query("DELETE FROM phone_agent_tasks WHERE projectId = :projectId")
     suspend fun deletePhoneAgentTasksForProject(projectId: String)
     @Transaction
     suspend fun deleteProjectAndKnowledge(projectId: String) {
+        deleteKnowledgeChunkFtsForProject(projectId)
         deleteKnowledgeDocumentsForProject(projectId)
         deletePhoneAgentTasksForProject(projectId)
         deleteUserMemoriesForProject(projectId)
@@ -507,14 +532,21 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 10,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
+    version = 11,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content, tokenize=unicode61)")
+                db.execSQL("INSERT OR REPLACE INTO knowledge_chunks_fts(chunkId, projectId, content) SELECT id, projectId, content FROM knowledge_chunks")
+            }
+        }
+
         private val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS agent_task_traces (id TEXT NOT NULL, taskId TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(id))")
@@ -583,7 +615,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
