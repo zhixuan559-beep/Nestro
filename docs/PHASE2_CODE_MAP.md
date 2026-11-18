@@ -449,7 +449,7 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - `DefaultAgentRuntime` now accepts the narrow access interface rather than requiring the mutable global catalog.
 - Phone Agent now registers a typed capability for the current action only (open URL, launch app, click, enter text, scroll, wait, verify, back, or sensitive handoff). It opens a one-capability session for that step and releases the session and registration immediately afterward.
 - Added JVM tests for allow-list isolation, unknown tool rejection, and post-close invalidation.
-- This is the first executable slice of precision dispatch, not completion of the entire unified tool center. MCP/plugin discovery, per-tool schema loading, credential leasing, and cross-module expert/workflow tool routing remain outstanding.
+- This is the first executable slice of precision dispatch, not completion of the entire unified tool center. MCP/plugin discovery, per-tool schema loading, and provider-backed credential adapters remain outstanding; expert/workflow per-operation routing is recorded in the later unified capability registration section.
 
 
 ## 2026-11-18 — Keep the newest Phone Agent action context
@@ -497,7 +497,7 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - `AgentTaskCoordinator` now revokes task capability and credential leases before pause/cancel and again when a task handler exits, so a stale task cannot keep using a previously opened lease.
 - Phone Agent action execution now opens its one-action capability through the lease registry and releases it in `finally`.
 - Added JVM regression coverage for task-wide tool-lease revocation and task-scoped credential resolution/revocation.
-- This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that MCP/plugin discovery, remote-provider credential adapters, dynamic schemas, or expert/workflow per-step tool routing are complete. Those remain Phase 2 integration work.
+- This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that MCP/plugin discovery, remote-provider credential adapters, or dynamic schemas are complete. Expert/workflow per-step capability selection is implemented in the later unified capability registration section; actual model-native tool invocation remains a separate adapter task.
 
 
 
@@ -505,8 +505,8 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 
 - Added `AgentCapabilityRegistry` as the shared declaration point for operation-scoped minimum tool sets. Expert members are keyed by member name; workflow steps are keyed by stable step ID. Empty declarations load no tools.
 - The registry validates identifiers and tool counts, resolves immutable tool sets, checks that every declared tool is currently registered, and fails closed when a declared tool is missing.
-- Expert-team and workflow coordinators now resolve the declaration for each member/step, open a task-owned lease only for that operation, pass the narrow `AgentToolAccess` to a tool-aware adapter, and release the lease in `finally`. If tools are declared but no tool-aware adapter is supplied, execution fails closed rather than silently ignoring the declaration.
+- Expert-team and workflow coordinators now resolve the declaration for each member/step, open a task-owned lease only for that operation, pass a discovery-only `AgentToolDiscovery` view to a tool-aware adapter, and release the lease in `finally`. The discovery view cannot invoke handlers directly; actual invocation remains behind `AgentRuntime` and `AgentPermissionRouter`. If tools are declared but no tool-aware adapter is supplied, execution fails closed rather than silently ignoring the declaration.
 - `NestroApplication` now owns one process-wide `AgentToolCatalog`; Phone Agent, expert-team and workflow execution share this catalog. Phone Agent no longer creates an isolated catalog for each run.
 - Added coordinator regression tests proving expert/workflow operations see only their declared tools and that the access view is invalid after the operation returns.
 - Current expert/workflow model adapters remain model-only and declare no tool sets by default. This is intentional: the shared boundary is ready, but model-native tool-call execution and MCP/plugin discovery are not marked complete.
-- Tool selection remains separate from authorization. Any actual invocation must still pass through `AgentPermissionRouter`; loading a tool does not grant permission.
+- Tool selection remains separate from authorization. Feature adapters receive only `AgentToolDiscovery`, not the invocation-capable `AgentToolAccess`; any actual invocation must pass through `AgentRuntime` and `AgentPermissionRouter`. Loading a tool does not grant permission.
