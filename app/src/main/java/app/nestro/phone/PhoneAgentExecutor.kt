@@ -12,6 +12,7 @@ import app.nestro.agent.AgentToolPermission
 import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolResult
 import app.nestro.agent.AgentToolSpec
+import app.nestro.agent.AgentToolLeaseRegistry
 import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.RoomAgentTaskStateStore
@@ -176,9 +177,9 @@ object PhoneAgentExecutor {
                         val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
                         AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
                     }
-            val toolSession = catalog.openSession(setOf(toolId))
+            val toolLease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(toolId))
             val runtime: AgentRuntime = DefaultAgentRuntime(
-                catalog = toolSession,
+                catalog = toolLease.access,
                 permissions = toolPermissionRouter,
                 states = agentStates,
                 traces = RoomAgentTaskTraceStore(dao)
@@ -186,7 +187,7 @@ object PhoneAgentExecutor {
             val toolResult = try {
                 runtime.execute(AgentToolRequest(taskId, toolId))
             } finally {
-                toolSession.close()
+                AgentToolLeaseRegistry.release(toolLease.id)
                 catalog.remove(toolId)
             }
             val success = toolResult.success
