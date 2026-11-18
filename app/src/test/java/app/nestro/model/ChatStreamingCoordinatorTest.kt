@@ -71,7 +71,7 @@ class ChatStreamingCoordinatorTest {
             transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _ ->
                 throw CancellationException("caller cancelled")
             },
-            partialStateStore = ChatPartialStateStore { _, _, _, _, _ -> }
+            partialStateStore = ChatPartialStateStore { _, _, _, _, _, _ -> }
         )
         val result = runCatching {
             coordinator.execute(
