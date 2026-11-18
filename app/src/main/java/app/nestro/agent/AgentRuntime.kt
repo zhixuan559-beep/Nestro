@@ -117,8 +117,128 @@ class AgentToolSession internal constructor(
     override fun close() {
         closed = true
     }
+
+    /** Revocation is explicit and immediate; it has the same terminal effect as close(). */
+    fun revoke() {
+        closed = true
+    }
 }
 
+/**
+ * Process-local registry for task-scoped capability leases.
+ * A task can revoke every open lease without holding individual session references.
+ */
+object AgentToolLeaseRegistry {
+    data class Lease internal constructor(
+        val id: String,
+        val taskId: String,
+        val access: AgentToolSession
+    )
+
+    private val leases = ConcurrentHashMap<String, Lease>()
+
+    fun open(taskId: String, catalog: AgentToolCatalog, toolIds: Set<String>): Lease {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(toolIds.isNotEmpty())
+        val lease = Lease(
+            id = java.util.UUID.randomUUID().toString(),
+            taskId = taskId,
+            access = catalog.openSession(toolIds)
+        )
+        leases[lease.id] = lease
+        return lease
+    }
+
+    fun release(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.access.close()
+        return true
+    }
+
+    fun revoke(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.access.revoke()
+        return true
+    }
+
+    fun revokeTask(taskId: String): Int {
+        val selected = leases.values.filter { it.taskId == taskId }
+        selected.forEach { lease ->
+            if (leases.remove(lease.id, lease)) lease.access.revoke()
+        }
+        return selected.size
+    }
+
+    fun activeLeaseCount(taskId: String): Int = leases.values.count { it.taskId == taskId }
+}
+
+/**
+ * A short-lived credential view for one task. The secret is resolved only when
+ * used, never copied into the lease registry or persisted by this abstraction.
+ */
+class AgentCredentialLease internal constructor(
+    val id: String,
+    val taskId: String,
+    private val expiresAtMillis: Long,
+    private val secretProvider: () -> String?
+) : AutoCloseable {
+    @Volatile private var revoked = false
+
+    fun isUsable(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        !revoked && nowMillis < expiresAtMillis
+
+    fun <T> withSecret(block: (String) -> T): T? {
+        if (!isUsable()) return null
+        val secret = secretProvider()?.takeIf { it.isNotBlank() } ?: return null
+        if (!isUsable()) return null
+        return block(secret)
+    }
+
+    fun revoke() {
+        revoked = true
+    }
+
+    override fun close() = revoke()
+}
+
+/** In-memory, task-bound credential leases; credentials themselves remain in their secure owner. */
+object AgentCredentialLeaseRegistry {
+    private val leases = ConcurrentHashMap<String, AgentCredentialLease>()
+
+    fun open(
+        taskId: String,
+        ttlMillis: Long = 60_000,
+        secretProvider: () -> String?
+    ): AgentCredentialLease {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(ttlMillis in 1..900_000) { "凭据租约有效期必须为 1 毫秒到 15 分钟" }
+        val lease = AgentCredentialLease(
+            id = java.util.UUID.randomUUID().toString(),
+            taskId = taskId,
+            expiresAtMillis = System.currentTimeMillis() + ttlMillis,
+            secretProvider = secretProvider
+        )
+        leases[lease.id] = lease
+        return lease
+    }
+
+    fun release(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.close()
+        return true
+    }
+
+    fun revokeTask(taskId: String): Int {
+        val selected = leases.values.filter { it.taskId == taskId }
+        selected.forEach { lease ->
+            if (leases.remove(lease.id, lease)) lease.revoke()
+        }
+        return selected.size
+    }
+
+    fun activeLeaseCount(taskId: String): Int =
+        leases.values.count { it.taskId == taskId && it.isUsable() }
+}
 
 class InMemoryAgentToolCatalog : AgentToolCatalog {
     private data class Entry(
