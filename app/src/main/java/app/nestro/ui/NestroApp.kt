@@ -163,20 +163,6 @@ fun NestroApp() {
     var projectResourceScopesReadOnly by remember(prefs) {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
-    val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
-        if (projectResourceScopesReadOnly) {
-            status = "项目资源范围数据校验失败，已锁定资源修改；请先恢复有效备份。"
-        } else runCatching {
-            val next = if (makeGlobal) {
-                ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
-            } else {
-                ProjectResourceScopeStore.setProjectScope(projectResourceScopes, kind, resourceId, setOf(activeProjectId))
-            }
-            ProjectResourceScopeStore.save(prefs, next)
-            projectResourceScopes = next
-            status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
-        }.onFailure { status = "资源范围更新失败：${it.message ?: "数据无效"}" }
-    }
     var activeProjectId by projectSpaceUiState.activeProjectId
     var deletingProjectId by projectSpaceUiState.deletingProjectId
     var showProjectDialog by projectSpaceUiState.showProjectDialog
@@ -211,6 +197,20 @@ fun NestroApp() {
     var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
     var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
     var status by chatExecutionUiState.status
+    val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已锁定资源修改；请先恢复有效备份。"
+        } else runCatching {
+            val next = if (makeGlobal) {
+                ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
+            } else {
+                ProjectResourceScopeStore.setProjectScope(projectResourceScopes, kind, resourceId, setOf(activeProjectId))
+            }
+            ProjectResourceScopeStore.save(prefs, next)
+            projectResourceScopes = next
+            status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
+        }.onFailure { status = "资源范围更新失败：${it.message ?: "数据无效"}" }
+    }
     var recallSources by chatExecutionUiState.recallSources
     var showRecallDialog by chatExecutionUiState.showRecallDialog
     val expertCatalogUiState = remember(prefs) { ExpertCatalogUiState(prefs) }
