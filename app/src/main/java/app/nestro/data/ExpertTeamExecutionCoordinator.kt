@@ -1,6 +1,10 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentCapabilityRegistry
+import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
 
 /**
@@ -20,7 +24,9 @@ class ExpertTeamExecutionCoordinator(
         taskId: String = UUID.randomUUID().toString(),
         shouldStop: () -> Boolean = { false },
         onMember: suspend (String, String) -> Unit = { _, _ -> },
-        invokeMember: suspend (ExpertTeamMemberTask, String) -> String
+        invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
+        toolCatalog: AgentToolCatalog? = null,
+        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolAccess?) -> String)? = null
     ): ExpertTeamRunResult = taskCoordinator.runInline(
         taskId = taskId,
         owner = "expert_team",
@@ -35,7 +41,23 @@ class ExpertTeamExecutionCoordinator(
             timeoutMillis = 45_000,
             shouldStop = shouldStop,
             onMember = onMember,
-            invoke = invokeMember
+            invoke = { member, prompt ->
+                val lease = AgentCapabilityRegistry.openLease(
+                    taskId = taskId,
+                    owner = "expert_team",
+                    operation = member.name,
+                    catalog = toolCatalog
+                )
+                try {
+                    if (lease != null && invokeMemberWithTools == null) {
+                        error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
+                    }
+                    invokeMemberWithTools?.invoke(member, prompt, lease?.access)
+                        ?: invokeMember(member, prompt)
+                } finally {
+                    lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                }
+            }
         )
         taskContext.checkpoint("team:" + teamId + ":finished", result.members.size)
         result
