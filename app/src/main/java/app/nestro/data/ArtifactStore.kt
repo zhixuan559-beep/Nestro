@@ -138,7 +138,7 @@ object ArtifactStore {
         val output = JSONArray()
         var totalBytes = 0L
         for (index in 0 until rows.length()) {
-            val row = rows.optJSONObject(index) ?: error("产物索引包含无效条目，已中止备份")
+            val row = requireNotNull(rows.optJSONObject(index)) { "产物索引包含无效条目，已中止备份" }
             val id = row.artifactString("id")
             val projectId = row.artifactString("projectId")
             require(id.matches(Regex("[0-9a-fA-F-]{36}")) && projectId in allowedProjectIds) { "产物索引包含无效 ID 或项目归属" }
