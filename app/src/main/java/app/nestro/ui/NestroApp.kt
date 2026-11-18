@@ -2089,7 +2089,7 @@ fun NestroApp() {
                                                         showProjectDialog = true
                                                     }) { Text("编辑", color = Mint) }
                                                     TextButton(
-                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && projects.size < 100,
+                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly && projects.size < 100,
                                                         onClick = {
                                                             val baseName = "${project.name} 副本".take(40)
                                                             val existingNames = projects.map { it.name.trim().lowercase() }.toSet()
