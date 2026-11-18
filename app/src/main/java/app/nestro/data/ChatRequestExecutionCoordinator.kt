@@ -1,8 +1,6 @@
 package app.nestro.data
 
 import app.nestro.model.ChatStreamingCoordinator
-import app.nestro.model.ModelConfig
-import app.nestro.data.ChatMessage
 
 internal data class ChatRequestExecutionRequest(
     val requestId: String,
