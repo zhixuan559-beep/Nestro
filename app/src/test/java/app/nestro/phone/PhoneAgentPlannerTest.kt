@@ -70,4 +70,20 @@ class PhoneAgentPlannerTest {
         if (replanned.steps.isNotEmpty()) assertTrue(replanned.steps.first().title.contains("重新核验"))
     }
 
+    @Test
+    fun capabilityLoadingIsOnDemandAndCostBounded() {
+        val selected = PhoneAgentAgent.selectCapabilities(
+            "打开浏览器",
+            listOf(
+                PhoneAgentAgent.AgentCapability("浏览器", estimatedCost = 2),
+                PhoneAgentAgent.AgentCapability("支付", estimatedCost = 5),
+                PhoneAgentAgent.AgentCapability("系统", PhoneAgentAgent.LoadPolicy.EAGER, 2)
+            ),
+            maxCost = 4
+        )
+        assertTrue(selected.any { it.id == "浏览器" })
+        assertTrue(selected.any { it.id == "系统" })
+        assertTrue(selected.none { it.id == "支付" })
+    }
+
 }
