@@ -103,6 +103,13 @@ internal object ProjectAccessControlStore {
         return allowed && persisted
     }
 
+    fun grantedReadableSourceProjects(preferences: SharedPreferences, targetProjectId: String): Set<String> {
+        if (targetProjectId.isBlank()) return emptySet()
+        return runCatching { loadGrants(preferences) }.getOrDefault(emptyList())
+            .filter { it.targetProjectId == targetProjectId && Access.READ in it.access }
+            .map { it.sourceProjectId }.toSet()
+    }
+
     /** Returns source projects whose READ grant explicitly permits the target project to retrieve resources. */
     fun readableSourceProjects(
         preferences: SharedPreferences,
