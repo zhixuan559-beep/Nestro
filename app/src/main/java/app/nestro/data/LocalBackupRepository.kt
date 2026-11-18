@@ -716,6 +716,7 @@ private suspend fun applyLocalBackup(
     database.withTransaction {
         if (refuseActivePhoneTasks) requireNoActivePhoneAgentTasks(database)
         dao.deleteAllConversations()
+        dao.deleteAllKnowledgeChunkFts()
         dao.deleteAllKnowledgeDocuments()
         dao.deleteAllUserMemories()
         dao.deleteAllPhoneAgentTasks()
