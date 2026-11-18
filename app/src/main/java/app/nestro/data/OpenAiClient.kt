@@ -9,10 +9,17 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.util.UUID
 
-private fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: String = "", maxTokens: Int = 2048): List<ChatMessage> {
+internal fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: String = "", maxTokens: Int = 2048): List<ChatMessage> {
     val source = history.takeLast(40)
-    val bounded = ChatRequestPolicy.boundedHistory(source.map { ChatHistoryItem(it.role, it.content) }, systemPrompt, outputReserveTokens = maxTokens)
-    return bounded.mapIndexed { index, item -> source[source.size - bounded.size + index].copy(content = item.content) }
+    val bounded = ChatRequestPolicy.boundedHistory(
+        source.map { ChatHistoryItem(it.role, it.content) },
+        systemPrompt,
+        outputReserveTokens = maxTokens
+    )
+    // boundedHistory may skip blank entries; never infer source positions from the result size.
+    return bounded.mapIndexed { index, item ->
+        ChatMessage("request-context-$index", item.role, item.content)
+    }
 }
 
 private fun estimatedUsageInput(history: List<ChatMessage>, systemPrompt: String, maxTokens: Int?): Int {
