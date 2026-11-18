@@ -27,6 +27,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     override fun captureVisibleText(): String {
+        // Keep observation read-only and bounded. A future virtual-screen renderer can consume this snapshot
+        // without taking input focus or changing the foreground application's window.
         val root = rootInActiveWindow ?: return "当前页面没有可读取的无障碍节点。"
         val lines = mutableListOf<String>()
         collect(root, lines, 0)
@@ -166,6 +168,12 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
             }
         }
         return null
+    }
+
+
+    /** Read-only snapshot for a non-focus-stealing virtual-screen layer. */
+    fun captureReadOnlySnapshot(maxLines: Int = 120, maxChars: Int = 12000): String {
+        return captureVisibleText().lines().take(maxLines).joinToString("\n").take(maxChars)
     }
 
     fun hasActiveWindow(): Boolean = rootInActiveWindow != null
