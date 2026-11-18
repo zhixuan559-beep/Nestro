@@ -63,7 +63,7 @@ class LocalBackupRoundTripTest {
             dao.putMessages(listOf(MessageEntity("m1", "c1", 0, "user", "保留这条消息", "[]", 0)))
             val hash = LocalBackupCompatibility.sha256("doc")
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "资料.txt", "text/plain", 3L, 4L, hash))
-            dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容")))
+            dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容 restoreindexmarker")))
             dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
 
             LocalVault.writeApiKey(context, "old-key", "must-not-survive-restore")
