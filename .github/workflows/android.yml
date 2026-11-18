@@ -70,3 +70,55 @@ jobs:
             app/build/reports/lint-results-*.xml
           if-no-files-found: ignore
           retention-days: 7
+
+  instrumented:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 4 -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Android instrumentation tests on emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 600000
+          script: |
+            adb wait-for-device
+            gradle --no-daemon --stacktrace connectedDebugAndroidTest
+
+      - name: Upload Android instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nestro-android-instrumentation-reports
+          path: |
+            app/build/reports/androidTests/connected/**
+            app/build/outputs/androidTest-results/connected/**
+          if-no-files-found: ignore
+          retention-days: 7
