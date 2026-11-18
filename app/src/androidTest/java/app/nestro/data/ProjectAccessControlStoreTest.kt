@@ -60,6 +60,21 @@ class ProjectAccessControlStoreTest {
         } finally { prefs.edit().clear().commit() }
     }
 
+    @Test fun resourceVisibilityIncludesOnlyExplicitlyReadableSourceProjects() {
+        val scopes = ProjectResourceScopeStore.setProjectScope(
+            emptyMap(), ProjectResourceKind.EXPERT, "expert-a", setOf("source")
+        )
+        assertFalse(ProjectResourceScopeStore.isVisibleFromProjects(
+            scopes, ProjectResourceKind.EXPERT, "expert-a", "target", emptySet()
+        ))
+        assertTrue(ProjectResourceScopeStore.isVisibleFromProjects(
+            scopes, ProjectResourceKind.EXPERT, "expert-a", "target", setOf("source")
+        ))
+        assertTrue(ProjectResourceScopeStore.isVisibleFromProjects(
+            scopes, ProjectResourceKind.EXPERT, "expert-a", "source", emptySet()
+        ))
+    }
+
     @Test fun malformedGrantDataIsRejectedInsteadOfPartiallyAccepted() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             ProjectAccessControlStore.decodeGrants("""[{"source":"a","target":"b","access":["read","read"],"granted_at":1}]""")
