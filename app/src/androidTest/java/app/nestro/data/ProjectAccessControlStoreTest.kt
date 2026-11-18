@@ -45,6 +45,21 @@ class ProjectAccessControlStoreTest {
         } finally { prefs.edit().clear().commit() }
     }
 
+    @Test fun readableSourceProjectsOnlyIncludesExplicitReadGrantsAndAuditsThem() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("project_access_readable_projects_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().commit()
+            ProjectAccessControlStore.grant(prefs, "source-a", "target", setOf(ProjectAccessControlStore.Access.READ), 35L)
+            ProjectAccessControlStore.grant(prefs, "source-b", "target", setOf(ProjectAccessControlStore.Access.WRITE), 36L)
+            assertEquals(setOf("source-a"), ProjectAccessControlStore.readableSourceProjects(
+                prefs, "target", setOf("source-a", "source-b", "target"), 37L
+            ))
+            val attempts = ProjectAccessControlStore.loadAudit(prefs).takeLast(2)
+            assertEquals(setOf("source-a", "source-b"), attempts.map { it.sourceProjectId }.toSet())
+        } finally { prefs.edit().clear().commit() }
+    }
+
     @Test fun malformedGrantDataIsRejectedInsteadOfPartiallyAccepted() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             ProjectAccessControlStore.decodeGrants("""[{"source":"a","target":"b","access":["read","read"],"granted_at":1}]""")
