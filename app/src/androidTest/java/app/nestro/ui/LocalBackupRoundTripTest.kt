@@ -508,6 +508,9 @@ class LocalBackupRoundTripTest {
             prefs.edit().remove("draft_backup-c1").putString("draft_missing", "孤立草稿").commit()
             assertTrue("导出不得静默丢弃孤立草稿", runCatching { repository.createBackup(prefs) }.isFailure)
             prefs.edit().remove("draft_missing").commit()
+            prefs.edit().putInt("draft_backup-c1", 123).commit()
+            assertTrue("导出不得忽略类型错误的草稿字段", runCatching { repository.createBackup(prefs) }.isFailure)
+            prefs.edit().remove("draft_backup-c1").commit()
 
             val validBackup = repository.createBackup(prefs)
 
