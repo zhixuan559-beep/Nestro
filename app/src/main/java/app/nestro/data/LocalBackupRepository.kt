@@ -156,7 +156,8 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     roomConversationRows.forEach { row ->
         val messages = JSONArray()
         row.messages.sortedBy { it.position }.forEach { message ->
-            val versions = runCatching { JSONArray(message.versionsJson) }.getOrDefault(JSONArray())
+            val versions = runCatching { JSONArray(message.versionsJson) }
+                .getOrElse { error("会话回答版本记录损坏，已中止备份") }
             messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
                 .put("versions", versions).put("active_version", message.activeVersion.coerceAtLeast(0)))
         }
