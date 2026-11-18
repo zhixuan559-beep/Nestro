@@ -498,3 +498,15 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Phone Agent action execution now opens its one-action capability through the lease registry and releases it in `finally`.
 - Added JVM regression coverage for task-wide tool-lease revocation and task-scoped credential resolution/revocation.
 - This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that MCP/plugin discovery, remote-provider credential adapters, dynamic schemas, or expert/workflow per-step tool routing are complete. Those remain Phase 2 integration work.
+
+
+
+## 2026-11-18 — Unified capability registration and per-operation routing
+
+- Added `AgentCapabilityRegistry` as the shared declaration point for operation-scoped minimum tool sets. Expert members are keyed by member name; workflow steps are keyed by stable step ID. Empty declarations load no tools.
+- The registry validates identifiers and tool counts, resolves immutable tool sets, checks that every declared tool is currently registered, and fails closed when a declared tool is missing.
+- Expert-team and workflow coordinators now resolve the declaration for each member/step, open a task-owned lease only for that operation, pass the narrow `AgentToolAccess` to a tool-aware adapter, and release the lease in `finally`. If tools are declared but no tool-aware adapter is supplied, execution fails closed rather than silently ignoring the declaration.
+- `NestroApplication` now owns one process-wide `AgentToolCatalog`; Phone Agent, expert-team and workflow execution share this catalog. Phone Agent no longer creates an isolated catalog for each run.
+- Added coordinator regression tests proving expert/workflow operations see only their declared tools and that the access view is invalid after the operation returns.
+- Current expert/workflow model adapters remain model-only and declare no tool sets by default. This is intentional: the shared boundary is ready, but model-native tool-call execution and MCP/plugin discovery are not marked complete.
+- Tool selection remains separate from authorization. Any actual invocation must still pass through `AgentPermissionRouter`; loading a tool does not grant permission.
