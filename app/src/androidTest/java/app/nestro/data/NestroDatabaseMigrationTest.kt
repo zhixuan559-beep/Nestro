@@ -55,6 +55,32 @@ class NestroDatabaseMigrationTest {
         }
     }
 
+    @Test fun deletingKnowledgeDocumentRemovesItsFullTextIndexRows() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            val document = KnowledgeDocumentEntity("doc-delete", "p1", "待删除文档", "text/plain", 12L, 1L, "c".repeat(64))
+            val chunk = KnowledgeChunkEntity("chunk-delete", document.id, "p1", 0, "deleteindexmarker searchable content")
+            dao.insertKnowledgeDocument(document)
+            dao.insertKnowledgeChunks(listOf(chunk))
+            dao.insertKnowledgeChunkFts(listOf(KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content)))
+
+            val before = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
+            assertEquals(1, before.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
+
+            dao.deleteKnowledgeDocumentAndIndex(document.id, "p1")
+
+            val after = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
+            assertEquals(0, after.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
+            assertEquals(emptyList<KnowledgeChunkEntity>(), dao.searchKnowledgeChunksFts("p1", "deleteindexmarker*", 5))
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun migratesVersionOneDatabaseThroughVersionTenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
