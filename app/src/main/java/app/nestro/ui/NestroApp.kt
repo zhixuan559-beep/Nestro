@@ -2742,6 +2742,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        status = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = teamDraftName.trim()
                     if (name.isNotBlank() && name.length <= 40 && teamDraftDescription.length <= 300 && teamDraftMembers.size in 2..4 &&
                         expertTeams.none { it.name == name && it.id != editingTeamId }
@@ -2814,6 +2818,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                        return@TextButton
+                    }
                     val replacing = bundle.name in skills
                     if (replacing && !canWriteProjectResource(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
                     skills = skills + (bundle.name to bundle.prompt)
@@ -2969,6 +2977,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        skillDialogError = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = skillDraftName.trim()
                     val prompt = skillDraftPrompt.trim()
                     val duplicate = name in skills && name != editingSkillName
@@ -3039,6 +3051,10 @@ fun NestroApp() {
                 Text("导入后会一并安装成员专家配置；同名专家的角色指令将被更新。", color = Muted)
             } },
             confirmButton = { TextButton(onClick = {
+                if (projectResourceScopesReadOnly) {
+                    teamImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                    return@TextButton
+                }
                 val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
                 if (previousTeam != null && !canWriteProjectResource(ProjectResourceKind.TEAM, previousTeam.id)) return@TextButton
                 val existingExpertNames = experts.toSet()
@@ -3079,6 +3095,10 @@ fun NestroApp() {
                 if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
             } },
             confirmButton = { TextButton(onClick = {
+                if (projectResourceScopesReadOnly) {
+                    expertImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                    return@TextButton
+                }
                 val isNewExpert = bundle.name !in experts
                 if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
                 val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
@@ -3300,6 +3320,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        workflowRunStatus = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val workflow = WorkflowDefinition(
                         id = editingWorkflowId.ifBlank { UUID.randomUUID().toString() },
                         name = workflowDraftName.trim(),
@@ -3350,6 +3374,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        expertDialogError = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = expertDraft.trim()
                     val oldName = editingExpertName
                     val validationError = ExpertCatalogRules.validateDefinition(name, expertPromptDraft, oldName, experts)
