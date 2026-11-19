@@ -57,7 +57,12 @@ class ProjectPackageCodecTest {
             includeProjectContent = false
         )
         clearReusableResources(destination)
-        val merged = JSONObject(ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw))
+        val mergedRaw = try {
+            ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        } catch (error: IllegalArgumentException) {
+            throw AssertionError("Valid project package import was rejected: ${error.message}", error)
+        }
+        val merged = JSONObject(mergedRaw)
         val importedProjectId = merged.getString("active_project_id")
 
         assertNotEquals("source", importedProjectId)
