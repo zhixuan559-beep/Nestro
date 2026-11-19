@@ -79,6 +79,15 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     ProjectPreferencesStore.loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
                     markDirty = false
                 )
+                ProjectResourceScopeStore.save(
+                    prefs,
+                    ProjectResourceScopeStore.removeProjectScope(
+                        ProjectResourceScopeStore.load(prefs),
+                        pendingProjectDeleteId
+                    )
+                )
+                ProjectMemorySettingsStore.removeProject(prefs, pendingProjectDeleteId)
+                ProjectAccessControlStore.removeProject(prefs, pendingProjectDeleteId)
                 val editor = prefs.edit()
                 (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
                     .distinct().forEach { editor.remove("draft_$it") }
