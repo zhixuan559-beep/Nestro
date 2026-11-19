@@ -122,8 +122,8 @@ class NestroAppSmokeTest {
             composeRule.waitForIdle()
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
-            composeRule.onNodeWithText("项目空间", substring = true).performClick()
-            composeRule.onNodeWithText("项目空间").assertIsDisplayed()
+            composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
+            composeRule.onNodeWithText("项目空间", substring = false).assertIsDisplayed()
         } finally {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
@@ -136,10 +136,10 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("我的专家", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
-        composeRule.onNodeWithText("深度研究员").assertIsDisplayed()
         composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
-        composeRule.onNodeWithText("搜索模板名称、说明或指令").performTextInput("风险")
-        composeRule.onNodeWithText("风险审查员").assertIsDisplayed()
+        composeRule.onNodeWithText("深度研究员").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("搜索模板名称、说明或指令").performScrollTo().performTextInput("风险")
+        composeRule.onNodeWithText("风险审查员").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("深度研究员").assertIsNotDisplayed()
     }
 
