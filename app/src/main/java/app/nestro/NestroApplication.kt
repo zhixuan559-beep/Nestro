@@ -58,7 +58,7 @@ import kotlinx.coroutines.sync.withLock
 class NestroApplication : Application() {
     val database: NestroDatabase by lazy { NestroDatabase.get(this) }
     val conversationPersistenceService: ConversationPersistenceService by lazy {
-        ConversationPersistenceService(database)
+        ConversationPersistenceService(database, applicationContext)
     }
     internal val chatRequestRecoveryCoordinator: ChatRequestRecoveryCoordinator by lazy {
         ChatRequestRecoveryCoordinator(conversationPersistenceService)
