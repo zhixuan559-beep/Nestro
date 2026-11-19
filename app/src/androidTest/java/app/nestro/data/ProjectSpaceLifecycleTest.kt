@@ -289,4 +289,39 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
+    @Test fun rollbackProjectDuplicateRemovesEveryCopiedRoomRelationshipAtomically() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("default", "默认空间", "", 1L),
+                ProjectEntity("source", "源项目", "", 2L)
+            ))
+            dao.putConversation(ConversationEntity("source-chat", "项目讨论", 3L, "source"))
+            dao.putMessages(listOf(MessageEntity("source-message", "source-chat", 0, "user", "内容")))
+            dao.insertKnowledgeDocument(KnowledgeDocumentEntity(
+                "source-doc", "source", "资料.txt", "text/plain", 4L, 4L, "source-hash"
+            ))
+            dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("source-chunk", "source-doc", "source", 0, "片段")))
+            dao.putUserMemory(UserMemoryEntity(
+                "source-memory", "source", "fact", "记忆", "fingerprint",
+                "source-chat", "source-message", 0.9, 5L, 5L
+            ))
+
+            assertTrue(dao.duplicateProject("source", "copy", "源项目副本", 10L))
+            dao.rollbackProjectDuplicate("copy")
+
+            assertFalse(dao.projectExists("copy"))
+            assertTrue(dao.projectConversationIds("copy").isEmpty())
+            assertTrue(dao.knowledgeDocuments("copy").isEmpty())
+            assertTrue(dao.knowledgeChunksForProject("copy").isEmpty())
+            assertTrue(dao.userMemories("copy").isEmpty())
+            assertTrue(dao.projectExists("source"))
+            assertEquals("内容", dao.loadConversations().single().messages.single().content)
+        } finally {
+            database.close()
+        }
+    }
+
 }
