@@ -96,6 +96,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                 val editor = prefs.edit()
                 (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
                     .distinct().forEach { editor.remove("draft_$it") }
+                editor.remove("project_last_opened_$pendingProjectDeleteId")
                 editor.remove("pending_project_delete_id").commit()
             } else {
                 prefs.edit().remove("pending_project_delete_id").commit()
