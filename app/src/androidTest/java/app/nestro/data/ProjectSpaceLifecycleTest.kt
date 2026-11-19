@@ -289,6 +289,26 @@ class ProjectSpaceLifecycleTest {
         }
     }
 
+    @Test fun identicalKnowledgeDocumentsRemainIsolatedAndDeduplicateOnlyWithinTheirProject() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
+        try {
+            val dao = database.dao()
+            val projectA = KnowledgeDocumentEntity("doc-a", "project-a", "相同资料.txt", "text/plain", 10L, 1L, "same-content-hash")
+            val projectB = KnowledgeDocumentEntity("doc-b", "project-b", "相同资料.txt", "text/plain", 10L, 2L, "same-content-hash")
+
+            assertEquals(projectA, dao.insertKnowledgeBundleIfAbsent(projectA, emptyList()))
+            assertEquals(projectB, dao.insertKnowledgeBundleIfAbsent(projectB, emptyList()))
+            val duplicateInA = projectA.copy(id = "doc-a-duplicate", name = "同项目重复资料")
+            assertEquals(projectA, dao.insertKnowledgeBundleIfAbsent(duplicateInA, emptyList()))
+
+            assertEquals(listOf("doc-a"), dao.knowledgeDocuments("project-a").map { it.id })
+            assertEquals(listOf("doc-b"), dao.knowledgeDocuments("project-b").map { it.id })
+        } finally {
+            database.close()
+        }
+    }
+
     @Test fun rollbackProjectDuplicateRemovesEveryCopiedRoomRelationshipAtomically() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
