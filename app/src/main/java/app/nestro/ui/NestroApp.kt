@@ -2456,8 +2456,15 @@ fun NestroApp() {
                                                                         if (it is java.util.concurrent.CancellationException) {
                                                                             status = "删除操作中断，下次启动会自动核对删除状态"
                                                                         } else {
-                                                                            prefs.edit().remove("pending_project_delete_id").commit()
-                                                                            status = it.message ?: "删除失败，项目空间已保留"
+                                                                            val projectStillExists = withContext(Dispatchers.IO) {
+                                                                                appRuntime.projectSpaceRepository.exists(project.id)
+                                                                            }
+                                                                            if (projectStillExists) {
+                                                                                prefs.edit().remove("pending_project_delete_id").commit()
+                                                                                status = it.message ?: "删除失败，项目空间已保留"
+                                                                            } else {
+                                                                                status = "项目主体已删除，剩余设置清理未完成；启动时会继续清理"
+                                                                            }
                                                                         }
                                                                     }.also {
                                                                         deletingProjectId = ""
