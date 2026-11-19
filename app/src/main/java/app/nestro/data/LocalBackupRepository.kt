@@ -180,7 +180,7 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
         val currentBackup = buildLocalBackup(appContext, prefs, database)
         val mergedBackup = ProjectPackageCodec.mergeIntoFullBackup(currentBackup, raw)
         val importedProjectId = JSONObject(mergedBackup).getString("active_project_id")
-        restoreLocalBackup(appContext, prefs, mergedBackup, database)
+        restoreLocalBackup(appContext, prefs, mergedBackup, database, preserveModelPreferences = true)
         importedProjectId
     }
 
@@ -495,11 +495,21 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     return encoded
 }
 
-internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferences, raw: String, database: NestroDatabase) {
+internal suspend fun restoreLocalBackup(
+    context: Context,
+    prefs: SharedPreferences,
+    raw: String,
+    database: NestroDatabase,
+    preserveModelPreferences: Boolean = false
+) {
     recoverInterruptedLocalBackupRestore(context, prefs, database)
     persistLocalBackupRestoreJournal(context, prefs, database)
     try {
-        applyLocalBackup(context, prefs, raw, database, refuseActivePhoneTasks = true)
+        applyLocalBackup(
+            context, prefs, raw, database,
+            refuseActivePhoneTasks = true,
+            preserveModelPreferences = preserveModelPreferences
+        )
         deleteLocalBackupRestoreJournal(context)
     } catch (failure: Throwable) {
         if (failure is ActivePhoneAgentTasksException) {
@@ -629,7 +639,8 @@ private suspend fun applyLocalBackup(
     prefs: SharedPreferences,
     raw: String,
     database: NestroDatabase,
-    refuseActivePhoneTasks: Boolean = false
+    refuseActivePhoneTasks: Boolean = false,
+    preserveModelPreferences: Boolean = false
 ) {
     LocalBackupCompatibility.requireUtf8SizeWithin(raw, 10_000_000, "备份文件过大")
     val root = JSONObject(raw)
@@ -1054,10 +1065,6 @@ private suspend fun applyLocalBackup(
         .putString("global_memory_v1", globalMemory)
         .putBoolean("automatic_memory_enabled", root.booleanOrDefault("automatic_memory_enabled", false))
         .putBoolean("chat_task_mode_enabled", root.booleanOrDefault("chat_task_mode_enabled", false))
-        .putString("active_model_registry_id", "")
-        .remove("base_url").remove("model").remove("model_profiles_v1")
-        .remove("model_registry_v1").remove("active_model_profile_id")
-        .remove("model_usage_v1").putBoolean("model_failover_enabled", false)
         .putString("reasoning_effort_v1", restoredReasoningEffort)
         .putFloat("tts_speech_rate", restoredTtsSpeechRate)
         .putString("phone_audit", restoredPhoneAudit.toString())
@@ -1085,6 +1092,13 @@ private suspend fun applyLocalBackup(
         })
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
+    // A project package is not a device backup: keep the user's local model catalog and routing settings.
+    if (!preserveModelPreferences) {
+        editor.putString("active_model_registry_id", "")
+            .remove("base_url").remove("model").remove("model_profiles_v1")
+            .remove("model_registry_v1").remove("active_model_profile_id")
+            .remove("model_usage_v1").putBoolean("model_failover_enabled", false)
+    }
     // In-flight UI operations belong to the device/process being restored, not the backup.
     editor.remove("chat_request_state_v1")
         .remove("pending_project_delete_id")

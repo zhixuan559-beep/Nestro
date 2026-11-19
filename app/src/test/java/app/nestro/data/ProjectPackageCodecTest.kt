@@ -73,6 +73,43 @@ class ProjectPackageCodecTest {
         assertTrue(LocalBackupCompatibility.verifyChecksum(merged))
     }
 
+    @Test fun sharedResourceWriteRequiresPermissionFromEveryForeignOwner() {
+        val scopes = ProjectResourceScopeStore.setProjectScope(
+            emptyMap(), ProjectResourceKind.EXPERT, "shared", setOf("source-a", "source-b")
+        )
+        assertFalse(ProjectResourceScopeStore.canWriteFromProject(
+            scopes, ProjectResourceKind.EXPERT, "shared", "target", setOf("source-a")
+        ))
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(
+            scopes, ProjectResourceKind.EXPERT, "shared", "target", setOf("source-a", "source-b")
+        ))
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(
+            scopes, ProjectResourceKind.EXPERT, "shared", "source-a", setOf("source-b")
+        ))
+        assertFalse(ProjectResourceScopeStore.canWriteFromProject(
+            scopes, ProjectResourceKind.EXPERT, "shared", "target", emptySet()
+        ))
+    }
+
+    @Test fun exportOmitsExpertAndTeamWhenExpertDependsOnHiddenSkill() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val scopes = ProjectResourceScopeStore.decode(source.getString("project_resource_scopes_v1")).toMutableMap()
+        scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "hidden")] = setOf("foreign")
+        source.put("skills", JSONObject().put("research", "研究技能指令").put("hidden", "不可见技能指令").toString())
+        source.put("expert_profiles_v1", ExpertProfileCodec.encode(
+            mapOf("writer" to ExpertProfile(skillNames = listOf("hidden")))
+        ))
+        source.put("project_resource_scopes_v1", ProjectResourceScopeStore.encode(scopes))
+        source.remove("checksum_sha256")
+        seal(source)
+
+        val resources = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+            .getJSONObject("resources")
+        assertEquals(0, resources.getJSONArray("experts").length())
+        assertEquals(0, resources.getJSONArray("expert_teams_v1").length())
+        assertFalse(resources.getJSONObject("skills").has("hidden"))
+    }
+
     @Test fun modifiedProjectPackageIsRejectedBeforeMerge() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))

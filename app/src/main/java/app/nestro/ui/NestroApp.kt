@@ -2604,7 +2604,7 @@ fun NestroApp() {
         AlertDialog(
             onDismissRequest = { showProjectPackageImportConfirm = false; pendingProjectPackageUri = null },
             title = { Text("导入项目包？") },
-            text = { Text("导入会新建一个独立项目，不覆盖现有项目。会复制项目会话、知识、记忆、产物和项目资源；API Key 与跨项目访问授权不会导入。") },
+            text = { Text("导入会新建一个独立项目，不覆盖现有项目。会复制项目会话、知识、记忆、产物和项目资源；本机模型/API 设置与跨项目授权保持不变，不随项目包导入。") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingProjectPackageUri
