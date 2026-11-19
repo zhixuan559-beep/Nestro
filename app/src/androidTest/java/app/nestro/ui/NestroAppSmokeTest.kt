@@ -137,10 +137,10 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("模板库").performClick()
 
         composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
-        composeRule.onNodeWithText("深度研究员").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("深度研究员", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("搜索模板名称、说明或指令").performScrollTo().performTextInput("风险")
-        composeRule.onNodeWithText("风险审查员").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("深度研究员").assertIsNotDisplayed()
+        composeRule.onNodeWithText("风险审查员", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("深度研究员", substring = true).assertIsNotDisplayed()
     }
 
     @Test
