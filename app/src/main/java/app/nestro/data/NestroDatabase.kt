@@ -566,6 +566,14 @@ interface NestroDao {
         return true
     }
 
+    @Transaction
+    suspend fun rollbackProjectDuplicate(projectId: String) {
+        require(projectId.isNotBlank() && projectId != "default") { "复制回滚项目 ID 无效" }
+        val ids = projectConversationIds(projectId)
+        if (ids.isNotEmpty()) deleteConversations(ids)
+        deleteProjectAndKnowledge(projectId)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 
