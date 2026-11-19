@@ -129,6 +129,8 @@ internal object ProjectPackageCodec {
         workflowIds.forEach { exportScope(ProjectResourceKind.WORKFLOW, it) }
 
         val settings = ProjectMemorySettingsStore.decode(stringField(backup, "project_memory_settings_v1", "{}"))
+        val projectMemoryEnabled = settings[projectId]
+            ?: (projectId == "default" && backup.optBoolean("automatic_memory_enabled", false))
         val resources = JSONObject()
             .put("experts", JSONArray(selectedExperts.sorted()))
             .put("expert_prompts", selectedExpertPrompts)
@@ -152,7 +154,7 @@ internal object ProjectPackageCodec {
             .put("knowledge_chunks_v1", chunks)
             .put("user_memories", memories)
             .put("artifacts_v1", artifacts)
-            .put("project_memory_enabled", settings[projectId] == true)
+            .put("project_memory_enabled", projectMemoryEnabled)
             .put("resources", resources)
         seal(result)
         val encoded = result.toString(2)
