@@ -313,6 +313,7 @@ fun NestroApp() {
     var voiceStatus by dataTransferUiState.voiceStatus
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
+    var initialChatPositionRestored by remember { mutableStateOf(false) }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -957,9 +958,24 @@ fun NestroApp() {
         }
     }
 
-        LaunchedEffect(messages.size, busy) {
+    LaunchedEffect(messages.size, busy, activeConversationId) {
+        if (page != "home" && page != "chat") return@LaunchedEffect
         val lastIndex = messages.lastIndex + if (busy) 1 else 0
-        if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
+        if (lastIndex >= 0) {
+            if (!initialChatPositionRestored) {
+                chatListState.scrollToItem(lastIndex)
+                initialChatPositionRestored = true
+            } else {
+                chatListState.animateScrollToItem(lastIndex)
+            }
+        }
+    }
+
+    LaunchedEffect(page) {
+        if (page == "home" || page == "chat") {
+            val lastIndex = messages.lastIndex + if (busy) 1 else 0
+            if (lastIndex >= 0) chatListState.scrollToItem(lastIndex)
+        }
     }
 
     MaterialTheme(
@@ -970,11 +986,19 @@ fun NestroApp() {
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
             Box(Modifier.fillMaxSize()) {
+                if (showDrawer && screenWidthDp < 600) {
+                    NavigationDrawerContent(
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigate = { destination -> page = destination; showDrawer = false },
+                        onClose = { showDrawer = false }
+                    )
+                } else {
                 Row(Modifier.fillMaxSize()) {
                     if (showDrawer && screenWidthDp >= 600) {
                         NavigationDrawerContent(
                             modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
-                            onNavigate = { destination -> page = destination; showDrawer = false }
+                            onNavigate = { destination -> page = destination; showDrawer = false },
+                            onClose = { showDrawer = false }
                         )
                     }
                     Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -2415,21 +2439,10 @@ fun NestroApp() {
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
                     }
                 }
-                if (showDrawer && screenWidthDp < 600) {
-                    Box(
-                        Modifier.fillMaxSize()
-                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.48f))
-                            .clickable { showDrawer = false }
-                            .zIndex(1f)
-                    )
-                    NavigationDrawerContent(
-                        modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight().zIndex(2f),
-                        onNavigate = { destination -> page = destination; showDrawer = false }
-                    )
+                }
                 }
             }
         }
-    }
 
     if (showBackupRestoreConfirm && pendingBackupUri != null) {
         AlertDialog(

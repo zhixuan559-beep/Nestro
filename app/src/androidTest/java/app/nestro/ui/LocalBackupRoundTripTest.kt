@@ -349,7 +349,7 @@ class LocalBackupRoundTripTest {
         val vaultPrefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         try {
             prefs.edit().clear().putString("messages", "[]").putString("global_memory_v1", "恢复前的记忆")
-                .putBoolean("automatic_memory_enabled", true).putString("draft_old", "旧草稿").commit()
+                .putBoolean("automatic_memory_enabled", true).putString("draft_journal-c1", "旧草稿").commit()
             LocalVault.writeApiKey(context, "journal-key", "encrypted-old-secret")
             val oldArtifact = ArtifactStore.save(context, "default", "journal-old-artifact", "# 恢复前的作品")
             val dao = database.dao()
@@ -372,7 +372,7 @@ class LocalBackupRoundTripTest {
             assertEquals("恢复前消息", dao.loadConversations().single().messages.single().content)
             assertEquals("恢复前的记忆", prefs.getString("global_memory_v1", ""))
             assertTrue(prefs.getBoolean("automatic_memory_enabled", false))
-            assertEquals("旧草稿", prefs.getString("draft_old", ""))
+            assertEquals("旧草稿", prefs.getString("draft_journal-c1", ""))
             assertEquals("encrypted-old-secret", LocalVault.readApiKey(context, "journal-key"))
             val recoveredArtifact = ArtifactStore.list(context, "default").single { it.title == "journal-old-artifact" }
             assertEquals("# 恢复前的作品", ArtifactStore.read(context, recoveredArtifact))
