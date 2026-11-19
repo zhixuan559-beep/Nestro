@@ -272,7 +272,7 @@ object ExpertTeamEngine {
 object ExpertTeamRunHistoryCodec {
     fun encode(records:List<ExpertTeamRunResult>):String =
         JSONArray().apply {
-            records.take(300).forEach { record ->
+            records.take(30).forEach { record ->
                 put(JSONObject()
                     .put("teamName",record.teamName)
                     .put("task",record.task.take(1200))
@@ -296,7 +296,7 @@ object ExpertTeamRunHistoryCodec {
     fun decode(raw:String):List<ExpertTeamRunResult> = runCatching {
         require(raw.length<=3_000_000) { "团队运行记录过大" }
         val array=JSONArray(raw)
-        (0 until minOf(array.length(),300)).mapNotNull { index ->
+        (0 until minOf(array.length(),30)).mapNotNull { index ->
             val item=array.optJSONObject(index) ?: return@mapNotNull null
             val members=item.optJSONArray("members") ?: JSONArray()
             val decoded=(0 until minOf(members.length(),4)).mapNotNull { memberIndex ->

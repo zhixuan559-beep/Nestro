@@ -56,6 +56,7 @@ class ProjectPackageCodecTest {
             conversationId = "destination-conversation",
             includeProjectContent = false
         )
+        clearReusableResources(destination)
         val merged = JSONObject(ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw))
         val importedProjectId = merged.getString("active_project_id")
 
@@ -122,7 +123,8 @@ class ProjectPackageCodecTest {
 
         val resources = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
             .getJSONObject("resources")
-        assertEquals(0, resources.getJSONArray("experts").length())
+        assertEquals(1, resources.getJSONArray("experts").length())
+        assertEquals("analyst", resources.getJSONArray("experts").getString(0))
         assertEquals(0, resources.getJSONArray("expert_teams_v1").length())
         assertFalse(resources.getJSONObject("skills").has("hidden"))
     }
@@ -265,6 +267,7 @@ class ProjectPackageCodecTest {
                 .put("name", "相同内容资料.txt").put("mimeType", "text/plain")
                 .put("sizeBytes", 8L).put("importedAt", 1L).put("contentHash", "a".repeat(64))
         )
+        clearReusableResources(destination)
         destination.remove("checksum_sha256")
         seal(destination)
 
@@ -328,6 +331,17 @@ class ProjectPackageCodecTest {
         assertThrows(IllegalArgumentException::class.java) {
             ProjectPackageCodec.mergeIntoFullBackup(source.toString(), packageRoot.toString())
         }
+    }
+
+    private fun clearReusableResources(root: JSONObject) {
+        root.put("experts", JSONArray().toString())
+        root.put("expert_prompts", JSONObject().toString())
+        root.put("expert_profiles_v1", JSONObject().toString())
+        root.put("expert_versions_v1", JSONObject().toString())
+        root.put("expert_teams_v1", JSONArray().toString())
+        root.put("skills", JSONObject().toString())
+        root.put("skill_metadata_v1", JSONObject().toString())
+        root.put("workflows_v1", JSONArray().toString())
     }
 
     private fun fixtureBackup(
