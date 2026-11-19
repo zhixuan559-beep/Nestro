@@ -150,6 +150,32 @@ internal object ProjectResourceScopeStore {
         return scopes + (resourceKey(kind, resourceId) to setOf(GLOBAL))
     }
 
+    fun renameResourceScope(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        oldResourceId: String,
+        newResourceId: String
+    ): Map<String, Set<String>> {
+        require(oldResourceId.isNotBlank() && newResourceId.isNotBlank() &&
+            oldResourceId.length <= 200 && newResourceId.length <= 200 && oldResourceId != newResourceId) {
+            "资源重命名参数无效"
+        }
+        val oldKey = resourceKey(kind, oldResourceId)
+        val newKey = resourceKey(kind, newResourceId)
+        require(newKey !in scopes) { "目标资源范围已存在，拒绝覆盖" }
+        val owners = scopes[oldKey] ?: return scopes
+        return (scopes - oldKey) + (newKey to owners)
+    }
+
+    fun removeResourceScope(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        resourceId: String
+    ): Map<String, Set<String>> {
+        require(resourceId.isNotBlank() && resourceId.length <= 200) { "资源 ID 无效" }
+        return scopes - resourceKey(kind, resourceId)
+    }
+
     fun duplicateProjectScope(
         scopes: Map<String, Set<String>>,
         sourceProjectId: String,
