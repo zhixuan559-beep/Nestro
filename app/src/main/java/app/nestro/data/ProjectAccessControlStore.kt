@@ -88,6 +88,29 @@ internal object ProjectAccessControlStore {
             .commit()) { "跨项目授权撤销及审计记录保存失败" }
     }
 
+    /** Remove every grant involving a deleted project and persist the revocation audit atomically. */
+    fun removeProject(preferences: SharedPreferences, projectId: String, at: Long = System.currentTimeMillis()) {
+        require(projectId.isNotBlank() && projectId.length <= MAX_ID && at >= 0L) { "待清理项目 ID 无效" }
+        val currentGrants = loadGrants(preferences)
+        val currentAudit = loadAudit(preferences)
+        val removed = currentGrants.filter {
+            it.sourceProjectId == projectId || it.targetProjectId == projectId
+        }
+        val nextGrants = currentGrants.filterNot {
+            it.sourceProjectId == projectId || it.targetProjectId == projectId
+        }
+        val revocations = removed.flatMap { grant ->
+            grant.access.map { permission ->
+                AuditEntry(at, grant.sourceProjectId, grant.targetProjectId, permission, true, "project_deleted")
+            }
+        }
+        val nextAudit = appendAuditEntries(currentAudit, revocations)
+        check(preferences.edit()
+            .putString(GRANTS_KEY, encodeGrants(nextGrants))
+            .putString(AUDIT_KEY, encodeAudit(nextAudit))
+            .commit()) { "项目授权清理及审计记录保存失败" }
+    }
+
     /** Missing or malformed grants deny access; inability to persist the decision also denies access. */
     fun authorize(preferences: SharedPreferences, sourceProjectId: String, targetProjectId: String, access: Access, at: Long = System.currentTimeMillis()): Boolean {
         require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId && at >= 0L) { "跨项目访问参数无效" }
