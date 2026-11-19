@@ -8,6 +8,9 @@ class ProjectSpaceRepository(private val database: NestroDatabase) {
     suspend fun hasLinkedData(projectId: String): Boolean =
         database.dao().projectHasLinkedData(projectId)
 
+    suspend fun exists(projectId: String): Boolean =
+        database.dao().projectExists(projectId)
+
     suspend fun deleteIfEmpty(projectId: String, activeProjectId: String): Boolean =
         database.dao().deleteProjectIfEmpty(projectId, activeProjectId)
 
