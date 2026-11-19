@@ -66,7 +66,7 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             }.getOrDefault(true)
             val hasArtifactsOrOrphans = context?.let { appContext ->
                 runCatching { ArtifactStore.hasProjectArtifactsOrOrphans(appContext, pendingProjectDeleteId) }.getOrDefault(true)
-            } ?: true
+            } ?: false
             val canRecover = !hasExclusiveResources && !hasArtifactsOrOrphans && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
