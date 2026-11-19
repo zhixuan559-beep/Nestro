@@ -2497,8 +2497,12 @@ fun NestroApp() {
                                                                         projectResourceScopes = remainingScopes
                                                                         ProjectMemorySettingsStore.removeProject(prefs, project.id)
                                                                         ProjectAccessControlStore.removeProject(prefs, project.id)
+                                                                        workflowHistory = workflowHistory.filterNot { it.projectId == project.id }
+                                                                        expertTeamRunHistory = expertTeamRunHistory.filterNot { it.projectId == project.id }
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
+                                                                        editor.putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory))
+                                                                            .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory))
                                                                         editor.remove("project_last_opened_${project.id}")
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
                                                                         status = if (markerCleared) "空项目空间已删除" else "项目已删除，启动时会自动清理残留标记"
