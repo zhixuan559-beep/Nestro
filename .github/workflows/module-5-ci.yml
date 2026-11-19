@@ -37,6 +37,27 @@ jobs:
         run: gradle --no-daemon --stacktrace compileDebugKotlin
       - name: Run JVM unit tests
         run: gradle --no-daemon --stacktrace testDebugUnitTest
+      - name: Print JVM unit test failure details
+        if: failure()
+        run: |
+          shopt -s nullglob
+          reports=(app/build/test-results/testDebugUnitTest/*.xml)
+          if (( ${#reports[@]} == 0 )); then
+            echo "No JVM test XML reports were generated."
+            exit 0
+          fi
+          for report in "${reports[@]}"; do
+            echo "===== $report ====="
+            cat "$report"
+          done
+      - name: Upload JVM unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-5-jvm-test-reports
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 3
       - name: Run Android lint
         if: always()
         run: gradle --no-daemon --stacktrace lintDebug
