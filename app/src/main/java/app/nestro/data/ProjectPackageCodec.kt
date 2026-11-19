@@ -411,7 +411,11 @@ internal object ProjectPackageCodec {
         }
         for (team in incomingTeamRows) {
             val members = team.opt("members") as? JSONArray ?: error("项目包团队成员列表格式无效")
-            require(members.toStringList().all { it in incomingExpertNames }) {
+            val memberNames = members.toStringList()
+            require(memberNames.size in 2..4 && memberNames.distinct().size == memberNames.size) {
+                "项目包团队成员数量或成员 ID 无效"
+            }
+            require(memberNames.all { it in incomingExpertNames }) {
                 "项目包团队引用了未随包导入的专家"
             }
         }
