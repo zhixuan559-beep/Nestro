@@ -51,7 +51,7 @@ data class MessageEntity(
     val activeVersion: Int = 0
 )
 
-@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["contentHash"], unique = true)])
+@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["projectId", "contentHash"], unique = true)])
 data class KnowledgeDocumentEntity(
     @PrimaryKey val id: String, val projectId: String, val name: String,
     val mimeType: String, val sizeBytes: Long, val importedAt: Long, val contentHash: String
@@ -583,8 +583,8 @@ interface NestroDao {
     suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
     @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId, position")
     suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
-    @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
-    suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
+    @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId AND contentHash = :hash LIMIT 1")
+    suspend fun knowledgeDocumentByHash(projectId: String, hash: String): KnowledgeDocumentEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -603,7 +603,7 @@ interface NestroDao {
         document: KnowledgeDocumentEntity,
         chunks: List<KnowledgeChunkEntity>
     ): KnowledgeDocumentEntity {
-        val existing = knowledgeDocumentByHash(document.contentHash)
+        val existing = knowledgeDocumentByHash(document.projectId, document.contentHash)
         if (existing != null) return existing
         insertKnowledgeDocument(document)
         insertKnowledgeChunks(chunks)
@@ -642,13 +642,20 @@ interface NestroDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_knowledge_documents_contentHash")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_knowledge_documents_projectId_contentHash ON knowledge_documents(projectId, contentHash)")
+            }
+        }
+
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content, tokenize=unicode61)")
@@ -724,7 +731,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
