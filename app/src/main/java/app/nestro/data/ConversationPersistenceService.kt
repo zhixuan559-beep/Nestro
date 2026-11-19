@@ -58,7 +58,12 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                 it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
             }
             val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-            val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
+            val hasExclusiveResources = runCatching {
+                ProjectResourceScopeStore.resourcesOwnedOnlyByProject(
+                    ProjectResourceScopeStore.load(prefs), pendingProjectDeleteId
+                ).isNotEmpty()
+            }.getOrDefault(true)
+            val canRecover = !hasExclusiveResources && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
                 hasRunningRequest = hasRunningRequest,
