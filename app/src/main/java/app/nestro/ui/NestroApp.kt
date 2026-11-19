@@ -2448,6 +2448,7 @@ fun NestroApp() {
                                                                         ProjectAccessControlStore.removeProject(prefs, project.id)
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
+                                                                        editor.remove("project_last_opened_${project.id}")
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
                                                                         status = if (markerCleared) "空项目空间已删除" else "项目已删除，启动时会自动清理残留标记"
                                                                     }.onFailure {
