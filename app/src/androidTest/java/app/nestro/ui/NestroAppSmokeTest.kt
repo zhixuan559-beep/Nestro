@@ -7,8 +7,6 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -36,8 +34,7 @@ class NestroAppSmokeTest {
     @Test
     fun opensProjectSpacesFromNavigationDrawer() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("项目空间", substring = true).performClick()
-        composeRule.onRoot().printToLog("NAV_PROJECT_SPACE")
+        composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
 
         composeRule.onNodeWithText("每个空间拥有独立会话与项目指令。", substring = true).assertIsDisplayed()
     }
@@ -66,12 +63,11 @@ class NestroAppSmokeTest {
     @Test
     fun opensWorkflowAndDataSettingsDestinations() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工作流", substring = true).performClick()
+        composeRule.onNodeWithText("工作流", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("数据与设置", substring = true).performClick()
-        composeRule.onRoot().printToLog("NAV_SETTINGS_AFTER_WORKFLOW")
+        composeRule.onNodeWithText("数据与设置", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("数据与设置").assertIsDisplayed()
         composeRule.onNodeWithText("本地数据备份").assertIsDisplayed()
     }
@@ -127,7 +123,6 @@ class NestroAppSmokeTest {
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
             composeRule.onNodeWithText("项目空间", substring = true).performClick()
-            composeRule.onRoot().printToLog("NAV_PROJECT_SPACE_LANDSCAPE")
             composeRule.onNodeWithText("项目空间").assertIsDisplayed()
         } finally {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -138,8 +133,7 @@ class NestroAppSmokeTest {
     @Test
     fun expertTemplateLibraryShowsBuiltInsAndFiltersBySearch() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("我的专家", substring = true).performClick()
-        composeRule.onRoot().printToLog("NAV_EXPERTS_BEFORE_TEMPLATE")
+        composeRule.onNodeWithText("我的专家", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
         composeRule.onNodeWithText("深度研究员").assertIsDisplayed()
