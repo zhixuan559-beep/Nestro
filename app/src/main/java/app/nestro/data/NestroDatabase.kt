@@ -528,14 +528,10 @@ interface NestroDao {
         }
 
         val copiedDocuments = sourceDocuments.map { document ->
-            val saltedHash = java.security.MessageDigest.getInstance("SHA-256")
-                .digest("$newProjectId:${document.contentHash}".toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
             document.copy(
                 id = documentIds.getValue(document.id),
                 projectId = newProjectId,
-                importedAt = createdAt,
-                contentHash = saltedHash
+                importedAt = createdAt
             )
         }
         if (copiedDocuments.isNotEmpty()) insertKnowledgeDocuments(copiedDocuments)
