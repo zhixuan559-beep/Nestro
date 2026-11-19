@@ -2229,21 +2229,26 @@ fun NestroApp() {
                     }
                 }
                 if (showDrawer && screenWidthDp < 600) {
-                    Box(
-                        Modifier.fillMaxSize()
-                            .padding(start = adaptiveDrawerWidth)
-                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.48f))
-                            .clickable { showDrawer = false }
-                            .zIndex(1f)
-                    )
-                    ModalDrawerSheet(
-                        modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight().zIndex(2f),
-                        drawerContainerColor = Card,
-                        drawerContentColor = Ink
-                    ) {
-                        NavigationDrawerContent(
-                            onNavigate = { destination -> page = destination; showDrawer = false }
+                    androidx.compose.ui.window.Dialog(
+                        onDismissRequest = { showDrawer = false },
+                        properties = androidx.compose.ui.window.DialogProperties(
+                            usePlatformDefaultWidth = false
                         )
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Surface(
+                                modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                                color = Card,
+                                shape = RoundedCornerShape(0.dp)
+                            ) {
+                                NavigationDrawerContent(
+                                    onNavigate = { destination -> page = destination; showDrawer = false }
+                                )
+                            }
+                        }
                     }
                 }
             }
