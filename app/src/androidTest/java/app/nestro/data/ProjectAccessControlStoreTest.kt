@@ -144,4 +144,38 @@ class ProjectAccessControlStoreTest {
             ))
         } finally { prefs.edit().clear().commit() }
     }
+    @Test fun deletingProjectRemovesIncomingAndOutgoingGrantsAndAuditsThem() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("project_access_delete_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().commit()
+            ProjectAccessControlStore.grant(
+                prefs, "deleted", "reader",
+                setOf(ProjectAccessControlStore.Access.READ), 40L
+            )
+            ProjectAccessControlStore.grant(
+                prefs, "writer", "deleted",
+                setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE), 41L
+            )
+            ProjectAccessControlStore.grant(
+                prefs, "kept", "other",
+                setOf(ProjectAccessControlStore.Access.READ), 42L
+            )
+
+            ProjectAccessControlStore.removeProject(prefs, "deleted", 50L)
+
+            val grants = ProjectAccessControlStore.loadGrants(prefs)
+            assertEquals(1, grants.size)
+            assertEquals("kept", grants.single().sourceProjectId)
+            assertEquals("other", grants.single().targetProjectId)
+            val deletedAudit = ProjectAccessControlStore.loadAudit(prefs).filter { it.reason == "project_deleted" }
+            assertEquals(3, deletedAudit.size)
+            assertTrue(deletedAudit.all { it.at == 50L && (it.sourceProjectId == "deleted" || it.targetProjectId == "deleted") })
+            assertTrue(ProjectAccessControlStore.grantedReadableSourceProjects(prefs, "reader").isEmpty())
+            assertTrue(ProjectAccessControlStore.grantedWritableSourceProjects(prefs, "deleted").isEmpty())
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
 }
