@@ -33,6 +33,18 @@ class KnowledgeChunkerTest {
     }
 
     @Test
+    fun reassemblesOverlappingChunksWithoutDuplicatingText() {
+        val source = "知识库内容。".repeat(700)
+        assertEquals(source, KnowledgeChunker.reassemble(KnowledgeChunker.split(source)))
+    }
+    @Test
+    fun neverSplitsUtf16SurrogatePairs() {
+        val source = "a".repeat(999) + "😀" + "b".repeat(1_500)
+        val chunks = KnowledgeChunker.split(source)
+        assertEquals(source, KnowledgeChunker.reassemble(chunks))
+        assertTrue(chunks.all { chunk -> chunk.zipWithNext().none { (left, right) -> left.isHighSurrogate() && !right.isLowSurrogate() } })
+    }
+    @Test
     fun refusesToSilentlyTruncateWhenChunkLimitIsReached() {
         val source = "x".repeat(5_000)
         val failure = runCatching {
