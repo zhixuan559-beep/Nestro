@@ -62,7 +62,7 @@ data class WorkflowRunRecord(
 
 object WorkflowRunHistoryCodec {
     fun encode(records:List<WorkflowRunRecord>):String = JSONArray().apply {
-        records.take(50).forEach { record ->
+        records.take(200).forEach { record ->
             put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
                 .put("workflowName",record.workflowName).put("input",record.input.take(12000))
                 .put("startedAt",record.startedAt).put("status",record.status).put("projectId",record.projectId)
@@ -109,7 +109,7 @@ object WorkflowRunHistoryCodec {
                 stepRuns=parsed,
                 projectId=item.optString("projectId", "default").ifBlank { "default" }
             )
-        }.take(50)
+        }.take(200)
     }.getOrDefault(emptyList())
 }
 
