@@ -1,9 +1,6 @@
 name: Module 5 Project Space CI
 
 on:
-  push:
-    branches:
-      - feature/module-5-project-space
   pull_request:
     branches:
       - refactor/phase-2-architecture
