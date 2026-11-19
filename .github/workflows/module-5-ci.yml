@@ -1,8 +1,6 @@
 name: Module 5 Project Space CI
 
 on:
-  push:
-    branches: [ "feature/module-5-project-space" ]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +13,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -42,3 +40,11 @@ jobs:
       - name: Compile Android instrumentation test sources
         if: always()
         run: gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
+      - name: Run Android instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: gradle --no-daemon --stacktrace connectedDebugAndroidTest
