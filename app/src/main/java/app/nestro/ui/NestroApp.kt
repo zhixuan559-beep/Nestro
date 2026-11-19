@@ -182,7 +182,7 @@ fun NestroApp() {
         }
         val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, kind, resourceId)
         val writableSources = owners.orEmpty().filter { source ->
-            source != "*" && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
+            source != "*" && source != activeProjectId && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
         }.toSet()
         val allowed = ProjectResourceScopeStore.canWriteFromProject(projectResourceScopes, kind, resourceId, activeProjectId, writableSources)
         if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
@@ -2582,6 +2582,7 @@ fun NestroApp() {
                             if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
                             prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
+                            if (editingTeamId.isBlank()) updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)
                         }
                         showTeamDialog = false
                     }
@@ -2640,6 +2641,7 @@ fun NestroApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val replacing = bundle.name in skills
+                    if (replacing && !canWriteProjectResource(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
                     skills = skills + (bundle.name to bundle.prompt)
                     skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
                     disabledSkills = disabledSkills - bundle.name
@@ -2648,6 +2650,7 @@ fun NestroApp() {
                         .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
                         .putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills))
                         .apply()
+                    if (!replacing) updateProjectResourceScope(ProjectResourceKind.SKILL, bundle.name, false)
                     skillImportStatus = if(replacing) "同名技能已更新并启用" else "技能已安装到本地"
                     showSkillImportDialog = false
                     pendingSkillBundle = null
@@ -2825,6 +2828,7 @@ fun NestroApp() {
                              .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                              .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
                              .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                        if (oldName.isBlank()) updateProjectResourceScope(ProjectResourceKind.SKILL, name, false)
                         if(name !in disabledSkills) selectedSkill=name
                         skillDraftName = ""
                         skillDraftPrompt = ""
@@ -3115,6 +3119,7 @@ fun NestroApp() {
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
                         prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                        if (editingWorkflowId.isBlank()) updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, false)
                         showWorkflowDialog = false
                     }.onFailure { workflowRunStatus = it.message ?: "工作流内容无效" }
                 }) { Text("保存工作流", color = Mint) }
@@ -3212,6 +3217,7 @@ fun NestroApp() {
                         selectedExpert = if (profile.enabled) name else "通用助手"
                     }
                     prefs.edit().putString("selected_expert", selectedExpert).apply()
+                    if (oldName.isBlank()) updateProjectResourceScope(ProjectResourceKind.EXPERT, name, false)
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
