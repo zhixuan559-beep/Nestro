@@ -223,17 +223,25 @@ fun NestroApp() {
         if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
         return allowed
     }
-    val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
-        if (canWriteProjectResource(kind, resourceId)) runCatching {
-            val next = if (makeGlobal) {
-                ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
-            } else {
-                ProjectResourceScopeStore.setProjectScope(projectResourceScopes, kind, resourceId, setOf(activeProjectId))
+    val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Boolean = { kind, resourceId, makeGlobal ->
+        if (!canWriteProjectResource(kind, resourceId)) {
+            false
+        } else {
+            runCatching {
+                val next = if (makeGlobal) {
+                    ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
+                } else {
+                    ProjectResourceScopeStore.setProjectScope(projectResourceScopes, kind, resourceId, setOf(activeProjectId))
+                }
+                ProjectResourceScopeStore.save(prefs, next)
+                projectResourceScopes = next
+                status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
+                true
+            }.getOrElse {
+                status = "资源范围更新失败：" + (it.message ?: "数据无效")
+                false
             }
-            ProjectResourceScopeStore.save(prefs, next)
-            projectResourceScopes = next
-            status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
-        }.onFailure { status = "资源范围更新失败：" + (it.message ?: "数据无效") }
+        }
     }
     var recallSources by chatExecutionUiState.recallSources
     var showRecallDialog by chatExecutionUiState.showRecallDialog
@@ -2757,10 +2765,10 @@ fun NestroApp() {
                             members = teamDraftMembers.filter { it in experts }.take(4)
                         )
                         if (team.members.size >= 2) {
+                            if (editingTeamId.isBlank() && !updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)) return@TextButton
                             if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
-                            prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
-                            if (editingTeamId.isBlank()) updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)
+                            check(prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).commit()) { "专家团队保存失败" }
                         }
                         showTeamDialog = false
                     }
@@ -2824,6 +2832,7 @@ fun NestroApp() {
                     }
                     val replacing = bundle.name in skills
                     if (replacing && !canWriteProjectResource(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
+                    if (!replacing && !updateProjectResourceScope(ProjectResourceKind.SKILL, bundle.name, false)) return@TextButton
                     skills = skills + (bundle.name to bundle.prompt)
                     skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
                     disabledSkills = disabledSkills - bundle.name
@@ -2832,7 +2841,6 @@ fun NestroApp() {
                         .putString("skill_metadata_v1", skillMetadataToJson(skillMetadata))
                         .putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills))
                         .apply()
-                    if (!replacing) updateProjectResourceScope(ProjectResourceKind.SKILL, bundle.name, false)
                     skillImportStatus = if(replacing) "同名技能已更新并启用" else "技能已安装到本地"
                     showSkillImportDialog = false
                     pendingSkillBundle = null
@@ -2994,6 +3002,7 @@ fun NestroApp() {
                         val oldName = editingSkillName
                         if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.SKILL, oldName)) return@TextButton
                         if (oldName.isNotBlank() && oldName != name && !canWriteSkillDependents(oldName)) return@TextButton
+                        if (oldName.isBlank() && !updateProjectResourceScope(ProjectResourceKind.SKILL, name, false)) return@TextButton
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
@@ -3025,7 +3034,6 @@ fun NestroApp() {
                         }
                         check(skillEditor.commit()) { "技能及项目范围保存失败" }
                         if (renamedSkillScopes != null) projectResourceScopes = renamedSkillScopes
-                        if (oldName.isBlank()) updateProjectResourceScope(ProjectResourceKind.SKILL, name, false)
                         if(name !in disabledSkills) selectedSkill=name
                         skillDraftName = ""
                         skillDraftPrompt = ""
@@ -3334,9 +3342,9 @@ fun NestroApp() {
                     )
                     if (editingWorkflowId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.WORKFLOW, editingWorkflowId)) return@TextButton
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
+                        if (editingWorkflowId.isBlank() && !updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, false)) return@onSuccess
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
                         prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
-                        if (editingWorkflowId.isBlank()) updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, false)
                         showWorkflowDialog = false
                     }.onFailure { workflowRunStatus = it.message ?: "工作流内容无效" }
                 }) { Text("保存工作流", color = Mint) }
@@ -3415,6 +3423,7 @@ fun NestroApp() {
                         expertDialogError = profileError
                         return@TextButton
                     }
+                    if (oldName.isBlank() && !updateProjectResourceScope(ProjectResourceKind.EXPERT, name, false)) return@TextButton
                     val previousProfile = expertProfiles[oldName] ?: if (oldName in experts) ExpertProfile() else null
                     val previousPrompt = expertPrompts[oldName].orEmpty()
                     if (oldName.isNotBlank() && previousProfile != null && (previousPrompt != expertPromptDraft.trim() || previousProfile.copy(version = profile.version) != profile)) {
@@ -3452,7 +3461,6 @@ fun NestroApp() {
                         selectedExpert = if (profile.enabled) name else "通用助手"
                     }
                     prefs.edit().putString("selected_expert", selectedExpert).apply()
-                    if (oldName.isBlank()) updateProjectResourceScope(ProjectResourceKind.EXPERT, name, false)
                     editingExpertName = ""
                     expertDraft = ""
                     expertPromptDraft = ""
