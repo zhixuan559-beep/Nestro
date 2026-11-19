@@ -20,4 +20,7 @@ class ProjectSpaceRepository(private val database: NestroDatabase) {
         newName: String,
         createdAt: Long
     ): Boolean = database.dao().duplicateProject(sourceProjectId, newProjectId, newName, createdAt)
+
+    suspend fun rollbackDuplicate(projectId: String) =
+        database.dao().rollbackProjectDuplicate(projectId)
 }
