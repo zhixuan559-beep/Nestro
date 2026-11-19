@@ -2449,9 +2449,10 @@ fun NestroApp() {
                                                                             val hasLocalConversationData = conversations.any {
                                                                                 it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
                                                                             }
-                                                                            check(ArtifactStore.list(context, project.id).isEmpty()) {
-                                                                                "该空间还有项目产物，请先导出或删除产物后再删除项目"
+                                                                            check(!ArtifactStore.hasProjectArtifactsOrOrphans(context, project.id)) {
+                                                                                "该空间还有项目产物或未登记文件，请先导出、清理后再删除项目"
                                                                             }
+                                                                            ArtifactStore.deleteProject(context, project.id)
                                                                             check(ProjectResourceScopeStore.resourcesOwnedOnlyByProject(projectResourceScopes, project.id).isEmpty()) {
                                                                                 "该空间仍有专属专家、团队、技能或工作流，请先转为全局共享或删除这些资源"
                                                                             }
