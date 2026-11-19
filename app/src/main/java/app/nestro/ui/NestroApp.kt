@@ -875,12 +875,9 @@ fun NestroApp() {
             val requestSelectedTeamId = selectedTeamId.takeIf { teamId ->
                 val team = expertTeams.firstOrNull { it.id == teamId }
                 !projectResourceScopesReadOnly && team != null &&
-                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, teamId, requestProjectId, requestReadableProjectIds) &&
-                    team.members.all { member ->
-                        ProjectResourceScopeStore.isVisibleFromProjects(
-                            projectResourceScopes, ProjectResourceKind.EXPERT, member, requestProjectId, requestReadableProjectIds
-                        )
-                    }
+                    ProjectResourceScopeStore.isTeamVisibleFromProjects(
+                        projectResourceScopes, teamId, team.members, requestProjectId, requestReadableProjectIds
+                    )
             }.orEmpty()
             val requestSelectedExpert = selectedExpert.takeIf {
                 !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds)
@@ -891,12 +888,9 @@ fun NestroApp() {
             val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
             val requestExpertTeams = expertTeams.filter { team ->
                 !projectResourceScopesReadOnly &&
-                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, team.id, requestProjectId, requestReadableProjectIds) &&
-                    team.members.all { member ->
-                        ProjectResourceScopeStore.isVisibleFromProjects(
-                            projectResourceScopes, ProjectResourceKind.EXPERT, member, requestProjectId, requestReadableProjectIds
-                        )
-                    }
+                    ProjectResourceScopeStore.isTeamVisibleFromProjects(
+                        projectResourceScopes, team.id, team.members, requestProjectId, requestReadableProjectIds
+                    )
             }
             val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
             val requestExpertProfiles = expertProfiles.filterKeys {
