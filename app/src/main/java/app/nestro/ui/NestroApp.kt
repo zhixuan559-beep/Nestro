@@ -2231,6 +2231,7 @@ fun NestroApp() {
                 if (showDrawer && screenWidthDp < 600) {
                     Box(
                         Modifier.fillMaxSize()
+                            .padding(start = adaptiveDrawerWidth)
                             .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.48f))
                             .clickable { showDrawer = false }
                             .zIndex(1f)
