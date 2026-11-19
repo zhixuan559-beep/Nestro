@@ -2405,6 +2405,9 @@ fun NestroApp() {
                                                                             check(ArtifactStore.list(context, project.id).isEmpty()) {
                                                                                 "该空间还有项目产物，请先导出或删除产物后再删除项目"
                                                                             }
+                                                                            check(ProjectResourceScopeStore.resourcesOwnedOnlyByProject(projectResourceScopes, project.id).isEmpty()) {
+                                                                                "该空间仍有专属专家、团队、技能或工作流，请先转为全局共享或删除这些资源"
+                                                                            }
                                                                             val hasLinkedData = appRuntime.projectSpaceRepository.hasLinkedData(project.id)
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
