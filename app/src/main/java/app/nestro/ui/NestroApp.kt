@@ -2365,18 +2365,33 @@ fun NestroApp() {
                                                                     }
                                                                 }
                                                                 if (copied) {
-                                                                    val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
-                                                                        projectResourceScopes, project.id, copyId
-                                                                    )
-                                                                    ProjectResourceScopeStore.save(prefs, copiedScopes)
-                                                                    projectResourceScopes = copiedScopes
-                                                                    ProjectMemorySettingsStore.duplicateProject(prefs, project.id, copyId)
-                                                                    val restored = withContext(Dispatchers.IO) {
-                                                                        appRuntime.conversationPersistenceService.restore(prefs)
+                                                                    val originalScopes = projectResourceScopes
+                                                                    val finalizeCopy = runCatching {
+                                                                        val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
+                                                                            originalScopes, project.id, copyId
+                                                                        )
+                                                                        ProjectResourceScopeStore.save(prefs, copiedScopes)
+                                                                        projectResourceScopes = copiedScopes
+                                                                        ProjectMemorySettingsStore.duplicateProject(prefs, project.id, copyId)
+                                                                        val restored = withContext(Dispatchers.IO) {
+                                                                            appRuntime.conversationPersistenceService.restore(prefs)
+                                                                        }
+                                                                        restored
                                                                     }
-                                                                    projects = restored.projects
-                                                                    conversations = restored.conversations
-                                                                    status = "已复制「${project.name}」及其会话、知识库和项目记忆。"
+                                                                    finalizeCopy.onSuccess { restored ->
+                                                                        projects = restored.projects
+                                                                        conversations = restored.conversations
+                                                                        status = "已复制「${project.name}」及其会话、知识库和项目记忆。"
+                                                                    }.onFailure { error ->
+                                                                        withContext(Dispatchers.IO) {
+                                                                            runCatching { appRuntime.projectSpaceRepository.rollbackDuplicate(copyId) }
+                                                                            runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                        }
+                                                                        runCatching { ProjectResourceScopeStore.save(prefs, originalScopes) }
+                                                                        projectResourceScopes = originalScopes
+                                                                        runCatching { ProjectMemorySettingsStore.removeProject(prefs, copyId) }
+                                                                        status = "项目复制后续保存失败，已执行回滚：" + (error.message ?: "未知错误")
+                                                                    }
                                                                 } else {
                                                                     status = "复制失败：项目不存在、名称重复或项目空间数量已达上限。"
                                                                 }
