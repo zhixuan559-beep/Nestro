@@ -242,7 +242,10 @@ internal object ProjectPackageCodec {
         val draftKeys = incomingDrafts.keys()
         while (draftKeys.hasNext()) {
             val oldId = draftKeys.next()
-            conversationIds[oldId]?.let { drafts.put(it, incomingDrafts.get(oldId)) }
+            val newId = conversationIds[oldId] ?: error("项目包草稿引用了未包含的会话")
+            val draft = incomingDrafts.opt(oldId) as? String ?: error("项目包会话草稿格式无效")
+            require(draft.length <= 100_000) { "项目包会话草稿过长" }
+            drafts.put(newId, draft)
         }
         current.put("conversation_drafts_v1", drafts)
 
@@ -294,8 +297,12 @@ internal object ProjectPackageCodec {
 
         val memories = arrayField(current, "user_memories")
         for (memory in arrayField(incoming, "user_memories").objects()) {
-            val oldConversation = memory.optString("sourceConversationId")
-            val oldMessage = memory.optString("sourceMessageId")
+            require(memory.opt("projectId") == sourceProjectId) { "项目包记忆包含来源项目之外的数据" }
+            val oldConversation = memory.opt("sourceConversationId") as? String ?: error("项目包记忆来源会话 ID 无效")
+            val oldMessage = memory.opt("sourceMessageId") as? String ?: error("项目包记忆来源消息 ID 无效")
+            require(oldConversation.isBlank() || oldConversation in conversationIds) { "项目包记忆引用了未包含的会话" }
+            require(oldMessage.isBlank() || oldMessage in messageIds) { "项目包记忆引用了未包含的消息" }
+            require(oldMessage.isBlank() || oldConversation.isNotBlank()) { "项目包记忆来源消息缺少会话 ID" }
             memories.put(JSONObject(memory.toString())
                 .put("id", UUID.randomUUID().toString())
                 .put("projectId", newProjectId)
@@ -305,21 +312,27 @@ internal object ProjectPackageCodec {
         current.put("user_memories", memories)
 
         val artifacts = arrayField(current, "artifacts_v1")
-        for (artifact in arrayField(incoming, "artifacts_v1").objects()) {
+        val incomingArtifacts = arrayField(incoming, "artifacts_v1").objects()
+        val artifactIds = incomingArtifacts.map { artifact ->
+            require(artifact.opt("projectId") == sourceProjectId) { "项目包产物包含来源项目之外的数据" }
+            artifact.opt("id") as? String ?: error("项目包产物 ID 无效")
+        }
+        require(artifactIds.all { it.isNotBlank() } && artifactIds.distinct().size == artifactIds.size) {
+            "项目包产物 ID 为空或重复"
+        }
+        for (artifact in incomingArtifacts) {
             artifacts.put(JSONObject(artifact.toString())
                 .put("id", UUID.randomUUID().toString())
                 .put("projectId", newProjectId))
         }
         current.put("artifacts_v1", artifacts)
 
-        mergeResources(
-            current,
-            incoming.optJSONObject("resources") ?: JSONObject(),
-            newProjectId,
-            sourceProjectId
-        )
+        val incomingResources = incoming.optJSONObject("resources") ?: error("项目包缺少资源清单")
+        mergeResources(current, incomingResources, newProjectId, sourceProjectId)
+        val projectMemoryEnabled = incoming.opt("project_memory_enabled") as? Boolean
+            ?: error("项目包自动记忆设置格式无效")
         val memorySettings = objectField(current, "project_memory_settings_v1")
-        memorySettings.put(newProjectId, incoming.optBoolean("project_memory_enabled", false))
+        memorySettings.put(newProjectId, projectMemoryEnabled)
         current.put("project_memory_settings_v1", memorySettings.toString())
         current.put("active_project_id", newProjectId)
         current.put("active_conversation_id", importedActiveConversationId)
