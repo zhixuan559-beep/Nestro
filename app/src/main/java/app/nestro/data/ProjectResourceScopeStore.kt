@@ -189,6 +189,14 @@ internal object ProjectResourceScopeStore {
         }
     }
 
+    fun resourcesOwnedOnlyByProject(
+        scopes: Map<String, Set<String>>,
+        projectId: String
+    ): Set<String> {
+        require(projectId.isNotBlank() && projectId != GLOBAL) { "项目 ID 无效" }
+        return scopes.filterValues { owners -> owners == setOf(projectId) }.keys
+    }
+
     fun removeProjectScope(
         scopes: Map<String, Set<String>>,
         projectId: String
