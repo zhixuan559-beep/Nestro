@@ -1795,6 +1795,7 @@ fun NestroApp() {
                                                 showExpertDialog = true
                                             }) { Text("编辑", color = Mint) }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertProfiles = expertProfiles + (name to profile.copy(enabled = !profile.enabled))
                                                 prefs.edit().putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles)).apply()
@@ -1815,6 +1816,7 @@ fun NestroApp() {
                                                 }
                                             }) { Text("↑", color = Mint) }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val index = experts.indexOf(name)
                                                 if (index >= 0 && index < experts.lastIndex) {
                                                     val reordered = experts.toMutableList()
@@ -2700,7 +2702,11 @@ fun NestroApp() {
                     OutlinedTextField(teamDraftName, { teamDraftName = it }, label = { Text("团队名称") }, singleLine = true)
                     OutlinedTextField(teamDraftDescription, { teamDraftDescription = it }, label = { Text("团队分工") }, minLines = 2)
                     Text("选择成员，至少 2 位", color = Ink, style = MaterialTheme.typography.labelLarge)
-                    experts.forEach { expert ->
+                    experts.filter { expert ->
+                        !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.EXPERT, expert, activeProjectId, readableProjectIds
+                        )
+                    }.forEach { expert ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = expert in teamDraftMembers, enabled = expertProfiles[expert]?.enabled != false, onCheckedChange = { checked ->
                                 teamDraftMembers = if (checked) teamDraftMembers + expert else teamDraftMembers - expert
