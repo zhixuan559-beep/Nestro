@@ -2525,7 +2525,7 @@ fun NestroApp() {
                                                                     }
                                                                 }
                                                             }
-                                                        }, enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly) {
+                                                        }) {
                                                             Text(if (deletingProjectId == project.id) "删除中…" else "删除", color = ColorStop)
                                                         }
                                                     }
