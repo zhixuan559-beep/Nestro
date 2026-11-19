@@ -1863,11 +1863,15 @@ fun NestroApp() {
                                                     expertPrompts = expertPrompts - name
                                                     expertProfiles = expertProfiles - name
                                                      workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
+                                                    val previousTeamIds = expertTeams.map { it.id }.toSet()
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
+                                                    val removedTeamIds = previousTeamIds - expertTeams.map { it.id }.toSet()
                                                     if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
-                                                    val remainingExpertScopes = ProjectResourceScopeStore.removeResourceScope(
-                                                        projectResourceScopes, ProjectResourceKind.EXPERT, name
-                                                    )
+                                                    val remainingExpertScopes = removedTeamIds.fold(
+                                                        ProjectResourceScopeStore.removeResourceScope(projectResourceScopes, ProjectResourceKind.EXPERT, name)
+                                                    ) { scopes, teamId ->
+                                                        ProjectResourceScopeStore.removeResourceScope(scopes, ProjectResourceKind.TEAM, teamId)
+                                                    }
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
                                                         .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingExpertScopes))
                                                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
