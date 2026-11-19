@@ -407,6 +407,12 @@ internal object ProjectPackageCodec {
             "项目包团队 ID 为空或重复"
         }
         for (team in incomingTeamRows) {
+            val members = team.opt("members") as? JSONArray ?: error("项目包团队成员列表格式无效")
+            require(members.toStringList().all { it in incomingExpertNames }) {
+                "项目包团队引用了未随包导入的专家"
+            }
+        }
+        for (team in incomingTeamRows) {
             val oldId = team.optString("id")
             requireImportedScope(ProjectResourceKind.TEAM, oldId)
             val newId = UUID.randomUUID().toString()
@@ -465,6 +471,15 @@ internal object ProjectPackageCodec {
         }
         current.put("workflows_v1", currentWorkflows.toString())
 
+        val expectedScopeKeys = buildSet {
+            incomingExpertNames.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, it)) }
+            incomingTeamIds.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, it)) }
+            newSkills.keys().asSequence().forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, it)) }
+            incomingWorkflowIds.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, it)) }
+        }
+        require(importedScopes.keys == expectedScopeKeys) {
+            "项目包资源归属清单与实际资源不一致，拒绝导入孤立或缺失的资源范围"
+        }
         val scopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}")).toMutableMap()
         val keys = incomingResourceScopes.keys()
         while (keys.hasNext()) {
