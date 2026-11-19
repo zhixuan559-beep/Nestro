@@ -296,10 +296,14 @@ internal object ProjectPackageCodec {
                 "项目包缺少资源归属记录：${kind.key}:$id"
             }
         }
-        fun rejectPrivateNameCollision(kind: ProjectResourceKind, id: String, label: String) {
-            val owners = ProjectResourceScopeStore.ownerProjectIds(currentScopes, kind, id)
-            require(owners == null || "*" in owners) {
-                "$label「$id」已归属于其他项目，导入时不能静默共享或扩大其可见范围"
+        fun rejectScopeCollision(kind: ProjectResourceKind, id: String, label: String) {
+            val existingOwners = ProjectResourceScopeStore.ownerProjectIds(currentScopes, kind, id)
+            val incomingOwners = ProjectResourceScopeStore.ownerProjectIds(importedScopes, kind, id)
+                ?: error("项目包缺少资源归属记录：${kind.key}:$id")
+            val existingIsGlobal = existingOwners == null || "*" in existingOwners
+            val incomingIsGlobal = "*" in incomingOwners
+            require(existingIsGlobal == incomingIsGlobal) {
+                "$label「$id」与本机已有资源的项目范围不同，导入时不能静默扩大或缩小可见范围"
             }
         }
         val currentExperts = arrayField(current, "experts")
@@ -314,7 +318,7 @@ internal object ProjectPackageCodec {
         for (name in incomingExperts.toStringList()) {
             requireImportedScope(ProjectResourceKind.EXPERT, name)
             if (name in currentNames) {
-                rejectPrivateNameCollision(ProjectResourceKind.EXPERT, name, "专家")
+                rejectScopeCollision(ProjectResourceKind.EXPERT, name, "专家")
                 require(sameValue(currentPrompts.opt(name), newPrompts.opt(name)) &&
                     sameValue(currentProfiles.opt(name), newProfiles.opt(name))) {
                     "专家「$name」与本机已有配置冲突，请先在项目包来源端重命名"
@@ -348,7 +352,7 @@ internal object ProjectPackageCodec {
         val newSkills = objectField(incoming, "skills")
         newSkills.keys().asSequence().forEach { name ->
             requireImportedScope(ProjectResourceKind.SKILL, name)
-            if (currentSkills.has(name)) rejectPrivateNameCollision(ProjectResourceKind.SKILL, name, "技能")
+            if (currentSkills.has(name)) rejectScopeCollision(ProjectResourceKind.SKILL, name, "技能")
         }
         val globalTemplateSkillRefs = ExpertTemplateCodec.decode(stringField(current, "expert_templates_v1", "[]"))
             .flatMap { it.profile.skillNames }.toSet()
