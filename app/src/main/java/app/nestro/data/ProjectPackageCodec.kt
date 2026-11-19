@@ -468,10 +468,14 @@ internal object ProjectPackageCodec {
         rows.objects().map { it.optString(key) }.filter { it.isNotBlank() }.toSet()
 
     private fun JSONArray.objects(): List<JSONObject> =
-        (0 until length()).mapNotNull { optJSONObject(it) }
+        (0 until length()).map { index ->
+            optJSONObject(index) ?: error("项目包数组第 ${index + 1} 项格式无效")
+        }
 
     private fun JSONArray.toStringList(): List<String> =
-        (0 until length()).mapNotNull { index -> opt(index) as? String }
+        (0 until length()).map { index ->
+            opt(index) as? String ?: error("项目包字符串数组第 ${index + 1} 项格式无效")
+        }
 
     private fun JSONArray.filterStrings(predicate: (String) -> Boolean): JSONArray =
         JSONArray().apply { toStringList().filter(predicate).forEach { put(it) } }
