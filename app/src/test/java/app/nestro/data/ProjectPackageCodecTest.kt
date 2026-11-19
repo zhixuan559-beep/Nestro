@@ -240,6 +240,16 @@ class ProjectPackageCodecTest {
         }
     }
 
+    @Test fun exportRejectsMalformedResourceArraysInsteadOfSilentlyDroppingEntries() {
+        val source = fixtureBackup(includeForeignProject = false)
+        source.put("experts", JSONArray().put("writer").put(123).toString())
+        source.remove("checksum_sha256")
+        seal(source)
+        assertThrows(IllegalStateException::class.java) {
+            ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        }
+    }
+
     @Test fun modifiedProjectPackageIsRejectedBeforeMerge() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
