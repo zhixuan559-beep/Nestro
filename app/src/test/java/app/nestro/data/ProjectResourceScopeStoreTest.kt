@@ -101,4 +101,18 @@ class ProjectResourceScopeStoreTest {
         }
     }
 
+    @Test fun projectDeletionCanDetectResourcesThatWouldBecomeOrphaned() {
+        val scopes = mapOf(
+            "expert:private" to setOf("project-a"),
+            "skill:shared" to setOf("project-a", "project-b"),
+            "workflow:global" to setOf("*")
+        )
+        assertEquals(
+            setOf("expert:private"),
+            ProjectResourceScopeStore.resourcesOwnedOnlyByProject(scopes, "project-a")
+        )
+        val afterRemovingA = ProjectResourceScopeStore.removeProjectScope(scopes, "project-a")
+        assertEquals(setOf("project-b"), afterRemovingA.getValue("skill:shared"))
+    }
+
 }
