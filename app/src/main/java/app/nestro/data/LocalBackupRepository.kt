@@ -790,7 +790,10 @@ private suspend fun applyLocalBackup(
         require(mimeType.length <= 120) { "知识库文档 MIME 类型过长" }
         KnowledgeDocumentEntity(id, projectId, name, mimeType, size, item.longOrDefault("importedAt", System.currentTimeMillis()), hash.lowercase())
     }
-    require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
+    require(
+        restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size &&
+            restoredKnowledgeDocuments.map { it.projectId to it.contentHash }.distinct().size == restoredKnowledgeDocuments.size
+    ) { "知识库文档 ID 重复，或同一项目内存在重复内容哈希" }
     val docsById = restoredKnowledgeDocuments.associateBy { it.id }
     val restoredKnowledgeChunks = (0 until chunkRows.length()).map { index ->
         val item = chunkRows.getJSONObject(index); val id = item.requiredString("id"); val documentId = item.requiredString("documentId")
