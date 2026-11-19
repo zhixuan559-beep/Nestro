@@ -3395,6 +3395,7 @@ fun NestroApp() {
                             }
                             TextButton(onClick = { historyCompareVersion = revision.version }) { Text("对比", color = Mint) }
                             TextButton(onClick = {
+                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                 val currentProfile = expertProfiles[name] ?: ExpertProfile()
                                 expertRevisions = expertRevisions + (name to (expertRevisions[name].orEmpty() + ExpertRevision(currentProfile.version, expertPrompts[name].orEmpty(), currentProfile, System.currentTimeMillis())).takeLast(20))
                                 expertPrompts = expertPrompts + (name to revision.prompt)

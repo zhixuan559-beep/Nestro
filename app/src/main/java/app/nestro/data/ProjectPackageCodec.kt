@@ -63,6 +63,13 @@ internal object ProjectPackageCodec {
             if (visible(ProjectResourceKind.SKILL, name)) skills.put(name, allSkills.get(name))
         }
         val skillNames = skills.keys().asSequence().toSet()
+        val decodedProfiles = ExpertProfileCodec.decode(expertProfiles.toString())
+        val validProfileNames = decodedProfiles.filterValues { profile -> profile.skillNames.all { it in skillNames } }.keys
+        selectedExperts.retainAll { it !in decodedProfiles || it in validProfileNames }
+        val validatedTeams = JSONArray()
+        teams.objects().filter { team ->
+            (team.optJSONArray("members") ?: JSONArray()).toStringList().all { it in selectedExperts }
+        }.forEach { validatedTeams.put(JSONObject(it.toString())) }
 
         val allWorkflows = arrayField(backup, "workflows_v1")
         val workflows = JSONArray()
@@ -83,11 +90,29 @@ internal object ProjectPackageCodec {
             if (dependenciesVisible) workflows.put(JSONObject(workflow.toString()))
         }
 
-        val teamIds = stringSet(teams, "id")
-        val workflowIds = stringSet(workflows, "id")
+        val validatedWorkflows = JSONArray()
+        workflows.objects().filter { workflow ->
+            (workflow.optJSONArray("steps") ?: JSONArray()).objects().all { step ->
+                if (!step.optBoolean("enabled", true)) true
+                else {
+                    val target = step.optString("targetId").ifBlank { step.optString("title") }
+                    when (step.optString("kind").uppercase()) {
+                        "EXPERT" -> target in selectedExperts
+                        "SKILL" -> target in skillNames
+                        else -> true
+                    }
+                }
+            }
+        }.forEach { validatedWorkflows.put(JSONObject(it.toString())) }
+        val teamIds = stringSet(validatedTeams, "id")
+        val workflowIds = stringSet(validatedWorkflows, "id")
         val selectedExpertPrompts = expertPrompts.only(selectedExperts)
-        val selectedExpertProfiles = expertProfiles.only(selectedExperts)
-        val selectedExpertVersions = expertVersions.only(selectedExperts)
+        val selectedExpertProfiles = JSONObject(ExpertProfileCodec.encode(decodedProfiles.filterKeys { it in selectedExperts }))
+        val decodedRevisions = ExpertRevisionCodec.decode(expertVersions.toString())
+        val safeRevisions = decodedRevisions.filterKeys { it in selectedExperts }
+            .mapValues { (_, rows) -> rows.filter { revision -> revision.profile.skillNames.all { it in skillNames } } }
+            .filterValues { it.isNotEmpty() }
+        val selectedExpertVersions = JSONObject(ExpertRevisionCodec.encode(safeRevisions))
         val skillMetadata = objectField(backup, "skill_metadata_v1").only(skillNames)
         // Skill enable/disable is device-global today, so it is intentionally not copied in a project package.
         val disabledSkills = JSONArray()
@@ -109,11 +134,11 @@ internal object ProjectPackageCodec {
             .put("expert_prompts", selectedExpertPrompts)
             .put("expert_profiles_v1", selectedExpertProfiles)
             .put("expert_versions_v1", selectedExpertVersions)
-            .put("expert_teams_v1", teams)
+            .put("expert_teams_v1", validatedTeams)
             .put("skills", skills)
             .put("skill_metadata_v1", skillMetadata)
             .put("disabled_skills_v1", disabledSkills)
-            .put("workflows_v1", workflows)
+            .put("workflows_v1", validatedWorkflows)
             .put("project_resource_scopes_v1", JSONObject(ProjectResourceScopeStore.encode(exportedScopes)))
 
         val result = JSONObject()
@@ -359,11 +384,12 @@ internal object ProjectPackageCodec {
 
     private fun uniqueName(raw: String, used: Set<String>, maxLength: Int): String {
         val base = raw.trim().ifBlank { "导入项目" }.take(maxLength)
-        if (base !in used) return base
+        fun exists(value: String) = used.any { it.trim().equals(value.trim(), ignoreCase = true) }
+        if (!exists(base)) return base
         val suffix = "（导入）"
         var candidate = base.take(maxLength - suffix.length) + suffix
         var index = 2
-        while (candidate in used) {
+        while (exists(candidate)) {
             val numbered = "（导入$index）"
             candidate = base.take(maxLength - numbered.length) + numbered
             index++

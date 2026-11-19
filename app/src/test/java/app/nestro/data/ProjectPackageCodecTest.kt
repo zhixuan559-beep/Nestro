@@ -61,9 +61,9 @@ class ProjectPackageCodecTest {
         assertEquals(importedConversation.getJSONArray("messages").getJSONObject(0).getString("id"), merged.getJSONArray("user_memories").getJSONObject(0).getString("sourceMessageId"))
         assertEquals(importedProjectId, merged.getJSONArray("artifacts_v1").getJSONObject(0).getString("projectId"))
 
-        val importedTeams = merged.getJSONArray("expert_teams_v1")
+        val importedTeams = JSONArray(merged.getString("expert_teams_v1"))
         val importedTeamId = importedTeams.getJSONObject(0).getString("id")
-        val importedWorkflowId = merged.getJSONArray("workflows_v1").getJSONObject(0).getString("id")
+        val importedWorkflowId = JSONArray(merged.getString("workflows_v1")).getJSONObject(0).getString("id")
         val scopes = ProjectResourceScopeStore.decode(merged.getString("project_resource_scopes_v1"))
         assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")))
         assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, importedTeamId)))
@@ -146,6 +146,11 @@ class ProjectPackageCodecTest {
             scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, teamId)] = setOf(projectId)
             scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")] = setOf(projectId)
             scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, "source-workflow")] = setOf(projectId)
+        } else {
+            conversations.put(
+                JSONObject().put("id", conversationId).put("title", "现有会话")
+                    .put("updated_at", 9L).put("project_id", projectId).put("messages", JSONArray())
+            )
         }
 
         val root = JSONObject()
