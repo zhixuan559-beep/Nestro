@@ -396,7 +396,7 @@ fun NestroApp() {
     ) { uri: Uri? ->
         if (uri != null && projectPackageExportProjectId.isNotBlank()) {
             val exportProjectId = projectPackageExportProjectId
-            val availableProjectIds = projects.map { it.id }.toSet()
+            val availableProjectIds = projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
             projectPackageStatus = "正在导出项目包…"
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
@@ -887,7 +887,7 @@ fun NestroApp() {
             activeRequestConversationId = requestConversationId
             val requestProjectId = activeProjectId
             val requestReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
-                prefs, requestProjectId, projects.map { it.id }.toSet()
+                prefs, requestProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
             ) else emptySet()
             val requestSelectedTeamId = selectedTeamId.takeIf { teamId ->
                 val team = expertTeams.firstOrNull { it.id == teamId }
@@ -1593,7 +1593,7 @@ fun NestroApp() {
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
                                                      val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
-                                                         prefs, projectId, projects.map { it.id }.toSet()
+                                                         prefs, projectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
                                                      ) else emptySet()
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
                                                      val startedAt = System.currentTimeMillis()
@@ -3174,7 +3174,7 @@ fun NestroApp() {
     if (showWorkflowTargetPicker && workflowTargetPickerIndex in workflowDraftSteps.indices) {
         val targetStep = workflowDraftSteps[workflowTargetPickerIndex]
         val workflowReadableProjectIds = if (projectResourceScopesReadOnly) emptySet() else
-            ProjectAccessControlStore.readableSourceProjects(prefs, activeProjectId, projects.map { it.id }.toSet())
+            ProjectAccessControlStore.readableSourceProjects(prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet())
         val targets = when (targetStep.kind) {
             WorkflowStepKind.EXPERT -> experts.filter { expert ->
                 !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
