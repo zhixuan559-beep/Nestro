@@ -454,6 +454,8 @@ class ProjectPackageCodecTest {
             .put("created_at", 1L).put("archived_at", 0L)
 
     private fun seal(root: JSONObject) {
+        // Re-sealing a mutated fixture must not include its previous checksum in the new digest.
+        root.remove("checksum_sha256")
         root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
     }
 }
