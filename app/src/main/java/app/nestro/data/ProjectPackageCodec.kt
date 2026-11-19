@@ -171,15 +171,24 @@ internal object ProjectPackageCodec {
         require(LocalBackupCompatibility.verifyChecksum(incoming)) { "项目包校验失败，文件可能已损坏或被修改" }
 
         val sourceProject = incoming.getJSONObject("project")
+        val sourceProjectId = sourceProject.opt("id") as? String
+            ?: error("项目包来源项目 ID 无效")
+        val sourceProjectName = sourceProject.opt("name") as? String
+            ?: error("项目包来源项目名称无效")
+        val sourceProjectInstructions = sourceProject.opt("instructions") as? String
+            ?: error("项目包来源项目指令无效")
+        require(sourceProjectId.isNotBlank() && sourceProjectId.length <= 120) { "项目包来源项目 ID 无效" }
+        require(sourceProjectName.isNotBlank() && sourceProjectName.length <= 40) { "项目包来源项目名称无效" }
+        require(sourceProjectInstructions.length <= 4000) { "项目包来源项目指令过长" }
         val projects = arrayField(current, "projects")
         require(projects.length() < 100) { "项目空间数量已达到 100 个上限" }
         val usedNames = (0 until projects.length()).mapNotNull { projects.optJSONObject(it)?.optString("name") }.toMutableSet()
-        val projectName = uniqueName(sourceProject.optString("name").ifBlank { "导入项目" }, usedNames, 40)
+        val projectName = uniqueName(sourceProjectName, usedNames, 40)
         val newProjectId = UUID.randomUUID().toString()
         val newProject = JSONObject()
             .put("id", newProjectId)
             .put("name", projectName)
-            .put("instructions", sourceProject.optString("instructions").take(4000))
+            .put("instructions", sourceProjectInstructions)
             .put("created_at", System.currentTimeMillis())
             .put("archived_at", 0L)
         projects.put(newProject)
@@ -195,7 +204,11 @@ internal object ProjectPackageCodec {
             require(oldId.isNotBlank()) { "项目包中的会话 ID 无效" }
             val newId = UUID.randomUUID().toString()
             conversationIds[oldId] = newId
-            val messages = row.optJSONArray("messages") ?: JSONArray()
+            val messages = when (val rawMessages = row.opt("messages")) {
+                null -> JSONArray()
+                is JSONArray -> rawMessages
+                else -> error("项目包中的会话消息列表格式无效")
+            }
             val copiedMessages = JSONArray()
             for (message in messages.objects()) {
                 val oldMessageId = message.optString("id")
@@ -273,7 +286,7 @@ internal object ProjectPackageCodec {
             current,
             incoming.optJSONObject("resources") ?: JSONObject(),
             newProjectId,
-            sourceProject.optString("id")
+            sourceProjectId
         )
         val memorySettings = objectField(current, "project_memory_settings_v1")
         memorySettings.put(newProjectId, incoming.optBoolean("project_memory_enabled", false))
