@@ -50,8 +50,11 @@ internal object ProjectPackageCodec {
         for (team in allTeams.objects()) {
             val id = team.optString("id")
             if (!visible(ProjectResourceKind.TEAM, id)) continue
-            val members = team.optJSONArray("members") ?: JSONArray()
+            val members = team.opt("members") as? JSONArray ?: error("项目团队成员列表格式无效")
             val memberNames = members.toStringList()
+            require(memberNames.size in 2..4 && memberNames.distinct().size == memberNames.size) {
+                "项目团队成员数量或成员 ID 无效"
+            }
             if (memberNames.all { it in selectedExperts }) teams.put(JSONObject(team.toString()))
         }
 
