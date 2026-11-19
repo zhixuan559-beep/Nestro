@@ -1036,7 +1036,10 @@ fun NestroApp() {
                             },
                             toolCatalog = appRuntime.agentToolCatalog
                         )
-                        expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
+                        val scopedTeamRun = teamRun.copy(projectId = requestProjectId)
+                        expertTeamRunHistory = (listOf(scopedTeamRun) + expertTeamRunHistory.filterNot {
+                            it.projectId == requestProjectId
+                        }.let { otherRuns -> otherRuns + expertTeamRunHistory.filter { it.projectId == requestProjectId }.take(29) }).take(30)
                         prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
                         teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"
                         if (!teamRun.isUsable) {
@@ -1682,9 +1685,12 @@ fun NestroApp() {
                                                              output = assistantText.take(20000),
                                                              stepRuns = result.getOrNull()?.stepRuns
                                                                  ?: (result.exceptionOrNull() as? WorkflowExecutionException)?.stepRuns
-                                                                 ?: emptyList()
+                                                                 ?: emptyList(),
+                                                             projectId = projectId
                                                          )
-                                                         workflowHistory = (listOf(runRecord) + workflowHistory).take(50)
+                                                         workflowHistory = (listOf(runRecord) + workflowHistory.filterNot {
+                                                             it.projectId == projectId
+                                                         }.let { otherRuns -> otherRuns + workflowHistory.filter { it.projectId == projectId }.take(49) }).take(50)
                                                          prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = ConversationPreferencesStore.saveConversationMessages(prefs, conversationId, completed, projectId, conversations)
@@ -1731,9 +1737,10 @@ fun NestroApp() {
                                          }
                                      }
                                  }
-                                 if (workflowHistory.isNotEmpty()) {
+                                 val activeWorkflowHistory = workflowHistory.filter { it.projectId == activeProjectId }
+                                 if (activeWorkflowHistory.isNotEmpty()) {
                                      Text("最近运行记录", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                     workflowHistory.take(5).forEach { record ->
+                                     activeWorkflowHistory.take(5).forEach { record ->
                                          Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                                              Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                  Text(record.workflowName, color = Ink)
@@ -1918,8 +1925,9 @@ fun NestroApp() {
                                 Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
                                 if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
-                                if (expertTeamRunHistory.isNotEmpty()) {
-                                    val latestTeamRun=expertTeamRunHistory.first()
+                                val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
+                                if (activeTeamRunHistory.isNotEmpty()) {
+                                    val latestTeamRun=activeTeamRunHistory.first()
                                     Surface(color=Card,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                             Text("最近一次协作 · ${latestTeamRun.teamName}",color=Ink,style=MaterialTheme.typography.titleSmall)
