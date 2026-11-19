@@ -56,7 +56,8 @@ data class WorkflowRunRecord(
     val startedAt:Long,
     val status:String,
     val output:String,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val projectId:String = "default"
 )
 
 object WorkflowRunHistoryCodec {
@@ -64,7 +65,7 @@ object WorkflowRunHistoryCodec {
         records.take(50).forEach { record ->
             put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
                 .put("workflowName",record.workflowName).put("input",record.input.take(12000))
-                .put("startedAt",record.startedAt).put("status",record.status)
+                .put("startedAt",record.startedAt).put("status",record.status).put("projectId",record.projectId)
                 .put("checkpointIndex",record.stepRuns.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
                 .put("output",record.output.take(20000))
                 .put("stepRuns",JSONArray().apply {
@@ -105,7 +106,8 @@ object WorkflowRunHistoryCodec {
                 startedAt=item.optLong("startedAt"),
                 status=item.optString("status").take(20),
                 output=item.optString("output").take(20000),
-                stepRuns=parsed
+                stepRuns=parsed,
+                projectId=item.optString("projectId", "default").ifBlank { "default" }
             )
         }.take(50)
     }.getOrDefault(emptyList())
