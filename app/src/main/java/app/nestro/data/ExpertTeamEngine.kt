@@ -38,7 +38,8 @@ data class ExpertTeamRunResult(
     val task:String,
     val startedAt:Long,
     val finishedAt:Long,
-    val members:List<ExpertTeamMemberRun>
+    val members:List<ExpertTeamMemberRun>,
+    val projectId:String = "default"
 ) {
     val successfulMembers:Int get()=members.count { it.status=="success" }
     val failedMembers:Int get()=members.count { it.status=="failed" }
@@ -277,6 +278,7 @@ object ExpertTeamRunHistoryCodec {
                     .put("task",record.task.take(1200))
                     .put("startedAt",record.startedAt)
                     .put("finishedAt",record.finishedAt)
+                    .put("projectId",record.projectId)
                     .put("members",JSONArray().apply {
                         record.members.forEach { member ->
                             put(JSONObject()
@@ -316,7 +318,8 @@ object ExpertTeamRunHistoryCodec {
                     task=item.optString("task").take(1200),
                     startedAt=item.optLong("startedAt").coerceAtLeast(0),
                     finishedAt=item.optLong("finishedAt").coerceAtLeast(0),
-                    members=decoded
+                    members=decoded,
+                    projectId=item.optString("projectId", "default").ifBlank { "default" }
                 )
         }
     }.getOrDefault(emptyList())
