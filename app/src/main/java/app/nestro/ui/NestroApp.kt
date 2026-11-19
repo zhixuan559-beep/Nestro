@@ -340,7 +340,9 @@ fun NestroApp() {
         val workflowsAllowed = workflows.filter { workflow ->
             workflow.steps.any { it.kind == WorkflowStepKind.SKILL && it.targetId.ifBlank { it.title } == skillName }
         }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
-        return expertsAllowed && workflowsAllowed
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skillName)
+        val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
+        return expertsAllowed && workflowsAllowed && templatesAllowed
     }
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
@@ -3448,7 +3450,13 @@ fun NestroApp() {
                         val prompt = expertPrompts[sourceName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(sourceName) }
                         val profile = expertProfiles[sourceName] ?: ExpertProfile()
                         val builtInName = builtInTemplates.any { it.name == name }
-                        if (name.isBlank() || prompt.isBlank()) {
+                        val projectOnlySkills = profile.skillNames.filter { skill ->
+                            val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
+                            owners != null && "*" !in owners
+                        }
+                        if (projectOnlySkills.isNotEmpty()) {
+                            templateStatus = "全局专家模板不能引用项目专属技能：" + projectOnlySkills.joinToString("、")
+                        } else if (name.isBlank() || prompt.isBlank()) {
                             templateStatus = "模板名称或当前专家指令为空，无法保存。"
                         } else if (builtInName) {
                             templateStatus = "该名称属于内置模板，请换一个名称保存自定义副本。"
@@ -3537,7 +3545,13 @@ fun NestroApp() {
                 TextButton(onClick = {
                     val builtInNames = ExpertTemplateCatalog.builtIns().map { it.name }.toSet()
                     val conflicts = importedTemplates.filter { it.name in builtInNames }
-                    if (conflicts.isNotEmpty()) {
+                    val unavailableSkills = importedTemplates.flatMap { it.profile.skillNames }.distinct().filter { skill ->
+                        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
+                        skill !in skills || (owners != null && "*" !in owners)
+                    }
+                    if (unavailableSkills.isNotEmpty()) {
+                        templateStatus = "导入失败：模板引用了不存在或项目专属技能：" + unavailableSkills.joinToString("、")
+                    } else if (conflicts.isNotEmpty()) {
                         templateStatus = "导入失败：模板名称与内置模板冲突，请先修改文件名称。"
                     } else if (expertTemplates.size + importedTemplates.count { incoming -> expertTemplates.none { it.name == incoming.name } } > 100) {
                         templateStatus = "导入失败：自定义模板总数不能超过 100 个。"

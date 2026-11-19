@@ -319,6 +319,13 @@ internal object ProjectPackageCodec {
 
         val currentSkills = objectField(current, "skills")
         val newSkills = objectField(incoming, "skills")
+        val globalTemplateSkillRefs = ExpertTemplateCodec.decode(stringField(current, "expert_templates_v1", "[]"))
+            .flatMap { it.profile.skillNames }.toSet()
+        val templateCollisions = newSkills.keys().asSequence()
+            .filter { !currentSkills.has(it) && it in globalTemplateSkillRefs }.toList()
+        require(templateCollisions.isEmpty()) {
+            "项目包技能名称与本机全局专家模板引用冲突：" + templateCollisions.joinToString("、")
+        }
         current.put("skills", mergeObjects(currentSkills, newSkills, "技能").toString())
         current.put("skill_metadata_v1", mergeObjects(objectField(current, "skill_metadata_v1"), objectField(incoming, "skill_metadata_v1"), "技能元数据").toString())
         val disabled = arrayField(current, "disabled_skills_v1")

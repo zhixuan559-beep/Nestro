@@ -110,6 +110,32 @@ class ProjectPackageCodecTest {
         assertFalse(resources.getJSONObject("skills").has("hidden"))
     }
 
+    @Test fun importRejectsSkillNameThatWouldBindGlobalTemplateToProjectSkill() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        destination.put("skills", JSONObject().toString())
+        destination.put("expert_templates_v1", ExpertTemplateCodec.encode(listOf(
+            ExpertTemplate(
+                name = "全局模板",
+                description = "模板描述",
+                prompt = "模板指令",
+                profile = ExpertProfile(skillNames = listOf("research"))
+            )
+        )))
+        destination.remove("checksum_sha256")
+        seal(destination)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        }
+    }
+
     @Test fun modifiedProjectPackageIsRejectedBeforeMerge() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
