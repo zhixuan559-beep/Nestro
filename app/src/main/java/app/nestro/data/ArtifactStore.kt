@@ -157,6 +157,13 @@ object ArtifactStore {
     }
 
     @Synchronized
+    fun deleteProjectIfEmpty(context: Context, projectId: String): Boolean {
+        if (hasProjectArtifactsOrOrphans(context, projectId)) return false
+        deleteProject(context, projectId)
+        return true
+    }
+
+    @Synchronized
     fun deleteProject(context: Context, projectId: String) {
         require(projectId.isNotBlank() && projectId != "default") { "不能清理默认项目产物" }
         val all = readAll(context)
