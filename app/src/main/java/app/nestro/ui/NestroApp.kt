@@ -1037,9 +1037,11 @@ fun NestroApp() {
                             toolCatalog = appRuntime.agentToolCatalog
                         )
                         val scopedTeamRun = teamRun.copy(projectId = requestProjectId)
-                        expertTeamRunHistory = (listOf(scopedTeamRun) + expertTeamRunHistory.filterNot {
-                            it.projectId == requestProjectId
-                        }.let { otherRuns -> otherRuns + expertTeamRunHistory.filter { it.projectId == requestProjectId }.take(29) }).take(30)
+                        expertTeamRunHistory = (
+                            listOf(scopedTeamRun) +
+                                expertTeamRunHistory.filter { it.projectId == requestProjectId }.take(29) +
+                                expertTeamRunHistory.filterNot { it.projectId == requestProjectId }
+                            ).take(300)
                         prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
                         teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"
                         if (!teamRun.isUsable) {
@@ -1688,9 +1690,11 @@ fun NestroApp() {
                                                                  ?: emptyList(),
                                                              projectId = projectId
                                                          )
-                                                         workflowHistory = (listOf(runRecord) + workflowHistory.filterNot {
-                                                             it.projectId == projectId
-                                                         }.let { otherRuns -> otherRuns + workflowHistory.filter { it.projectId == projectId }.take(49) }).take(50)
+                                                         workflowHistory = (
+                                                             listOf(runRecord) +
+                                                                 workflowHistory.filter { it.projectId == projectId }.take(49) +
+                                                                 workflowHistory.filterNot { it.projectId == projectId }
+                                                             ).take(200)
                                                          prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = ConversationPreferencesStore.saveConversationMessages(prefs, conversationId, completed, projectId, conversations)
