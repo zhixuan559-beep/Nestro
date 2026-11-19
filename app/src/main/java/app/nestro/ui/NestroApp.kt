@@ -2410,6 +2410,7 @@ fun NestroApp() {
                                                                         ProjectResourceScopeStore.save(prefs, remainingScopes)
                                                                         projectResourceScopes = remainingScopes
                                                                         ProjectMemorySettingsStore.removeProject(prefs, project.id)
+                                                                        ProjectAccessControlStore.removeProject(prefs, project.id)
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
