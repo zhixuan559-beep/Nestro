@@ -3141,9 +3141,20 @@ fun NestroApp() {
 
     if (showWorkflowTargetPicker && workflowTargetPickerIndex in workflowDraftSteps.indices) {
         val targetStep = workflowDraftSteps[workflowTargetPickerIndex]
+        val workflowReadableProjectIds = if (projectResourceScopesReadOnly) emptySet() else
+            ProjectAccessControlStore.readableSourceProjects(prefs, activeProjectId, projects.map { it.id }.toSet())
         val targets = when (targetStep.kind) {
-            WorkflowStepKind.EXPERT -> experts
-            WorkflowStepKind.SKILL -> skills.keys.filterNot { it in disabledSkills }
+            WorkflowStepKind.EXPERT -> experts.filter { expert ->
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                    projectResourceScopes, ProjectResourceKind.EXPERT, expert, activeProjectId, workflowReadableProjectIds
+                )
+            }
+            WorkflowStepKind.SKILL -> skills.keys.filter { skill ->
+                skill !in disabledSkills && !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isVisibleFromProjects(
+                        projectResourceScopes, ProjectResourceKind.SKILL, skill, activeProjectId, workflowReadableProjectIds
+                    )
+            }
             WorkflowStepKind.PROMPT -> emptyList()
         }
         AlertDialog(
