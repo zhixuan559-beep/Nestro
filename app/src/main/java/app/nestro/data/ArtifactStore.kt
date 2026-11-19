@@ -132,6 +132,31 @@ object ArtifactStore {
     }
 
     @Synchronized
+    fun hasProjectArtifactsOrOrphans(context: Context, projectId: String): Boolean {
+        require(projectId.isNotBlank()) { "项目 ID 无效" }
+        val all = readAll(context)
+        val indexedFiles = mutableSetOf<String>()
+        var hasProjectArtifacts = false
+        for (index in 0 until all.length()) {
+            val row = all.getJSONObject(index)
+            val id = row.artifactString("id")
+            val fileName = row.artifactString("fileName")
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && fileName == "$id.md") {
+                "项目产物索引引用无效，拒绝判断项目是否为空"
+            }
+            indexedFiles += fileName
+            if (row.artifactString("projectId") == projectId) {
+                hasProjectArtifacts = true
+                require(File(root(context), fileName).isFile) { "项目产物文件缺失，拒绝删除项目" }
+            }
+        }
+        val orphanedFiles = root(context).listFiles().orEmpty().any { file ->
+            file.isFile && file.name != "index.json" && file.name.endsWith(".md") && file.name !in indexedFiles
+        }
+        return hasProjectArtifacts || orphanedFiles
+    }
+
+    @Synchronized
     fun deleteProject(context: Context, projectId: String) {
         require(projectId.isNotBlank() && projectId != "default") { "不能清理默认项目产物" }
         val all = readAll(context)
