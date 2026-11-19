@@ -916,11 +916,19 @@ fun NestroApp() {
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
             Box(Modifier.fillMaxSize()) {
+                if (showDrawer && screenWidthDp < 600) {
+                    NavigationDrawerContent(
+                        modifier = Modifier.fillMaxSize(),
+                        onNavigate = { destination -> page = destination; showDrawer = false },
+                        onClose = { showDrawer = false }
+                    )
+                } else {
                 Row(Modifier.fillMaxSize()) {
                     if (showDrawer && screenWidthDp >= 600) {
                         NavigationDrawerContent(
                             modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
-                            onNavigate = { destination -> page = destination; showDrawer = false }
+                            onNavigate = { destination -> page = destination; showDrawer = false },
+                            onClose = { showDrawer = false }
                         )
                     }
                     Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -2228,28 +2236,7 @@ fun NestroApp() {
                         else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
                     }
                 }
-                if (showDrawer && screenWidthDp < 600) {
-                    androidx.compose.ui.window.Dialog(
-                        onDismissRequest = { showDrawer = false },
-                        properties = androidx.compose.ui.window.DialogProperties(
-                            usePlatformDefaultWidth = false
-                        )
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Surface(
-                                modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
-                                color = Card,
-                                shape = RoundedCornerShape(0.dp)
-                            ) {
-                                NavigationDrawerContent(
-                                    onNavigate = { destination -> page = destination; showDrawer = false }
-                                )
-                            }
-                        }
-                    }
+                }
                 }
             }
         }
