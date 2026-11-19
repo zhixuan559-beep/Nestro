@@ -92,6 +92,25 @@ internal object ProjectResourceScopeStore {
             allowedProjects.any { it in additionallyReadableProjectIds }
     }
 
+    /** Null is legacy-global; "*" is explicitly global; empty means orphaned. */
+    fun ownerProjectIds(scopes: Map<String, Set<String>>, kind: ProjectResourceKind, resourceId: String): Set<String>? =
+        scopes[resourceKey(kind, resourceId)]
+
+    /** Require WRITE from every foreign owner before mutating a shared resource. */
+    fun canWriteFromProject(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        resourceId: String,
+        activeProjectId: String,
+        writableSourceProjectIds: Set<String>
+    ): Boolean {
+        if (resourceId.isBlank() || activeProjectId.isBlank()) return false
+        val owners = ownerProjectIds(scopes, kind, resourceId) ?: return true
+        if (GLOBAL in owners) return true
+        if (owners.isEmpty()) return false
+        return owners.filterNot { it == activeProjectId }.all { it in writableSourceProjectIds }
+    }
+
     fun setProjectScope(
         scopes: Map<String, Set<String>>,
         kind: ProjectResourceKind,

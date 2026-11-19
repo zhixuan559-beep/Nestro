@@ -175,6 +175,19 @@ fun NestroApp() {
     var writableProjectIds by remember(activeProjectId) {
         mutableStateOf(ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId))
     }
+    fun canWriteProjectResource(kind: ProjectResourceKind, resourceId: String): Boolean {
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已阻止修改。"
+            return false
+        }
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, kind, resourceId)
+        val writableSources = owners.orEmpty().filter { source ->
+            source != "*" && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
+        }.toSet()
+        val allowed = ProjectResourceScopeStore.canWriteFromProject(projectResourceScopes, kind, resourceId, activeProjectId, writableSources)
+        if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
+        return allowed
+    }
     var pendingAccessSourceProjectId by remember { mutableStateOf("") }
     var showProjectAccessDialog by remember { mutableStateOf(false) }
     var deletingProjectId by projectSpaceUiState.deletingProjectId
@@ -1568,14 +1581,16 @@ fun NestroApp() {
                                                      }
                                                  }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (runningWorkflowId == workflow.id) "执行中…" else "运行") }
                                                  TextButton(onClick = {
-                                                     editingWorkflowId = workflow.id
+                                                     if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
+                                                      editingWorkflowId = workflow.id
                                                      workflowDraftName = workflow.name
                                                      workflowDraftDescription = workflow.description
                                                      workflowDraftSteps = workflow.steps.toList()
                                                      showWorkflowDialog = true
                                                  }) { Text("编辑", color = Mint) }
                                                  TextButton(onClick = {
-                                                     workflows = workflows.filterNot { it.id == workflow.id }
+                                                     if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
+                                                      workflows = workflows.filterNot { it.id == workflow.id }
                                                      prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                                                  }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                              }
@@ -1652,9 +1667,11 @@ fun NestroApp() {
                                                 Text(expertPrompts[name]?.take(100)?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(name).ifBlank { "尚未设置角色指令" }.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 editingExpertName = name
                                                 expertDraft = name
                                                 expertPromptDraft = expertPrompts[name].orEmpty()
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertGroupDraft = profile.group
                                                 expertAvatarDraft = profile.avatar
@@ -1676,7 +1693,8 @@ fun NestroApp() {
                                                 }
                                             }) { Text(if (expertProfiles[name]?.enabled == false) "启用" else "停用", color = if (expertProfiles[name]?.enabled == false) Mint else Muted) }
                                             TextButton(onClick = {
-                                                val index = experts.indexOf(name)
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
+                                                 val index = experts.indexOf(name)
                                                 if (index > 0) {
                                                     val reordered = experts.toMutableList()
                                                     val item = reordered.removeAt(index)
@@ -1703,7 +1721,8 @@ fun NestroApp() {
                                                  exportExpertLauncher.launch("$safeName.nestro-expert.json")
                                              }) { Text("导出", color = Mint) }
                                              TextButton(onClick = {
-                                                    experts = experts - name
+                                                    if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
+                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
                                                     expertProfiles = expertProfiles - name
                                                      workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
@@ -1798,6 +1817,7 @@ fun NestroApp() {
                                                     page = "home"
                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (selectedTeamId == team.id) "当前团队" else "使用团队") }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     editingTeamId = team.id
                                                     teamDraftName = team.name
                                                     teamDraftDescription = team.description
@@ -1805,6 +1825,7 @@ fun NestroApp() {
                                                     showTeamDialog = true
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     expertTeams = expertTeams.filterNot { it.id == team.id }
                                                     if (selectedTeamId == team.id) selectedTeamId = ""
                                                     prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
@@ -2380,6 +2401,7 @@ fun NestroApp() {
                                                     if(draft.isBlank()) draft = "请使用「$name」处理：\n"
                                                 }) { Text("试用", color = if(isDisabled) Muted else Mint) }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
                                                     editingSkillName = name
                                                     skillDraftName = name
                                                     skillDraftPrompt = prompt
@@ -2387,6 +2409,7 @@ fun NestroApp() {
                                                     showSkillDialog = true
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
                                                     disabledSkills = if(isDisabled) disabledSkills - name else disabledSkills + name
                                                     if(!isDisabled && selectedSkill==name) selectedSkill = ""
                                                     prefs.edit().putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills)).apply()
@@ -2397,7 +2420,8 @@ fun NestroApp() {
                                                     exportSkillLauncher.launch("$safeName.nestro-skill.json")
                                                 }) { Text("导出", color = Mint) }
                                                 if(name !in DEFAULT_SKILLS.keys) TextButton(onClick = {
-                                                    skills = skills - name
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
+                                                     skills = skills - name
                                                     skillMetadata = skillMetadata - name
                                                     disabledSkills = disabledSkills - name
                                                     expertProfiles = expertProfiles.mapValues { (_, profile) -> profile.copy(skillNames = profile.skillNames - name) }
@@ -2555,6 +2579,7 @@ fun NestroApp() {
                             members = teamDraftMembers.filter { it in experts }.take(4)
                         )
                         if (team.members.size >= 2) {
+                            if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
                             prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
                         }
@@ -2778,6 +2803,7 @@ fun NestroApp() {
                         skillDialogError = "已有同名技能，请更换名称。"
                     } else {
                         val oldName = editingSkillName
+                        if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.SKILL, oldName)) return@TextButton
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
@@ -3085,6 +3111,7 @@ fun NestroApp() {
                             step.copy(title = step.title.trim(), instruction = step.instruction.trim())
                         }
                     )
+                    if (editingWorkflowId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.WORKFLOW, editingWorkflowId)) return@TextButton
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
                         prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
@@ -3130,6 +3157,10 @@ fun NestroApp() {
                     val validationError = ExpertCatalogRules.validateDefinition(name, expertPromptDraft, oldName, experts)
                     if (validationError != null) {
                         expertDialogError = validationError
+                        return@TextButton
+                    }
+                    if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.EXPERT, oldName)) {
+                        expertDialogError = "当前项目没有该专家的写入权限。"
                         return@TextButton
                     }
                     val temperature = expertTemperatureDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()

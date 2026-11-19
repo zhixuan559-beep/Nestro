@@ -86,6 +86,22 @@ class ProjectAccessControlStoreTest {
         } finally { prefs.edit().clear().commit() }
     }
 
+    @Test fun sharedResourceRequiresWriteFromEveryForeignOwner() {
+        val scopes = ProjectResourceScopeStore.setProjectScope(emptyMap(), ProjectResourceKind.EXPERT, "shared", setOf("source-a", "source-b"))
+        assertFalse(ProjectResourceScopeStore.canWriteFromProject(scopes, ProjectResourceKind.EXPERT, "shared", "target", setOf("source-a")))
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(scopes, ProjectResourceKind.EXPERT, "shared", "target", setOf("source-a", "source-b")))
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(scopes, ProjectResourceKind.EXPERT, "shared", "source-a", setOf("source-b")))
+        assertFalse(ProjectResourceScopeStore.canWriteFromProject(scopes, ProjectResourceKind.EXPERT, "shared", "unrelated", emptySet()))
+    }
+
+    @Test fun legacyAndGlobalResourcesAreWritableButOrphanedScopesFailClosed() {
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(emptyMap(), ProjectResourceKind.SKILL, "legacy", "target", emptySet()))
+        val global = ProjectResourceScopeStore.setGlobal(emptyMap(), ProjectResourceKind.SKILL, "global")
+        assertTrue(ProjectResourceScopeStore.canWriteFromProject(global, ProjectResourceKind.SKILL, "global", "target", emptySet()))
+        val orphan = mapOf(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "orphan") to emptySet())
+        assertFalse(ProjectResourceScopeStore.canWriteFromProject(orphan, ProjectResourceKind.SKILL, "orphan", "target", emptySet()))
+    }
+
     @Test fun malformedGrantDataIsRejectedInsteadOfPartiallyAccepted() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             ProjectAccessControlStore.decodeGrants("""[{"source":"a","target":"b","access":["read","read"],"granted_at":1}]""")
