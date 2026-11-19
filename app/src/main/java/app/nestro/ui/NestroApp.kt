@@ -3067,19 +3067,21 @@ fun NestroApp() {
                 if (previousTeam != null && !canWriteProjectResource(ProjectResourceKind.TEAM, previousTeam.id)) return@TextButton
                 val existingExpertNames = experts.toSet()
                 if (bundle.members.any { it.name in experts && !canWriteProjectResource(ProjectResourceKind.EXPERT, it.name) }) return@TextButton
+                val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
+                bundle.members.filter { it.name !in existingExpertNames }.forEach { member ->
+                    if (!updateProjectResourceScope(ProjectResourceKind.EXPERT, member.name, false)) return@TextButton
+                }
+                if (previousTeam == null && !updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)) return@TextButton
                 bundle.members.forEach { member ->
                     if (member.name !in experts) experts = experts + member.name
                     expertPrompts = expertPrompts + (member.name to member.prompt)
                 }
-                val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
                 expertTeams = expertTeams.filterNot { it.name == bundle.name } + team
                 if(selectedTeamId==previousTeam?.id) selectedTeamId=team.id
                 prefs.edit().putString("experts", JSONArray(experts).toString())
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                     .putString("selected_team_id",selectedTeamId).apply()
-                bundle.members.filter { it.name !in existingExpertNames }.forEach { updateProjectResourceScope(ProjectResourceKind.EXPERT, it.name, false) }
-                if (previousTeam == null) updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)
                 teamImportStatus = "已导入团队：" + bundle.name
                 pendingTeamBundle = null
             }) { Text("导入团队", color = Mint) } },
@@ -3109,6 +3111,7 @@ fun NestroApp() {
                 }
                 val isNewExpert = bundle.name !in experts
                 if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
+                if (isNewExpert && !updateProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name, false)) return@TextButton
                 val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
                 if (missingSkills.isNotEmpty()) {
                     expertImportStatus = "导入未完成，以下挂载技能不存在或已停用：${missingSkills.joinToString()}"
@@ -3129,7 +3132,6 @@ fun NestroApp() {
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                     .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
-                if (isNewExpert) updateProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name, false)
                 expertImportStatus = "已导入专家：" + bundle.name
                 pendingExpertBundle = null
             }) { Text("导入", color = Mint) } },
