@@ -1783,7 +1783,7 @@ fun NestroApp() {
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
 
-                                experts.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
+                                experts.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId, readableProjectIds) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
@@ -1931,7 +1931,7 @@ fun NestroApp() {
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.TEAM, it.id, activeProjectId, readableProjectIds) }.forEach { team ->
+                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isTeamVisibleFromProjects(projectResourceScopes, it.id, it.members, activeProjectId, readableProjectIds) }.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
@@ -2281,19 +2281,22 @@ fun NestroApp() {
                                                     Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
                                                         scope.launch {
                                                             activeProjectId = project.id
+                                                            readableProjectIds = readableSourcesFor(project.id)
+                                                            writableProjectIds = writableSourcesFor(project.id)
                                                             automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
                                                             if (!projectResourceScopesReadOnly &&
-                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.EXPERT, selectedExpert, project.id)) {
+                                                                !ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, selectedExpert, project.id, readableProjectIds)) {
                                                                 selectedExpert = "通用助手"
                                                                 prefs.edit().putString("selected_expert", selectedExpert).apply()
                                                             }
                                                             if (!projectResourceScopesReadOnly &&
-                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.TEAM, selectedTeamId, project.id)) {
+                                                                !ProjectResourceScopeStore.isTeamVisibleFromProjects(projectResourceScopes, selectedTeamId,
+                                                                    expertTeams.firstOrNull { it.id == selectedTeamId }?.members.orEmpty(), project.id, readableProjectIds)) {
                                                                 selectedTeamId = ""
                                                                 prefs.edit().putString("selected_team_id", "").apply()
                                                             }
                                                             if (!projectResourceScopesReadOnly &&
-                                                                !ProjectResourceScopeStore.isVisible(projectResourceScopes, ProjectResourceKind.SKILL, selectedSkill, project.id)) {
+                                                                !ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, selectedSkill, project.id, readableProjectIds)) {
                                                                 selectedSkill = ""
                                                             }
                                                             prefs.edit().putString("active_project_id", project.id)
