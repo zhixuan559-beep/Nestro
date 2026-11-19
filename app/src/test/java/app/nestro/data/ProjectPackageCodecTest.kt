@@ -65,9 +65,9 @@ class ProjectPackageCodecTest {
         val importedTeamId = importedTeams.getJSONObject(0).getString("id")
         val importedWorkflowId = JSONArray(merged.getString("workflows_v1")).getJSONObject(0).getString("id")
         val scopes = ProjectResourceScopeStore.decode(merged.getString("project_resource_scopes_v1"))
-        assertTrue("*" in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")))
         assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, importedTeamId)))
-        assertTrue("*" in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")))
         assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, importedWorkflowId)))
         assertTrue(JSONObject(merged.getString("project_memory_settings_v1")).getBoolean(importedProjectId))
         assertTrue(LocalBackupCompatibility.verifyChecksum(merged))
@@ -133,6 +133,42 @@ class ProjectPackageCodecTest {
         seal(destination)
         assertThrows(IllegalArgumentException::class.java) {
             ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        }
+    }
+
+    @Test fun importRejectsNameCollisionWithProjectOwnedExpertInsteadOfSharingIt() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        val scopes = ProjectResourceScopeStore.decode(destination.getString("project_resource_scopes_v1")).toMutableMap()
+        scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")] = setOf("destination")
+        destination.put("project_resource_scopes_v1", ProjectResourceScopeStore.encode(scopes))
+        destination.remove("checksum_sha256")
+        seal(destination)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        }
+    }
+
+    @Test fun importRejectsResourceScopeReferencesOutsideTheSourceProject() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        val resources = packageRoot.getJSONObject("resources")
+        val scopes = ProjectResourceScopeStore.decode(
+            resources.getJSONObject("project_resource_scopes_v1").toString()
+        ).toMutableMap()
+        scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")] = setOf("unrelated-project")
+        resources.put("project_resource_scopes_v1", JSONObject(ProjectResourceScopeStore.encode(scopes)))
+        packageRoot.remove("checksum_sha256")
+        seal(packageRoot)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), packageRoot.toString())
         }
     }
 
