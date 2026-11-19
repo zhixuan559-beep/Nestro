@@ -90,7 +90,7 @@ class NestroWindowSizeTest {
                     .performScrollTo()
                     .performClick()
                 composeRule.waitForIdle()
-                composeRule.onNodeWithText(pageTitle, substring = true).assertIsDisplayed()
+                composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
         }
     }
