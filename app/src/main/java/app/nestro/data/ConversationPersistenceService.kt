@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +31,7 @@ internal fun decodeMessageVersions(raw: String, activeVersion: Int): List<String
 
 
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
-class ConversationPersistenceService(private val database: NestroDatabase) {
+class ConversationPersistenceService(private val database: NestroDatabase, private val context: Context? = null) {
     internal data class RestoreResult(
         val conversations: List<ConversationRecord>,
         val projects: List<ProjectRecord>
@@ -63,9 +64,9 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     ProjectResourceScopeStore.load(prefs), pendingProjectDeleteId
                 ).isNotEmpty()
             }.getOrDefault(true)
-            val hasArtifactsOrOrphans = runCatching {
-                ArtifactStore.hasProjectArtifactsOrOrphans(context, pendingProjectDeleteId)
-            }.getOrDefault(true)
+            val hasArtifactsOrOrphans = context?.let { appContext ->
+                runCatching { ArtifactStore.hasProjectArtifactsOrOrphans(appContext, pendingProjectDeleteId) }.getOrDefault(true)
+            } ?: true
             val canRecover = !hasExclusiveResources && !hasArtifactsOrOrphans && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
@@ -74,7 +75,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                 hasLocalConversationData = hasLocalConversationData,
                 hasLinkedData = hasLinkedData
             )
-            if (canRecover) ArtifactStore.deleteProject(context, pendingProjectDeleteId)
+            if (canRecover) context?.let { ArtifactStore.deleteProject(it, pendingProjectDeleteId) }
             val deleted = canRecover &&
                 dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
             if (deleted) {
