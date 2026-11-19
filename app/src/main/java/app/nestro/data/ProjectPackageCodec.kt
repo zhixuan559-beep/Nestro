@@ -267,7 +267,12 @@ internal object ProjectPackageCodec {
         }
         current.put("artifacts_v1", artifacts)
 
-        mergeResources(current, incoming.optJSONObject("resources") ?: JSONObject(), newProjectId)
+        mergeResources(
+            current,
+            incoming.optJSONObject("resources") ?: JSONObject(),
+            newProjectId,
+            sourceProject.optString("id")
+        )
         val memorySettings = objectField(current, "project_memory_settings_v1")
         memorySettings.put(newProjectId, incoming.optBoolean("project_memory_enabled", false))
         current.put("project_memory_settings_v1", memorySettings.toString())
@@ -277,7 +282,26 @@ internal object ProjectPackageCodec {
         return current.toString(2)
     }
 
-    private fun mergeResources(current: JSONObject, incoming: JSONObject, projectId: String) {
+    private fun mergeResources(current: JSONObject, incoming: JSONObject, projectId: String, sourceProjectId: String) {
+        require(sourceProjectId.isNotBlank() && sourceProjectId.length <= 120) { "项目包来源项目 ID 无效" }
+        val incomingResourceScopes = objectField(incoming, "project_resource_scopes_v1")
+        val importedScopes = ProjectResourceScopeStore.decode(incomingResourceScopes.toString())
+        require(importedScopes.values.all { owners ->
+            owners.isNotEmpty() && owners.all { it == "*" || it == sourceProjectId }
+        }) { "项目包资源归属无效，不能引用来源项目以外的项目" }
+        val currentScopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}"))
+
+        fun requireImportedScope(kind: ProjectResourceKind, id: String) {
+            require(importedScopes.containsKey(ProjectResourceScopeStore.resourceKey(kind, id))) {
+                "项目包缺少资源归属记录：${kind.key}:$id"
+            }
+        }
+        fun rejectPrivateNameCollision(kind: ProjectResourceKind, id: String, label: String) {
+            val owners = ProjectResourceScopeStore.ownerProjectIds(currentScopes, kind, id)
+            require(owners == null || "*" in owners) {
+                "$label「$id」已归属于其他项目，导入时不能静默共享或扩大其可见范围"
+            }
+        }
         val currentExperts = arrayField(current, "experts")
         val incomingExperts = arrayField(incoming, "experts")
         val currentNames = currentExperts.toStringList().toMutableSet()
@@ -288,7 +312,9 @@ internal object ProjectPackageCodec {
         val newProfiles = objectField(incoming, "expert_profiles_v1")
         val newVersions = objectField(incoming, "expert_versions_v1")
         for (name in incomingExperts.toStringList()) {
+            requireImportedScope(ProjectResourceKind.EXPERT, name)
             if (name in currentNames) {
+                rejectPrivateNameCollision(ProjectResourceKind.EXPERT, name, "专家")
                 require(sameValue(currentPrompts.opt(name), newPrompts.opt(name)) &&
                     sameValue(currentProfiles.opt(name), newProfiles.opt(name))) {
                     "专家「$name」与本机已有配置冲突，请先在项目包来源端重命名"
@@ -309,6 +335,7 @@ internal object ProjectPackageCodec {
         val incomingTeams = arrayField(incoming, "expert_teams_v1")
         for (team in incomingTeams.objects()) {
             val oldId = team.optString("id")
+            requireImportedScope(ProjectResourceKind.TEAM, oldId)
             val newId = UUID.randomUUID().toString()
             teamIdMap[oldId] = newId
             val name = uniqueName(team.optString("name").ifBlank { "导入团队" }, teamNames, 40)
@@ -319,9 +346,12 @@ internal object ProjectPackageCodec {
 
         val currentSkills = objectField(current, "skills")
         val newSkills = objectField(incoming, "skills")
+        newSkills.keys().asSequence().forEach { name ->
+            requireImportedScope(ProjectResourceKind.SKILL, name)
+            if (currentSkills.has(name)) rejectPrivateNameCollision(ProjectResourceKind.SKILL, name, "技能")
+        }
         val globalTemplateSkillRefs = ExpertTemplateCodec.decode(stringField(current, "expert_templates_v1", "[]"))
             .flatMap { it.profile.skillNames }.toSet()
-        val incomingResourceScopes = objectField(incoming, "project_resource_scopes_v1")
         val templateCollisions = newSkills.keys().asSequence()
             .filter { name ->
                 if (currentSkills.has(name) || name !in globalTemplateSkillRefs) false
@@ -342,6 +372,7 @@ internal object ProjectPackageCodec {
         val workflowIdMap = mutableMapOf<String, String>()
         for (workflow in arrayField(incoming, "workflows_v1").objects()) {
             val oldId = workflow.optString("id")
+            requireImportedScope(ProjectResourceKind.WORKFLOW, oldId)
             val newId = UUID.randomUUID().toString()
             workflowIdMap[oldId] = newId
             val name = uniqueName(workflow.optString("name").ifBlank { "导入工作流" }, workflowNames, 60)
@@ -351,8 +382,7 @@ internal object ProjectPackageCodec {
         current.put("workflows_v1", currentWorkflows.toString())
 
         val scopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}")).toMutableMap()
-        val importedScopes = incomingResourceScopes
-        val keys = importedScopes.keys()
+        val keys = incomingResourceScopes.keys()
         while (keys.hasNext()) {
             val oldKey = keys.next()
             val kind = oldKey.substringBefore(':')
