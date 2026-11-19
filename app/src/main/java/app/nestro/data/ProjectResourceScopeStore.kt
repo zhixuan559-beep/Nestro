@@ -93,6 +93,23 @@ internal object ProjectResourceScopeStore {
             allowedProjects.any { it in additionallyReadableProjectIds }
     }
 
+    fun isTeamVisibleFromProjects(
+        scopes: Map<String, Set<String>>,
+        teamId: String,
+        memberExpertIds: List<String>,
+        activeProjectId: String,
+        additionallyReadableProjectIds: Set<String>
+    ): Boolean {
+        if (memberExpertIds.size !in 2..4 || memberExpertIds.distinct().size != memberExpertIds.size) return false
+        return isVisibleFromProjects(
+            scopes, ProjectResourceKind.TEAM, teamId, activeProjectId, additionallyReadableProjectIds
+        ) && memberExpertIds.all { memberId ->
+            isVisibleFromProjects(
+                scopes, ProjectResourceKind.EXPERT, memberId, activeProjectId, additionallyReadableProjectIds
+            )
+        }
+    }
+
     /** Null is legacy-global; "*" is explicitly global; empty means orphaned. */
     fun ownerProjectIds(scopes: Map<String, Set<String>>, kind: ProjectResourceKind, resourceId: String): Set<String>? =
         scopes[resourceKey(kind, resourceId)]
