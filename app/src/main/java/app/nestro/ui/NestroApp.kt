@@ -278,6 +278,7 @@ fun NestroApp() {
     var voiceStatus by dataTransferUiState.voiceStatus
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
+    var initialChatPositionRestored by remember { mutableStateOf(false) }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -887,10 +888,24 @@ fun NestroApp() {
         }
     }
 
-        LaunchedEffect(messages.size, busy, page) {
+    LaunchedEffect(messages.size, busy, activeConversationId) {
         if (page != "home" && page != "chat") return@LaunchedEffect
         val lastIndex = messages.lastIndex + if (busy) 1 else 0
-        if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
+        if (lastIndex >= 0) {
+            if (!initialChatPositionRestored) {
+                chatListState.scrollToItem(lastIndex)
+                initialChatPositionRestored = true
+            } else {
+                chatListState.animateScrollToItem(lastIndex)
+            }
+        }
+    }
+
+    LaunchedEffect(page) {
+        if (page == "home" || page == "chat") {
+            val lastIndex = messages.lastIndex + if (busy) 1 else 0
+            if (lastIndex >= 0) chatListState.scrollToItem(lastIndex)
+        }
     }
 
     MaterialTheme(
