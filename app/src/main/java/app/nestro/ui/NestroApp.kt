@@ -1702,7 +1702,13 @@ fun NestroApp() {
                                                  TextButton(onClick = {
                                                      if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
                                                       workflows = workflows.filterNot { it.id == workflow.id }
-                                                     prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                                                     val remainingWorkflowScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                         projectResourceScopes, ProjectResourceKind.WORKFLOW, workflow.id
+                                                     )
+                                                     check(prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
+                                                         .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingWorkflowScopes))
+                                                         .commit()) { "工作流及项目范围删除失败" }
+                                                     projectResourceScopes = remainingWorkflowScopes
                                                  }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                              }
                                          }
@@ -1842,12 +1848,17 @@ fun NestroApp() {
                                                      workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
                                                     if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
+                                                    val remainingExpertScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                        projectResourceScopes, ProjectResourceKind.EXPERT, name
+                                                    )
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
+                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingExpertScopes))
                                                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                                                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                                                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                                                          .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
-                                                        .putString("selected_team_id", selectedTeamId).apply()
+                                                        .putString("selected_team_id", selectedTeamId).commit()
+                                                    projectResourceScopes = remainingExpertScopes
                                                     if (selectedExpert == name) {
                                                         selectedExpert = "通用助手"
                                                         prefs.edit().putString("selected_expert", selectedExpert).apply()
@@ -1942,8 +1953,13 @@ fun NestroApp() {
                                                     if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     expertTeams = expertTeams.filterNot { it.id == team.id }
                                                     if (selectedTeamId == team.id) selectedTeamId = ""
+                                                    val remainingTeamScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                        projectResourceScopes, ProjectResourceKind.TEAM, team.id
+                                                    )
                                                     prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
-                                                        .putString("selected_team_id", selectedTeamId).apply()
+                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingTeamScopes))
+                                                        .putString("selected_team_id", selectedTeamId).commit()
+                                                    projectResourceScopes = remainingTeamScopes
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
                                         }
@@ -2555,13 +2571,18 @@ fun NestroApp() {
                                                     expertRevisions = expertRevisions.mapValues { (_, rows) -> rows.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) } }
                                                     expertTemplates = expertTemplates.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) }
                                                     workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.SKILL && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
+                                                    val remainingSkillScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                        projectResourceScopes, ProjectResourceKind.SKILL, name
+                                                    )
                                                     prefs.edit().putString("skills",skillMapToJson(skills))
+                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingSkillScopes))
                                                         .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
                                                         .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
                                                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                                                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                                                         .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
-                                                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                                                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).commit()
+                                                    projectResourceScopes = remainingSkillScopes
                                                     if(selectedSkill==name) selectedSkill=""
                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                             }
@@ -2972,13 +2993,23 @@ fun NestroApp() {
                             if(wasDisabled) disabledSkills = (disabledSkills - oldName) + name
                             if(selectedSkill==oldName) selectedSkill=if(wasDisabled) "" else name
                         }
-                        prefs.edit().putString("skills",skillMapToJson(skills))
+                        val renamedSkillScopes = if (oldName.isNotBlank() && oldName != name) {
+                            ProjectResourceScopeStore.renameResourceScope(
+                                projectResourceScopes, ProjectResourceKind.SKILL, oldName, name
+                            )
+                        } else null
+                        val skillEditor = prefs.edit().putString("skills",skillMapToJson(skills))
                             .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
                             .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
                             .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                              .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                              .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
-                             .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                             .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
+                        if (renamedSkillScopes != null) {
+                            skillEditor.putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(renamedSkillScopes))
+                        }
+                        check(skillEditor.commit()) { "技能及项目范围保存失败" }
+                        if (renamedSkillScopes != null) projectResourceScopes = renamedSkillScopes
                         if (oldName.isBlank()) updateProjectResourceScope(ProjectResourceKind.SKILL, name, false)
                         if(name !in disabledSkills) selectedSkill=name
                         skillDraftName = ""
@@ -3369,13 +3400,23 @@ fun NestroApp() {
                         expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
                         workflows = ExpertCatalogRules.renameWorkflowReferences(workflows, oldName, name)
                     }
-                    prefs.edit().putString("experts", JSONArray(experts).toString())
+                    val renamedExpertScopes = if (oldName.isNotBlank() && oldName != name) {
+                        ProjectResourceScopeStore.renameResourceScope(
+                            projectResourceScopes, ProjectResourceKind.EXPERT, oldName, name
+                        )
+                    } else null
+                    val expertEditor = prefs.edit().putString("experts", JSONArray(experts).toString())
                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
-                        .putString("selected_expert", selectedExpert).apply()
+                        .putString("selected_expert", selectedExpert)
+                    if (renamedExpertScopes != null) {
+                        expertEditor.putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(renamedExpertScopes))
+                    }
+                    check(expertEditor.commit()) { "专家及项目范围保存失败" }
+                    if (renamedExpertScopes != null) projectResourceScopes = renamedExpertScopes
                     if (selectedExpert == oldName || selectedExpert == name) {
                         selectedExpert = if (profile.enabled) name else "通用助手"
                     }
