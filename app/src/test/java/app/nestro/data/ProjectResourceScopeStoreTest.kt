@@ -77,4 +77,28 @@ class ProjectResourceScopeStoreTest {
         ))
     }
 
+    @Test fun renamingAndRemovingResourcesPreservesScopeWithoutMakingThemGlobal() {
+        val original = mapOf("expert:writer" to setOf("project-a"))
+        val renamed = ProjectResourceScopeStore.renameResourceScope(
+            original, ProjectResourceKind.EXPERT, "writer", "writer-v2"
+        )
+        assertFalse("expert:writer" in renamed)
+        assertEquals(setOf("project-a"), renamed.getValue("expert:writer-v2"))
+        val removed = ProjectResourceScopeStore.removeResourceScope(
+            renamed, ProjectResourceKind.EXPERT, "writer-v2"
+        )
+        assertFalse("expert:writer-v2" in removed)
+        assertTrue(ProjectResourceScopeStore.isVisible(removed, ProjectResourceKind.EXPERT, "writer-v2", "project-b"))
+    }
+
+    @Test fun renamingCannotOverwriteAnExistingResourceScope() {
+        val scopes = mapOf(
+            "skill:old" to setOf("project-a"),
+            "skill:new" to setOf("project-b")
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.renameResourceScope(scopes, ProjectResourceKind.SKILL, "old", "new")
+        }
+    }
+
 }
