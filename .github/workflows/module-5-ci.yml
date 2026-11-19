@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - refactor/phase-2-architecture
+  push:
+    branches:
+      - feature/module-5-project-space
   workflow_dispatch:
 
 permissions:
