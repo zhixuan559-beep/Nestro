@@ -342,6 +342,7 @@ class ProjectPackageCodecTest {
         root.put("skills", JSONObject().toString())
         root.put("skill_metadata_v1", JSONObject().toString())
         root.put("workflows_v1", JSONArray().toString())
+        seal(root)
     }
 
     private fun fixtureBackup(
