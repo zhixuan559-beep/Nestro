@@ -250,6 +250,27 @@ class ProjectPackageCodecTest {
         }
     }
 
+    @Test fun importRejectsMalformedProjectIdentityAndNestedMessageArrays() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+
+        val invalidIdentity = JSONObject(packageRaw)
+        invalidIdentity.getJSONObject("project").put("id", 123)
+        invalidIdentity.remove("checksum_sha256")
+        seal(invalidIdentity)
+        assertThrows(IllegalStateException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), invalidIdentity.toString())
+        }
+
+        val invalidMessages = JSONObject(packageRaw)
+        invalidMessages.getJSONArray("conversations_v1").getJSONObject(0).put("messages", "not-an-array")
+        invalidMessages.remove("checksum_sha256")
+        seal(invalidMessages)
+        assertThrows(IllegalStateException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), invalidMessages.toString())
+        }
+    }
+
     @Test fun modifiedProjectPackageIsRejectedBeforeMerge() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
