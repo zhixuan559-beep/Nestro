@@ -323,6 +323,10 @@ internal object ProjectPackageCodec {
         }
         val currentExperts = arrayField(current, "experts")
         val incomingExperts = arrayField(incoming, "experts")
+        val incomingExpertNames = incomingExperts.toStringList()
+        require(incomingExpertNames.all { it.isNotBlank() } && incomingExpertNames.distinct().size == incomingExpertNames.size) {
+            "项目包专家名称为空或重复"
+        }
         val currentNames = currentExperts.toStringList().toMutableSet()
         val currentPrompts = objectField(current, "expert_prompts")
         val currentProfiles = objectField(current, "expert_profiles_v1")
@@ -352,7 +356,14 @@ internal object ProjectPackageCodec {
         val teamNames = currentTeams.objects().map { it.optString("name") }.toMutableSet()
         val teamIdMap = mutableMapOf<String, String>()
         val incomingTeams = arrayField(incoming, "expert_teams_v1")
-        for (team in incomingTeams.objects()) {
+        val incomingTeamRows = incomingTeams.objects()
+        val incomingTeamIds = incomingTeamRows.map { row ->
+            row.opt("id") as? String ?: error("项目包团队 ID 无效")
+        }
+        require(incomingTeamIds.all { it.isNotBlank() } && incomingTeamIds.distinct().size == incomingTeamIds.size) {
+            "项目包团队 ID 为空或重复"
+        }
+        for (team in incomingTeamRows) {
             val oldId = team.optString("id")
             requireImportedScope(ProjectResourceKind.TEAM, oldId)
             val newId = UUID.randomUUID().toString()
@@ -366,6 +377,10 @@ internal object ProjectPackageCodec {
         val currentSkills = objectField(current, "skills")
         val newSkills = objectField(incoming, "skills")
         newSkills.keys().asSequence().forEach { name ->
+            val prompt = newSkills.opt(name) as? String ?: error("项目包技能「$name」指令格式无效")
+            require(name.isNotBlank() && name.length <= 40 && prompt.isNotBlank() && prompt.length <= 8000) {
+                "项目包技能「$name」名称或指令无效"
+            }
             requireImportedScope(ProjectResourceKind.SKILL, name)
             if (currentSkills.has(name)) rejectScopeCollision(ProjectResourceKind.SKILL, name, "技能")
         }
@@ -389,7 +404,14 @@ internal object ProjectPackageCodec {
         val currentWorkflows = arrayField(current, "workflows_v1")
         val workflowNames = currentWorkflows.objects().map { it.optString("name") }.toMutableSet()
         val workflowIdMap = mutableMapOf<String, String>()
-        for (workflow in arrayField(incoming, "workflows_v1").objects()) {
+        val incomingWorkflowRows = arrayField(incoming, "workflows_v1").objects()
+        val incomingWorkflowIds = incomingWorkflowRows.map { row ->
+            row.opt("id") as? String ?: error("项目包工作流 ID 无效")
+        }
+        require(incomingWorkflowIds.all { it.isNotBlank() } && incomingWorkflowIds.distinct().size == incomingWorkflowIds.size) {
+            "项目包工作流 ID 为空或重复"
+        }
+        for (workflow in incomingWorkflowRows) {
             val oldId = workflow.optString("id")
             requireImportedScope(ProjectResourceKind.WORKFLOW, oldId)
             val newId = UUID.randomUUID().toString()
