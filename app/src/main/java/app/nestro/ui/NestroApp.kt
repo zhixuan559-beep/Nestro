@@ -3613,11 +3613,17 @@ fun NestroApp() {
                         val prompt = expertPrompts[sourceName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(sourceName) }
                         val profile = expertProfiles[sourceName] ?: ExpertProfile()
                         val builtInName = builtInTemplates.any { it.name == name }
+                        val expertOwners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.EXPERT, sourceName)
+                        val projectOnlyExpert = expertOwners != null && "*" !in expertOwners
                         val projectOnlySkills = profile.skillNames.filter { skill ->
                             val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
                             owners != null && "*" !in owners
                         }
-                        if (projectOnlySkills.isNotEmpty()) {
+                        if (projectResourceScopesReadOnly) {
+                            templateStatus = "项目资源范围数据校验失败，已锁定全局模板创建。"
+                        } else if (projectOnlyExpert) {
+                            templateStatus = "项目专属专家不能直接保存为全局模板，请先将专家设为全局共享。"
+                        } else if (projectOnlySkills.isNotEmpty()) {
                             templateStatus = "全局专家模板不能引用项目专属技能：" + projectOnlySkills.joinToString("、")
                         } else if (name.isBlank() || prompt.isBlank()) {
                             templateStatus = "模板名称或当前专家指令为空，无法保存。"
@@ -3706,6 +3712,11 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        templateStatus = "项目资源范围数据校验失败，已锁定模板导入。"
+                        pendingTemplateBundle = null
+                        return@TextButton
+                    }
                     val builtInNames = ExpertTemplateCatalog.builtIns().map { it.name }.toSet()
                     val conflicts = importedTemplates.filter { it.name in builtInNames }
                     val unavailableSkills = importedTemplates.flatMap { it.profile.skillNames }.distinct().filter { skill ->
