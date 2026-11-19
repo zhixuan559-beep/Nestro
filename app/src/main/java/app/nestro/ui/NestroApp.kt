@@ -169,11 +169,19 @@ fun NestroApp() {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
     var activeProjectId by projectSpaceUiState.activeProjectId
-    var readableProjectIds by remember(activeProjectId) {
-        mutableStateOf(ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId))
+    fun readableSourcesFor(targetProjectId: String): Set<String> {
+        val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
+        return ProjectAccessControlStore.grantedReadableSourceProjects(prefs, targetProjectId).intersect(eligible)
     }
-    var writableProjectIds by remember(activeProjectId) {
-        mutableStateOf(ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId))
+    fun writableSourcesFor(targetProjectId: String): Set<String> {
+        val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
+        return ProjectAccessControlStore.grantedWritableSourceProjects(prefs, targetProjectId).intersect(eligible)
+    }
+    var readableProjectIds by remember(activeProjectId, projects) {
+        mutableStateOf(readableSourcesFor(activeProjectId))
+    }
+    var writableProjectIds by remember(activeProjectId, projects) {
+        mutableStateOf(writableSourcesFor(activeProjectId))
     }
     var pendingAccessSourceProjectId by remember { mutableStateOf("") }
     var showProjectAccessDialog by remember { mutableStateOf(false) }
@@ -479,8 +487,8 @@ fun NestroApp() {
                 projectResourceScopesReadOnly = false
                 activeProjectId = importedProjectId
                 prefs.edit().putLong("project_last_opened_$importedProjectId", System.currentTimeMillis()).apply()
-                readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
-                writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
+                readableProjectIds = readableSourcesFor(activeProjectId)
+                writableProjectIds = writableSourcesFor(activeProjectId)
                 automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "")
                     .takeIf { id -> conversations.any { it.id == id } }
@@ -2708,8 +2716,8 @@ fun NestroApp() {
                                 prefs, pendingAccessSourceProjectId, activeProjectId,
                                 setOf(ProjectAccessControlStore.Access.READ)
                             )
-                            readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
-                            writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
+                            readableProjectIds = readableSourcesFor(activeProjectId)
+                            writableProjectIds = writableSourcesFor(activeProjectId)
                             status = "已授权当前项目读取「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」的资源"
                         }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
                         showProjectAccessDialog = false
@@ -2721,8 +2729,8 @@ fun NestroApp() {
                                 prefs, pendingAccessSourceProjectId, activeProjectId,
                                 setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE)
                             )
-                            readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
-                            writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
+                            readableProjectIds = readableSourcesFor(activeProjectId)
+                            writableProjectIds = writableSourcesFor(activeProjectId)
                             status = "已授权当前项目读取和写入「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」"
                         }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
                         showProjectAccessDialog = false
@@ -2735,8 +2743,8 @@ fun NestroApp() {
                     TextButton(onClick = {
                         runCatching { ProjectAccessControlStore.revoke(prefs, pendingAccessSourceProjectId, activeProjectId) }
                             .onSuccess {
-                                readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
-                                writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
+                                readableProjectIds = readableSourcesFor(activeProjectId)
+                                writableProjectIds = writableSourcesFor(activeProjectId)
                                 status = "已撤销跨项目授权"
                             }
                             .onFailure { status = "撤销失败：" + (it.message ?: "数据无效") }
