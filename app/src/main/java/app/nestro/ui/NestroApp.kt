@@ -2812,7 +2812,7 @@ fun NestroApp() {
                             description = teamDraftDescription.trim().take(300),
                             members = teamDraftMembers.filter { it in experts }.take(4)
                         )
-                        if (team.members.size >= 2) {
+                        if (team.members.size in 2..4 && team.members.distinct().size == team.members.size) {
                             if (editingTeamId.isBlank() && !updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)) return@TextButton
                             if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
@@ -3109,6 +3109,11 @@ fun NestroApp() {
             confirmButton = { TextButton(onClick = {
                 if (projectResourceScopesReadOnly) {
                     teamImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                    return@TextButton
+                }
+                if (bundle.members.size !in 2..4 || bundle.members.map { it.name }.distinct().size != bundle.members.size) {
+                    teamImportStatus = "团队成员必须为 2–4 位且不能重复。"
+                    pendingTeamBundle = null
                     return@TextButton
                 }
                 val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
