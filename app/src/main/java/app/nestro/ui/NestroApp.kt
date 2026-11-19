@@ -2240,7 +2240,6 @@ fun NestroApp() {
                 }
             }
         }
-    }
 
     if (showBackupRestoreConfirm && pendingBackupUri != null) {
         AlertDialog(
