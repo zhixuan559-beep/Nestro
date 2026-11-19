@@ -224,9 +224,7 @@ fun NestroApp() {
         return allowed
     }
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
-        if (projectResourceScopesReadOnly) {
-            status = "项目资源范围数据校验失败，已锁定资源修改；请先恢复有效备份。"
-        } else runCatching {
+        if (canWriteProjectResource(kind, resourceId)) runCatching {
             val next = if (makeGlobal) {
                 ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
             } else {
@@ -235,7 +233,7 @@ fun NestroApp() {
             ProjectResourceScopeStore.save(prefs, next)
             projectResourceScopes = next
             status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
-        }.onFailure { status = "资源范围更新失败：${it.message ?: "数据无效"}" }
+        }.onFailure { status = "资源范围更新失败：" + (it.message ?: "数据无效") }
     }
     var recallSources by chatExecutionUiState.recallSources
     var showRecallDialog by chatExecutionUiState.showRecallDialog
@@ -323,7 +321,27 @@ fun NestroApp() {
     var backupStatus by dataTransferUiState.backupStatus
     var pendingBackupUri by dataTransferUiState.pendingBackupUri
     var showBackupRestoreConfirm by dataTransferUiState.showBackupRestoreConfirm
+    var projectPackageExportProjectId by remember { mutableStateOf("") }
+    var pendingProjectPackageUri by remember { mutableStateOf<Uri?>(null) }
+    var showProjectPackageImportConfirm by remember { mutableStateOf(false) }
+    var projectPackageStatus by remember { mutableStateOf("") }
     var voiceStatus by dataTransferUiState.voiceStatus
+    fun canWriteExpertDependents(expertName: String): Boolean {
+        val teamsAllowed = expertTeams.filter { expertName in it.members }
+            .all { canWriteProjectResource(ProjectResourceKind.TEAM, it.id) }
+        val workflowsAllowed = workflows.filter { workflow ->
+            workflow.steps.any { it.kind == WorkflowStepKind.EXPERT && it.targetId.ifBlank { it.title } == expertName }
+        }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
+        return teamsAllowed && workflowsAllowed
+    }
+    fun canWriteSkillDependents(skillName: String): Boolean {
+        val expertsAllowed = expertProfiles.filterValues { skillName in it.skillNames }.keys
+            .all { canWriteProjectResource(ProjectResourceKind.EXPERT, it) }
+        val workflowsAllowed = workflows.filter { workflow ->
+            workflow.steps.any { it.kind == WorkflowStepKind.SKILL && it.targetId.ifBlank { it.title } == skillName }
+        }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
+        return expertsAllowed && workflowsAllowed
+    }
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
     var initialChatPositionRestored by remember { mutableStateOf(false) }
@@ -352,6 +370,34 @@ fun NestroApp() {
         if (uri != null) {
             pendingBackupUri = uri
             showBackupRestoreConfirm = true
+        }
+    }
+    val exportProjectPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null && projectPackageExportProjectId.isNotBlank()) {
+            val exportProjectId = projectPackageExportProjectId
+            val availableProjectIds = projects.map { it.id }.toSet()
+            projectPackageStatus = "正在导出项目包…"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val readable = ProjectAccessControlStore.readableSourceProjects(prefs, exportProjectId, availableProjectIds)
+                        val json = appRuntime.localBackupRepository.createProjectPackage(prefs, exportProjectId, readable)
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                            ?: error("无法创建项目包文件")
+                    }
+                }
+                projectPackageStatus = result.fold({ "项目包已导出" }, { "导出失败：" + (it.message ?: "未知错误") })
+            }
+        }
+    }
+    val importProjectPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pendingProjectPackageUri = uri
+            showProjectPackageImportConfirm = true
         }
     }
     val performBackupRestore: (Uri) -> Unit = { uri ->
@@ -400,6 +446,62 @@ fun NestroApp() {
                 automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
             }
             backupStatus = result.fold({ "恢复完成。备份不含 API Key；仅保留本机地址与型号匹配的密钥。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
+        }
+    }
+
+    val performProjectPackageImport: (Uri) -> Unit = { uri ->
+        projectPackageStatus = "正在导入项目包…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = appRuntime.localBackupRepository.readText(uri)
+                    appRuntime.localBackupRepository.importProjectPackage(prefs, raw)
+                }
+            }
+            if (result.isSuccess) {
+                val importedProjectId = result.getOrThrow()
+                persistedConversationVersions.clear()
+                conversations = ConversationPreferencesStore.loadConversations(prefs)
+                projects = ProjectPreferencesStore.loadProjects(prefs)
+                projectStorageReadOnly = false
+                projectResourceScopes = ProjectResourceScopeStore.load(prefs)
+                projectResourceScopesReadOnly = false
+                activeProjectId = importedProjectId
+                readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
+                writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
+                automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
+                activeConversationId = (prefs.getString("active_conversation_id", "") ?: "")
+                    .takeIf { id -> conversations.any { it.id == id } }
+                    ?: conversations.firstOrNull { it.projectId == importedProjectId }?.id.orEmpty()
+                messages = if (activeConversationId.isBlank()) emptyList() else withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(activeConversationId).orEmpty()
+                }
+                conversations = conversations.map { row ->
+                    if (row.id == activeConversationId) row.copy(messages = messages, messagesLoaded = true) else row
+                }
+                draft = prefs.getString("draft_" + activeConversationId, "") ?: ""
+                experts = loadExperts(prefs)
+                expertPrompts = loadExpertPrompts(prefs)
+                expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
+                expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
+                expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
+                selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
+                expertTeams = loadExpertTeams(prefs)
+                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                skills = loadSkills(prefs)
+                skillMetadata = loadSkillMetadata(prefs)
+                disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
+                selectedSkill = ""
+                workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
+                workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                page = "spaces"
+            }
+            projectPackageStatus = result.fold(
+                { "项目包已导入：" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: "新项目") },
+                { "导入失败：" + (it.message ?: "项目包格式无效") }
+            )
         }
     }
 
@@ -1722,6 +1824,7 @@ fun NestroApp() {
                                              }) { Text("导出", color = Mint) }
                                              TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
+                                                     if (!canWriteExpertDependents(name)) return@TextButton
                                                      experts = experts - name
                                                     expertPrompts = expertPrompts - name
                                                     expertProfiles = expertProfiles - name
@@ -2111,14 +2214,20 @@ fun NestroApp() {
                                 if (projectResourceScopesReadOnly) {
                                     Text("专家、团队、技能和工作流的项目归属数据校验失败，已停止加载这些资源以防跨项目泄漏。请恢复有效备份后再使用。", color = ColorStop)
                                 }
-                                Button(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
-                                    editingProjectId = ""
-                                    projectDraftName = ""
-                                    projectDraftInstructions = ""
-                                    showProjectDialog = true
-                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
-                                    Text("＋ 创建项目空间")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
+                                        editingProjectId = ""
+                                        projectDraftName = ""
+                                        projectDraftInstructions = ""
+                                        showProjectDialog = true
+                                    }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                        Text("＋ 创建项目")
+                                    }
+                                    OutlinedButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                        importProjectPackageLauncher.launch(arrayOf("application/json", "application/octet-stream"))
+                                    }, modifier = Modifier.weight(1f)) { Text("导入项目包") }
                                 }
+                                if (projectPackageStatus.isNotBlank()) Text(projectPackageStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(projects.filter { it.archivedAt == 0L }.sortedByDescending { prefs.getLong("project_last_opened_${it.id}", it.createdAt) }, key = { it.id }) { project ->
                                         val count = conversations.count { it.projectId == project.id }
@@ -2178,6 +2287,11 @@ fun NestroApp() {
                                                         projectDraftInstructions = project.instructions
                                                         showProjectDialog = true
                                                     }) { Text("编辑", color = Mint) }
+                                                    TextButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                                        projectPackageExportProjectId = project.id
+                                                        val safeName = project.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "project" }
+                                                        exportProjectPackageLauncher.launch(safeName + ".nestro-project.json")
+                                                    }) { Text("导出项目包", color = Mint) }
                                                     TextButton(
                                                         enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly && projects.size < 100,
                                                         onClick = {
@@ -2421,6 +2535,7 @@ fun NestroApp() {
                                                 }) { Text("导出", color = Mint) }
                                                 if(name !in DEFAULT_SKILLS.keys) TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
+                                                     if (!canWriteSkillDependents(name)) return@TextButton
                                                      skills = skills - name
                                                     skillMetadata = skillMetadata - name
                                                     disabledSkills = disabledSkills - name
@@ -2482,6 +2597,25 @@ fun NestroApp() {
                 }) { Text("覆盖并恢复", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
             },
             dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false; pendingBackupUri = null }) { Text("取消") } }
+        )
+    }
+
+    if (showProjectPackageImportConfirm && pendingProjectPackageUri != null) {
+        AlertDialog(
+            onDismissRequest = { showProjectPackageImportConfirm = false; pendingProjectPackageUri = null },
+            title = { Text("导入项目包？") },
+            text = { Text("导入会新建一个独立项目，不覆盖现有项目。会复制项目会话、知识、记忆、产物和项目资源；API Key 与跨项目访问授权不会导入。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingProjectPackageUri
+                    showProjectPackageImportConfirm = false
+                    pendingProjectPackageUri = null
+                    if (uri != null) performProjectPackageImport(uri)
+                }) { Text("导入项目", color = Mint) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProjectPackageImportConfirm = false; pendingProjectPackageUri = null }) { Text("取消") }
+            }
         )
     }
 
@@ -2807,6 +2941,7 @@ fun NestroApp() {
                     } else {
                         val oldName = editingSkillName
                         if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.SKILL, oldName)) return@TextButton
+                        if (oldName.isNotBlank() && oldName != name && !canWriteSkillDependents(oldName)) return@TextButton
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
@@ -2854,11 +2989,14 @@ fun NestroApp() {
                 Text("导入后会一并安装成员专家配置；同名专家的角色指令将被更新。", color = Muted)
             } },
             confirmButton = { TextButton(onClick = {
+                val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
+                if (previousTeam != null && !canWriteProjectResource(ProjectResourceKind.TEAM, previousTeam.id)) return@TextButton
+                val existingExpertNames = experts.toSet()
+                if (bundle.members.any { it.name in experts && !canWriteProjectResource(ProjectResourceKind.EXPERT, it.name) }) return@TextButton
                 bundle.members.forEach { member ->
                     if (member.name !in experts) experts = experts + member.name
                     expertPrompts = expertPrompts + (member.name to member.prompt)
                 }
-                val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
                 val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
                 expertTeams = expertTeams.filterNot { it.name == bundle.name } + team
                 if(selectedTeamId==previousTeam?.id) selectedTeamId=team.id
@@ -2866,7 +3004,9 @@ fun NestroApp() {
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                     .putString("selected_team_id",selectedTeamId).apply()
-                teamImportStatus = "已导入团队：${bundle.name}"
+                bundle.members.filter { it.name !in existingExpertNames }.forEach { updateProjectResourceScope(ProjectResourceKind.EXPERT, it.name, false) }
+                if (previousTeam == null) updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)
+                teamImportStatus = "已导入团队：" + bundle.name
                 pendingTeamBundle = null
             }) { Text("导入团队", color = Mint) } },
             dismissButton = { TextButton(onClick = { pendingTeamBundle = null }) { Text("取消") } }
@@ -2889,6 +3029,8 @@ fun NestroApp() {
                 if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
             } },
             confirmButton = { TextButton(onClick = {
+                val isNewExpert = bundle.name !in experts
+                if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
                 val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
                 if (missingSkills.isNotEmpty()) {
                     expertImportStatus = "导入未完成，以下挂载技能不存在或已停用：${missingSkills.joinToString()}"
@@ -2909,7 +3051,8 @@ fun NestroApp() {
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                     .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
-                expertImportStatus = "已导入专家：${bundle.name}"
+                if (isNewExpert) updateProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name, false)
+                expertImportStatus = "已导入专家：" + bundle.name
                 pendingExpertBundle = null
             }) { Text("导入", color = Mint) } },
             dismissButton = { TextButton(onClick = { pendingExpertBundle = null }) { Text("取消") } }
@@ -3166,6 +3309,10 @@ fun NestroApp() {
                     }
                     if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.EXPERT, oldName)) {
                         expertDialogError = "当前项目没有该专家的写入权限。"
+                        return@TextButton
+                    }
+                    if (oldName.isNotBlank() && oldName != name && !canWriteExpertDependents(oldName)) {
+                        expertDialogError = "该专家被其他只读团队或工作流引用，不能在当前项目重命名。"
                         return@TextButton
                     }
                     val temperature = expertTemperatureDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()

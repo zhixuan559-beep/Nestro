@@ -1,0 +1,185 @@
+package app.nestro.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
+import org.junit.Test
+
+class ProjectPackageCodecTest {
+    @Test fun exportFiltersProjectDataAndCarriesOnlyVisibleReusableResources() {
+        val source = fixtureBackup(includeForeignProject = true)
+        val exported = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+
+        assertEquals("nestro-project-package", exported.getString("format"))
+        assertEquals(1, exported.getJSONArray("conversations_v1").length())
+        assertEquals(1, exported.getJSONArray("knowledge_documents_v1").length())
+        assertEquals(1, exported.getJSONArray("knowledge_chunks_v1").length())
+        assertEquals(1, exported.getJSONArray("user_memories").length())
+        assertEquals(1, exported.getJSONArray("artifacts_v1").length())
+
+        val resources = exported.getJSONObject("resources")
+        assertEquals(listOf("writer"), (0 until resources.getJSONArray("experts").length()).map { resources.getJSONArray("experts").getString(it) })
+        assertEquals(1, resources.getJSONArray("expert_teams_v1").length())
+        assertEquals(1, resources.getJSONArray("workflows_v1").length())
+        assertTrue(resources.getJSONObject("skills").has("research"))
+        assertTrue(LocalBackupCompatibility.verifyChecksum(exported))
+    }
+
+    @Test fun importCreatesIsolatedProjectAndRemapsAllProjectOwnedIds() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        val merged = JSONObject(ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw))
+        val importedProjectId = merged.getString("active_project_id")
+
+        assertNotEquals("source", importedProjectId)
+        assertEquals(2, JSONArray(merged.getString("projects")).length())
+        val conversations = merged.getJSONArray("conversations_v1")
+        assertEquals(2, conversations.length())
+        assertEquals("destination", conversations.getJSONObject(0).getString("project_id"))
+        val importedConversation = (0 until conversations.length()).map { conversations.getJSONObject(it) }
+            .single { it.getString("project_id") == importedProjectId }
+        assertNotEquals("source-conversation", importedConversation.getString("id"))
+        assertNotEquals("source-message", importedConversation.getJSONArray("messages").getJSONObject(0).getString("id"))
+
+        val documents = merged.getJSONArray("knowledge_documents_v1")
+        assertEquals(importedProjectId, documents.getJSONObject(0).getString("projectId"))
+        assertNotEquals("source-document", documents.getJSONObject(0).getString("id"))
+        assertEquals(importedProjectId, merged.getJSONArray("knowledge_chunks_v1").getJSONObject(0).getString("projectId"))
+        assertEquals(importedProjectId, merged.getJSONArray("user_memories").getJSONObject(0).getString("projectId"))
+        assertEquals(importedConversation.getString("id"), merged.getJSONArray("user_memories").getJSONObject(0).getString("sourceConversationId"))
+        assertEquals(importedConversation.getJSONArray("messages").getJSONObject(0).getString("id"), merged.getJSONArray("user_memories").getJSONObject(0).getString("sourceMessageId"))
+        assertEquals(importedProjectId, merged.getJSONArray("artifacts_v1").getJSONObject(0).getString("projectId"))
+
+        val importedTeams = merged.getJSONArray("expert_teams_v1")
+        val importedTeamId = importedTeams.getJSONObject(0).getString("id")
+        val importedWorkflowId = merged.getJSONArray("workflows_v1").getJSONObject(0).getString("id")
+        val scopes = ProjectResourceScopeStore.decode(merged.getString("project_resource_scopes_v1"))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, importedTeamId)))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")))
+        assertTrue(importedProjectId in scopes.getValue(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, importedWorkflowId)))
+        assertTrue(JSONObject(merged.getString("project_memory_settings_v1")).getBoolean(importedProjectId))
+        assertTrue(LocalBackupCompatibility.verifyChecksum(merged))
+    }
+
+    @Test fun modifiedProjectPackageIsRejectedBeforeMerge() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        packageRoot.getJSONObject("project").put("name", "篡改后的名称")
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), packageRoot.toString())
+        }
+    }
+
+    private fun fixtureBackup(
+        includeForeignProject: Boolean,
+        projectId: String = "source",
+        projectName: String = "源项目",
+        conversationId: String = "source-conversation",
+        includeProjectContent: Boolean = true
+    ): JSONObject {
+        val projects = JSONArray().put(project(projectId, projectName))
+        if (includeForeignProject) projects.put(project("foreign", "其他项目"))
+        val conversations = JSONArray()
+        val documents = JSONArray()
+        val chunks = JSONArray()
+        val memories = JSONArray()
+        val artifacts = JSONArray()
+        val teams = JSONArray()
+        val workflows = JSONArray()
+        val scopes = linkedMapOf<String, Set<String>>()
+        if (includeProjectContent) {
+            val messageId = if (projectId == "source") "source-message" else "$conversationId-message"
+            conversations.put(
+                JSONObject().put("id", conversationId).put("title", "项目会话")
+                    .put("updated_at", 10L).put("project_id", projectId)
+                    .put("messages", JSONArray().put(
+                        JSONObject().put("id", messageId).put("role", "user").put("content", "项目内容")
+                            .put("versions", JSONArray()).put("active_version", 0)
+                    ))
+            )
+            if (includeForeignProject) conversations.put(
+                JSONObject().put("id", "foreign-conversation").put("title", "其他会话")
+                    .put("updated_at", 11L).put("project_id", "foreign").put("messages", JSONArray())
+            )
+            documents.put(
+                JSONObject().put("id", "source-document").put("projectId", projectId)
+                    .put("name", "项目资料").put("mimeType", "text/plain").put("sizeBytes", 8L)
+                    .put("importedAt", 1L).put("contentHash", "a".repeat(64))
+            )
+            chunks.put(
+                JSONObject().put("id", "source-chunk").put("documentId", "source-document")
+                    .put("projectId", projectId).put("position", 0).put("content", "项目资料内容")
+            )
+            memories.put(
+                JSONObject().put("id", "source-memory").put("projectId", projectId)
+                    .put("category", "project").put("content", "这是一个项目记忆内容")
+                    .put("fingerprint", "source-fingerprint").put("sourceConversationId", conversationId)
+                    .put("sourceMessageId", messageId).put("confidence", 0.9)
+                    .put("createdAt", 1L).put("updatedAt", 2L)
+            )
+            artifacts.put(
+                JSONObject().put("id", "source-artifact").put("projectId", projectId)
+                    .put("title", "项目产物").put("version", 1).put("createdAt", 1L)
+                    .put("content", "# 项目产物")
+            )
+            val teamId = "source-team"
+            teams.put(JSONObject().put("id", teamId).put("name", "项目团队")
+                .put("description", "团队说明").put("members", JSONArray().put("writer")))
+            workflows.put(JSONObject().put("id", "source-workflow").put("name", "项目工作流")
+                .put("description", "工作流说明").put("steps", JSONArray().put(
+                    JSONObject().put("kind", "SKILL").put("targetId", "research")
+                        .put("title", "使用技能").put("enabled", true)
+                )))
+            scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer")] = setOf(projectId)
+            scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, teamId)] = setOf(projectId)
+            scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "research")] = setOf(projectId)
+            scopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, "source-workflow")] = setOf(projectId)
+        }
+
+        val root = JSONObject()
+            .put("format", "nestro-local-backup")
+            .put("version", LocalBackupCompatibility.CURRENT_VERSION)
+            .put("projects", projects.toString())
+            .put("active_project_id", projectId)
+            .put("active_conversation_id", conversationId)
+            .put("conversations_v1", conversations)
+            .put("conversation_drafts_v1", JSONObject())
+            .put("knowledge_documents_v1", documents)
+            .put("knowledge_chunks_v1", chunks)
+            .put("user_memories", memories)
+            .put("artifacts_v1", artifacts)
+            .put("project_memory_settings_v1", JSONObject().put(projectId, true).toString())
+            .put("project_resource_scopes_v1", ProjectResourceScopeStore.encode(scopes))
+            .put("experts", JSONArray().put("writer").toString())
+            .put("expert_prompts", JSONObject().put("writer", "专家指令").toString())
+            .put("expert_profiles_v1", JSONObject().toString())
+            .put("expert_versions_v1", JSONObject().toString())
+            .put("expert_teams_v1", teams.toString())
+            .put("skills", JSONObject().put("research", "研究技能指令").toString())
+            .put("skill_metadata_v1", JSONObject().toString())
+            .put("disabled_skills_v1", JSONArray().toString())
+            .put("workflows_v1", workflows.toString())
+        seal(root)
+        return root
+    }
+
+    private fun project(id: String, name: String) =
+        JSONObject().put("id", id).put("name", name).put("instructions", "项目指令")
+            .put("created_at", 1L).put("archived_at", 0L)
+
+    private fun seal(root: JSONObject) {
+        root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
+    }
+}

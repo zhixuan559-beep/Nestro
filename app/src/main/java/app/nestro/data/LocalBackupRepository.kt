@@ -165,6 +165,25 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
         restoreLocalBackup(appContext, prefs, raw, database)
     }
 
+    suspend fun createProjectPackage(
+        prefs: SharedPreferences,
+        projectId: String,
+        readableProjectIds: Set<String>
+    ): String = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        ProjectPackageCodec.export(buildLocalBackup(appContext, prefs, database), projectId, readableProjectIds)
+    }
+
+    suspend fun importProjectPackage(prefs: SharedPreferences, raw: String): String = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        requireNoActivePhoneAgentTasks(database)
+        val currentBackup = buildLocalBackup(appContext, prefs, database)
+        val mergedBackup = ProjectPackageCodec.mergeIntoFullBackup(currentBackup, raw)
+        val importedProjectId = JSONObject(mergedBackup).getString("active_project_id")
+        restoreLocalBackup(appContext, prefs, mergedBackup, database)
+        importedProjectId
+    }
+
     suspend fun recoverInterruptedRestore(prefs: SharedPreferences) = operationMutex.withLock {
         recoverInterruptedLocalBackupRestore(appContext, prefs, database)
     }

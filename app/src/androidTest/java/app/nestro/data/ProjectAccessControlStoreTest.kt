@@ -98,7 +98,7 @@ class ProjectAccessControlStoreTest {
         assertTrue(ProjectResourceScopeStore.canWriteFromProject(emptyMap(), ProjectResourceKind.SKILL, "legacy", "target", emptySet()))
         val global = ProjectResourceScopeStore.setGlobal(emptyMap(), ProjectResourceKind.SKILL, "global")
         assertTrue(ProjectResourceScopeStore.canWriteFromProject(global, ProjectResourceKind.SKILL, "global", "target", emptySet()))
-        val orphan = mapOf(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "orphan") to emptySet())
+        val orphan = mapOf(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "orphan") to emptySet<String>())
         assertFalse(ProjectResourceScopeStore.canWriteFromProject(orphan, ProjectResourceKind.SKILL, "orphan", "target", emptySet()))
     }
 
