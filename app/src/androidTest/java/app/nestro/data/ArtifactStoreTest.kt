@@ -6,6 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -81,6 +83,29 @@ class ArtifactStoreTest {
             rejected = true
         }
         assertTrue("corrupted artifact must be rejected", rejected)
+    }
+
+    @Test
+    fun projectDeletionGuardDetectsRegisteredArtifactsAndOrphanedFiles() {
+        val record = ArtifactStore.save(context, "project-a", "Keep", "content")
+        assertTrue(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a"))
+        assertFalse(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-b"))
+
+        ArtifactStore.delete(context, record)
+        assertFalse(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a"))
+
+        val orphan = File(context.filesDir, "artifacts/${UUID.randomUUID()}.md")
+        orphan.writeText("orphaned content")
+        assertTrue(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-b"))
+    }
+
+    @Test
+    fun projectDeletionGuardFailsClosedWhenArtifactIndexIsCorrupt() {
+        val index = File(context.filesDir, "artifacts/index.json")
+        index.writeText("{not-json")
+        assertThrows(RuntimeException::class.java) {
+            ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a")
+        }
     }
 
     @Test
