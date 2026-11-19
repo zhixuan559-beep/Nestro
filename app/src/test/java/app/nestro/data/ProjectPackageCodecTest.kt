@@ -250,6 +250,33 @@ class ProjectPackageCodecTest {
         }
     }
 
+    @Test fun importingKnowledgeWithSameHashAsAnotherProjectKeepsItInTheNewProject() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = true,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        destination.getJSONArray("knowledge_documents_v1").put(
+            JSONObject().put("id", "foreign-document").put("projectId", "foreign")
+                .put("name", "相同内容资料.txt").put("mimeType", "text/plain")
+                .put("sizeBytes", 8L).put("importedAt", 1L).put("contentHash", "a".repeat(64))
+        )
+        destination.remove("checksum_sha256")
+        seal(destination)
+
+        val merged = JSONObject(ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw))
+        val importedProjectId = merged.getString("active_project_id")
+        val matchingDocuments = merged.getJSONArray("knowledge_documents_v1")
+        assertTrue((0 until matchingDocuments.length()).map { matchingDocuments.getJSONObject(it) }
+            .any { it.getString("projectId") == importedProjectId && it.getString("contentHash") == "a".repeat(64) })
+        assertTrue((0 until matchingDocuments.length()).map { matchingDocuments.getJSONObject(it) }
+            .any { it.getString("projectId") == "foreign" && it.getString("contentHash") == "a".repeat(64) })
+    }
+
     @Test fun importRejectsDuplicateTeamAndWorkflowIdsBeforeScopeRemapping() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
