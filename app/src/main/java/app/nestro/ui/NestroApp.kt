@@ -1810,7 +1810,11 @@ fun NestroApp() {
                                                 expertGroupDraft = profile.group
                                                 expertAvatarDraft = profile.avatar
                                                 expertEnabledDraft = profile.enabled
-                                                expertSkillDraft = profile.skillNames.toSet()
+                                                expertSkillDraft = profile.skillNames.filter { skillName ->
+                                                    !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                                                        projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                                                    )
+                                                }.toSet()
                                                 expertTemperatureDraft = profile.temperature?.toString().orEmpty()
                                                 expertMaxTokensDraft = profile.maxTokens?.toString().orEmpty()
                                                 expertDescriptionDraft = profile.description
@@ -3155,9 +3159,14 @@ fun NestroApp() {
                 val isNewExpert = bundle.name !in experts
                 if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
                 if (isNewExpert && !updateProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name, false)) return@TextButton
-                val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
+                val missingSkills = bundle.skillNames.filter { skillName ->
+                    skillName !in skills || skillName in disabledSkills || projectResourceScopesReadOnly ||
+                        !ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                        )
+                }
                 if (missingSkills.isNotEmpty()) {
-                    expertImportStatus = "导入未完成，以下挂载技能不存在或已停用：${missingSkills.joinToString()}"
+                    expertImportStatus = "导入未完成，以下挂载技能不存在、已停用或当前项目无读取权限：${missingSkills.joinToString()}"
                     return@TextButton
                 }
                 val previousProfile = expertProfiles[bundle.name] ?: if (bundle.name in experts) ExpertProfile() else null
@@ -3423,7 +3432,11 @@ fun NestroApp() {
                     OutlinedTextField(value = expertDescriptionDraft, onValueChange = { expertDescriptionDraft = it.take(300) }, label = { Text("专家简介") }, singleLine = false, minLines = 2)
                     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = expertEnabledDraft, onCheckedChange = { expertEnabledDraft = it }); Text("启用此专家", color = Ink) }
                     Text("挂载技能（仅启用技能可新挂载）", color = Mint, style = MaterialTheme.typography.titleSmall)
-                    skills.forEach { (skillName, _) ->
+                    skills.filterKeys { skillName ->
+                        !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                        )
+                    }.forEach { (skillName, _) ->
                         val attached = skillName in expertSkillDraft
                         val disabled = skillName in disabledSkills
                         Row(verticalAlignment = Alignment.CenterVertically) {
