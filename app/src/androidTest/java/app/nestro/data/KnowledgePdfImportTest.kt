@@ -1,6 +1,11 @@
 package app.nestro.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -8,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -26,6 +32,12 @@ class KnowledgePdfImportTest {
         val bytes = createPdf("Nestro knowledge base PDF extraction")
         val text = KnowledgeStore.extractPdfText(context, bytes)
         assertTrue(text.contains("Nestro knowledge base PDF extraction"))
+    }
+
+    @Test
+    fun recognizesTextFromScannedPdfOnDevice() {
+        val text = KnowledgeStore.extractPdfText(context, createScannedPdf("NESTRO OCR TEST"))
+        assertTrue(text.uppercase().contains("NESTRO"))
     }
 
     @Test
@@ -48,6 +60,36 @@ class KnowledgePdfImportTest {
             assertTrue(failure?.message?.contains("300 页") == true)
         } finally {
             document.close()
+        }
+    }
+
+    private fun createScannedPdf(text: String): ByteArray {
+        val bitmap = Bitmap.createBitmap(1200, 500, Bitmap.Config.ARGB_8888)
+        try {
+            Canvas(bitmap).apply {
+                drawColor(Color.WHITE)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.BLACK
+                    textSize = 96f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                }
+                drawText(text, 50f, 260f, paint)
+            }
+            val document = PDDocument()
+            try {
+                val page = PDPage()
+                document.addPage(page)
+                PDPageContentStream(document, page).use { stream ->
+                    stream.drawImage(LosslessFactory.createFromImage(document, bitmap), 50f, 450f, 500f, 208f)
+                }
+                val output = ByteArrayOutputStream()
+                document.save(output)
+                return output.toByteArray()
+            } finally {
+                document.close()
+            }
+        } finally {
+            bitmap.recycle()
         }
     }
 

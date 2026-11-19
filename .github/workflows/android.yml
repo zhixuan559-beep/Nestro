@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "wip/module-6-knowledge-base" ]
   pull_request:
     branches: [ "main", "feature/voice-system" ]
   workflow_dispatch:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/wip/module-6-knowledge-base'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
