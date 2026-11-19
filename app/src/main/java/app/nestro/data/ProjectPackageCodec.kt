@@ -363,8 +363,8 @@ internal object ProjectPackageCodec {
                 ?: error("项目包缺少资源归属记录：${kind.key}:$id")
             val existingIsGlobal = existingOwners == null || "*" in existingOwners
             val incomingIsGlobal = "*" in incomingOwners
-            require(existingIsGlobal == incomingIsGlobal) {
-                "$label「$id」与本机已有资源的项目范围不同，导入时不能静默扩大或缩小可见范围"
+            require(existingIsGlobal && incomingIsGlobal) {
+                "$label「$id」与本机已有项目资源发生同名冲突，导入时不能静默共享或扩大可见范围"
             }
         }
         val currentExperts = arrayField(current, "experts")
