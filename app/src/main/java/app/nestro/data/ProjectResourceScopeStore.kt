@@ -104,6 +104,41 @@ internal object ProjectResourceScopeStore {
         return scopes + (resourceKey(kind, resourceId) to projectIds)
     }
 
+    /** New resources are private to the active project unless the user explicitly shares them. */
+    fun assignNewResourceToProject(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        resourceId: String,
+        projectId: String
+    ): Map<String, Set<String>> {
+        require(projectId.isNotBlank() && projectId != GLOBAL) { "当前项目 ID 无效" }
+        val key = resourceKey(kind, resourceId)
+        require(key !in scopes) { "资源已经存在归属范围，不能覆盖原权限" }
+        return setProjectScope(scopes, kind, resourceId, setOf(projectId))
+    }
+
+    /** Preserve the old ownership boundary when a name-keyed resource is renamed. */
+    fun renameResource(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        oldResourceId: String,
+        newResourceId: String
+    ): Map<String, Set<String>> {
+        require(oldResourceId.isNotBlank() && newResourceId.isNotBlank()) { "资源 ID 无效" }
+        if (oldResourceId == newResourceId) return scopes
+        val oldKey = resourceKey(kind, oldResourceId)
+        val newKey = resourceKey(kind, newResourceId)
+        val oldScope = scopes[oldKey] ?: return scopes
+        require(newKey !in scopes) { "目标资源已经存在归属范围" }
+        return (scopes - oldKey) + (newKey to oldScope)
+    }
+
+    /** Resources whose only owner is this project must be moved or deleted before project deletion. */
+    fun resourcesExclusiveToProject(scopes: Map<String, Set<String>>, projectId: String): Set<String> {
+        require(projectId.isNotBlank() && projectId != GLOBAL) { "项目 ID 无效" }
+        return scopes.filterValues { GLOBAL !in it && it == setOf(projectId) }.keys
+    }
+
     fun setGlobal(
         scopes: Map<String, Set<String>>,
         kind: ProjectResourceKind,
