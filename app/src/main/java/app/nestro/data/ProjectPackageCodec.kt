@@ -198,10 +198,18 @@ internal object ProjectPackageCodec {
         val conversationIds = mutableMapOf<String, String>()
         val messageIds = mutableMapOf<String, String>()
         val incomingConversations = arrayField(incoming, "conversations_v1")
+        val incomingConversationRows = incomingConversations.objects()
+        val incomingConversationIds = incomingConversationRows.map { row ->
+            require(row.opt("project_id") == sourceProjectId) { "项目包会话包含来源项目之外的数据" }
+            row.opt("id") as? String ?: error("项目包中的会话 ID 无效")
+        }
+        require(incomingConversationIds.all { it.isNotBlank() } && incomingConversationIds.distinct().size == incomingConversationIds.size) {
+            "项目包会话 ID 为空或重复"
+        }
         require(conversations.length() + maxOf(1, incomingConversations.length()) <= 200) { "导入后会话总数超过 200 个上限" }
-        for (row in incomingConversations.objects()) {
+        val seenMessageIds = mutableSetOf<String>()
+        for (row in incomingConversationRows) {
             val oldId = row.optString("id")
-            require(oldId.isNotBlank()) { "项目包中的会话 ID 无效" }
             val newId = UUID.randomUUID().toString()
             conversationIds[oldId] = newId
             val messages = when (val rawMessages = row.opt("messages")) {
@@ -211,8 +219,8 @@ internal object ProjectPackageCodec {
             }
             val copiedMessages = JSONArray()
             for (message in messages.objects()) {
-                val oldMessageId = message.optString("id")
-                require(oldMessageId.isNotBlank()) { "项目包中的消息 ID 无效" }
+                val oldMessageId = message.opt("id") as? String ?: error("项目包中的消息 ID 无效")
+                require(oldMessageId.isNotBlank() && seenMessageIds.add(oldMessageId)) { "项目包消息 ID 为空或重复" }
                 val newMessageId = UUID.randomUUID().toString()
                 messageIds[oldMessageId] = newMessageId
                 copiedMessages.put(JSONObject(message.toString()).put("id", newMessageId))
@@ -239,22 +247,44 @@ internal object ProjectPackageCodec {
         current.put("conversation_drafts_v1", drafts)
 
         val documents = arrayField(current, "knowledge_documents_v1")
-        val existingHashes = (0 until documents.length()).mapNotNull { documents.optJSONObject(it)?.optString("contentHash") }.toMutableSet()
+        val incomingDocumentRows = arrayField(incoming, "knowledge_documents_v1").objects()
+        val incomingDocumentIds = incomingDocumentRows.map { doc ->
+            require(doc.opt("projectId") == sourceProjectId) { "项目包知识文档包含来源项目之外的数据" }
+            doc.opt("id") as? String ?: error("项目包知识文档 ID 无效")
+        }
+        require(incomingDocumentIds.all { it.isNotBlank() } && incomingDocumentIds.distinct().size == incomingDocumentIds.size) {
+            "项目包知识文档 ID 为空或重复"
+        }
         val documentIds = mutableMapOf<String, String>()
-        for (doc in arrayField(incoming, "knowledge_documents_v1").objects()) {
-            val hash = doc.optString("contentHash")
-            if (hash.isBlank() || hash in existingHashes) continue
+        val importedDocumentIdsByHash = mutableMapOf<String, String>()
+        for (doc in incomingDocumentRows) {
+            val hash = doc.opt("contentHash") as? String ?: error("项目包知识文档哈希无效")
+            require(hash.matches(Regex("[0-9a-f]{64}"))) { "项目包知识文档哈希格式无效" }
             val oldId = doc.optString("id")
+            val duplicateId = importedDocumentIdsByHash[hash]
+            if (duplicateId != null) {
+                documentIds[oldId] = duplicateId
+                continue
+            }
             val newId = UUID.randomUUID().toString()
             documentIds[oldId] = newId
-            existingHashes += hash
+            importedDocumentIdsByHash[hash] = newId
             documents.put(JSONObject(doc.toString()).put("id", newId).put("projectId", newProjectId))
         }
         current.put("knowledge_documents_v1", documents)
 
         val chunks = arrayField(current, "knowledge_chunks_v1")
-        for (chunk in arrayField(incoming, "knowledge_chunks_v1").objects()) {
-            val newDocumentId = documentIds[chunk.optString("documentId")] ?: continue
+        val incomingChunkRows = arrayField(incoming, "knowledge_chunks_v1").objects()
+        val incomingChunkIds = incomingChunkRows.map { chunk ->
+            require(chunk.opt("projectId") == sourceProjectId) { "项目包知识片段包含来源项目之外的数据" }
+            chunk.opt("id") as? String ?: error("项目包知识片段 ID 无效")
+        }
+        require(incomingChunkIds.all { it.isNotBlank() } && incomingChunkIds.distinct().size == incomingChunkIds.size) {
+            "项目包知识片段 ID 为空或重复"
+        }
+        for (chunk in incomingChunkRows) {
+            val oldDocumentId = chunk.opt("documentId") as? String ?: error("项目包知识片段所属文档 ID 无效")
+            val newDocumentId = documentIds[oldDocumentId] ?: error("项目包知识片段引用了未包含的文档")
             chunks.put(JSONObject(chunk.toString())
                 .put("id", UUID.randomUUID().toString())
                 .put("documentId", newDocumentId)
