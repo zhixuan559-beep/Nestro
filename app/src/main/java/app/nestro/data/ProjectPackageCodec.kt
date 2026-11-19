@@ -498,8 +498,8 @@ internal object ProjectPackageCodec {
                 "workflow" -> workflowIdMap[oldId] ?: oldId
                 else -> oldId
             }
-            val values = importedScopes.optJSONArray(oldKey) ?: JSONArray()
-            val importedOwners = if (values.toStringList().contains("*")) setOf("*") else setOf(projectId)
+            val values = importedScopes[oldKey].orEmpty()
+            val importedOwners = if ("*" in values) setOf("*") else setOf(projectId)
             val key = "$kind:$newId"
             val existing = scopes[key]
             scopes[key] = when {
