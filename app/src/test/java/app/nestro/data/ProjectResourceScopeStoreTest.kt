@@ -60,4 +60,21 @@ class ProjectResourceScopeStoreTest {
             ProjectResourceScopeStore.decode("""{"skill:item":["project-a","project-a"]}""")
         }
     }
+    @Test fun teamVisibilityRequiresEveryMemberToBeVisibleInTheTargetProject() {
+        val scopes = mapOf(
+            "team:team-a" to setOf("project-b"),
+            "expert:member-a" to setOf("project-b"),
+            "expert:member-b" to setOf("project-a")
+        )
+        assertFalse(ProjectResourceScopeStore.isTeamVisibleFromProjects(
+            scopes, "team-a", listOf("member-a", "member-b"), "project-b", emptySet()
+        ))
+        assertTrue(ProjectResourceScopeStore.isTeamVisibleFromProjects(
+            scopes, "team-a", listOf("member-a", "member-b"), "project-b", setOf("project-a")
+        ))
+        assertFalse(ProjectResourceScopeStore.isTeamVisibleFromProjects(
+            scopes, "team-a", listOf("member-a"), "project-b", emptySet()
+        ))
+    }
+
 }
