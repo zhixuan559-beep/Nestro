@@ -1,19 +1,14 @@
 package app.nestro.ui
 
-import android.content.res.Configuration
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
@@ -27,16 +22,10 @@ class NestroWindowSizeTest {
     fun keepsPrimaryNavigationUsableAcrossPhoneFoldableAndTabletWindowWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
-            val configuration = Configuration().apply {
-                screenWidthDp = windowSize.value.width.value.toInt()
-                screenHeightDp = windowSize.value.height.value.toInt()
-            }
-            CompositionLocalProvider(LocalConfiguration provides configuration) {
-                DeviceConfigurationOverride(
-                    DeviceConfigurationOverride.ForcedSize(windowSize.value)
-                ) {
-                    NestroApp()
-                }
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(windowSize.value)
+            ) {
+                NestroApp()
             }
         }
 
@@ -53,8 +42,7 @@ class NestroWindowSizeTest {
             composeRule.waitForIdle()
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
-            composeRule.onNodeWithText("项目空间", substring = true).performClick()
-            composeRule.onRoot().printToLog("NAV_WINDOW_SPACES_${size.width.value.toInt()}")
+            composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
             composeRule.onNodeWithText("项目空间").assertIsDisplayed()
         }
     }
@@ -62,16 +50,10 @@ class NestroWindowSizeTest {
     fun keepsEveryPrimaryDestinationReachableAcrossPhoneFoldableAndTabletWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 720.dp))
         composeRule.setContent {
-            val configuration = Configuration().apply {
-                screenWidthDp = windowSize.value.width.value.toInt()
-                screenHeightDp = windowSize.value.height.value.toInt()
-            }
-            CompositionLocalProvider(LocalConfiguration provides configuration) {
-                DeviceConfigurationOverride(
-                    DeviceConfigurationOverride.ForcedSize(windowSize.value)
-                ) {
-                    NestroApp()
-                }
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.ForcedSize(windowSize.value)
+            ) {
+                NestroApp()
             }
         }
 
@@ -108,7 +90,6 @@ class NestroWindowSizeTest {
                     .performScrollTo()
                     .performClick()
                 composeRule.waitForIdle()
-                composeRule.onRoot().printToLog("NAV_WINDOW_${size.width.value.toInt()}_${navigationLabel}")
                 composeRule.onNodeWithText(pageTitle, substring = true).assertIsDisplayed()
             }
         }
