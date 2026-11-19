@@ -175,19 +175,6 @@ fun NestroApp() {
     var writableProjectIds by remember(activeProjectId) {
         mutableStateOf(ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId))
     }
-    fun canWriteProjectResource(kind: ProjectResourceKind, resourceId: String): Boolean {
-        if (projectResourceScopesReadOnly) {
-            status = "项目资源范围数据校验失败，已阻止修改。"
-            return false
-        }
-        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, kind, resourceId)
-        val writableSources = owners.orEmpty().filter { source ->
-            source != "*" && source != activeProjectId && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
-        }.toSet()
-        val allowed = ProjectResourceScopeStore.canWriteFromProject(projectResourceScopes, kind, resourceId, activeProjectId, writableSources)
-        if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
-        return allowed
-    }
     var pendingAccessSourceProjectId by remember { mutableStateOf("") }
     var showProjectAccessDialog by remember { mutableStateOf(false) }
     var deletingProjectId by projectSpaceUiState.deletingProjectId
@@ -223,6 +210,19 @@ fun NestroApp() {
     var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
     var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
     var status by chatExecutionUiState.status
+    fun canWriteProjectResource(kind: ProjectResourceKind, resourceId: String): Boolean {
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已阻止修改。"
+            return false
+        }
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, kind, resourceId)
+        val writableSources = owners.orEmpty().filter { source ->
+            source != "*" && source != activeProjectId && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
+        }.toSet()
+        val allowed = ProjectResourceScopeStore.canWriteFromProject(projectResourceScopes, kind, resourceId, activeProjectId, writableSources)
+        if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
+        return allowed
+    }
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Unit = { kind, resourceId, makeGlobal ->
         if (projectResourceScopesReadOnly) {
             status = "项目资源范围数据校验失败，已锁定资源修改；请先恢复有效备份。"
