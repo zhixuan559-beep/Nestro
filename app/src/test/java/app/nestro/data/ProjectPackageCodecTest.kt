@@ -250,6 +250,29 @@ class ProjectPackageCodecTest {
         }
     }
 
+    @Test fun importRejectsDuplicateTeamAndWorkflowIdsBeforeScopeRemapping() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+
+        val duplicateTeam = JSONObject(packageRaw)
+        val teams = duplicateTeam.getJSONObject("resources").getJSONArray("expert_teams_v1")
+        teams.put(JSONObject(teams.getJSONObject(0).toString()).put("name", "另一个团队"))
+        duplicateTeam.remove("checksum_sha256")
+        seal(duplicateTeam)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), duplicateTeam.toString())
+        }
+
+        val duplicateWorkflow = JSONObject(packageRaw)
+        val workflows = duplicateWorkflow.getJSONObject("resources").getJSONArray("workflows_v1")
+        workflows.put(JSONObject(workflows.getJSONObject(0).toString()).put("name", "另一个工作流"))
+        duplicateWorkflow.remove("checksum_sha256")
+        seal(duplicateWorkflow)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), duplicateWorkflow.toString())
+        }
+    }
+
     @Test fun importRejectsMalformedProjectIdentityAndNestedMessageArrays() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
