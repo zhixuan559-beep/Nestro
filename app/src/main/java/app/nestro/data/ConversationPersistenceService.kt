@@ -64,10 +64,10 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                     ProjectResourceScopeStore.load(prefs), pendingProjectDeleteId
                 ).isNotEmpty()
             }.getOrDefault(true)
-            val hasArtifactsOrOrphans = context?.let { appContext ->
-                runCatching { ArtifactStore.hasProjectArtifactsOrOrphans(appContext, pendingProjectDeleteId) }.getOrDefault(true)
-            } ?: false
-            val canRecover = !hasExclusiveResources && !hasArtifactsOrOrphans && ProjectSpaceRules.canRecoverPendingDeletion(
+            val artifactsCleaned = context?.let { appContext ->
+                runCatching { ArtifactStore.deleteProjectIfEmpty(appContext, pendingProjectDeleteId) }.getOrDefault(false)
+            } ?: true
+            val canRecover = !hasExclusiveResources && artifactsCleaned && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
                 hasRunningRequest = hasRunningRequest,
@@ -75,7 +75,6 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 hasLocalConversationData = hasLocalConversationData,
                 hasLinkedData = hasLinkedData
             )
-            if (canRecover) context?.let { ArtifactStore.deleteProject(it, pendingProjectDeleteId) }
             val deleted = canRecover &&
                 dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
             if (deleted) {
