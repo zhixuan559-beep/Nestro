@@ -29,6 +29,23 @@ class ProjectPackageCodecTest {
         assertTrue(LocalBackupCompatibility.verifyChecksum(exported))
     }
 
+    @Test fun exportPreservesLegacyDefaultProjectAutomaticMemorySetting() {
+        val source = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "default",
+            projectName = "默认空间",
+            conversationId = "default-conversation",
+            includeProjectContent = false
+        )
+        source.put("project_memory_settings_v1", "{}")
+        source.put("automatic_memory_enabled", true)
+        source.remove("checksum_sha256")
+        seal(source)
+
+        val exported = JSONObject(ProjectPackageCodec.export(source.toString(), "default", emptySet()))
+        assertTrue(exported.getBoolean("project_memory_enabled"))
+    }
+
     @Test fun importCreatesIsolatedProjectAndRemapsAllProjectOwnedIds() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
