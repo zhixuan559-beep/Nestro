@@ -156,6 +156,36 @@ class ProjectPackageCodecTest {
         }
     }
 
+    @Test fun importRejectsPrivateExpertCollisionWithAnExistingGlobalExpert() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        }
+    }
+
+    @Test fun importRejectsPrivateSkillCollisionWithAnExistingGlobalSkill() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
+        val destination = fixtureBackup(
+            includeForeignProject = false,
+            projectId = "destination",
+            projectName = "现有项目",
+            conversationId = "destination-conversation",
+            includeProjectContent = false
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
+        }
+    }
+
     @Test fun importRejectsResourceScopeReferencesOutsideTheSourceProject() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
