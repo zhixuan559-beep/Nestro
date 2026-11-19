@@ -478,6 +478,7 @@ fun NestroApp() {
                 projectResourceScopes = ProjectResourceScopeStore.load(prefs)
                 projectResourceScopesReadOnly = false
                 activeProjectId = importedProjectId
+                prefs.edit().putLong("project_last_opened_$importedProjectId", System.currentTimeMillis()).apply()
                 readableProjectIds = ProjectAccessControlStore.grantedReadableSourceProjects(prefs, activeProjectId)
                 writableProjectIds = ProjectAccessControlStore.grantedWritableSourceProjects(prefs, activeProjectId)
                 automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
