@@ -12,10 +12,6 @@ concurrency:
   group: module-5-ci-${{ github.ref }}
   cancel-in-progress: true
 
-concurrency:
-  group: module-5-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   verify:
     runs-on: ubuntu-latest
