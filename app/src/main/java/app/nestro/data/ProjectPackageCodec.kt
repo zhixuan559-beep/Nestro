@@ -321,8 +321,12 @@ internal object ProjectPackageCodec {
         val newSkills = objectField(incoming, "skills")
         val globalTemplateSkillRefs = ExpertTemplateCodec.decode(stringField(current, "expert_templates_v1", "[]"))
             .flatMap { it.profile.skillNames }.toSet()
+        val incomingResourceScopes = objectField(incoming, "project_resource_scopes_v1")
         val templateCollisions = newSkills.keys().asSequence()
-            .filter { !currentSkills.has(it) && it in globalTemplateSkillRefs }.toList()
+            .filter { name ->
+                if (currentSkills.has(name) || name !in globalTemplateSkillRefs) false
+                else "*" !in (incomingResourceScopes.optJSONArray(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, name))?.toStringList().orEmpty())
+            }.toList()
         require(templateCollisions.isEmpty()) {
             "项目包技能名称与本机全局专家模板引用冲突：" + templateCollisions.joinToString("、")
         }
@@ -347,7 +351,7 @@ internal object ProjectPackageCodec {
         current.put("workflows_v1", currentWorkflows.toString())
 
         val scopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}")).toMutableMap()
-        val importedScopes = objectField(incoming, "project_resource_scopes_v1")
+        val importedScopes = incomingResourceScopes
         val keys = importedScopes.keys()
         while (keys.hasNext()) {
             val oldKey = keys.next()

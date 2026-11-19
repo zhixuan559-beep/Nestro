@@ -342,6 +342,7 @@ fun NestroApp() {
         }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
         val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skillName)
         val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
+        if (!templatesAllowed) status = "该技能被全局专家模板引用，不能在项目空间内单独重命名或删除。"
         return expertsAllowed && workflowsAllowed && templatesAllowed
     }
     val chatListState = rememberLazyListState()
