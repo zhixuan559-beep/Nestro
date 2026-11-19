@@ -181,6 +181,7 @@ class ProjectPackageCodecTest {
             conversationId = "destination-conversation",
             includeProjectContent = false
         )
+        destination.put("experts", JSONArray().put("unrelated-expert").toString())
         assertThrows(IllegalArgumentException::class.java) {
             ProjectPackageCodec.mergeIntoFullBackup(destination.toString(), packageRaw)
         }
