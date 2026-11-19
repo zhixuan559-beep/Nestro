@@ -2423,8 +2423,12 @@ fun NestroApp() {
                                                                 status = "项目已归档，原有会话、知识库、记忆和任务均保留；恢复后可继续使用。"
                                                             }
                                                         ) { Text("归档", color = Muted) }
-                                                        TextButton(onClick = {
-                                                            if (project.id == activeProjectId) {
+                                                        TextButton(
+                                                            enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly,
+                                                            onClick = {
+                                                            if (projectStorageReadOnly || projectResourceScopesReadOnly) {
+                                                                status = "项目数据或资源范围校验失败，已锁定删除操作。"
+                                                            } else if (project.id == activeProjectId) {
                                                                 status = "当前空间正在使用，请先切换到其他空间再删除"
                                                             } else if (!prefs.edit().putString("pending_project_delete_id", project.id).commit()) {
                                                                 status = "删除保护标记写入失败，未执行删除"
