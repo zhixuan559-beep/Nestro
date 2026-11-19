@@ -2664,7 +2664,7 @@ fun NestroApp() {
                 Text(
                     "允许当前项目「" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: activeProjectId) +
                         "」访问「" + (sourceProject?.name ?: pendingAccessSourceProjectId) +
-                        "」中的资源。读取权限用于检索知识、调用专家/技能/工作流；写入权限当前用于管理该项目的知识库文档。授权仅对这两个项目生效。",
+                        "」中的资源。读取权限用于检索该项目的知识、记忆及调用可见专家/技能/工作流；写入权限用于管理该项目知识文档，并允许修改由该项目拥有的共享资源。授权仅对这两个项目生效。",
                     color = Muted
                 )
             },
