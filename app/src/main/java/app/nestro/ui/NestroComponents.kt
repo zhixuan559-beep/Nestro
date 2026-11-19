@@ -23,9 +23,18 @@ internal fun ChatMessage.allVersions(): List<String> = when {
 
 @Composable
 internal fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
-    Surface(color = Card2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Text("$icon   $label", color = Ink, modifier = Modifier.padding(14.dp))
-    }
+    NavigationDrawerItem(
+        label = { Text("$icon   $label", color = Ink) },
+        selected = false,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = NavigationDrawerItemDefaults.colors(
+            unselectedContainerColor = Card2,
+            unselectedTextColor = Ink,
+            selectedContainerColor = Card2,
+            selectedTextColor = Ink
+        )
+    )
 }
 
 @Composable
