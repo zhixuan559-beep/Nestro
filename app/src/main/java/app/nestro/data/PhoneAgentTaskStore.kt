@@ -21,7 +21,7 @@ object PhoneAgentTaskStore {
         val now = System.currentTimeMillis()
         val task = PhoneAgentTaskEntity(
             id = UUID.randomUUID().toString(), projectId = projectId, conversationId = conversationId,
-            goal = plan.goal, category = plan.category.name, status = STATUS_PLANNED,
+            goal = PhoneAgentRiskPolicy.redactSensitiveText(plan.goal), category = plan.category.name, status = STATUS_PLANNED,
             planJson = encodePlan(plan), currentStep = 0, createdAt = now, updatedAt = now
         )
         dao.putPhoneAgentTask(task)
@@ -162,7 +162,7 @@ object PhoneAgentTaskStore {
         dao.phoneAgentTaskLogs(taskId, limit).reversed()
 
     suspend fun appendClarification(dao: NestroDao, taskId: String, clarification: String) {
-        val clean = clarification.trim().take(500)
+        val clean = PhoneAgentRiskPolicy.redactSensitiveText(clarification).trim().take(500)
         require(clean.length >= 2) { "补充内容太短" }
         require(!containsSensitiveClarification(clean)) { "请勿在这里填写地址、电话、验证码或其他敏感信息，请在目标应用中自行处理。" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
