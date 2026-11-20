@@ -168,6 +168,13 @@ object PhoneAgentAgent {
                     .append(result.action).append("：")
                     .append(if (result.success) "成功" else "失败")
                     .append("，").append(result.detail.take(100)).append("\n")
+                PhoneAgentNotifications.show(
+                    context,
+                    taskId,
+                    "Phone Agent 正在执行",
+                    "第 ${completed} 步：${result.action} · ${if (result.success) "已核验" else "未完成"}",
+                    true
+                )
             }
             if (execution.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(execution.outcome, execution.handoffReason)
