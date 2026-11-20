@@ -19,6 +19,13 @@ class KnowledgeStoreFormatImportTest {
         assertFalse(text.contains("<root>"))
     }
 
+
+    @Test fun xmlImportRejectsDoctypeAndExternalEntities() {
+        val malicious = """<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>"""
+        val result = runCatching { KnowledgeStore.extractXmlText(malicious.toByteArray()) }
+        assertTrue(result.isFailure)
+    }
+
     @Test fun docxImportExtractsParagraphText() {
         val xml = """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>项目文档正文</w:t></w:r></w:p></w:body></w:document>"""
         val text = KnowledgeStore.extractOfficeText("docx", zip(mapOf("word/document.xml" to xml)))
