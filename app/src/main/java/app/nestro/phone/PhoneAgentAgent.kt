@@ -111,6 +111,17 @@ object PhoneAgentAgent {
             }
             if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
 
+            if (plan.summary.isNotBlank()) {
+                PhoneAgentTaskStore.recordActionResult(
+                    dao,
+                    taskId,
+                    task.currentStep,
+                    "任务进度",
+                    true,
+                    PhoneAgentRiskPolicy.redactSensitiveText(plan.summary).take(240)
+                )
+            }
+
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&
                     service.verifyVisibleText(plan.completionEvidence)
