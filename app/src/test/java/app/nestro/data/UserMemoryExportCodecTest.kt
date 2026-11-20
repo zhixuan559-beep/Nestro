@@ -24,6 +24,8 @@ class UserMemoryExportCodecTest {
         val json = JSONObject(UserMemoryExportCodec.encode(memory()))
         assertEquals(UserMemoryExportCodec.FORMAT, json.getString("format"))
         assertEquals(UserMemoryExportCodec.VERSION, json.getInt("version"))
+        assertEquals("memory-1", json.getString("id"))
+        assertEquals("project-1", json.getString("project_id"))
         assertEquals("偏好清晰直接的表达方式", json.getString("content"))
         assertEquals("conversation-1", json.getString("source_conversation_id"))
         assertEquals("message-1", json.getString("source_message_id"))
