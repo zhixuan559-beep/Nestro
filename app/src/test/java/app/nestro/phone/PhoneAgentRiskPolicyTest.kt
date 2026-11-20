@@ -1,0 +1,47 @@
+package app.nestro.phone
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PhoneAgentRiskPolicyTest {
+    @Test
+    fun finalCommitActionsRequireUserHandoff() {
+        listOf("立即购买", "确认支付", "提交订单", "确认预约", "删除账号", "发布内容", "发送消息")
+            .forEach { assertTrue("$it must be handed to the user", PhoneAgentRiskPolicy.requiresUserHandoffForClick(it)) }
+    }
+
+    @Test
+    fun informationalLabelsAreNotMistakenForCommitActions() {
+        listOf("购买须知", "预约规则", "订单详情", "查看退款政策", "搜索提交记录")
+            .forEach { assertFalse("$it is informational", PhoneAgentRiskPolicy.requiresUserHandoffForClick(it)) }
+    }
+
+    @Test
+    fun sensitiveFieldsAreDetectedAcrossCommonLabels() {
+        listOf("收货地址", "联系人姓名", "手机号码", "银行卡号", "验证码")
+            .forEach { assertTrue("$it is sensitive", PhoneAgentRiskPolicy.isSensitiveField(it)) }
+        assertFalse(PhoneAgentRiskPolicy.isSensitiveField("商品名称"))
+    }
+
+    @Test
+    fun sensitiveValuesAreDetectedWithoutStoringThemInPolicyResults() {
+        assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("13812345678"))
+        assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("test@example.com"))
+        assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("6222021234567890123"))
+        assertFalse(PhoneAgentRiskPolicy.containsSensitiveValue("普通公开商品描述"))
+    }
+
+    @Test
+    fun parserAndExecutionPolicyUseTheSameCommitBoundary() {
+        val handoff = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"立即购买"}]}"""
+        )
+        assertTrue(handoff.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+
+        val informational = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"购买须知"}]}"""
+        )
+        assertTrue(informational.actions.single() is PhoneAgentExecutor.Action.ClickText)
+    }
+}
