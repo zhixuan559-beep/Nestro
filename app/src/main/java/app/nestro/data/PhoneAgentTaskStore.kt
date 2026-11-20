@@ -39,7 +39,7 @@ object PhoneAgentTaskStore {
                     row.put("type", "open_url").put("url", action.url)
                 }
                 is PhoneAgentExecutor.Action.LaunchApp -> {
-                    require(action.packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+                    require(action.packageName.length <= 255 && action.packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
                     row.put("type", "launch_app").put("package", action.packageName)
                 }
                 is PhoneAgentExecutor.Action.ClickText -> {
@@ -55,7 +55,7 @@ object PhoneAgentTaskStore {
                     row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 }
                 is PhoneAgentExecutor.Action.EnterText -> {
-                    require(action.fieldLabel.isNotBlank() && action.fieldLabel.length <= 80 && action.value.length <= 1000 && !PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感或无效输入必须由用户本人处理" }
+                    require(action.fieldLabel.isNotBlank() && action.fieldLabel.length <= 80 && action.value.length <= 1000 && !PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感或无效输入必须由用户本人处理" }
                     row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
                 }
                 is PhoneAgentExecutor.Action.Scroll -> {
@@ -140,6 +140,7 @@ object PhoneAgentTaskStore {
                     require(
                         label.isNotBlank() && label.length <= 80 && value.length <= 1000 &&
                             !PhoneAgentRiskPolicy.isSensitiveField(label) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(label) &&
                             !PhoneAgentRiskPolicy.containsSensitiveValue(value)
                     ) { "已保存的敏感输入必须由用户本人处理" }
                     PhoneAgentExecutor.Action.EnterText(label, value)
