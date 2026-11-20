@@ -12,7 +12,8 @@ object KnowledgeChunker {
         maxChunks: Int = 600
     ): List<String> {
         require(chunkSize >= 2) { "chunkSize must be at least 2 to preserve UTF-16 surrogate pairs" }
-        require(overlap >= 0 && overlap < chunkSize) { "overlap must be smaller than chunkSize" }
+        require(overlap >= 0 && overlap < chunkSize && overlap % 2 == 0) { "overlap must be an even value smaller than chunkSize to preserve UTF-16 surrogate pairs" }
+        require(chunkSize - overlap >= 2) { "chunkSize must exceed overlap by at least 2 characters" }
         require(maxChunks > 0) { "maxChunks must be positive" }
         if (text.isEmpty()) return emptyList()
 
@@ -25,11 +26,16 @@ object KnowledgeChunker {
                     charArrayOf('\n', '。', '！', '？', '.', '!', '?'),
                     end - 1
                 )
-                if (boundary > start + chunkSize / 2) end = boundary + 1
-                if (end < text.length && end > 0 &&
-                    text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()
-                ) end--
+                if (boundary > start + chunkSize / 2 && boundary - start > overlap + 1) {
+                    end = boundary + 1
+                }
             }
+            // Keep the end on a Unicode code-point boundary. Since overlap is even,
+            // end - overlap is also a safe boundary and every adjacent chunk overlaps
+            // by exactly the configured number of UTF-16 code units.
+            if (end < text.length && end > 0 &&
+                text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()
+            ) end--
 
             result += text.substring(start, end)
             if (end >= text.length) {
@@ -37,10 +43,8 @@ object KnowledgeChunker {
                 break
             }
 
-            var nextStart = maxOf(start + 1, end - overlap)
-            if (nextStart > 0 && nextStart < text.length &&
-                text[nextStart].isLowSurrogate() && text[nextStart - 1].isHighSurrogate()
-            ) nextStart++
+            val nextStart = end - overlap
+            check(nextStart > start) { "chunkSize must leave new content after applying overlap" }
             start = nextStart
         }
 
