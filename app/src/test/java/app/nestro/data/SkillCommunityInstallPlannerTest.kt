@@ -164,4 +164,15 @@ class SkillCommunityInstallPlannerTest {
         assertEquals(listOf("共享依赖", "父技能"), plan.bundles.map { it.name })
     }
 
+    @Test
+    fun rejectsRootReleaseWithAlteredSignedUrl() {
+        val signed = release("根技能")
+        val forged = signed.copy(bundleUrl = "https://attacker.example/altered.json")
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillCommunityInstallPlanner.createPlan(forged, listOf(signed), emptyMap(), emptyMap()) {
+                throw AssertionError("forged release must be rejected before download")
+            }
+        }
+    }
+
 }

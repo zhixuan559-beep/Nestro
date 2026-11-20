@@ -117,9 +117,7 @@ object SkillCommunityInstallPlanner {
             ordered += bundle
         }
 
-        require(rootRelease in catalog || catalog.any {
-            it.name == rootRelease.name && it.version == rootRelease.version && it.sha256 == rootRelease.sha256
-        }) { "请求安装的技能不在当前已验签社区目录中" }
+        require(rootRelease in catalog) { "请求安装的技能必须是当前已验签社区目录中的原始条目" }
         visit(rootRelease, null, isRoot = true)
 
         // Validate replacement compatibility against the complete staged plan. This allows
