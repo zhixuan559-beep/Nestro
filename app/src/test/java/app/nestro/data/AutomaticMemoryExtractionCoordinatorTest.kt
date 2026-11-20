@@ -44,7 +44,26 @@ class AutomaticMemoryExtractionCoordinatorTest {
         )
         coordinator.extractAndSave(
             enabled = true, prompt = "今天帮我总结这段文字",
-            modelConfigs = emptyList(), projectId = "p", conversationId = "c", userId = "u"
+            modelConfigs = emptyList(), projectId = "p", conversationId = "c", messageId = "m"
+        )
+        assertEquals(0, extractionCalls)
+    }
+
+    @Test
+    fun skipsBlankMessageIdsAndSensitivePromptsBeforeCallingExtractor() = kotlinx.coroutines.runBlocking {
+        var extractionCalls = 0
+        val coordinator = AutomaticMemoryExtractionCoordinator(
+            extractCandidates = { _, _ -> extractionCalls += 1; emptyList() },
+            saveCandidates = { _, _, _, _ -> }
+        )
+        val ordinaryPrompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。"
+        coordinator.extractAndSave(
+            enabled = true, prompt = ordinaryPrompt, modelConfigs = emptyList(),
+            projectId = "p", conversationId = "c", messageId = ""
+        )
+        coordinator.extractAndSave(
+            enabled = true, prompt = "以后请记住我的银行卡号是 6222021234567890123",
+            modelConfigs = emptyList(), projectId = "p", conversationId = "c", messageId = "m"
         )
         assertEquals(0, extractionCalls)
     }

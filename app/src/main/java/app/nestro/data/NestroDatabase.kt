@@ -325,10 +325,10 @@ interface NestroDao {
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
     @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
-    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long)
+    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
 
     @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
-    suspend fun deleteUserMemory(id: String, projectId: String)
+    suspend fun deleteUserMemory(id: String, projectId: String): Int
 
     @Query("DELETE FROM user_memories WHERE projectId = :projectId")
     suspend fun deleteUserMemoriesForProject(projectId: String)
@@ -570,17 +570,21 @@ interface NestroDao {
             })
         }
 
-        userMemories(sourceProjectId).forEach { memory ->
-            putUserMemory(memory.copy(
-                id = java.util.UUID.randomUUID().toString(),
-                projectId = newProjectId,
-                sourceConversationId = conversationIds[memory.sourceConversationId].orEmpty(),
-                sourceMessageId = messageIds[memory.sourceMessageId].orEmpty(),
-                fingerprint = UserMemoryStore.fingerprint(memory.category + "|" + memory.content.lowercase()),
-                createdAt = createdAt,
-                updatedAt = createdAt
-            ))
-        }
+        userMemories(sourceProjectId)
+            .filter { memory ->
+                memory.sourceConversationId in conversationIds && memory.sourceMessageId in messageIds
+            }
+            .forEach { memory ->
+                putUserMemory(memory.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    projectId = newProjectId,
+                    sourceConversationId = conversationIds.getValue(memory.sourceConversationId),
+                    sourceMessageId = messageIds.getValue(memory.sourceMessageId),
+                    fingerprint = UserMemoryStore.fingerprint(memory.category + "|" + memory.content.lowercase()),
+                    createdAt = createdAt,
+                    updatedAt = createdAt
+                ))
+            }
         return true
     }
 

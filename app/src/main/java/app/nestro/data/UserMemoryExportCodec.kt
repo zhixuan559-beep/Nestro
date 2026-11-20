@@ -8,10 +8,12 @@ object UserMemoryExportCodec {
     const val VERSION = 1
 
     fun encode(memory: UserMemoryEntity): String {
-        require(memory.id.isNotBlank() && memory.projectId.isNotBlank()) { "记忆标识无效，拒绝导出" }
+        require(memory.id.isNotBlank() && memory.projectId.isNotBlank() &&
+            memory.sourceConversationId.isNotBlank() && memory.sourceMessageId.isNotBlank() &&
+            memory.fingerprint.isNotBlank()) { "记忆标识或来源信息无效，拒绝导出" }
         require(memory.category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效，拒绝导出" }
-        require(memory.content.length in 1..180) { "记忆内容无效，拒绝导出" }
-        require(memory.confidence.isFinite() && memory.confidence in 0.0..1.0) { "记忆置信度无效，拒绝导出" }
+        require(memory.content.length in 8..180 && UserMemoryStore.isSafeContent(memory.content)) { "记忆内容无效或包含敏感信息，拒绝导出" }
+        require(memory.confidence.isFinite() && memory.confidence in 0.8..1.0) { "记忆置信度无效，拒绝导出" }
         require(memory.createdAt >= 0L && memory.updatedAt >= memory.createdAt) { "记忆时间戳无效，拒绝导出" }
         return JSONObject()
             .put("format", FORMAT)

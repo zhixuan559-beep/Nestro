@@ -72,6 +72,7 @@ import app.nestro.data.WorkflowRunRecord
 import app.nestro.data.WorkflowExecutionException
 import app.nestro.data.UserMemoryEntity
 import app.nestro.data.UserMemoryExportCodec
+import app.nestro.data.KnowledgeEmbeddingModelManager
 import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
@@ -210,6 +211,16 @@ fun NestroApp() {
     var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
     var memoryEdits by memoryUiState.memoryEdits
     var memoryStatus by memoryUiState.memoryStatus
+    var embeddingModelInstalled by remember { mutableStateOf(false) }
+    var embeddingModelInstalling by remember { mutableStateOf(false) }
+    var embeddingModelStatus by remember { mutableStateOf("正在检查本地语义模型…") }
+    LaunchedEffect(context) {
+        val installed = withContext(Dispatchers.IO) {
+            KnowledgeEmbeddingModelManager.isInstalled(context)
+        }
+        embeddingModelInstalled = installed
+        embeddingModelStatus = if (installed) "本地语义模型已安装，语义检索可用。" else "尚未安装；当前使用关键词检索。"
+    }
     val chatExecutionUiState = remember { ChatExecutionUiState() }
     var draft by chatExecutionUiState.draft
     var busy by chatExecutionUiState.busy
@@ -2198,6 +2209,50 @@ fun NestroApp() {
                                     )
                                 }
                                 Text("自动记忆仅保存在本机。敏感内容会在本地进行基础规则预检，但规则无法保证识别所有敏感信息。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("本地语义检索", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "可选下载 BGE-small-zh-v1.5 量化模型（下载文件限制 35 MB）到本机。安装后，向量在本机生成和缓存，不会单独上传；被召回的记忆文本会随聊天请求发送给当前配置的模型。不安装时仍可使用关键词检索。",
+                                    color = Muted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                embeddingModelInstalling = true
+                                                embeddingModelStatus = "正在下载并校验本地语义模型…"
+                                                try {
+                                                    val result = runCatchingCancellable {
+                                                        withContext(Dispatchers.IO) {
+                                                            KnowledgeEmbeddingModelManager.install(context)
+                                                        }
+                                                    }
+                                                    embeddingModelInstalled = withContext(Dispatchers.IO) {
+                                                        KnowledgeEmbeddingModelManager.isInstalled(context)
+                                                    }
+                                                    embeddingModelStatus = result.fold(
+                                                        { "模型安装完成，语义检索已启用。" },
+                                                        { "模型安装失败：${it.message ?: "未知错误"}；关键词检索仍可使用。" }
+                                                    )
+                                                } finally {
+                                                    embeddingModelInstalling = false
+                                                }
+                                            }
+                                        },
+                                        enabled = !embeddingModelInstalling && !embeddingModelInstalled,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                    ) {
+                                        Text(if (embeddingModelInstalling) "正在安装…" else if (embeddingModelInstalled) "已安装" else "下载并安装模型")
+                                    }
+                                    if (embeddingModelInstalling) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    }
+                                }
+                                Text(embeddingModelStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (automaticMemories.isEmpty()) {
                                     Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 } else {
@@ -2264,10 +2319,18 @@ fun NestroApp() {
                                                     }) { Text("导出", color = Mint) }
                                                     TextButton(onClick = {
                                                         scope.launch {
-                                                            withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.delete(memory.id, activeProjectId) }
-                                                            automaticMemories = automaticMemories.filterNot { it.id == memory.id }
-                                                            memoryEdits = memoryEdits - memory.id
-                                                            memoryStatus = "记忆已删除"
+                                                            val result = runCatchingCancellable {
+                                                                withContext(Dispatchers.IO) {
+                                                                    appRuntime.userMemoryRepository.delete(memory.id, activeProjectId)
+                                                                }
+                                                            }
+                                                            if (result.isSuccess) {
+                                                                automaticMemories = automaticMemories.filterNot { it.id == memory.id }
+                                                                memoryEdits = memoryEdits - memory.id
+                                                                memoryStatus = "记忆已删除"
+                                                            } else {
+                                                                memoryStatus = "删除失败：${result.exceptionOrNull()?.message ?: "记忆可能已被删除"}"
+                                                            }
                                                         }
                                                     }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                                                 }

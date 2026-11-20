@@ -35,6 +35,19 @@ class UserMemoryExportCodecTest {
     }
 
     @Test
+    fun refusesToExportSensitiveContentWeakConfidenceOrMissingProvenance() {
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.encode(memory().copy(content = "我的银行卡号是 6222021234567890123"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.encode(memory().copy(confidence = 0.79))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.encode(memory().copy(sourceMessageId = ""))
+        }
+    }
+
+    @Test
     fun refusesToExportInvalidCategoryOrTimestamp() {
         assertThrows(IllegalArgumentException::class.java) {
             UserMemoryExportCodec.encode(memory().copy(category = "secret"))

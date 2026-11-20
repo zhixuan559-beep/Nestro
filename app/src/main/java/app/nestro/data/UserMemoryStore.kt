@@ -147,12 +147,14 @@ object UserMemoryStore {
         val nextFingerprint = fingerprint(category + "|" + normalized.lowercase())
         val duplicate = dao.userMemoryByFingerprint(projectId, nextFingerprint)
         require(duplicate == null || duplicate.id == id) { "已有相同记忆，请直接编辑现有条目" }
-        dao.updateUserMemory(id, projectId, normalized, category, nextFingerprint, System.currentTimeMillis())
+        val updated = dao.updateUserMemory(id, projectId, normalized, category, nextFingerprint, System.currentTimeMillis())
+        check(updated == 1) { "记忆不存在或已被删除，未执行更新" }
     }
 
     suspend fun delete(dao: NestroDao, id: String, projectId: String) {
         require(id.isNotBlank() && projectId.isNotBlank()) { "记忆 ID 或项目 ID 无效" }
-        dao.deleteUserMemory(id, projectId)
+        val deleted = dao.deleteUserMemory(id, projectId)
+        check(deleted == 1) { "记忆不存在或已被删除" }
     }
 
     private fun extractTerms(query: String): List<String> {
