@@ -955,22 +955,6 @@ fun NestroApp() {
                     stopRequested = false
                     return@launch
                 }
-                val projectMemoryContext = if (requestAutomaticMemoryEnabled) {
-                    withContext(Dispatchers.IO) {
-                        (listOf(requestProjectId) + requestReadableProjectIds)
-                            .distinct()
-                            .mapNotNull { memoryProjectId ->
-                                appRuntime.userMemoryRepository.recall(memoryProjectId, prompt).context
-                                    .takeIf { it.isNotBlank() }
-                            }
-                            .joinToString("\n\n")
-                            .take(6000)
-                    }
-                } else ""
-                val requestSystemContext = listOf(baseSystemContext, projectMemoryContext)
-                    .filter { it.isNotBlank() }
-                    .joinToString("\n\n")
-                    .take(18000)
                 val execution = appRuntime.chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
                         requestId = assistantId,
@@ -980,7 +964,7 @@ fun NestroApp() {
                         startedAt = requestStartedAt,
                         history = requestHistory,
                         modelConfigs = requestModelConfigs,
-                        baseSystemContext = requestSystemContext,
+                        baseSystemContext = baseSystemContext,
                         taskModeEnabled = requestExecutionAuthorization.taskModeEnabled,
                         temperature = requestExpertProfile?.temperature,
                         maxTokens = requestExpertProfile?.maxTokens,
