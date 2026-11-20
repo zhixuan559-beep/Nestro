@@ -35,6 +35,7 @@ object PhoneAgentRiskPolicy {
     private val card = Regex("(?<!\\d)\\d{16,19}(?!\\d)")
     private val verificationCode = Regex("(?<!\\d)\\d{6}(?!\\d)")
     private val nationalId = Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])")
+    private val socialSecurityNumber = Regex("\\b[0-9]{3}-[0-9]{2}-[0-9]{4}\\b")
 
     fun requiresUserHandoffForClick(label: String): Boolean {
         val normalized = normalize(label)
@@ -53,7 +54,8 @@ object PhoneAgentRiskPolicy {
         return email.containsMatchIn(decoded) ||
             phone.containsMatchIn(decoded) ||
             card.containsMatchIn(decoded) ||
-            nationalId.containsMatchIn(decoded)
+            nationalId.containsMatchIn(decoded) ||
+            socialSecurityNumber.containsMatchIn(decoded)
     }
 
     fun redactSensitiveText(value: String): String = value
@@ -62,6 +64,7 @@ object PhoneAgentRiskPolicy {
         .replace(card, "[疑似卡号已隐藏]")
         .replace(verificationCode, "[六位数字已隐藏]")
         .replace(nationalId, "[身份证号已隐藏]")
+        .replace(socialSecurityNumber, "[身份号码已隐藏]")
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
         .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
