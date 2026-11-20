@@ -2941,6 +2941,10 @@ fun NestroApp() {
         val dependencyReport = remember(bundle, skills, skillMetadata, disabledSkills) {
             SkillDependencyResolver.inspect(bundle, skills.filterKeys { it !in disabledSkills }, skillMetadata)
         }
+        val incompatibleDependents = remember(bundle, skills, skillMetadata) {
+            SkillDependencyResolver.findIncompatibleDependents(bundle.name, bundle.version, skills, skillMetadata)
+        }
+        val dependentCompatibilityPassed = incompatibleDependents?.isEmpty() == true
         AlertDialog(
             onDismissRequest = { showSkillImportDialog = false; pendingSkillBundle = null },
             title = { Text("审核技能导入") },
@@ -2953,13 +2957,20 @@ fun NestroApp() {
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     if (protectedBuiltin) Text("安全保护：不能通过导入包覆盖 Nestro 内置技能。", color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
                     if (!dependencyReport.isSatisfied) Text("依赖未满足，暂不能安装：\n" + dependencyReport.issues.joinToString("\n") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
+                    if (incompatibleDependents == null) Text("无法核验现有技能的依赖元数据，已阻止覆盖。", color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
+                    else if (incompatibleDependents.isNotEmpty()) Text("更新会破坏以下技能的版本约束，暂不能安装：\n" + incompatibleDependents.joinToString("、"), color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
                     Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
                     Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
                     Text("安装只保存提示词和元数据。权限声明不会自动开启无障碍、文件访问或 MCP，也不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
-                TextButton(enabled = !protectedBuiltin && dependencyReport.isSatisfied, onClick = {
+                TextButton(enabled = !protectedBuiltin && dependencyReport.isSatisfied && dependentCompatibilityPassed, onClick = {
+                    val liveCompatibility = SkillDependencyResolver.findIncompatibleDependents(bundle.name, bundle.version, skills, skillMetadata)
+                    if (liveCompatibility == null || liveCompatibility.isNotEmpty()) {
+                        skillImportStatus = if (liveCompatibility == null) "无法核验现有技能依赖，已阻止覆盖。" else "更新会破坏现有技能依赖，已阻止覆盖：" + liveCompatibility.joinToString("、")
+                        return@TextButton
+                    }
                     if (projectResourceScopesReadOnly) {
                         skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
                         return@TextButton

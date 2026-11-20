@@ -134,4 +134,20 @@ class SkillDependencyResolverTest {
         assertTrue(report.issues.any { it.reason.contains("依赖深度超过") })
     }
 
+    @Test
+    fun detectsDependentsThatWouldBreakAfterVersionReplacement() {
+        val installed = mapOf("目标技能" to "prompt", "下游技能" to "child prompt")
+        val metadata = mapOf(
+            "目标技能" to """{"version":"1.0.0"}""",
+            "下游技能" to JSONObject().put("version", "1.0.0").put(
+                "dependencies", org.json.JSONArray().put(
+                    JSONObject().put("name", "目标技能").put("version", "^1.0.0")
+                )
+            ).toString()
+        )
+        assertEquals(listOf("下游技能"), SkillDependencyResolver.findIncompatibleDependents("目标技能", "2.0.0", installed, metadata))
+        assertTrue(SkillDependencyResolver.findIncompatibleDependents("目标技能", "1.5.0", installed, metadata).orEmpty().isEmpty())
+        assertEquals(null, SkillDependencyResolver.findIncompatibleDependents("目标技能", "2.0.0", installed, metadata + ("下游技能" to "{bad-json")))
+    }
+
 }

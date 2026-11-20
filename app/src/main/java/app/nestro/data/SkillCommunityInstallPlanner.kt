@@ -58,6 +58,12 @@ object SkillCommunityInstallPlanner {
             require(current.isNotBlank() && SkillCommunityClient.isNewerVersion(release.version, current)) {
                 "技能“${release.name}”仅允许升级到严格高于本机的社区版本"
             }
+            val incompatibleDependents = SkillDependencyResolver.findIncompatibleDependents(
+                release.name, release.version, installedSkills, installedMetadata
+            ) ?: error("本机技能依赖元数据损坏，无法证明升级安全，已拒绝覆盖")
+            require(incompatibleDependents.isEmpty()) {
+                "升级技能“${release.name}”会破坏以下技能的版本约束：" + incompatibleDependents.joinToString("、")
+            }
         }
 
         fun chooseRelease(name: String, constraint: String): SignedSkillRelease {

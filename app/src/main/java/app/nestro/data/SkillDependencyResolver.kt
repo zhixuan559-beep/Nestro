@@ -147,6 +147,38 @@ object SkillDependencyResolver {
         }
     }
 
+    /**
+     * Returns dependent skill names that would become incompatible with a proposed version.
+     * Null means existing dependency metadata is malformed and compatibility cannot be proven.
+     */
+    fun findIncompatibleDependents(
+        skillName: String,
+        candidateVersion: String,
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>
+    ): List<String>? {
+        if (!isValidVersion(candidateVersion)) return null
+        val conflicts = mutableListOf<String>()
+        for (dependentName in installedSkills.keys) {
+            if (dependentName == skillName) continue
+            val raw = installedMetadata[dependentName] ?: continue
+            val metadata = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+            val dependencies = metadata.optJSONArray("dependencies")
+            if (metadata.has("dependencies") && dependencies == null) return null
+            for (index in 0 until (dependencies?.length() ?: 0)) {
+                val row = dependencies?.optJSONObject(index) ?: return null
+                val dependencyName = row.optString("name").trim()
+                val constraint = row.optString("version", "*").trim()
+                if (dependencyName.isBlank() || !isValidConstraint(constraint)) return null
+                if (dependencyName == skillName && !versionSatisfies(candidateVersion, constraint)) {
+                    conflicts += dependentName
+                    break
+                }
+            }
+        }
+        return conflicts
+    }
+
     fun versionSatisfies(installed: String, constraint: String): Boolean {
         val required = constraint.trim()
         if (required == "*") return isValidVersion(installed)
