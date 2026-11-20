@@ -47,9 +47,10 @@ object PhoneAgentWorkScheduler {
         // Keep the durable marker if WorkManager rejects enqueueing. Startup reconciliation
         // can retry after the grace window instead of orphaning a planned/running task.
         val manager = WorkManager.getInstance(context.applicationContext)
-        val current = runCatching { manager.getWorkInfosForUniqueWork(QUEUE_NAME).get() }
-            .getOrDefault(emptyList())
-            .count { !it.state.isFinished }
+        val current = preferences.all.keys.count {
+            it.startsWith("phone_agent_work_pending_") &&
+                !it.startsWith("phone_agent_work_pending_at_")
+        }
         if (current >= MAX_QUEUE_DEPTH) {
             preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
                 .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
