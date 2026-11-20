@@ -101,6 +101,7 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
                 val updateAvailable = isCommunityInstalled && installedVersion.isNotBlank() &&
                     runCatching { SkillCommunityClient.isNewerVersion(release.version, installedVersion) }.getOrDefault(false)
                 val sameOrOlder = isCommunityInstalled && !updateAvailable
+                val localConflict = isInstalled && !isCommunityInstalled
                 Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         Text(release.name+" · v"+release.version,style=MaterialTheme.typography.titleSmall)
@@ -113,7 +114,7 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
                             )
                         }
                         Text("SHA-256："+release.sha256.take(20)+"…",style=MaterialTheme.typography.labelSmall)
-                        OutlinedButton(enabled=!loading && !sameOrOlder,onClick={
+                        OutlinedButton(enabled=!loading && !sameOrOlder && !localConflict,onClick={
                             loading=true
                             scope.launch {
                                 val installedSkillsJson = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject())
@@ -130,7 +131,7 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
                                 result.fold({ pendingPlan=it.bundles },{ installStatus="下载/依赖校验拒绝："+(it.message ?: "校验失败") })
                                 loading=false
                             }
-                        }) { Text(if (updateAvailable) "下载并更新" else if (sameOrOlder) "已安装 / 阻止降级" else "下载并校验") }
+                        }) { Text(if (localConflict) "同名本地技能 / 禁止覆盖" else if (updateAvailable) "下载并更新" else if (sameOrOlder) "已安装 / 阻止降级" else "下载并校验") }
                     }
                 }
             }
