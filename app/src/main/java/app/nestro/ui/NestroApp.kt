@@ -1690,10 +1690,14 @@ fun NestroApp() {
                                                                                  "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
                                                                              }
                                                                              check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
+                                                                                 val workflowVisibleSkills = skills.filterKeys { dependencyName ->
+                                                                                     !projectResourceScopesReadOnly &&
+                                                                                         ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, dependencyName, projectId, workflowReadableProjectIds)
+                                                                                 }
                                                                              val skillPrompt = skills[skillName]?.takeIf { it.isNotBlank() }
                                                                                  ?: error("工作流引用的技能「$skillName」不存在")
                                                                              val dependencyReport = SkillDependencyResolver.inspectInstalledSkill(
-                                                                                 skillName, skillPrompt, skills, skillMetadata, disabledSkills
+                                                                                 skillName, skillPrompt, workflowVisibleSkills, skillMetadata, disabledSkills
                                                                              )
                                                                              check(dependencyReport.isSatisfied) {
                                                                                  "工作流技能「$skillName」依赖未满足：" + dependencyReport.issues.joinToString("；") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }
