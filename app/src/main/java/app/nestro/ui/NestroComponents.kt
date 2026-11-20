@@ -136,7 +136,7 @@ internal fun NavigationDrawerContent(
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
         DrawerItem("✦", "我的专家") { onNavigate("experts") }
         DrawerItem("♧", "专家团队") { onNavigate("teams") }
-        DrawerItem("◇", "能力中心") { onNavigate("skills") }
+        DrawerItem("◇", "技能库") { onNavigate("skills") }
         DrawerItem("⚙", "模型管理") { onNavigate("models") }
         DrawerItem("▤", "数据与设置") { onNavigate("settings") }
         Spacer(Modifier.height(12.dp))
