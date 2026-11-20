@@ -17,6 +17,7 @@ object PhoneAgentTaskStore {
     const val STATUS_CANCELLED = "cancelled"
 
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
+        require(plan.goal.isNotBlank() && plan.goal.length <= 2_000) { "任务目标为空或超出长度限制" }
         val now = System.currentTimeMillis()
         val task = PhoneAgentTaskEntity(
             id = UUID.randomUUID().toString(), projectId = projectId, conversationId = conversationId,
