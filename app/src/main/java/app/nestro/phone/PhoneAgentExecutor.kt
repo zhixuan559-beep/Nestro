@@ -114,6 +114,14 @@ object PhoneAgentExecutor {
                 agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "操作授权已失效"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
             }
+            val screenBeforeAction = service.captureVisibleText()
+            if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screenBeforeAction)) {
+                val message = "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。"
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "需要用户接手", false, message)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), message))
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, message)
+            }
             action = actions[index]
             if (action is Action.ConfirmSensitive) {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, action.description)
