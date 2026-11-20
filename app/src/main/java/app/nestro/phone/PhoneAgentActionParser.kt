@@ -21,6 +21,12 @@ object PhoneAgentActionParser {
         val actions = (0 until rows.length()).map { index ->
             val item = rows.getJSONObject(index)
             when (item.getString("type")) {
+                "search_web" -> {
+                    val query = item.getString("query").trim()
+                    require(query.isNotBlank() && query.length <= 240) { "网页搜索关键词无效" }
+                    val encoded = java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
+                    PhoneAgentExecutor.Action.OpenUrl("https://html.duckduckgo.com/html/?q=$encoded")
+                }
                 "open_url" -> {
                     val url = item.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("模型生成的网址无效") }
