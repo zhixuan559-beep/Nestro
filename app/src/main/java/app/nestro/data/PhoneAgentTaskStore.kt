@@ -34,15 +34,27 @@ object PhoneAgentTaskStore {
         actions.forEach { action ->
             val row = JSONObject()
             when (action) {
-                is PhoneAgentExecutor.Action.OpenUrl -> row.put("type", "open_url").put("url", action.url)
+                is PhoneAgentExecutor.Action.OpenUrl -> {
+                    require(!PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址包含个人敏感信息，不能持久化" }
+                    row.put("type", "open_url").put("url", action.url)
+                }
                 is PhoneAgentExecutor.Action.LaunchApp -> row.put("type", "launch_app").put("package", action.packageName)
-                is PhoneAgentExecutor.Action.ClickText -> row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
-                is PhoneAgentExecutor.Action.EnterText -> row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
+                is PhoneAgentExecutor.Action.ClickText -> {
+                    require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)) { "高风险或敏感点击必须由用户处理" }
+                    row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
+                }
+                is PhoneAgentExecutor.Action.EnterText -> {
+                    require(!PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感输入必须由用户本人处理" }
+                    row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
+                }
                 is PhoneAgentExecutor.Action.Scroll -> row.put("type", "scroll").put("direction", action.direction)
                 is PhoneAgentExecutor.Action.Wait -> row.put("type", "wait").put("millis", action.millis)
-                is PhoneAgentExecutor.Action.VerifyText -> row.put("type", "verify").put("text", action.expected)
+                is PhoneAgentExecutor.Action.VerifyText -> {
+                    require(!PhoneAgentRiskPolicy.containsSensitiveValue(action.expected)) { "敏感页面文字不能持久化为核验条件" }
+                    row.put("type", "verify").put("text", action.expected)
+                }
                 PhoneAgentExecutor.Action.Back -> row.put("type", "back")
-                is PhoneAgentExecutor.Action.ConfirmSensitive -> row.put("type", "confirm_sensitive").put("description", action.description)
+                is PhoneAgentExecutor.Action.ConfirmSensitive -> row.put("type", "confirm_sensitive").put("description", PhoneAgentRiskPolicy.redactSensitiveText(action.description))
             }
             rows.put(row)
         }
@@ -83,7 +95,7 @@ object PhoneAgentTaskStore {
                 "open_url" -> {
                     val url = row.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("已保存的网址格式无效") }
-                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "已保存的网址不安全" }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
@@ -94,7 +106,7 @@ object PhoneAgentTaskStore {
                 "click" -> {
                     val label = row.getString("text").trim()
                     val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
-                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120)) { "已保存的点击目标无效" }
+                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120) && !PhoneAgentRiskPolicy.containsSensitiveValue(label)) { "已保存的点击目标无效或包含个人敏感信息" }
                     require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "已保存的高风险点击必须由用户重新确认" }
                     PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                 }
@@ -122,13 +134,13 @@ object PhoneAgentTaskStore {
                 }
                 "verify" -> {
                     val expected = row.getString("text").trim()
-                    require(expected.isNotBlank() && expected.length <= 100) { "已保存的验证目标无效" }
+                    require(expected.isNotBlank() && expected.length <= 100 && !PhoneAgentRiskPolicy.containsSensitiveValue(expected)) { "已保存的验证目标无效或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.VerifyText(expected)
                 }
                 "back" -> PhoneAgentExecutor.Action.Back
                 "confirm_sensitive" -> {
                     val description = row.getString("description").trim()
-                    require(description.isNotBlank() && description.length <= 240) { "已保存的用户确认说明无效" }
+                    require(description.isNotBlank() && description.length <= 240 && !PhoneAgentRiskPolicy.containsSensitiveValue(description)) { "已保存的用户确认说明无效或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.ConfirmSensitive(description)
                 }
                 else -> error("任务包含未知动作类型")
