@@ -160,7 +160,11 @@ internal object ProjectAccessControlStore {
         decodeAudit(preferences.getString(AUDIT_KEY, "[]") ?: "[]")
 
     internal fun decodeAudit(raw: String): List<AuditEntry> {
-        val rows = JSONArray(raw)
+        val rows = try {
+            JSONArray(raw)
+        } catch (error: org.json.JSONException) {
+            throw IllegalArgumentException("跨项目审计记录格式无效", error)
+        }
         require(rows.length() <= MAX_AUDIT) { "跨项目审计记录数量超过上限" }
         return (0 until rows.length()).map { index ->
             val row = rows.optJSONObject(index) ?: error("跨项目审计记录格式无效")
