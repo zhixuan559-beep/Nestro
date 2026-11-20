@@ -53,8 +53,10 @@ object PhoneAgentWorkScheduler {
         }
         val current = pendingCount - if (allowExistingMarker && preferences.getBoolean(pendingKey, false)) 1 else 0
         if (current >= MAX_QUEUE_DEPTH) {
-            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
-                .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            if (!allowExistingMarker) {
+                preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
+                    .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            }
             error("Phone Agent 调度队列已满，请等待当前任务完成后再提交。")
         }
         manager.beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request).enqueue()
