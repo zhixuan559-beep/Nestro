@@ -28,6 +28,7 @@ class PhoneAgentRiskPolicyTest {
     fun sensitiveValuesAreDetectedWithoutStoringThemInPolicyResults() {
         assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("13812345678"))
         assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("test@example.com"))
+        assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("test%40example.com"))
         assertTrue(PhoneAgentRiskPolicy.containsSensitiveValue("6222021234567890123"))
         assertFalse(PhoneAgentRiskPolicy.containsSensitiveValue("普通公开商品描述"))
         assertFalse(PhoneAgentRiskPolicy.containsSensitiveValue("123456"))
