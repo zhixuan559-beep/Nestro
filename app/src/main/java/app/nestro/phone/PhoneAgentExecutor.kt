@@ -229,7 +229,7 @@ object PhoneAgentExecutor {
         is Action.OpenUrl -> {
             val uri = runCatching { java.net.URI(action.url) }.getOrNull()
             if (uri?.host in setOf("html.duckduckgo.com", "www.google.com", "www.bing.com")) {
-                val encodedQuery = uri.rawQuery.orEmpty().substringAfter("q=", "")
+                val encodedQuery = uri?.rawQuery.orEmpty().substringAfter("q=", "")
                 val query = runCatching { java.net.URLDecoder.decode(encodedQuery, "UTF-8") }.getOrDefault("")
                 "网页搜索：" + PhoneAgentRiskPolicy.redactSensitiveText(query).take(80)
             } else {
