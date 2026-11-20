@@ -190,21 +190,34 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
 
     private fun findEditableFields(node: AccessibilityNodeInfo, label: String): List<AccessibilityNodeInfo> {
         val matches = mutableListOf<AccessibilityNodeInfo>()
-        fun visit(current: AccessibilityNodeInfo, depth: Int) {
-            if (depth > 12 || matches.size > 20) return
+        fun isEditableTarget(current: AccessibilityNodeInfo): Boolean {
+            if (!current.isVisibleToUser || !current.isEditable || !current.isEnabled || current.isPassword) return false
+            val hint = if (android.os.Build.VERSION.SDK_INT >= 26) current.hintText?.toString().orEmpty() else ""
+            return hint.equals(label, true) ||
+                current.contentDescription?.toString()?.equals(label, true) == true ||
+                current.text?.toString()?.equals(label, true) == true
+        }
+        fun collectEditable(current: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 12 || matches.size >= 20) return
             if (current.isVisibleToUser && current.isEditable && current.isEnabled && !current.isPassword) {
-                val hint = if (android.os.Build.VERSION.SDK_INT >= 26) current.hintText?.toString().orEmpty() else ""
-                if (hint.equals(label, true) ||
-                    current.contentDescription?.toString()?.equals(label, true) == true ||
-                    current.text?.toString()?.equals(label, true) == true
-                ) matches += current
+                matches += current
             }
             for (index in 0 until current.childCount) {
-                current.getChild(index)?.let { visit(it, depth + 1) }
+                current.getChild(index)?.let { collectEditable(it, depth + 1) }
+            }
+        }
+        fun visit(current: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 12 || matches.size >= 20) return
+            if (isEditableTarget(current)) matches += current
+            for (index in 0 until current.childCount) {
+                val child = current.getChild(index) ?: continue
+                val childLabel = child.text?.toString()?.trim().orEmpty().equals(label, true) ||
+                    child.contentDescription?.toString()?.trim().orEmpty().equals(label, true)
+                if (childLabel) collectEditable(child, depth + 1) else visit(child, depth + 1)
             }
         }
         visit(node, 0)
-        return matches
+        return matches.distinctBy { it.hashCode() }
     }
 
 
