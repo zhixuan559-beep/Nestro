@@ -118,20 +118,22 @@ object PhoneAgentTaskStore {
                 "click" -> {
                     val label = row.getString("text").trim()
                     val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
-                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120) && !PhoneAgentRiskPolicy.containsSensitiveValue(label)) { "已保存的点击目标无效或包含个人敏感信息" }
+                    require(
+                        label.isNotBlank() && label.length <= 80 &&
+                            (expectedAfter == null || (expectedAfter.length <= 120 && !PhoneAgentRiskPolicy.containsSensitiveValue(expectedAfter))) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(label)
+                    ) { "已保存的点击目标无效或包含个人敏感信息" }
                     require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "已保存的高风险点击必须由用户重新确认" }
                     PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                 }
                 "enter_text" -> {
                     val label = row.getString("label").trim()
                     val value = row.getString("value")
-                    require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "已保存的输入动作无效" }
-                    require(listOf("密码", "验证码", "银行卡", "身份证", "安全码", "手机号", "电话", "邮箱", "地址", "姓名", "账号").none { label.contains(it, true) }) { "已保存的敏感输入必须由用户本人处理" }
-                    require(!Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}").containsMatchIn(value) &&
-                        !Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""").containsMatchIn(value) &&
-                        !Regex("""(?<!\d)\d{17}[0-9Xx](?!\d)""").containsMatchIn(value)) {
-                        "已保存的敏感输入必须由用户本人处理"
-                    }
+                    require(
+                        label.isNotBlank() && label.length <= 80 && value.length <= 1000 &&
+                            !PhoneAgentRiskPolicy.isSensitiveField(label) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(value)
+                    ) { "已保存的敏感输入必须由用户本人处理" }
                     PhoneAgentExecutor.Action.EnterText(label, value)
                 }
                 "scroll" -> {
