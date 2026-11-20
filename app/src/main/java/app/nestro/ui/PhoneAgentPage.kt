@@ -92,23 +92,25 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                     color = if (hasTaskGrant || hasSingleGrant) Mint else Muted
                 )
                 Button(
-                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("授予单次操作") }
                 OutlinedButton(
-                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("授予本次任务持续授权（最长 2 小时）") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = {
-                            PhoneAgentService.activeService?.requestTaskStop()
-                            taskMessage = "已请求停止当前任务"
+                            tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }?.id?.let { taskId ->
+                                PhoneAgentService.activeService?.requestTaskStop(taskId)
+                                taskMessage = "已请求停止任务：${taskId.take(8)}"
+                            } ?: run { taskMessage = "当前没有正在运行的任务" }
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
                     TextButton(
-                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").putBoolean("phone_task_stop_requested", true).apply(); refresh++ },
+                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").apply(); refresh++ },
                         modifier = Modifier.weight(1f)
                     ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                 }
