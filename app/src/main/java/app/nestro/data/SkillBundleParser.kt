@@ -66,7 +66,7 @@ object SkillBundleParser {
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
         require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
         val metadata = try {
-            JSONObject(metadataRaw ?: "{}")
+            JSONObject(metadataRaw?.takeIf { it.isNotBlank() } ?: "{}")
         } catch (error: Exception) {
             throw IllegalArgumentException("技能元数据损坏", error)
         }

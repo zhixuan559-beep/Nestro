@@ -112,37 +112,9 @@ object SkillDependencyResolver {
         )
         if (name !in installedSkills) return issue("技能不存在")
         if (name in disabledSkills) return issue("技能已停用")
-        val metadata = installedMetadata[name]?.let { raw ->
-            if (raw.isBlank()) JSONObject() else runCatching { JSONObject(raw) }.getOrNull()
-        } ?: if (installedMetadata.containsKey(name)) return issue("技能元数据损坏") else JSONObject()
-        if (metadata.has("dependencies") && metadata.optJSONArray("dependencies") == null) {
-            return issue("技能依赖元数据格式无效")
-        }
-        val dependenciesArray = metadata.optJSONArray("dependencies") ?: org.json.JSONArray()
-        if (dependenciesArray.length() > 10) return issue("技能依赖数量超出限制")
-        val dependencies = mutableListOf<SkillDependency>()
-        val seen = mutableSetOf<String>()
-        for (index in 0 until dependenciesArray.length()) {
-            val row = dependenciesArray.optJSONObject(index) ?: return issue("技能依赖元数据格式无效")
-            val dependencyName = row.optString("name").trim()
-            val constraint = row.optString("version", "*").trim()
-            if (dependencyName.isBlank() || dependencyName.length > 40 || !isValidConstraint(constraint)) {
-                return issue("技能依赖元数据格式无效")
-            }
-            if (!seen.add(dependencyName)) return issue("技能依赖存在重复声明")
-            dependencies += SkillDependency(dependencyName, constraint)
-        }
-        val version = metadata.optString("version", "1.0.0").ifBlank { "1.0.0" }
-        if (!isValidVersion(version)) return issue("技能版本元数据无效")
-        val candidate = SkillBundle(
-            name = name,
-            version = version,
-            description = metadata.optString("description", ""),
-            prompt = prompt,
-            source = metadata.optString("source", "本地技能"),
-            permissions = emptyList(),
-            dependencies = dependencies
-        )
+        val candidate = runCatching {
+            SkillBundleParser.fromStored(name, prompt, installedMetadata[name])
+        }.getOrElse { return issue(it.message ?: "技能元数据无效") }
         return inspect(
             candidate,
             installedSkills.filterKeys { it !in disabledSkills },
