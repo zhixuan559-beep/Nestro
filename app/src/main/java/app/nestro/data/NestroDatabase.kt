@@ -555,6 +555,7 @@ interface NestroDao {
                 projectId = newProjectId,
                 sourceConversationId = conversationIds[memory.sourceConversationId].orEmpty(),
                 sourceMessageId = messageIds[memory.sourceMessageId].orEmpty(),
+                fingerprint = UserMemoryStore.fingerprint(memory.category + "|" + memory.content.lowercase()),
                 createdAt = createdAt,
                 updatedAt = createdAt
             ))
