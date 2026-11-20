@@ -24,6 +24,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        lastTextUndo = null
         if (activeService === this) activeService = null
         PhoneAgentExecutionEnvironmentProvider.detach(this)
         super.onDestroy()
