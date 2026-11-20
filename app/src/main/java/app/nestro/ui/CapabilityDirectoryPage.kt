@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.SkillCommunityClient
+import app.nestro.data.SkillDependencyResolver
 import app.nestro.data.SkillInstallPolicy
 import app.nestro.data.SkillCommunityInstallPlanner
 import app.nestro.data.SignedSkillRelease
