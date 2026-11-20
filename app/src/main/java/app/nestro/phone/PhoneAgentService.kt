@@ -94,7 +94,22 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         require(!PhoneAgentRiskPolicy.isSensitiveField(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
-        val node = findEditableField(root, target) ?: return false
+        val matches = findEditableFields(root, target)
+        if (matches.size != 1) {
+            audit("SET_TEXT_BLOCKED", if (matches.isEmpty()) "未找到唯一可见输入框" else "存在多个同名输入框，已阻止填写")
+            return false
+        }
+        val node = matches.single()
+        if (!PhoneAgentTargetPolicy.canFillField(
+                matches.size,
+                node.isVisibleToUser,
+                node.isEnabled,
+                node.isPassword
+            )
+        ) {
+            audit("SET_TEXT_BLOCKED", "输入框不可见、不可用或属于密码字段")
+            return false
+        }
         val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
         val performed = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         val success = performed && node.text?.toString() == value
@@ -173,24 +188,23 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return null
     }
 
-    private fun findEditableField(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
-        if (node.isVisibleToUser && node.isEditable && node.isEnabled && !node.isPassword) {
-            val hint = if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText?.toString().orEmpty() else ""
-            if (hint.equals(label, true) || node.contentDescription?.toString()?.equals(label, true) == true || node.text?.toString()?.equals(label, true) == true) return node
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val direct = findEditableField(child, label)
-            if (direct != null) return direct
-            val childLabel = child.text?.toString()?.trim().orEmpty().equals(label, true) || child.contentDescription?.toString()?.trim().orEmpty().equals(label, true)
-            if (childLabel) {
-                for (j in 0 until child.childCount) {
-                    val field = child.getChild(j) ?: continue
-                    if (field.isVisibleToUser && field.isEditable && field.isEnabled && !field.isPassword) return field
-                }
+    private fun findEditableFields(node: AccessibilityNodeInfo, label: String): List<AccessibilityNodeInfo> {
+        val matches = mutableListOf<AccessibilityNodeInfo>()
+        fun visit(current: AccessibilityNodeInfo, depth: Int) {
+            if (depth > 12 || matches.size > 20) return
+            if (current.isVisibleToUser && current.isEditable && current.isEnabled && !current.isPassword) {
+                val hint = if (android.os.Build.VERSION.SDK_INT >= 26) current.hintText?.toString().orEmpty() else ""
+                if (hint.equals(label, true) ||
+                    current.contentDescription?.toString()?.equals(label, true) == true ||
+                    current.text?.toString()?.equals(label, true) == true
+                ) matches += current
+            }
+            for (index in 0 until current.childCount) {
+                current.getChild(index)?.let { visit(it, depth + 1) }
             }
         }
-        return null
+        visit(node, 0)
+        return matches
     }
 
 
