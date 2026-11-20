@@ -62,8 +62,16 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
-        val node = findVisibleNode(root, normalized) { true } ?: return false
-        val target = clickableAncestor(node) ?: return false
+        val matches = findVisibleNodes(root, normalized) { true }
+        if (matches.size != 1) {
+            audit("CLICK_BLOCKED", if (matches.isEmpty()) "未找到唯一可见目标" else "存在多个同名目标，已阻止点击")
+            return false
+        }
+        val target = clickableAncestor(matches.single()) ?: return false
+        if (!PhoneAgentTargetPolicy.canClick(matches.size, target.isVisibleToUser, target.isEnabled)) {
+            audit("CLICK_BLOCKED", "目标不可见或不可用")
+            return false
+        }
         val success = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         consumeSingleGrantIfNeeded()
         audit("CLICK", redactSensitiveText(normalized))
@@ -137,8 +145,15 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return found
     }
 
+    private fun findVisibleNodes(root: AccessibilityNodeInfo, text: String, predicate: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> =
+        root.findAccessibilityNodeInfosByText(text).filter {
+            it.isVisibleToUser && predicate(it) &&
+                (it.text?.toString()?.trim()?.equals(text, true) == true ||
+                    it.contentDescription?.toString()?.trim()?.equals(text, true) == true)
+        }
+
     private fun findVisibleNode(root: AccessibilityNodeInfo, text: String, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? =
-        root.findAccessibilityNodeInfosByText(text).firstOrNull { it.isVisibleToUser && predicate(it) && (it.text?.toString()?.trim()?.equals(text, true) == true || it.contentDescription?.toString()?.trim()?.equals(text, true) == true) }
+        findVisibleNodes(root, text, predicate).firstOrNull()
 
     private fun clickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
