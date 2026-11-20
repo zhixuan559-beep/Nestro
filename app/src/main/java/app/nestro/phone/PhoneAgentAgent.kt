@@ -172,7 +172,7 @@ object PhoneAgentAgent {
                     context,
                     taskId,
                     "Phone Agent 正在执行",
-                    "第 ${completed} 步：${result.action} · ${if (result.success) "已核验" else "未完成"}",
+                    "${result.action} · ${if (result.success) "已核验" else "未完成"}",
                     true
                 )
             }
