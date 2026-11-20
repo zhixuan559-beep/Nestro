@@ -31,6 +31,6 @@ object PhoneAgentScreenSafetyPolicy {
 
     fun requiresUserHandoff(screenText: String): Boolean {
         val normalized = screenText.replace(Regex("\\s+"), "").lowercase()
-        return handoffSignals.any { normalized.contains(it.lowercase()) }
+        return handoffSignals.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) }
     }
 }
