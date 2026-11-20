@@ -11,13 +11,19 @@ object PhoneAgentRiskPolicy {
         "确认购买", "确认支付", "确认提交", "最终提交", "预约提交",
         "确认预约", "立即预约", "确认预订", "立即预订", "删除账号",
         "删除账户", "删除", "发布", "发送", "分享", "上传", "申请退款", "确认退款", "提交退款",
-        "提现", "充值"
+        "提现", "充值", "pay now", "place order", "buy now", "confirm purchase",
+        "submit order", "checkout", "purchase", "transfer money", "withdraw",
+        "top up", "book now", "confirm booking", "reserve now", "delete account",
+        "send message", "publish", "upload"
     )
 
     private val sensitiveLabels = listOf(
         "密码", "验证码", "短信码", "动态码", "支付码", "银行卡", "身份证",
         "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱",
-        "电子邮件", "地址", "联系人", "收货人", "姓名", "账号", "账户"
+        "电子邮件", "地址", "联系人", "收货人", "姓名", "账号", "账户",
+        "password", "passcode", "verification code", "one-time code", "otp",
+        "credit card", "card number", "security code", "phone number",
+        "email address", "shipping address", "full name", "account number"
     )
 
     private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
