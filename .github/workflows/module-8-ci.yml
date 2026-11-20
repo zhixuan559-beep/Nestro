@@ -1,9 +1,6 @@
 name: Module 8 Phone Agent CI
 
 on:
-  pull_request:
-    branches:
-      - feature/module-7-memory
   workflow_dispatch:
     inputs:
       jvm_test_filter:
