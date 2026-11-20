@@ -165,7 +165,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                 }
                             }) { Text("补充信息并重新规划", color = Mint) }
                         }
-                        taskLogs[task.id].orEmpty().takeLast(3).forEach { log ->
+                        taskLogs[task.id].orEmpty().takeLast(12).forEach { log ->
                             Text(
                                 "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
                                 color = if (log.success) Muted else androidx.compose.ui.graphics.Color(0xFFF87171),
