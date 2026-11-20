@@ -114,14 +114,18 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
             return false
         }
         val previousValue = node.text?.toString().orEmpty()
-        if (PhoneAgentRiskPolicy.containsSensitiveValue(previousValue)) {
+        if (PhoneAgentRiskPolicy.redactSensitiveText(previousValue) != previousValue) {
             audit("SET_TEXT_BLOCKED", "原输入框包含敏感信息，已阻止覆盖以避免保存敏感撤销数据")
             return false
         }
         val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
         val performed = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         val success = performed && node.text?.toString() == value
-        if (success) lastTextUndo = TextUndoRecord(target, previousValue, value)
+        if (success) {
+            lastTextUndo = if (PhoneAgentRiskPolicy.redactSensitiveText(value) == value) {
+                TextUndoRecord(target, previousValue, value)
+            } else null
+        }
         consumeSingleGrantIfNeeded()
         audit("SET_TEXT", "字段=$target，字符数=" + value.length)
         return success
@@ -132,8 +136,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     fun undoLastTextEdit(): Boolean {
         val record = lastTextUndo ?: return false
         if (!hasValidGrant() || PhoneAgentRiskPolicy.isSensitiveField(record.label) ||
-            PhoneAgentRiskPolicy.containsSensitiveValue(record.previousValue) ||
-            PhoneAgentRiskPolicy.containsSensitiveValue(record.appliedValue)
+            PhoneAgentRiskPolicy.redactSensitiveText(record.previousValue) != record.previousValue ||
+            PhoneAgentRiskPolicy.redactSensitiveText(record.appliedValue) != record.appliedValue
         ) return false
         val root = rootInActiveWindow ?: return false
         val matches = findEditableFields(root, record.label)
