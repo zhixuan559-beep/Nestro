@@ -29,6 +29,17 @@ class PhoneAgentUrlPolicyTest {
     }
 
     @Test
+    fun rejectsRelativeMalformedAndCredentialBearingQueryUrls() {
+        listOf(
+            "example.com/path",
+            "https://",
+            "https://example.com/?%61ccess_token=secret",
+            "https://example.com/?api_key=secret",
+            "https://example.com/path with spaces"
+        ).forEach { assertFalse(it, PhoneAgentUrlPolicy.isSafePublicWebUrl(it)) }
+    }
+
+    @Test
     fun rejectsUnsafeSchemesCredentialsAndNonStandardPorts() {
         listOf(
             "file:///etc/passwd",
