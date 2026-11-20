@@ -13,7 +13,7 @@ class PhoneAgentRiskPolicyTest {
 
     @Test
     fun informationalLabelsAreNotMistakenForCommitActions() {
-        listOf("购买须知", "预约规则", "订单详情", "查看退款政策", "搜索提交记录")
+        listOf("购买须知", "预约规则", "订单详情", "查看退款政策", "搜索提交记录", "Purchase history")
             .forEach { assertFalse("$it is informational", PhoneAgentRiskPolicy.requiresUserHandoffForClick(it)) }
     }
 
