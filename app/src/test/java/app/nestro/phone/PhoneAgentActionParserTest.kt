@@ -62,6 +62,26 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun searchWebCanUseAlternatePublicSearchEngines() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"coffee delivery fees","engine":"google"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://www.google.com/search?q="))
+    }
+
+    @Test
+    fun rejectsUnknownSearchEngine() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"search_web","query":"coffee","engine":"unknown"}]}"""
+            )
+            fail("unknown search engine must be rejected")
+        } catch (_: IllegalStateException) {
+        }
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""
