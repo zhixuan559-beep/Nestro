@@ -26,7 +26,7 @@ class KnowledgeEmbeddingModelInstrumentedTest {
             )
         )
         assertEquals(3, vectors.size)
-        assertTrue(vectors.all { it.size == 512 && it.all(Float::isFinite) })
+        assertTrue(vectors.all { it.size == 512 && it.all { value -> value.isFinite() } })
         val relatedSimilarity = cosine(vectors[0], vectors[1])
         val unrelatedSimilarity = cosine(vectors[0], vectors[2])
         assertTrue(

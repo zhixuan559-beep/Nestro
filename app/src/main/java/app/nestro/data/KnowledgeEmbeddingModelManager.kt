@@ -134,9 +134,11 @@ internal object KnowledgeEmbeddingModelManager {
                 inputs["token_type_ids"] = typeTensor
             }
             session.run(inputs).use { result ->
-                val output = result.iterator().asSequence()
+                val outputTensors = result.iterator().asSequence()
                     .mapNotNull { it.value as? OnnxTensor }
-                    .firstOrNull { it.info.shape.size >= 2 }
+                    .toList()
+                val output = outputTensors.firstOrNull { it.info.shape.size == 3 }
+                    ?: outputTensors.firstOrNull { it.info.shape.size == 2 }
                     ?: error("ONNX 模型没有返回可用的文本向量。")
                 val raw = output.value as? Array<*> ?: error("ONNX 模型输出维度无效。")
                 val vectors = raw.indices.map { batchIndex ->
