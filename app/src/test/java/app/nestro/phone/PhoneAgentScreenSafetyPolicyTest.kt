@@ -29,7 +29,8 @@ class PhoneAgentScreenSafetyPolicyTest {
             "允许 Nestro 访问位置信息",
             "Allow Nestro to access your location",
             "Only this time · Location",
-            "Don't allow Nestro to use the camera"
+            "Don't allow Nestro to use the camera",
+            "Terms of Service · Agree"
         ).forEach { assertTrue(it, PhoneAgentScreenSafetyPolicy.requiresUserHandoff(it)) }
     }
 
