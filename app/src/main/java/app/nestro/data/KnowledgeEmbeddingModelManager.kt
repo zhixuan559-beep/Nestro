@@ -18,9 +18,9 @@ import kotlinx.coroutines.withContext
 
 internal object KnowledgeEmbeddingModelManager {
     const val MODEL_ID = "bge-small-zh-v1.5-int8-v1"
-    private const val MODEL_URL = "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_int8.onnx"
+    private const val MODEL_URL = "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/75c43b069aac4d136ba6bc1122f995fedcfd2781/onnx/model_int8.onnx"
     private const val MODEL_SHA256 = "b9837c19ce154ff0726d398ee77abbc03a7faf0476c6f93016c84e531be7ebb5"
-    private const val VOCAB_URL = "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/vocab.txt"
+    private const val VOCAB_URL = "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/7999e1d/vocab.txt"
     private const val MAX_MODEL_BYTES = 35L * 1024L * 1024L
     private const val MAX_SEQUENCE_LENGTH = 512
     private const val BATCH_SIZE = 4
