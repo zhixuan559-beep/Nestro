@@ -8,8 +8,8 @@ import org.junit.Test
 class PhoneAgentExecutionEnvironmentTest {
     private class FakeEnvironment : PhoneAgentExecutionEnvironment {
         override fun hasValidGrant() = true
-        override fun isTaskStopped() = false
-        override fun requestTaskStop() = Unit
+        override fun isTaskStopped(taskId: String) = false
+        override fun requestTaskStop(taskId: String) = Unit
         override fun captureVisibleText() = "isolated screen"
         override fun clickVisibleText(exactText: String) = true
         override fun setTextOnVisibleField(label: String, value: String) = true
