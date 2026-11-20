@@ -218,7 +218,16 @@ object PhoneAgentExecutor {
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
     private fun actionLabel(action: Action): String = when (action) {
-        is Action.OpenUrl -> "打开网页：" + (runCatching { java.net.URI(action.url).host }.getOrNull() ?: "网页")
+        is Action.OpenUrl -> {
+            val uri = runCatching { java.net.URI(action.url) }.getOrNull()
+            if (uri?.host == "html.duckduckgo.com") {
+                val encodedQuery = uri.rawQuery.orEmpty().substringAfter("q=", "")
+                val query = runCatching { java.net.URLDecoder.decode(encodedQuery, "UTF-8") }.getOrDefault("")
+                "网页搜索：" + PhoneAgentRiskPolicy.redactSensitiveText(query).take(80)
+            } else {
+                "打开网页：" + (uri?.host ?: "网页")
+            }
+        }
         is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
         is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
         is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
