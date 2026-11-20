@@ -60,6 +60,8 @@ object PhoneAgentRiskPolicy {
         .replace(nationalId, "[身份证号已隐藏]")
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
+        .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
+        .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
 
     private fun normalize(value: String): String =
         value.trim().lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
