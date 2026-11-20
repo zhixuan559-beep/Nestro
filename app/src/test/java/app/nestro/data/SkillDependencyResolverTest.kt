@@ -80,4 +80,36 @@ class SkillDependencyResolverTest {
         assertTrue(SkillDependencyResolver.versionSatisfies("1.4.0", ">=1.0"))
         assertFalse(SkillDependencyResolver.isValidConstraint("latest"))
     }
+    @Test
+    fun storedSkillExecutionRequiresAnEnabledValidDependencyClosure() {
+        val installed = mapOf(
+            "根技能" to "root prompt",
+            "中间技能" to "middle prompt",
+            "底层技能" to "leaf prompt"
+        )
+        val metadata = mapOf(
+            "根技能" to JSONObject().put("version", "1.0.0").put(
+                "dependencies", org.json.JSONArray().put(JSONObject().put("name", "中间技能").put("version", "^1.0.0"))
+            ).toString(),
+            "中间技能" to JSONObject().put("version", "1.0.0").put(
+                "dependencies", org.json.JSONArray().put(JSONObject().put("name", "底层技能").put("version", "*"))
+            ).toString(),
+            "底层技能" to JSONObject().put("version", "1.0.0").toString()
+        )
+        assertTrue(SkillDependencyResolver.inspectInstalledSkill("根技能", "root prompt", installed, metadata).isSatisfied)
+        assertFalse(SkillDependencyResolver.inspectInstalledSkill("根技能", "root prompt", installed, metadata, setOf("底层技能")).isSatisfied)
+        assertEquals(setOf("底层技能"), SkillDependencyResolver.filterSatisfiedSkills(installed, metadata, setOf("中间技能")).keys)
+    }
+
+    @Test
+    fun malformedStoredDependencyMetadataFailsClosed() {
+        val installed = mapOf("损坏技能" to "prompt")
+        val report = SkillDependencyResolver.inspectInstalledSkill(
+            "损坏技能", "prompt", installed, mapOf("损坏技能" to "{not-json")
+        )
+        assertFalse(report.isSatisfied)
+        assertTrue(report.issues.any { it.reason.contains("元数据损坏") })
+        assertFalse(SkillDependencyResolver.filterSatisfiedSkills(installed, mapOf("损坏技能" to "{not-json")).containsKey("损坏技能"))
+    }
+
 }
