@@ -77,7 +77,7 @@ object PhoneAgentRiskPolicy {
         .replace(socialSecurityNumber, "[身份号码已隐藏]")
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
-        .replace(Regex("(手机号|手机号码|电话号码|电话|phone number|mobile number|telephone)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[电话已隐藏]")
+        .replace(Regex("(手机号|手机号码|电话号码|电话|phone number|mobile number|telephone)[:：]\\s*(?!\\[)[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[电话已隐藏]")
         .replace(Regex("(出生日期|生日|date of birth|birth date)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[日期已隐藏]")
         .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
         .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
