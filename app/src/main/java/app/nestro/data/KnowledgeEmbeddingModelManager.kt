@@ -308,7 +308,7 @@ internal fun meanPoolMaskedTokens(tokenVectors: List<FloatArray>, attentionMask:
         "Token 向量与 attention mask 长度不一致。"
     }
     val dimensions = tokenVectors.first().size
-    require(dimensions > 0 && tokenVectors.all { it.size == dimensions && it.all(Float::isFinite) }) {
+    require(dimensions > 0 && tokenVectors.all { it.size == dimensions && it.all { value -> value.isFinite() } }) {
         "Token 向量维度或数值无效。"
     }
     val included = attentionMask.indices.filter { attentionMask[it] == 1L }
