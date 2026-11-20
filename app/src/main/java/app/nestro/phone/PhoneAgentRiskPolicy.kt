@@ -66,6 +66,7 @@ object PhoneAgentRiskPolicy {
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
         .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
         .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
+        .replace(Regex("(passport number|social security|tax id|bank account|routing number|card number|security code|account number)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[敏感信息已隐藏]")
 
     private fun normalize(value: String): String =
         value.trim().lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
