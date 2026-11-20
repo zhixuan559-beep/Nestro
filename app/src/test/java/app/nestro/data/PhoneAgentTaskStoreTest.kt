@@ -84,7 +84,7 @@ class PhoneAgentTaskStoreTest {
         val ordinaryConfirm = JSONObject()
             .put("format", "phone_agent_actions_v1")
             .put("actions", JSONArray().put(
-                JSONObject().put("type", "click").put("text", "确认")
+                JSONObject().put("type", "click").put("text", "确认筛选")
             ))
             .toString()
 
