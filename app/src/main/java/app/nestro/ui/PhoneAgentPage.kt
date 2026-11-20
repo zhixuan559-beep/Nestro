@@ -110,7 +110,14 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
                     TextButton(
-                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").apply(); refresh++ },
+                        onClick = {
+                            prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").apply()
+                            tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }?.id?.let { taskId ->
+                                PhoneAgentService.activeService?.requestTaskStop(taskId)
+                                taskMessage = "授权已撤销，正在停止当前任务"
+                            } ?: run { taskMessage = "授权已撤销" }
+                            refresh++
+                        },
                         modifier = Modifier.weight(1f)
                     ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                 }
