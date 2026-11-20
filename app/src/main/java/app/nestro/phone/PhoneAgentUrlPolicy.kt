@@ -6,8 +6,10 @@ import java.net.URI
 object PhoneAgentUrlPolicy {
     fun isSafePublicWebUrl(rawUrl: String): Boolean {
         val uri = runCatching { URI(rawUrl.trim()) }.getOrNull() ?: return false
-        if (!(uri.scheme.equals("https", true) || uri.scheme.equals("http", true))) return false
-        if (uri.userInfo != null || uri.host.isNullOrBlank() || uri.port !in setOf(-1, 80, 443)) return false
+        val scheme = uri.scheme.lowercase()
+        if (scheme != "https" && scheme != "http") return false
+        val portAllowed = uri.port == -1 || (scheme == "https" && uri.port == 443) || (scheme == "http" && uri.port == 80)
+        if (uri.userInfo != null || uri.host.isNullOrBlank() || !portAllowed) return false
         val host = uri.host.lowercase().trimEnd('.').removePrefix("[").removeSuffix("]")
         if (host == "localhost" || host.endsWith(".localhost") ||
             host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan")
