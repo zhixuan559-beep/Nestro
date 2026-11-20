@@ -90,7 +90,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
-        require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(value) && !PhoneAgentRiskPolicy.containsSensitiveValue(value)) { "输入内容触发高风险或敏感信息规则，必须由用户本人处理" }
+        require(!PhoneAgentRiskPolicy.containsSensitiveValue(value)) { "输入内容包含敏感信息，必须由用户本人处理" }
         require(!PhoneAgentRiskPolicy.isSensitiveField(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
