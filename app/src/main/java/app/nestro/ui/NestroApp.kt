@@ -930,7 +930,6 @@ fun NestroApp() {
             }.toSet()
             val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
             val requestAutomaticMemoryEnabled = automaticMemoryEnabled
-            val requestUserId = user.id
             val requestStartedAt = System.currentTimeMillis()
             ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, "", requestStartedAt)
             val requestExpertProfile = requestExpertProfiles[requestSelectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
@@ -1088,7 +1087,7 @@ fun NestroApp() {
                             modelConfigs = requestModelConfigs,
                             projectId = requestProjectId,
                             conversationId = requestConversationId,
-                            userId = requestUserId
+                            messageId = requestHistory.lastOrNull { it.role == "user" }?.id.orEmpty()
                         )
                     }
                 }
