@@ -16,7 +16,7 @@ object TtsCapability {
         engine.voices.orEmpty()
             .filter { it.locale.language.equals(Locale.CHINESE.language, true) }
             .distinctBy { it.name }
-            .sortedWith(compareBy<TtsVoiceOption> { it.latency }.thenByDescending { it.quality })
+            .sortedWith(compareBy<Voice> { it.latency }.thenByDescending { it.quality })
             .map { TtsVoiceOption(it.name, it.locale.toLanguageTag(), it.quality, it.latency) }
 
     fun isLocaleAvailable(engine: TextToSpeech, locale: Locale): Boolean =
