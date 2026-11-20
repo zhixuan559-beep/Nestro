@@ -198,8 +198,13 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
                 }
                 val saved = prefs.edit().putString("skills",skills.toString())
                     .putString("skill_metadata_v1",metadata.toString()).commit()
-                installStatus=if(saved) "已原子安装/更新 ${plan.size} 个社区技能；请在本地技能库中手动启用。" else "安装失败：本地存储提交失败。"
-                if(saved) pendingPlan=null
+                installStatus=if(saved) "已原子安装/更新 ${plan.size} 个社区技能；未自动选为当前技能。" else "安装失败：本地存储提交失败。"
+                if(saved) {
+                    val updatedSkills = skills.keys().asSequence().associateWith { skills.optString(it) }
+                    val updatedMetadata = metadata.keys().asSequence().associateWith { metadata.optString(it) }
+                    onSkillsChanged(updatedSkills, updatedMetadata)
+                    pendingPlan=null
+                }
             }) { Text("确认安装") }},
             dismissButton={TextButton(onClick={pendingPlan=null}) { Text("取消") }}
         )
