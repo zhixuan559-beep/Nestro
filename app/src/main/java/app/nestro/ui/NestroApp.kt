@@ -71,6 +71,7 @@ import app.nestro.data.WorkflowRunHistoryCodec
 import app.nestro.data.WorkflowRunRecord
 import app.nestro.data.WorkflowExecutionException
 import app.nestro.data.UserMemoryEntity
+import app.nestro.data.UserMemoryExportCodec
 import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
@@ -2212,6 +2213,7 @@ fun NestroApp() {
                                                     minLines = 2
                                                 )
                                                 Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                Text("创建：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.createdAt))} · 更新：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.updatedAt))}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 TextButton(
                                                     onClick = {
                                                         val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
@@ -2252,6 +2254,15 @@ fun NestroApp() {
                                                             }
                                                         }
                                                     }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存修改") }
+                                                    TextButton(onClick = {
+                                                        runCatching {
+                                                            val send = Intent(Intent.ACTION_SEND).apply {
+                                                                type = "application/json"
+                                                                putExtra(Intent.EXTRA_TEXT, UserMemoryExportCodec.encode(memory))
+                                                            }
+                                                            context.startActivity(Intent.createChooser(send, "导出单条记忆"))
+                                                        }.onFailure { memoryStatus = "导出失败：${it.message ?: "数据无效"}" }
+                                                    }) { Text("导出", color = Mint) }
                                                     TextButton(onClick = {
                                                         scope.launch {
                                                             withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.delete(memory.id, activeProjectId) }
