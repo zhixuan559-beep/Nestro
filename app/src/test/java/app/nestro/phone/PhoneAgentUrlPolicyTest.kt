@@ -31,7 +31,9 @@ class PhoneAgentUrlPolicyTest {
             "file:///etc/passwd",
             "javascript:alert(1)",
             "https://user:pass@example.com",
-            "https://example.com:8443"
+            "https://example.com:8443",
+            "https://example.com:80",
+            "http://example.com:443"
         ).forEach { assertFalse(it, PhoneAgentUrlPolicy.isSafePublicWebUrl(it)) }
     }
 }
