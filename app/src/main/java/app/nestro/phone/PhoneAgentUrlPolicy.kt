@@ -16,16 +16,8 @@ object PhoneAgentUrlPolicy {
         if (host == "localhost" || host.endsWith(".localhost") ||
             host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan")
         ) return false
-        val octets = host.split(".")
-        if (octets.size == 4 && octets.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }) {
-            val a = octets[0].toInt()
-            val b = octets[1].toInt()
-            if (a == 10 || a == 127 || a == 0 || a == 169 && b == 254 ||
-                a == 172 && b in 16..31 || a == 192 && b == 168 ||
-                a >= 224
-            ) return false
-        }
-        if (host.contains(":")) return false
+        // Do not let browsers reinterpret shortened, integer or hexadecimal IP literals.
+        if (host.matches(Regex("(?i)(0x[0-9a-f]+|[0-9.]+)")) || host.contains(":")) return false
         return true
     }
 }
