@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.SkillCommunityClient
+import app.nestro.data.SkillInstallPolicy
 import app.nestro.data.SignedSkillRelease
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -143,6 +144,15 @@ fun CapabilityDirectoryPage() {
         }
     }
     pendingBundle?.let { bundle ->
+        val installedSkillsJson = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val installedMetadataJson = runCatching { JSONObject(prefs.getString("skill_metadata_v1", "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val disabledJson = runCatching { JSONArray(prefs.getString("disabled_skills_v1", "[]") ?: "[]") }.getOrDefault(JSONArray())
+        val installedSkills = installedSkillsJson.keys().asSequence().associateWith { installedSkillsJson.optString(it) }
+        val installedMetadata = installedMetadataJson.keys().asSequence().associateWith { installedMetadataJson.optString(it) }
+        val disabled = (0 until disabledJson.length()).map { disabledJson.optString(it) }.toSet()
+        val assessment = remember(bundle, installedSkillsJson.toString(), installedMetadataJson.toString(), disabled) {
+            SkillInstallPolicy.inspectCommunityRelease(bundle, installedSkills, installedMetadata, disabled)
+        }
         AlertDialog(
             onDismissRequest={pendingBundle=null},
             title={Text("安装社区技能？")},
@@ -151,22 +161,23 @@ fun CapabilityDirectoryPage() {
                 Text(bundle.description)
                 Text("权限声明："+bundle.permissions.ifEmpty { listOf("无") }.joinToString("、"))
                 Text("依赖："+bundle.dependencies.map { it.name+"@"+it.version }.ifEmpty { listOf("无") }.joinToString("、"))
-                val existingSkills = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject())
-                val existingMetadata = runCatching { JSONObject(JSONObject(prefs.getString("skill_metadata_v1", "{}") ?: "{}").optString(bundle.name, "{}")) }.getOrDefault(JSONObject())
-                val existing = existingSkills.has(bundle.name)
-                val existingCommunity = existing && existingMetadata.optString("source") == "已验证签名社区目录"
-                val localConflict = existing && !existingCommunity
-                if (localConflict) Text("本机已存在同名本地技能，拒绝覆盖；请先在技能库中自行处理。", color=MaterialTheme.colorScheme.error)
-                else if (existing) Text("将更新已验证来源的社区技能；不会自动授予任何系统权限。", color=MaterialTheme.colorScheme.error)
+                if (assessment.issues.isNotEmpty()) {
+                    Text("当前不能安装：", color=MaterialTheme.colorScheme.error)
+                    assessment.issues.forEach { Text("• "+it, color=MaterialTheme.colorScheme.error, style=MaterialTheme.typography.bodySmall) }
+                } else {
+                    Text("依赖检查通过。"+if(bundle.name in installedSkills) "将升级现有社区技能。" else "将安装为新技能。")
+                }
                 Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。")
             }},
-            confirmButton={TextButton(onClick={
+            confirmButton={TextButton(enabled=assessment.canInstall,onClick={
                 val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
                 val metadata=runCatching { JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}") }.getOrDefault(JSONObject())
-                skills.put(bundle.name,bundle.prompt); metadata.put(bundle.name,SkillBundleParser.metadataJson(bundle))
-                prefs.edit().putString("skills",skills.toString()).putString("skill_metadata_v1",metadata.toString()).apply()
-                installStatus="已安装 "+bundle.name+"。请在本地技能库中手动选择启用。"
-                pendingBundle=null
+                skills.put(bundle.name,bundle.prompt)
+                metadata.put(bundle.name,SkillBundleParser.metadataJson(bundle))
+                val saved = prefs.edit().putString("skills",skills.toString())
+                    .putString("skill_metadata_v1",metadata.toString()).commit()
+                installStatus=if(saved) "已安装 "+bundle.name+"。请在本地技能库中手动选择启用。" else "安装失败：本地存储写入失败，原有技能未确认更新。"
+                if(saved) pendingBundle=null
             }) { Text("确认安装") }},
             dismissButton={TextButton(onClick={pendingBundle=null}) { Text("取消") }}
         )
