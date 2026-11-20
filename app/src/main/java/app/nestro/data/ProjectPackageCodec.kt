@@ -523,8 +523,10 @@ internal object ProjectPackageCodec {
         val visibleSkills = mergedSkills.filterKeys { name ->
             ProjectResourceScopeStore.isVisibleFromProjects(scopes, ProjectResourceKind.SKILL, name, projectId, setOf(projectId))
         }
-        visibleSkills.forEach { (name, prompt) ->
+        newSkills.keys().asSequence().forEach { name ->
+            require(name in visibleSkills) { "导入技能「$name」没有有效的项目资源归属" }
             if (name !in disabledSkillNames) {
+                val prompt = visibleSkills.getValue(name)
                 val report = SkillDependencyResolver.inspectInstalledSkill(name, prompt, visibleSkills, mergedMetadata, disabledSkillNames)
                 require(report.isSatisfied) {
                     "项目包技能「$name」依赖无效或超出当前项目权限：" +
