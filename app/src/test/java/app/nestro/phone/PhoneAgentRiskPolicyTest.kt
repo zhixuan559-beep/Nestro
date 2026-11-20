@@ -33,6 +33,14 @@ class PhoneAgentRiskPolicyTest {
     }
 
     @Test
+    fun parserHandsSensitiveValuesBackInsteadOfEmbeddingThemInActions() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"搜索关键词","value":"13812345678"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun parserAndExecutionPolicyUseTheSameCommitBoundary() {
         val handoff = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"click","text":"立即购买"}]}"""
