@@ -132,7 +132,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
 
     override fun openUrl(rawUrl: String): Boolean {
         val uri = android.net.Uri.parse(rawUrl.trim())
-        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(rawUrl)) { "仅允许打开安全的公开 HTTP/HTTPS 网页" }
+        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(rawUrl) && !PhoneAgentRiskPolicy.containsSensitiveValue(rawUrl)) { "仅允许打开安全且不含个人敏感信息的公开网页" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         consumeSingleGrantIfNeeded()
