@@ -398,7 +398,6 @@ object KnowledgeStore {
    isNamespaceAware=true
    // Android's built-in XML parser disables XInclude by default; its setter throws UnsupportedOperationException.
    isExpandEntityReferences=false
-   setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING,true)
    setFeature("http://apache.org/xml/features/disallow-doctype-decl",true)
    setFeature("http://xml.org/sax/features/external-general-entities",false)
    setFeature("http://xml.org/sax/features/external-parameter-entities",false)
