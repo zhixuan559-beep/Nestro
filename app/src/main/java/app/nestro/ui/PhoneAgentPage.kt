@@ -138,6 +138,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             enabled = serviceEnabled,
             modifier = Modifier.fillMaxWidth()
         ) { Text("撤销上次安全文本填写") }
+        Text("仅支持页面未变化时撤销最后一次非敏感文本填写；需要有效操作授权。", color = Muted, style = MaterialTheme.typography.labelSmall)
         if (taskMessage.isNotBlank()) Text(taskMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
