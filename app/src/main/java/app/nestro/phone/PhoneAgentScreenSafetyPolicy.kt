@@ -68,7 +68,8 @@ object PhoneAgentScreenSafetyPolicy {
     private val permissionResources = listOf(
         "位置", "通知", "相机", "摄像头", "麦克风", "照片", "视频",
         "文件", "通讯录", "蓝牙", "附近设备", "日历", "存储", "location", "notifications", "camera",
-        "microphone", "photos", "videos", "files", "contacts"
+        "microphone", "photos", "videos", "files", "contacts", "bluetooth",
+        "nearby devices", "calendar", "storage", "media"
     )
 
     fun requiresUserHandoff(screenText: String): Boolean {
