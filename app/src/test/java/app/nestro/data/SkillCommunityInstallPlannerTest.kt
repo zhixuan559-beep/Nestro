@@ -42,7 +42,7 @@ class SkillCommunityInstallPlannerTest {
             mapOf("已安装依赖" to metadata("2.1.0"))
         ) {
             downloads++
-            bundle(it.name, it.version, if (it.name == root.name) SkillDependency("已安装依赖", "^2.0.0") else nullDependency())
+            if (it.name == root.name) bundle(it.name, it.version, SkillDependency("已安装依赖", "^2.0.0")) else bundle(it.name, it.version)
         }
         assertEquals(listOf("根技能"), plan.bundles.map { it.name })
         assertEquals(1, downloads)
@@ -69,7 +69,7 @@ class SkillCommunityInstallPlannerTest {
         assertThrows(IllegalArgumentException::class.java) {
             SkillCommunityInstallPlanner.createPlan(root, listOf(root, dep),
                 mapOf("依赖" to "prompt"), mapOf("依赖" to metadata("1.0.0")), setOf("依赖")) {
-                bundle(it.name, it.version, if (it.name == root.name) SkillDependency("依赖", "*") else nullDependency())
+                if (it.name == root.name) bundle(it.name, it.version, SkillDependency("依赖", "*")) else bundle(it.name, it.version)
             }
         }
     }
@@ -100,5 +100,4 @@ class SkillCommunityInstallPlannerTest {
         }
     }
 
-    private fun nullDependency() = emptyList<SkillDependency>().let { SkillDependency("占位", "*") }
 }
