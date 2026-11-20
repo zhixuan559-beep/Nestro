@@ -26,13 +26,13 @@ object PhoneAgentRiskPolicy {
 
     private val sensitiveLabels = listOf(
         "密码", "验证码", "短信码", "动态码", "支付码", "银行卡", "身份证",
-        "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱",
+        "安全码", "cvv", "pin", "手机号", "手机号码", "电话号码", "电话", "邮箱", "出生日期", "生日",
         "电子邮件", "地址", "联系人", "收货人", "姓名", "账号", "账户",
         "password", "passcode", "verification code", "one-time code", "otp",
         "credit card", "card number", "security code", "phone number",
         "email address", "shipping address", "street address", "home address",
         "postal address", "zip code", "postal code", "recipient", "full name", "account number",
-        "bank account", "routing number", "passport number", "passport", "social security", "ssn", "tax id", "iban", "swift code", "security answer"
+        "bank account", "routing number", "passport number", "passport", "social security", "ssn", "tax id", "iban", "swift code", "security answer", "date of birth", "birth date", "phone number", "mobile number", "telephone"
     )
 
     private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
@@ -72,6 +72,8 @@ object PhoneAgentRiskPolicy {
         .replace(socialSecurityNumber, "[身份号码已隐藏]")
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
+        .replace(Regex("(手机号|手机号码|电话号码|电话|phone number|mobile number|telephone)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[电话已隐藏]")
+        .replace(Regex("(出生日期|生日|date of birth|birth date)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[日期已隐藏]")
         .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
         .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
         .replace(Regex("(护照号|护照号码|社保号|税号|银行卡号|卡号|银行账号|账号|passport number|passport|social security|ssn|tax id|iban|swift code|bank account|routing number|card number|security code|account number)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1:[敏感信息已隐藏]")
