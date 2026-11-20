@@ -13,7 +13,10 @@ class PhoneAgentScreenSafetyPolicyTest {
             "安全验证后继续",
             "检测到异常访问，请稍后再试",
             "请先登录后继续",
-            "请输入登录密码"
+            "请输入登录密码",
+            "Please enter verification code",
+            "Complete the CAPTCHA",
+            "Login to continue"
         ).forEach { assertTrue(it, PhoneAgentScreenSafetyPolicy.requiresUserHandoff(it)) }
     }
 
