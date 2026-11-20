@@ -101,4 +101,25 @@ class SkillCommunityInstallPlannerTest {
         }
     }
 
+    @Test
+    fun rejectsInstalledDependencyWhenItsTransitiveClosureIsBroken() {
+        val root = release("根技能")
+        val installed = mapOf("已安装中间技能" to "middle prompt")
+        val metadata = mapOf(
+            "已安装中间技能" to JSONObject().put("version", "1.2.0").put(
+                "dependencies", org.json.JSONArray().put(
+                    JSONObject().put("name", "缺失底层技能").put("version", "*")
+                )
+            ).toString()
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillCommunityInstallPlanner.createPlan(
+                root, listOf(root, release("已安装中间技能")), installed, metadata
+            ) {
+                if (it.name == root.name) bundle(root.name, root.version, SkillDependency("已安装中间技能", "^1.0.0"))
+                else bundle(it.name, it.version)
+            }
+        }
+    }
+
 }

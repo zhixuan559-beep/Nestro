@@ -32,6 +32,20 @@ object SkillCommunityInstallPlanner {
             return metadata.optString("version", "1.0.0").ifBlank { "1.0.0" }
         }
 
+        fun installedDependencySatisfies(name: String, constraint: String): Boolean {
+            val version = installedVersion(name) ?: return false
+            if (name in disabledSkills || !SkillDependencyResolver.versionSatisfies(version, constraint)) return false
+            val prompt = installedSkills[name] ?: return false
+            val report = SkillDependencyResolver.inspectInstalledSkill(
+                name, prompt, installedSkills, installedMetadata, disabledSkills
+            )
+            require(report.isSatisfied) {
+                "已安装依赖技能“$name”的传递依赖未满足：" +
+                    report.issues.joinToString("；") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }
+            }
+            return true
+        }
+
         fun ensureReplaceable(release: SignedSkillRelease) {
             if (release.name !in installedSkills) return
             val metadata = installedMetadata[release.name]?.let {
@@ -70,7 +84,7 @@ object SkillCommunityInstallPlanner {
             val installed = installedVersion(name)
             if (!isRoot && installed != null) {
                 require(name !in disabledSkills) { "依赖技能“$name”已停用，请先在本地技能库启用" }
-                if (expectedConstraint != null && SkillDependencyResolver.versionSatisfies(installed, expectedConstraint)) return
+                if (expectedConstraint != null && installedDependencySatisfies(name, expectedConstraint)) return
             }
             ensureReplaceable(release)
             if (!isRoot && name in installedSkills) {
@@ -91,11 +105,7 @@ object SkillCommunityInstallPlanner {
                 }
             }
             bundle.dependencies.forEach { dependency ->
-                val installedDependencyVersion = installedVersion(dependency.name)
-                if (installedDependencyVersion != null && dependency.name !in disabledSkills &&
-                    SkillDependencyResolver.versionSatisfies(installedDependencyVersion, dependency.version)) {
-                    return@forEach
-                }
+                if (installedDependencySatisfies(dependency.name, dependency.version)) return@forEach
                 require(dependency.name !in disabledSkills) {
                     "依赖技能“${dependency.name}”已停用，请先在本地技能库启用"
                 }

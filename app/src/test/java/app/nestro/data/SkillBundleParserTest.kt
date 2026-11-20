@@ -118,4 +118,16 @@ class SkillBundleParserTest {
         }
     }
 
+    @Test
+    fun refusesToExportMalformedStoredPermissionAndDependencyFields() {
+        val malformedPermissions = """{"version":"1.0.0","permissions":"root_access"}"""
+        val malformedDependencies = """{"version":"1.0.0","dependencies":{"name":"search"}}"""
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillBundleParser.exportJson("坏权限", prompt, malformedPermissions)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillBundleParser.exportJson("坏依赖", prompt, malformedDependencies)
+        }
+    }
+
 }
