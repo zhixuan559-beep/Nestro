@@ -52,9 +52,17 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     override fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
-    override fun isTaskStopped(): Boolean = getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean("phone_task_stop_requested", false)
-    fun clearTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().remove("phone_task_stop_requested").apply() }
-    override fun requestTaskStop() { getSharedPreferences("nestro_local", MODE_PRIVATE).edit().putBoolean("phone_task_stop_requested", true).apply(); audit("TASK_STOP", "用户请求停止当前任务") }
+    override fun isTaskStopped(taskId: String): Boolean =
+        getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean(PhoneAgentWorkScheduler.stopKey(taskId), false)
+    fun clearTaskStop(taskId: String) {
+        getSharedPreferences("nestro_local", MODE_PRIVATE).edit()
+            .remove(PhoneAgentWorkScheduler.stopKey(taskId)).apply()
+    }
+    override fun requestTaskStop(taskId: String) {
+        getSharedPreferences("nestro_local", MODE_PRIVATE).edit()
+            .putBoolean(PhoneAgentWorkScheduler.stopKey(taskId), true).apply()
+        audit("TASK_STOP", "用户请求停止任务 " + taskId.take(48))
+    }
 
     override fun clickVisibleText(exactText: String): Boolean {
         val normalized = exactText.trim()
