@@ -33,6 +33,15 @@ class PhoneAgentRiskPolicyTest {
     }
 
     @Test
+    fun sensitiveValuesAreRedactedBeforeTaskPersistenceOrDisplay() {
+        val redacted = PhoneAgentRiskPolicy.redactSensitiveText("联系人：张三，电话：13812345678，邮箱：test@example.com")
+        assertFalse(redacted.contains("13812345678"))
+        assertFalse(redacted.contains("test@example.com"))
+        assertTrue(redacted.contains("[手机号已隐藏]"))
+        assertTrue(redacted.contains("[邮箱已隐藏]"))
+    }
+
+    @Test
     fun parserHandsSensitiveValuesBackInsteadOfEmbeddingThemInActions() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"enter_text","label":"搜索关键词","value":"13812345678"}]}"""
