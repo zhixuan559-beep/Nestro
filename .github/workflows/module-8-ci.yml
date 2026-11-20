@@ -6,7 +6,7 @@ on:
       - feature/module-8-phone-agent
   pull_request:
     branches:
-      - refactor/phase-2-architecture
+      - feature/module-7-memory
   workflow_dispatch:
     inputs:
       jvm_test_filter:
