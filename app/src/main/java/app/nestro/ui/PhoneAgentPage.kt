@@ -219,6 +219,6 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                 }
             }
         }
-        Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。网页检索会向搜索服务发送检索词，含手机号、邮箱、卡号等敏感信息会被拦截。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
