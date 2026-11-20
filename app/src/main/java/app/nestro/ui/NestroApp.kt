@@ -33,6 +33,7 @@ import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
+import app.nestro.data.SkillDependencyResolver
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
@@ -2872,6 +2873,10 @@ fun NestroApp() {
 
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
+        val protectedBuiltin = bundle.name in DEFAULT_SKILLS
+        val dependencyReport = remember(bundle, skills, skillMetadata) {
+            SkillDependencyResolver.inspect(bundle, skills, skillMetadata)
+        }
         AlertDialog(
             onDismissRequest = { showSkillImportDialog = false; pendingSkillBundle = null },
             title = { Text("审核技能导入") },
@@ -2882,13 +2887,15 @@ fun NestroApp() {
                     if (bundle.description.isNotBlank()) Text(bundle.description, color = Muted)
                     Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else androidx.compose.ui.graphics.Color(0xFFFBBF24))
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    if (protectedBuiltin) Text("安全保护：不能通过导入包覆盖 Nestro 内置技能。", color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
+                    if (!dependencyReport.isSatisfied) Text("依赖未满足，暂不能安装：\n" + dependencyReport.issues.joinToString("\n") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
                     Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
                     Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
                     Text("安装只保存提示词和元数据。权限声明不会自动开启无障碍、文件访问或 MCP，也不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !protectedBuiltin && dependencyReport.isSatisfied, onClick = {
                     if (projectResourceScopesReadOnly) {
                         skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
                         return@TextButton

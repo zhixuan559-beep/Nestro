@@ -79,6 +79,22 @@ class SkillBundleParserTest {
     }
 
     @Test
+    fun rejectsMalformedDependencyConstraintsAndDuplicateDependencies() {
+        val invalid = """{"name":"坏技能","version":"1.0.0","prompt":"执行","dependencies":[{"name":"搜索","version":"latest"}]}"""
+        try {
+            SkillBundleParser.parse(invalid, "bad.json")
+            fail("unknown version tags must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+        val duplicate = """{"name":"重复依赖","version":"1.0.0","prompt":"执行","dependencies":[{"name":"搜索","version":"*"},{"name":"搜索","version":"^1.0.0"}]}"""
+        try {
+            SkillBundleParser.parse(duplicate, "duplicate.json")
+            fail("duplicate dependency names must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
     fun shortLocalSkillCanRoundTripThroughExportAndImport() {
         val exported = SkillBundleParser.exportJson("短技能", "只输出摘要。", null)
         val imported = SkillBundleParser.parse(exported, "short.nestro-skill.json")

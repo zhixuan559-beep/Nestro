@@ -21,7 +21,7 @@ object SkillBundleParser {
     )
 
     fun parse(raw: String, sourceLabel: String): SkillBundle {
-        require(raw.isNotBlank() && raw.length <= 30_000) { "技能文件为空或超过 30 KB" }
+        require(raw.isNotBlank() && raw.toByteArray(Charsets.UTF_8).size <= 30_000) { "技能文件为空或超过 30 KB" }
         val safeSource = sourceLabel.substringAfterLast('/').take(120).ifBlank { "本地文件" }
         if (!raw.trimStart().startsWith("{")) {
             val name = safeSource.substringBeforeLast('.').replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().take(40)
@@ -41,6 +41,8 @@ object SkillBundleParser {
         require(description.length <= 300) { "技能描述过长" }
         require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
+        require(!json.has("permissions") || json.optJSONArray("permissions") != null) { "技能权限字段格式无效" }
+        require(!json.has("dependencies") || json.optJSONArray("dependencies") != null) { "技能依赖字段格式无效" }
         val permissionArray = json.optJSONArray("permissions") ?: JSONArray()
         require(permissionArray.length() <= 10) { "技能权限数量超出限制" }
         val permissions = (0 until permissionArray.length()).map { permissionArray.getString(it).trim() }.distinct()

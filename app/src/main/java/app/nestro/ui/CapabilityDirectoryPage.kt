@@ -151,8 +151,13 @@ fun CapabilityDirectoryPage() {
                 Text(bundle.description)
                 Text("权限声明："+bundle.permissions.ifEmpty { listOf("无") }.joinToString("、"))
                 Text("依赖："+bundle.dependencies.map { it.name+"@"+it.version }.ifEmpty { listOf("无") }.joinToString("、"))
-                val existing = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject()).has(bundle.name)
-                if (existing) Text("本地技能库已存在同名技能。确认后将替换该技能的提示词和元数据；不会自动授予任何系统权限。", color=MaterialTheme.colorScheme.error)
+                val existingSkills = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject())
+                val existingMetadata = runCatching { JSONObject(JSONObject(prefs.getString("skill_metadata_v1", "{}") ?: "{}").optString(bundle.name, "{}")) }.getOrDefault(JSONObject())
+                val existing = existingSkills.has(bundle.name)
+                val existingCommunity = existing && existingMetadata.optString("source") == "已验证签名社区目录"
+                val localConflict = existing && !existingCommunity
+                if (localConflict) Text("本机已存在同名本地技能，拒绝覆盖；请先在技能库中自行处理。", color=MaterialTheme.colorScheme.error)
+                else if (existing) Text("将更新已验证来源的社区技能；不会自动授予任何系统权限。", color=MaterialTheme.colorScheme.error)
                 Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。")
             }},
             confirmButton={TextButton(onClick={
