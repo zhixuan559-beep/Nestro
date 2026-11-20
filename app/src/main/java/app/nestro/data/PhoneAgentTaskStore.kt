@@ -172,9 +172,9 @@ object PhoneAgentTaskStore {
                 id = UUID.randomUUID().toString(),
                 taskId = taskId,
                 actionIndex = index,
-                action = action.take(60),
+                action = PhoneAgentRiskPolicy.redactSensitiveText(action).take(60),
                 success = success,
-                detail = detail.take(240),
+                detail = PhoneAgentRiskPolicy.redactSensitiveText(detail).take(240),
                 createdAt = System.currentTimeMillis()
             )
         )
