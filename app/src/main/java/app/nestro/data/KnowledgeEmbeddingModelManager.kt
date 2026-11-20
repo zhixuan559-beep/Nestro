@@ -144,7 +144,13 @@ internal object KnowledgeEmbeddingModelManager {
                 val vectors = raw.indices.map { batchIndex ->
                     val vector = if (output.info.shape.size >= 3) {
                         val sequence = raw[batchIndex] as? Array<*> ?: error("ONNX 序列输出无效。")
-                        sequence.firstOrNull() as? FloatArray ?: error("ONNX CLS 向量格式无效。")
+                        val tokenVectors = sequence.map { token ->
+                            token as? FloatArray ?: error("ONNX token 向量格式无效。")
+                        }
+                        val attentionMask = LongArray(sequence.size) { tokenIndex ->
+                            masks[batchIndex * sequenceLength + tokenIndex]
+                        }
+                        meanPoolMaskedTokens(tokenVectors, attentionMask)
                     } else {
                         raw[batchIndex] as? FloatArray ?: error("ONNX 向量输出格式无效。")
                     }
@@ -293,4 +299,27 @@ internal class BgeWordPieceTokenizer(
 
     private fun isCjk(char: Char): Boolean =
         char in '\u3400'..'\u4DBF' || char in '\u4E00'..'\u9FFF' || char in '\uF900'..'\uFAFF'
+}
+
+
+/** BGE sentence embeddings use attention-mask-aware mean pooling, not the CLS token alone. */
+internal fun meanPoolMaskedTokens(tokenVectors: List<FloatArray>, attentionMask: LongArray): FloatArray {
+    require(tokenVectors.isNotEmpty() && tokenVectors.size == attentionMask.size) {
+        "Token 向量与 attention mask 长度不一致。"
+    }
+    val dimensions = tokenVectors.first().size
+    require(dimensions > 0 && tokenVectors.all { it.size == dimensions && it.all(Float::isFinite) }) {
+        "Token 向量维度或数值无效。"
+    }
+    val included = attentionMask.indices.filter { attentionMask[it] == 1L }
+    require(included.isNotEmpty()) { "Attention mask 不包含有效 token。" }
+    val sums = DoubleArray(dimensions)
+    included.forEach { tokenIndex ->
+        tokenVectors[tokenIndex].forEachIndexed { dimension, value ->
+            sums[dimension] += value.toDouble()
+        }
+    }
+    return FloatArray(dimensions) { dimension ->
+        (sums[dimension] / included.size).toFloat()
+    }
 }
