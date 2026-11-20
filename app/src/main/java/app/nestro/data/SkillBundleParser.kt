@@ -61,6 +61,32 @@ object SkillBundleParser {
         return SkillBundle(name, version, description, prompt, source, permissions, dependencies)
     }
 
+    /** Reconstructs and validates a persisted skill before backup, import, or execution. */
+    fun fromStored(name: String, prompt: String, metadataRaw: String?): SkillBundle {
+        require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
+        require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
+        val metadata = try {
+            JSONObject(metadataRaw ?: "{}")
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能元数据损坏", error)
+        }
+        require(!metadata.has("permissions") || metadata.optJSONArray("permissions") != null) {
+            "技能权限元数据格式无效"
+        }
+        require(!metadata.has("dependencies") || metadata.optJSONArray("dependencies") != null) {
+            "技能依赖元数据格式无效"
+        }
+        val bundle = JSONObject()
+            .put("name", name)
+            .put("version", metadata.optString("version", "1.0.0").ifBlank { "1.0.0" })
+            .put("description", metadata.optString("description", ""))
+            .put("prompt", prompt)
+            .put("source", metadata.optString("source", "Nestro 本地技能"))
+            .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
+            .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
+        return parse(bundle.toString(), "$name.nestro-skill.json")
+    }
+
     fun metadataJson(bundle: SkillBundle): String =
         JSONObject()
             .put("version", bundle.version)
