@@ -82,7 +82,7 @@ object PhoneAgentAgent {
         }
         var loop = 0
         while (loop < 8) {
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
             if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效")
             task = dao.phoneAgentTask(taskId)
                 ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
@@ -109,7 +109,7 @@ object PhoneAgentAgent {
             if (isCancellationRequested(context, taskId, task.status)) {
                 return Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             }
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
 
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&
