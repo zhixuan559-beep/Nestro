@@ -193,7 +193,7 @@ object PhoneAgentExecutor {
             val success = toolResult.success
             val detail = if (success) toolResult.output.ifBlank { "动作已执行并核验" }
                 else toolResult.error.ifBlank { "目标未匹配或动作未成功" }
-            val result = ActionResult(index, action.javaClass.simpleName, success, detail)
+            val result = ActionResult(index, actionLabel(action), success, detail)
             results += result
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
@@ -217,6 +217,18 @@ object PhoneAgentExecutor {
         )
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
+    private fun actionLabel(action: Action): String = when (action) {
+        is Action.OpenUrl -> "打开网页：" + (runCatching { java.net.URI(action.url).host }.getOrNull() ?: "网页")
+        is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
+        is Action.ClickText -> "点击目标：" + action.exactText.take(80)
+        is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
+        is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"
+        is Action.Wait -> "等待 ${action.millis.coerceIn(0, 10_000)} ms"
+        is Action.VerifyText -> "核验页面文字：" + action.expected.take(80)
+        Action.Back -> "返回上一页"
+        is Action.ConfirmSensitive -> "等待用户处理：" + action.description.take(100)
+    }
+
     private fun toolIdFor(action: Action): String = when (action) {
         is Action.OpenUrl -> "phone.open_url"
         is Action.LaunchApp -> "phone.launch_app"
