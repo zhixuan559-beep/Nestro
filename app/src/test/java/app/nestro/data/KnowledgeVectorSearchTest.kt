@@ -1,7 +1,6 @@
 package app.nestro.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -22,7 +21,7 @@ class KnowledgeVectorSearchTest {
             KnowledgeChunkEmbeddingEntity("bad", "model", 2, byteArrayOf(1, 2, 3)),
             KnowledgeChunkEmbeddingEntity("wrong", "model", 2, KnowledgeVectorSearch.encode(floatArrayOf(1f, 0f)))
         )
-        val result = KnowledgeVectorSearch.rank(floatArrayOf(1f, 0f, 0f), rows, 5)
+        val result = KnowledgeVectorSearch.rank(floatArrayOf(1f, 0f), rows, 5)
         assertEquals(listOf("wrong"), result.map { it.chunkId })
     }
 }

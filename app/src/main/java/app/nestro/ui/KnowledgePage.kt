@@ -117,7 +117,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
        KnowledgeEmbeddingModelManager.install(context)
        semanticModelReady = true
       }
-      status = "正在为当前项目建立语义向量索引…"
+      if (latestProjectId == requestedProjectId) status = "正在为当前项目建立语义向量索引…"
       repository.rebuildVectorIndex(requestedProjectId)
       if (latestProjectId == requestedProjectId) status = "本地语义检索已启用，当前项目索引已建立。"
      } catch (cancel: CancellationException) {

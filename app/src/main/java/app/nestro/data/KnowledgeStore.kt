@@ -231,7 +231,7 @@ object KnowledgeStore {
   ensureProjectVectorIndex(context, dao, projectId)
  }
   suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String,context:Context?=null):String {
-   val matches=search(dao,projectId,prompt,6,context,ensureVectorIndex=false)
+   val matches=search(dao,projectId,prompt,6,context,ensureVectorIndex=true)
    if(matches.isEmpty()) return ""
    val context=StringBuilder()
    for(match in matches.distinctBy { it.documentName to it.content }) {
