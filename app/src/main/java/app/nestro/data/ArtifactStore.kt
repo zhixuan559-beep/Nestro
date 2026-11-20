@@ -112,6 +112,78 @@ object ArtifactStore {
     }
 
     @Synchronized
+    fun duplicateProject(context: Context, sourceProjectId: String, targetProjectId: String): List<ArtifactRecord> {
+        require(sourceProjectId.isNotBlank() && targetProjectId.isNotBlank() && sourceProjectId != targetProjectId) {
+            "项目产物复制参数无效"
+        }
+        require(list(context, targetProjectId).isEmpty()) { "目标项目已有产物，拒绝覆盖" }
+        val source = list(context, sourceProjectId)
+            .sortedWith(compareBy<ArtifactRecord> { it.title.lowercase() }.thenBy { it.version })
+            .map { it.title to read(context, it) }
+        require(source.size <= MAX_ITEMS) { "源项目产物数量超过复制上限" }
+        val created = mutableListOf<ArtifactRecord>()
+        try {
+            source.forEach { (title, content) -> created += save(context, targetProjectId, title, content) }
+            return created
+        } catch (error: Throwable) {
+            created.asReversed().forEach { record -> runCatching { delete(context, record) } }
+            throw error
+        }
+    }
+
+    @Synchronized
+    fun hasProjectArtifactsOrOrphans(context: Context, projectId: String): Boolean {
+        require(projectId.isNotBlank()) { "项目 ID 无效" }
+        val all = readAll(context)
+        val indexedFiles = mutableSetOf<String>()
+        var hasProjectArtifacts = false
+        for (index in 0 until all.length()) {
+            val row = all.getJSONObject(index)
+            val id = row.artifactString("id")
+            val fileName = row.artifactString("fileName")
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && fileName == "$id.md") {
+                "项目产物索引引用无效，拒绝判断项目是否为空"
+            }
+            indexedFiles += fileName
+            if (row.artifactString("projectId") == projectId) {
+                hasProjectArtifacts = true
+                require(File(root(context), fileName).isFile) { "项目产物文件缺失，拒绝删除项目" }
+            }
+        }
+        val orphanedFiles = root(context).listFiles().orEmpty().any { file ->
+            file.isFile && file.name != "index.json" && file.name.endsWith(".md") && file.name !in indexedFiles
+        }
+        return hasProjectArtifacts || orphanedFiles
+    }
+
+    @Synchronized
+    fun deleteProjectIfEmpty(context: Context, projectId: String): Boolean {
+        if (hasProjectArtifactsOrOrphans(context, projectId)) return false
+        deleteProject(context, projectId)
+        return true
+    }
+
+    @Synchronized
+    fun deleteProject(context: Context, projectId: String) {
+        require(projectId.isNotBlank() && projectId != "default") { "不能清理默认项目产物" }
+        val all = readAll(context)
+        val kept = JSONArray()
+        val files = mutableListOf<File>()
+        for (index in 0 until all.length()) {
+            val row = all.optJSONObject(index) ?: error("产物索引包含无效条目")
+            if (row.optString("projectId") == projectId) {
+                val id = row.artifactString("id")
+                require(id.matches(Regex("[0-9a-fA-F-]{36}")) && row.artifactString("fileName") == "$id.md") {
+                    "项目产物文件引用无效，拒绝清理"
+                }
+                files += File(root(context), "$id.md")
+            } else kept.put(row)
+        }
+        writeIndex(context, kept)
+        files.forEach { it.delete() }
+    }
+
+    @Synchronized
     fun delete(context: Context, record: ArtifactRecord) {
         require(record.id.matches(Regex("[0-9a-fA-F-]{36}")) && record.fileName == "${record.id}.md") { "产物文件引用无效" }
         val all = readAll(context)

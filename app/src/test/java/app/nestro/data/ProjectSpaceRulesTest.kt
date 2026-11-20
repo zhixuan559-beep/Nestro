@@ -4,7 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class ProjectSpaceRulesTest {
     private val existing = listOf(
@@ -47,10 +50,10 @@ class ProjectSpaceRulesTest {
     @Test fun projectSerializationRejectsInvalidCollectionsInsteadOfSilentlyTruncating() {
         val tooMany = listOf(ProjectRecord("default", "默认空间", "", 0L)) +
             (1..100).map { ProjectRecord("p$it", "项目$it", "", it.toLong()) }
-        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             ProjectPreferencesStore.projectsToJson(tooMany)
         }
-        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             ProjectPreferencesStore.projectsToJson(existing.map {
                 ProjectRecord(it.id, it.name, if (it.id == "work") "指令".repeat(4001) else "", 0L)
             })
@@ -64,8 +67,55 @@ class ProjectSpaceRulesTest {
             ProjectRecord("work", "工作", instructions, 2L, 3L)
         )
         val encoded = ProjectPreferencesStore.projectsToJson(projects)
-        val decoded = ProjectPreferencesStore.parseProjects(org.json.JSONArray(encoded))
+        val decoded = ProjectPreferencesStore.parseProjects(JSONArray(encoded))
         assertEquals(projects, decoded)
+    }
+
+    @Test fun loadingProjectsRejectsOversizedFieldsInsteadOfSilentlyTruncatingThem() {
+        val oversized = JSONArray().put(
+            JSONObject().put("id", "work").put("name", "工作")
+                .put("instructions", "规则".repeat(2001)).put("created_at", 1L)
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.parseProjects(oversized)
+        }
+    }
+
+    @Test fun loadingProjectsRejectsMalformedAndDuplicateRecords() {
+        val nonStringId = JSONArray().put(
+            JSONObject().put("id", 123).put("name", "工作").put("instructions", "")
+        )
+        assertThrows(IllegalStateException::class.java) {
+            ProjectPreferencesStore.parseProjects(nonStringId)
+        }
+
+        val duplicateIds = JSONArray()
+            .put(JSONObject().put("id", "default").put("name", "默认空间"))
+            .put(JSONObject().put("id", "work").put("name", "工作"))
+            .put(JSONObject().put("id", "work").put("name", "另一个"))
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.parseProjects(duplicateIds)
+        }
+    }
+
+    @Test fun loadingProjectsRejectsFractionalTimestampsInsteadOfCoercingThem() {
+        val fractionalTimestamp = JSONArray().put(
+            JSONObject().put("id", "default").put("name", "默认空间")
+                .put("created_at", 1.5)
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPreferencesStore.parseProjects(fractionalTimestamp)
+        }
+    }
+
+    @Test fun loadingLegacyProjectsAddsOnlyTheMissingDefaultWithoutDroppingRecords() {
+        val legacy = JSONArray().put(
+            JSONObject().put("id", "work").put("name", "工作")
+                .put("instructions", "项目专属指令").put("created_at", 10L)
+        )
+        val loaded = ProjectPreferencesStore.parseProjects(legacy)
+        assertEquals(listOf("default", "work"), loaded.map { it.id }.sorted())
+        assertEquals("项目专属指令", loaded.single { it.id == "work" }.instructions)
     }
 
     @Test fun protectsDefaultAndProjectsWithLinkedDataFromDeletion() {
@@ -96,5 +146,78 @@ class ProjectSpaceRulesTest {
         assertFalse(canRecover(hasDraft = true))
         assertFalse(canRecover(hasLocalConversationData = true))
         assertFalse(canRecover(hasLinkedData = true))
+    }
+
+    @Test fun projectResourceScopesPreserveLegacyGlobalDefaultsAndSupportProjectSharing() {
+        val kind = ProjectResourceKind.SKILL
+        val legacy = ProjectResourceScopeStore.decode("{}")
+        assertTrue(ProjectResourceScopeStore.isVisible(legacy, kind, "research", "project-a"))
+        assertTrue(ProjectResourceScopeStore.isVisible(legacy, kind, "research", "project-b"))
+
+        val scoped = ProjectResourceScopeStore.setProjectScope(
+            legacy, kind, "research", setOf("project-a", "project-b")
+        )
+        assertTrue(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-a"))
+        assertTrue(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-b"))
+        assertFalse(ProjectResourceScopeStore.isVisible(scoped, kind, "research", "project-c"))
+
+        val global = ProjectResourceScopeStore.setGlobal(scoped, kind, "research")
+        assertTrue(ProjectResourceScopeStore.isVisible(global, kind, "research", "project-c"))
+        assertEquals(global, ProjectResourceScopeStore.decode(ProjectResourceScopeStore.encode(global)))
+    }
+
+    @Test fun projectResourceScopesRejectMalformedAndAmbiguousOwnership() {
+        assertThrows(IllegalStateException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":[123]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":["project-a","project-a"]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.decode("""{"skill:research":["*","project-a"]}""")
+        }
+    }
+
+    @Test fun projectDuplicationCarriesExplicitResourceAssociationsWithoutChangingGlobalResources() {
+        val initial = mapOf(
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "writer") to setOf("source"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "global-skill") to setOf("*"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, "hidden") to setOf("other")
+        )
+        val copied = ProjectResourceScopeStore.duplicateProjectScope(initial, "source", "copy")
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.EXPERT, "writer", "copy"))
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.EXPERT, "writer", "source"))
+        assertTrue(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.SKILL, "global-skill", "copy"))
+        assertFalse(ProjectResourceScopeStore.isVisible(copied, ProjectResourceKind.WORKFLOW, "hidden", "copy"))
+    }
+
+    @Test fun deletingProjectRemovesItsResourceReferencesWithoutLeavingOrphans() {
+        val scopes = mapOf(
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, "only-here") to setOf("deleted"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, "shared") to setOf("deleted", "kept"),
+            ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, "global") to setOf("*")
+        )
+        val cleaned = ProjectResourceScopeStore.removeProjectScope(scopes, "deleted")
+        assertFalse(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.EXPERT, "only-here", "any-project"))
+        assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.SKILL, "shared", "kept"))
+        assertFalse(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.SKILL, "shared", "other"))
+        assertTrue(ProjectResourceScopeStore.isVisible(cleaned, ProjectResourceKind.TEAM, "global", "other"))
+    }
+
+    @Test fun projectMemorySettingsDefaultOffOutsideLegacyDefaultAndPreserveExplicitChoices() {
+        val settings = ProjectMemorySettingsStore.decode("""{"default":true,"research":false,"writing":true}""")
+        assertTrue(settings["default"] == true)
+        assertFalse(settings["research"] == true)
+        assertTrue(settings["writing"] == true)
+        assertEquals(settings, ProjectMemorySettingsStore.decode(ProjectMemorySettingsStore.encode(settings)))
+    }
+
+    @Test fun projectMemorySettingsRejectInvalidTypesAndProjectIds() {
+        assertThrows(IllegalStateException::class.java) {
+            ProjectMemorySettingsStore.decode("""{"research":"enabled"}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectMemorySettingsStore.decode("""{"":[true]}""")
+        }
     }
 }

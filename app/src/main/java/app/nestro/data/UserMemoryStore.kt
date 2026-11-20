@@ -109,7 +109,7 @@ object UserMemoryStore {
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
             listOf("密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "宗教", "政治立场", "性取向", "地址", "住址", "出生", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资").any { value.contains(it, true) }
 
-    private fun fingerprint(value: String): String =
+    internal fun fingerprint(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }

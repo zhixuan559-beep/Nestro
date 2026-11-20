@@ -1,0 +1,593 @@
+package app.nestro.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
+/**
+ * A project package contains one portable project and only the durable data/resources
+ * visible to that project. Device-wide model settings, API credentials and access grants
+ * are deliberately excluded.
+ */
+internal object ProjectPackageCodec {
+    private const val FORMAT = "nestro-project-package"
+    private const val VERSION = 1
+
+    fun export(fullBackupRaw: String, projectId: String, readableProjectIds: Set<String>): String {
+        val backup = JSONObject(fullBackupRaw)
+        require(LocalBackupCompatibility.verifyChecksum(backup)) { "本机数据快照校验失败，无法导出项目包" }
+        val project = arrayField(backup, "projects").let { rows ->
+            (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
+                .firstOrNull { it.optString("id") == projectId }
+        } ?: error("项目不存在，无法导出项目包")
+        val scopes = ProjectResourceScopeStore.decode(stringField(backup, "project_resource_scopes_v1", "{}"))
+        val visibleProjects = readableProjectIds + projectId
+        fun visible(kind: ProjectResourceKind, id: String) =
+            ProjectResourceScopeStore.isVisibleFromProjects(scopes, kind, id, projectId, visibleProjects)
+
+        val conversations = filterArray(arrayField(backup, "conversations_v1")) { it.optString("project_id") == projectId }
+        val conversationIds = stringSet(conversations, "id")
+        val drafts = JSONObject()
+        val sourceDrafts = objectField(backup, "conversation_drafts_v1")
+        conversationIds.forEach { id -> if (sourceDrafts.has(id)) drafts.put(id, sourceDrafts.get(id)) }
+
+        val documents = filterArray(arrayField(backup, "knowledge_documents_v1")) { it.optString("projectId") == projectId }
+        val documentIds = stringSet(documents, "id")
+        val chunks = filterArray(arrayField(backup, "knowledge_chunks_v1")) {
+            it.optString("projectId") == projectId && it.optString("documentId") in documentIds
+        }
+        val memories = filterArray(arrayField(backup, "user_memories")) { it.optString("projectId") == projectId }
+        val artifacts = filterArray(arrayField(backup, "artifacts_v1")) { it.optString("projectId") == projectId }
+
+        val allExperts = arrayField(backup, "experts")
+        val expertPrompts = objectField(backup, "expert_prompts")
+        val expertProfiles = objectField(backup, "expert_profiles_v1")
+        val expertVersions = objectField(backup, "expert_versions_v1")
+        val selectedExperts = allExperts.toStringList().filter { visible(ProjectResourceKind.EXPERT, it) }.toMutableSet()
+
+        val allTeams = arrayField(backup, "expert_teams_v1")
+        val teams = JSONArray()
+        for (team in allTeams.objects()) {
+            val id = team.optString("id")
+            if (!visible(ProjectResourceKind.TEAM, id)) continue
+            val members = team.opt("members") as? JSONArray ?: error("项目团队成员列表格式无效")
+            val memberNames = members.toStringList()
+            require(memberNames.size in 2..4 && memberNames.distinct().size == memberNames.size) {
+                "项目团队成员数量或成员 ID 无效"
+            }
+            if (memberNames.all { it in selectedExperts }) teams.put(JSONObject(team.toString()))
+        }
+
+        val allSkills = objectField(backup, "skills")
+        val skills = JSONObject()
+        val skillKeys = allSkills.keys()
+        while (skillKeys.hasNext()) {
+            val name = skillKeys.next()
+            if (visible(ProjectResourceKind.SKILL, name)) skills.put(name, allSkills.get(name))
+        }
+        val skillNames = skills.keys().asSequence().toSet()
+        val decodedProfiles = ExpertProfileCodec.decode(expertProfiles.toString())
+        val validProfileNames = decodedProfiles.filterValues { profile -> profile.skillNames.all { it in skillNames } }.keys
+        selectedExperts.retainAll { it !in decodedProfiles || it in validProfileNames }
+        val validatedTeams = JSONArray()
+        teams.objects().filter { team ->
+            (team.optJSONArray("members") ?: JSONArray()).toStringList().all { it in selectedExperts }
+        }.forEach { validatedTeams.put(JSONObject(it.toString())) }
+
+        val allWorkflows = arrayField(backup, "workflows_v1")
+        val workflows = JSONArray()
+        for (workflow in allWorkflows.objects()) {
+            if (!visible(ProjectResourceKind.WORKFLOW, workflow.optString("id"))) continue
+            val steps = workflow.optJSONArray("steps") ?: JSONArray()
+            val dependenciesVisible = steps.objects().all { step ->
+                if (step.optBoolean("enabled", true).not()) true
+                else {
+                    val target = step.optString("targetId").ifBlank { step.optString("title") }
+                    when (step.optString("kind").uppercase()) {
+                        "EXPERT" -> target in selectedExperts
+                        "SKILL" -> target in skillNames
+                        else -> true
+                    }
+                }
+            }
+            if (dependenciesVisible) workflows.put(JSONObject(workflow.toString()))
+        }
+
+        val validatedWorkflows = JSONArray()
+        workflows.objects().filter { workflow ->
+            (workflow.optJSONArray("steps") ?: JSONArray()).objects().all { step ->
+                if (!step.optBoolean("enabled", true)) true
+                else {
+                    val target = step.optString("targetId").ifBlank { step.optString("title") }
+                    when (step.optString("kind").uppercase()) {
+                        "EXPERT" -> target in selectedExperts
+                        "SKILL" -> target in skillNames
+                        else -> true
+                    }
+                }
+            }
+        }.forEach { validatedWorkflows.put(JSONObject(it.toString())) }
+        val teamIds = stringSet(validatedTeams, "id")
+        val workflowIds = stringSet(validatedWorkflows, "id")
+        val selectedExpertPrompts = expertPrompts.only(selectedExperts)
+        val selectedExpertProfiles = JSONObject(ExpertProfileCodec.encode(decodedProfiles.filterKeys { it in selectedExperts }))
+        val decodedRevisions = ExpertRevisionCodec.decode(expertVersions.toString())
+        val safeRevisions = decodedRevisions.filterKeys { it in selectedExperts }
+            .mapValues { (_, rows) -> rows.filter { revision -> revision.profile.skillNames.all { it in skillNames } } }
+            .filterValues { it.isNotEmpty() }
+        val selectedExpertVersions = JSONObject(ExpertRevisionCodec.encode(safeRevisions))
+        val skillMetadata = objectField(backup, "skill_metadata_v1").only(skillNames)
+        // Skill enable/disable is device-global today, so it is intentionally not copied in a project package.
+        val disabledSkills = JSONArray()
+
+        val exportedScopes = linkedMapOf<String, Set<String>>()
+        fun exportScope(kind: ProjectResourceKind, id: String) {
+            val original = scopes[ProjectResourceScopeStore.resourceKey(kind, id)]
+            exportedScopes[ProjectResourceScopeStore.resourceKey(kind, id)] =
+                if (original == null || "*" in original) setOf("*") else setOf(projectId)
+        }
+        selectedExperts.forEach { exportScope(ProjectResourceKind.EXPERT, it) }
+        teamIds.forEach { exportScope(ProjectResourceKind.TEAM, it) }
+        skillNames.forEach { exportScope(ProjectResourceKind.SKILL, it) }
+        workflowIds.forEach { exportScope(ProjectResourceKind.WORKFLOW, it) }
+
+        val settings = ProjectMemorySettingsStore.decode(stringField(backup, "project_memory_settings_v1", "{}"))
+        val projectMemoryEnabled = settings[projectId]
+            ?: (projectId == "default" && backup.optBoolean("automatic_memory_enabled", false))
+        val resources = JSONObject()
+            .put("experts", JSONArray(selectedExperts.sorted()))
+            .put("expert_prompts", selectedExpertPrompts)
+            .put("expert_profiles_v1", selectedExpertProfiles)
+            .put("expert_versions_v1", selectedExpertVersions)
+            .put("expert_teams_v1", validatedTeams)
+            .put("skills", skills)
+            .put("skill_metadata_v1", skillMetadata)
+            .put("disabled_skills_v1", disabledSkills)
+            .put("workflows_v1", validatedWorkflows)
+            .put("project_resource_scopes_v1", JSONObject(ProjectResourceScopeStore.encode(exportedScopes)))
+
+        val result = JSONObject()
+            .put("format", FORMAT)
+            .put("version", VERSION)
+            .put("created_at", System.currentTimeMillis())
+            .put("project", JSONObject(project.toString()))
+            .put("conversations_v1", conversations)
+            .put("conversation_drafts_v1", drafts)
+            .put("knowledge_documents_v1", documents)
+            .put("knowledge_chunks_v1", chunks)
+            .put("user_memories", memories)
+            .put("artifacts_v1", artifacts)
+            .put("project_memory_enabled", projectMemoryEnabled)
+            .put("resources", resources)
+        seal(result)
+        val encoded = result.toString(2)
+        require(encoded.toByteArray(Charsets.UTF_8).size <= 10_000_000) { "项目包超过 10 MB，请先清理项目数据" }
+        return encoded
+    }
+
+    fun mergeIntoFullBackup(currentBackupRaw: String, packageRaw: String): String {
+        require(packageRaw.toByteArray(Charsets.UTF_8).size <= 10_000_000) { "项目包超过 10 MB" }
+        val current = JSONObject(currentBackupRaw)
+        require(LocalBackupCompatibility.verifyChecksum(current)) { "当前本机备份校验失败，已停止导入" }
+        val incoming = JSONObject(packageRaw)
+        require(incoming.optString("format") == FORMAT && incoming.optInt("version") == VERSION) { "项目包格式或版本不受支持" }
+        require(LocalBackupCompatibility.verifyChecksum(incoming)) { "项目包校验失败，文件可能已损坏或被修改" }
+
+        val sourceProject = incoming.getJSONObject("project")
+        val sourceProjectId = sourceProject.opt("id") as? String
+            ?: error("项目包来源项目 ID 无效")
+        val sourceProjectName = sourceProject.opt("name") as? String
+            ?: error("项目包来源项目名称无效")
+        val sourceProjectInstructions = sourceProject.opt("instructions") as? String
+            ?: error("项目包来源项目指令无效")
+        require(sourceProjectId.isNotBlank() && sourceProjectId.length <= 120) { "项目包来源项目 ID 无效" }
+        require(sourceProjectName.isNotBlank() && sourceProjectName.length <= 40) { "项目包来源项目名称无效" }
+        require(sourceProjectInstructions.length <= 4000) { "项目包来源项目指令过长" }
+        val projects = arrayField(current, "projects")
+        require(projects.length() < 100) { "项目空间数量已达到 100 个上限" }
+        val usedNames = (0 until projects.length()).mapNotNull { projects.optJSONObject(it)?.optString("name") }.toMutableSet()
+        val projectName = uniqueName(sourceProjectName, usedNames, 40)
+        val newProjectId = UUID.randomUUID().toString()
+        val newProject = JSONObject()
+            .put("id", newProjectId)
+            .put("name", projectName)
+            .put("instructions", sourceProjectInstructions)
+            .put("created_at", System.currentTimeMillis())
+            .put("archived_at", 0L)
+        projects.put(newProject)
+        current.put("projects", projects.toString())
+
+        val conversations = arrayField(current, "conversations_v1")
+        val conversationIds = mutableMapOf<String, String>()
+        val messageIds = mutableMapOf<String, String>()
+        val incomingConversations = arrayField(incoming, "conversations_v1")
+        val incomingConversationRows = incomingConversations.objects()
+        val incomingConversationIds = incomingConversationRows.map { row ->
+            require(row.opt("project_id") == sourceProjectId) { "项目包会话包含来源项目之外的数据" }
+            row.opt("id") as? String ?: error("项目包中的会话 ID 无效")
+        }
+        require(incomingConversationIds.all { it.isNotBlank() } && incomingConversationIds.distinct().size == incomingConversationIds.size) {
+            "项目包会话 ID 为空或重复"
+        }
+        require(conversations.length() + maxOf(1, incomingConversations.length()) <= 200) { "导入后会话总数超过 200 个上限" }
+        val seenMessageIds = mutableSetOf<String>()
+        for (row in incomingConversationRows) {
+            val oldId = row.optString("id")
+            val newId = UUID.randomUUID().toString()
+            conversationIds[oldId] = newId
+            val messages = when (val rawMessages = row.opt("messages")) {
+                null -> JSONArray()
+                is JSONArray -> rawMessages
+                else -> error("项目包中的会话消息列表格式无效")
+            }
+            val copiedMessages = JSONArray()
+            for (message in messages.objects()) {
+                val oldMessageId = message.opt("id") as? String ?: error("项目包中的消息 ID 无效")
+                require(oldMessageId.isNotBlank() && seenMessageIds.add(oldMessageId)) { "项目包消息 ID 为空或重复" }
+                val newMessageId = UUID.randomUUID().toString()
+                messageIds[oldMessageId] = newMessageId
+                copiedMessages.put(JSONObject(message.toString()).put("id", newMessageId))
+            }
+            conversations.put(JSONObject(row.toString())
+                .put("id", newId)
+                .put("project_id", newProjectId)
+                .put("messages", copiedMessages))
+        }
+        val importedActiveConversationId = conversationIds.values.firstOrNull() ?: UUID.randomUUID().toString().also { id ->
+            conversations.put(JSONObject().put("id", id).put("title", "新对话")
+                .put("updated_at", System.currentTimeMillis()).put("project_id", newProjectId)
+                .put("messages", JSONArray()))
+        }
+        current.put("conversations_v1", conversations)
+
+        val drafts = objectField(current, "conversation_drafts_v1")
+        val incomingDrafts = objectField(incoming, "conversation_drafts_v1")
+        val draftKeys = incomingDrafts.keys()
+        while (draftKeys.hasNext()) {
+            val oldId = draftKeys.next()
+            val newId = conversationIds[oldId] ?: error("项目包草稿引用了未包含的会话")
+            val draft = incomingDrafts.opt(oldId) as? String ?: error("项目包会话草稿格式无效")
+            require(draft.length <= 100_000) { "项目包会话草稿过长" }
+            drafts.put(newId, draft)
+        }
+        current.put("conversation_drafts_v1", drafts)
+
+        val documents = arrayField(current, "knowledge_documents_v1")
+        val incomingDocumentRows = arrayField(incoming, "knowledge_documents_v1").objects()
+        val incomingDocumentIds = incomingDocumentRows.map { doc ->
+            require(doc.opt("projectId") == sourceProjectId) { "项目包知识文档包含来源项目之外的数据" }
+            doc.opt("id") as? String ?: error("项目包知识文档 ID 无效")
+        }
+        require(incomingDocumentIds.all { it.isNotBlank() } && incomingDocumentIds.distinct().size == incomingDocumentIds.size) {
+            "项目包知识文档 ID 为空或重复"
+        }
+        val documentIds = mutableMapOf<String, String>()
+        val importedDocumentIdsByHash = mutableMapOf<String, String>()
+        for (doc in incomingDocumentRows) {
+            val hash = doc.opt("contentHash") as? String ?: error("项目包知识文档哈希无效")
+            require(hash.matches(Regex("[0-9a-f]{64}"))) { "项目包知识文档哈希格式无效" }
+            val oldId = doc.optString("id")
+            val duplicateId = importedDocumentIdsByHash[hash]
+            if (duplicateId != null) {
+                documentIds[oldId] = duplicateId
+                continue
+            }
+            val newId = UUID.randomUUID().toString()
+            documentIds[oldId] = newId
+            importedDocumentIdsByHash[hash] = newId
+            documents.put(JSONObject(doc.toString()).put("id", newId).put("projectId", newProjectId))
+        }
+        current.put("knowledge_documents_v1", documents)
+
+        val chunks = arrayField(current, "knowledge_chunks_v1")
+        val incomingChunkRows = arrayField(incoming, "knowledge_chunks_v1").objects()
+        val incomingChunkIds = incomingChunkRows.map { chunk ->
+            require(chunk.opt("projectId") == sourceProjectId) { "项目包知识片段包含来源项目之外的数据" }
+            chunk.opt("id") as? String ?: error("项目包知识片段 ID 无效")
+        }
+        require(incomingChunkIds.all { it.isNotBlank() } && incomingChunkIds.distinct().size == incomingChunkIds.size) {
+            "项目包知识片段 ID 为空或重复"
+        }
+        for (chunk in incomingChunkRows) {
+            val oldDocumentId = chunk.opt("documentId") as? String ?: error("项目包知识片段所属文档 ID 无效")
+            val newDocumentId = documentIds[oldDocumentId] ?: error("项目包知识片段引用了未包含的文档")
+            chunks.put(JSONObject(chunk.toString())
+                .put("id", UUID.randomUUID().toString())
+                .put("documentId", newDocumentId)
+                .put("projectId", newProjectId))
+        }
+        current.put("knowledge_chunks_v1", chunks)
+
+        val memories = arrayField(current, "user_memories")
+        for (memory in arrayField(incoming, "user_memories").objects()) {
+            require(memory.opt("projectId") == sourceProjectId) { "项目包记忆包含来源项目之外的数据" }
+            val oldConversation = memory.opt("sourceConversationId") as? String ?: error("项目包记忆来源会话 ID 无效")
+            val oldMessage = memory.opt("sourceMessageId") as? String ?: error("项目包记忆来源消息 ID 无效")
+            require(oldConversation.isBlank() || oldConversation in conversationIds) { "项目包记忆引用了未包含的会话" }
+            require(oldMessage.isBlank() || oldMessage in messageIds) { "项目包记忆引用了未包含的消息" }
+            require(oldMessage.isBlank() || oldConversation.isNotBlank()) { "项目包记忆来源消息缺少会话 ID" }
+            memories.put(JSONObject(memory.toString())
+                .put("id", UUID.randomUUID().toString())
+                .put("projectId", newProjectId)
+                .put("sourceConversationId", conversationIds[oldConversation] ?: "")
+                .put("sourceMessageId", messageIds[oldMessage] ?: ""))
+        }
+        current.put("user_memories", memories)
+
+        val artifacts = arrayField(current, "artifacts_v1")
+        val incomingArtifacts = arrayField(incoming, "artifacts_v1").objects()
+        val artifactIds = incomingArtifacts.map { artifact ->
+            require(artifact.opt("projectId") == sourceProjectId) { "项目包产物包含来源项目之外的数据" }
+            artifact.opt("id") as? String ?: error("项目包产物 ID 无效")
+        }
+        require(artifactIds.all { it.isNotBlank() } && artifactIds.distinct().size == artifactIds.size) {
+            "项目包产物 ID 为空或重复"
+        }
+        for (artifact in incomingArtifacts) {
+            artifacts.put(JSONObject(artifact.toString())
+                .put("id", UUID.randomUUID().toString())
+                .put("projectId", newProjectId))
+        }
+        current.put("artifacts_v1", artifacts)
+
+        val incomingResources = incoming.optJSONObject("resources") ?: error("项目包缺少资源清单")
+        mergeResources(current, incomingResources, newProjectId, sourceProjectId)
+        val projectMemoryEnabled = incoming.opt("project_memory_enabled") as? Boolean
+            ?: error("项目包自动记忆设置格式无效")
+        val memorySettings = objectField(current, "project_memory_settings_v1")
+        memorySettings.put(newProjectId, projectMemoryEnabled)
+        current.put("project_memory_settings_v1", memorySettings.toString())
+        current.put("active_project_id", newProjectId)
+        current.put("active_conversation_id", importedActiveConversationId)
+        seal(current)
+        return current.toString(2)
+    }
+
+    private fun mergeResources(current: JSONObject, incoming: JSONObject, projectId: String, sourceProjectId: String) {
+        require(sourceProjectId.isNotBlank() && sourceProjectId.length <= 120) { "项目包来源项目 ID 无效" }
+        val incomingResourceScopes = objectField(incoming, "project_resource_scopes_v1")
+        val importedScopes = ProjectResourceScopeStore.decode(incomingResourceScopes.toString())
+        require(importedScopes.values.all { owners ->
+            owners.isNotEmpty() && owners.all { it == "*" || it == sourceProjectId }
+        }) { "项目包资源归属无效，不能引用来源项目以外的项目" }
+        val currentScopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}"))
+
+        fun requireImportedScope(kind: ProjectResourceKind, id: String) {
+            require(importedScopes.containsKey(ProjectResourceScopeStore.resourceKey(kind, id))) {
+                "项目包缺少资源归属记录：${kind.key}:$id"
+            }
+        }
+        fun rejectScopeCollision(kind: ProjectResourceKind, id: String, label: String) {
+            val existingOwners = ProjectResourceScopeStore.ownerProjectIds(currentScopes, kind, id)
+            val incomingOwners = ProjectResourceScopeStore.ownerProjectIds(importedScopes, kind, id)
+                ?: error("项目包缺少资源归属记录：${kind.key}:$id")
+            val existingIsGlobal = existingOwners == null || "*" in existingOwners
+            val incomingIsGlobal = "*" in incomingOwners
+            require(existingIsGlobal && incomingIsGlobal) {
+                "$label「$id」与本机已有项目资源发生同名冲突，导入时不能静默共享或扩大可见范围"
+            }
+        }
+        val currentExperts = arrayField(current, "experts")
+        val incomingExperts = arrayField(incoming, "experts")
+        val incomingExpertNames = incomingExperts.toStringList()
+        require(incomingExpertNames.all { it.isNotBlank() } && incomingExpertNames.distinct().size == incomingExpertNames.size) {
+            "项目包专家名称为空或重复"
+        }
+        val currentNames = currentExperts.toStringList().toMutableSet()
+        val currentPrompts = objectField(current, "expert_prompts")
+        val currentProfiles = objectField(current, "expert_profiles_v1")
+        val currentVersions = objectField(current, "expert_versions_v1")
+        val newPrompts = objectField(incoming, "expert_prompts")
+        val newProfiles = objectField(incoming, "expert_profiles_v1")
+        val newVersions = objectField(incoming, "expert_versions_v1")
+        for (name in incomingExperts.toStringList()) {
+            requireImportedScope(ProjectResourceKind.EXPERT, name)
+            if (name in currentNames) {
+                rejectScopeCollision(ProjectResourceKind.EXPERT, name, "专家")
+                require(sameValue(currentPrompts.opt(name), newPrompts.opt(name)) &&
+                    sameValue(currentProfiles.opt(name), newProfiles.opt(name))) {
+                    "专家「$name」与本机已有配置冲突，请先在项目包来源端重命名"
+                }
+            } else {
+                currentExperts.put(name)
+                currentNames += name
+            }
+        }
+        current.put("experts", currentExperts.toString())
+        current.put("expert_prompts", mergeObjects(currentPrompts, newPrompts, "专家指令").toString())
+        current.put("expert_profiles_v1", mergeObjects(currentProfiles, newProfiles, "专家配置").toString())
+        current.put("expert_versions_v1", mergeObjects(currentVersions, newVersions, "专家版本历史").toString())
+
+        val currentTeams = arrayField(current, "expert_teams_v1")
+        val teamNames = currentTeams.objects().map { it.optString("name") }.toMutableSet()
+        val teamIdMap = mutableMapOf<String, String>()
+        val incomingTeams = arrayField(incoming, "expert_teams_v1")
+        val incomingTeamRows = incomingTeams.objects()
+        val incomingTeamIds = incomingTeamRows.map { row ->
+            row.opt("id") as? String ?: error("项目包团队 ID 无效")
+        }
+        require(incomingTeamIds.all { it.isNotBlank() } && incomingTeamIds.distinct().size == incomingTeamIds.size) {
+            "项目包团队 ID 为空或重复"
+        }
+        for (team in incomingTeamRows) {
+            val members = team.opt("members") as? JSONArray ?: error("项目包团队成员列表格式无效")
+            val memberNames = members.toStringList()
+            require(memberNames.size in 2..4 && memberNames.distinct().size == memberNames.size) {
+                "项目包团队成员数量或成员 ID 无效"
+            }
+            require(memberNames.all { it in incomingExpertNames }) {
+                "项目包团队引用了未随包导入的专家"
+            }
+        }
+        for (team in incomingTeamRows) {
+            val oldId = team.optString("id")
+            requireImportedScope(ProjectResourceKind.TEAM, oldId)
+            val newId = UUID.randomUUID().toString()
+            teamIdMap[oldId] = newId
+            val name = uniqueName(team.optString("name").ifBlank { "导入团队" }, teamNames, 40)
+            teamNames += name
+            currentTeams.put(JSONObject(team.toString()).put("id", newId).put("name", name))
+        }
+        current.put("expert_teams_v1", currentTeams.toString())
+
+        val currentSkills = objectField(current, "skills")
+        val newSkills = objectField(incoming, "skills")
+        newSkills.keys().asSequence().forEach { name ->
+            val prompt = newSkills.opt(name) as? String ?: error("项目包技能「$name」指令格式无效")
+            require(name.isNotBlank() && name.length <= 40 && prompt.isNotBlank() && prompt.length <= 8000) {
+                "项目包技能「$name」名称或指令无效"
+            }
+            requireImportedScope(ProjectResourceKind.SKILL, name)
+            if (currentSkills.has(name)) rejectScopeCollision(ProjectResourceKind.SKILL, name, "技能")
+        }
+        val globalTemplateSkillRefs = ExpertTemplateCodec.decode(stringField(current, "expert_templates_v1", "[]"))
+            .flatMap { it.profile.skillNames }.toSet()
+        val templateCollisions = newSkills.keys().asSequence()
+            .filter { name ->
+                if (currentSkills.has(name) || name !in globalTemplateSkillRefs) false
+                else "*" !in (incomingResourceScopes.optJSONArray(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, name))?.toStringList().orEmpty())
+            }.toList()
+        require(templateCollisions.isEmpty()) {
+            "项目包技能名称与本机全局专家模板引用冲突：" + templateCollisions.joinToString("、")
+        }
+        current.put("skills", mergeObjects(currentSkills, newSkills, "技能").toString())
+        current.put("skill_metadata_v1", mergeObjects(objectField(current, "skill_metadata_v1"), objectField(incoming, "skill_metadata_v1"), "技能元数据").toString())
+        val disabled = arrayField(current, "disabled_skills_v1")
+        val disabledSet = disabled.toStringList().toMutableSet()
+        arrayField(incoming, "disabled_skills_v1").toStringList().forEach { if (disabledSet.add(it)) disabled.put(it) }
+        current.put("disabled_skills_v1", disabled.toString())
+
+        val currentWorkflows = arrayField(current, "workflows_v1")
+        val workflowNames = currentWorkflows.objects().map { it.optString("name") }.toMutableSet()
+        val workflowIdMap = mutableMapOf<String, String>()
+        val incomingWorkflowRows = arrayField(incoming, "workflows_v1").objects()
+        val incomingWorkflowIds = incomingWorkflowRows.map { row ->
+            row.opt("id") as? String ?: error("项目包工作流 ID 无效")
+        }
+        require(incomingWorkflowIds.all { it.isNotBlank() } && incomingWorkflowIds.distinct().size == incomingWorkflowIds.size) {
+            "项目包工作流 ID 为空或重复"
+        }
+        for (workflow in incomingWorkflowRows) {
+            val oldId = workflow.optString("id")
+            requireImportedScope(ProjectResourceKind.WORKFLOW, oldId)
+            val newId = UUID.randomUUID().toString()
+            workflowIdMap[oldId] = newId
+            val name = uniqueName(workflow.optString("name").ifBlank { "导入工作流" }, workflowNames, 60)
+            workflowNames += name
+            currentWorkflows.put(JSONObject(workflow.toString()).put("id", newId).put("name", name))
+        }
+        current.put("workflows_v1", currentWorkflows.toString())
+
+        val expectedScopeKeys = buildSet {
+            incomingExpertNames.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, it)) }
+            incomingTeamIds.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, it)) }
+            newSkills.keys().asSequence().forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, it)) }
+            incomingWorkflowIds.forEach { add(ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, it)) }
+        }
+        require(importedScopes.keys == expectedScopeKeys) {
+            "项目包资源归属清单与实际资源不一致，拒绝导入孤立或缺失的资源范围"
+        }
+        val scopes = ProjectResourceScopeStore.decode(stringField(current, "project_resource_scopes_v1", "{}")).toMutableMap()
+        val keys = incomingResourceScopes.keys()
+        while (keys.hasNext()) {
+            val oldKey = keys.next()
+            val kind = oldKey.substringBefore(':')
+            val oldId = oldKey.substringAfter(':')
+            val newId = when (kind) {
+                "team" -> teamIdMap[oldId] ?: oldId
+                "workflow" -> workflowIdMap[oldId] ?: oldId
+                else -> oldId
+            }
+            val values = importedScopes[oldKey].orEmpty()
+            val importedOwners = if ("*" in values) setOf("*") else setOf(projectId)
+            val key = "$kind:$newId"
+            val existing = scopes[key]
+            scopes[key] = when {
+                existing == null -> importedOwners
+                "*" in existing || "*" in importedOwners -> setOf("*")
+                else -> existing + projectId
+            }
+        }
+        current.put("project_resource_scopes_v1", ProjectResourceScopeStore.encode(scopes))
+        current.put("selected_team_id", teamIdMap.values.firstOrNull() ?: "")
+        current.put("selected_expert", "通用助手")
+    }
+
+    private fun mergeObjects(current: JSONObject, incoming: JSONObject, label: String): JSONObject {
+        val result = JSONObject(current.toString())
+        val keys = incoming.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (result.has(key)) require(sameValue(result.opt(key), incoming.opt(key))) { "$label「$key」与本机已有内容冲突，请先重命名或处理重复项" }
+            else result.put(key, incoming.get(key))
+        }
+        return result
+    }
+
+    private fun sameValue(left: Any?, right: Any?): Boolean = when {
+        left == null || right == null -> left == right
+        else -> left.toString() == right.toString()
+    }
+
+    private fun uniqueName(raw: String, used: Set<String>, maxLength: Int): String {
+        val base = raw.trim().ifBlank { "导入项目" }.take(maxLength)
+        fun exists(value: String) = used.any { it.trim().equals(value.trim(), ignoreCase = true) }
+        if (!exists(base)) return base
+        val suffix = "（导入）"
+        var candidate = base.take(maxLength - suffix.length) + suffix
+        var index = 2
+        while (exists(candidate)) {
+            val numbered = "（导入$index）"
+            candidate = base.take(maxLength - numbered.length) + numbered
+            index++
+        }
+        return candidate
+    }
+
+    private fun arrayField(root: JSONObject, key: String): JSONArray = when (val value = root.opt(key)) {
+        null -> JSONArray()
+        is JSONArray -> JSONArray(value.toString())
+        is String -> JSONArray(value)
+        else -> error("项目包字段 $key 格式无效")
+    }
+
+    private fun objectField(root: JSONObject, key: String): JSONObject = when (val value = root.opt(key)) {
+        null -> JSONObject()
+        is JSONObject -> JSONObject(value.toString())
+        is String -> JSONObject(value)
+        else -> error("项目包字段 $key 格式无效")
+    }
+
+    private fun stringField(root: JSONObject, key: String, default: String): String =
+        if (!root.has(key)) default else root.opt(key) as? String ?: error("项目包字段 $key 必须是文本")
+
+    private fun filterArray(rows: JSONArray, predicate: (JSONObject) -> Boolean): JSONArray =
+        JSONArray().apply { rows.objects().filter(predicate).forEach { put(JSONObject(it.toString())) } }
+
+    private fun stringSet(rows: JSONArray, key: String): Set<String> =
+        rows.objects().map { it.optString(key) }.filter { it.isNotBlank() }.toSet()
+
+    private fun JSONArray.objects(): List<JSONObject> =
+        (0 until length()).map { index ->
+            optJSONObject(index) ?: error("项目包数组第 ${index + 1} 项格式无效")
+        }
+
+    private fun JSONArray.toStringList(): List<String> =
+        (0 until length()).map { index ->
+            opt(index) as? String ?: error("项目包字符串数组第 ${index + 1} 项格式无效")
+        }
+
+    private fun JSONArray.filterStrings(predicate: (String) -> Boolean): JSONArray =
+        JSONArray().apply { toStringList().filter(predicate).forEach { put(it) } }
+
+    private fun JSONObject.only(keys: Set<String>): JSONObject {
+        val result = JSONObject()
+        keys.forEach { key -> if (has(key)) result.put(key, get(key)) }
+        return result
+    }
+
+    private fun seal(root: JSONObject) {
+        root.remove("checksum_sha256")
+        root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
+    }
+}

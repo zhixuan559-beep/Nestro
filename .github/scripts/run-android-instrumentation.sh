@@ -6,7 +6,7 @@ mkdir -p "$DIAG"
 
 adb wait-for-device
 booted=""
-for attempt in $(seq 1 300); do
+for attempt in $(seq 1 30); do
   booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
   [[ "$booted" == "1" ]] && break
   sleep 2
@@ -17,7 +17,7 @@ adb shell pm list instrumentation -f > "$DIAG/instrumentation-list.txt" 2>&1 || 
 adb shell pm list packages -3 > "$DIAG/third-party-packages.txt" 2>&1 || true
 
 if [[ "$booted" != "1" ]]; then
-  echo "Emulator did not finish booting within 600 seconds." > "$DIAG/diagnostic-error.txt"
+  echo "Emulator did not finish booting after the emulator-runner readiness check." > "$DIAG/diagnostic-error.txt"
   exit 2
 fi
 
@@ -32,15 +32,22 @@ trap cleanup EXIT
 
 # Build APKs, then invoke AndroidJUnitRunner directly. This bypasses AGP's
 # UTP driver, whose additionalTestOutputDir is inaccessible on this emulator.
-if ! gradle --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest; then
-  exit 1
+if [[ "${SKIP_ANDROID_APK_BUILD:-false}" != "true" ]]; then
+  if ! gradle --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest; then
+    exit 1
+  fi
 fi
 
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 set +e
-timeout 1500 adb shell am instrument -w -r app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
+instrument_args=(-w -r)
+if [[ -n "${ANDROID_TEST_FILTER:-}" ]]; then
+  instrument_args+=(-e class "$ANDROID_TEST_FILTER")
+  echo "Running targeted instrumentation tests: $ANDROID_TEST_FILTER"
+fi
+timeout 1500 adb shell am instrument "${instrument_args[@]}" app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
 instrumentation_exit=${PIPESTATUS[0]}
 set -e
 

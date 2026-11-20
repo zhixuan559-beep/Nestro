@@ -38,7 +38,8 @@ data class ExpertTeamRunResult(
     val task:String,
     val startedAt:Long,
     val finishedAt:Long,
-    val members:List<ExpertTeamMemberRun>
+    val members:List<ExpertTeamMemberRun>,
+    val projectId:String = "default"
 ) {
     val successfulMembers:Int get()=members.count { it.status=="success" }
     val failedMembers:Int get()=members.count { it.status=="failed" }
@@ -271,12 +272,13 @@ object ExpertTeamEngine {
 object ExpertTeamRunHistoryCodec {
     fun encode(records:List<ExpertTeamRunResult>):String =
         JSONArray().apply {
-            records.takeLast(30).forEach { record ->
+            records.take(30).forEach { record ->
                 put(JSONObject()
                     .put("teamName",record.teamName)
                     .put("task",record.task.take(1200))
                     .put("startedAt",record.startedAt)
                     .put("finishedAt",record.finishedAt)
+                    .put("projectId",record.projectId)
                     .put("members",JSONArray().apply {
                         record.members.forEach { member ->
                             put(JSONObject()
@@ -292,7 +294,7 @@ object ExpertTeamRunHistoryCodec {
         }.toString()
 
     fun decode(raw:String):List<ExpertTeamRunResult> = runCatching {
-        require(raw.length<=500_000) { "团队运行记录过大" }
+        require(raw.length<=3_000_000) { "团队运行记录过大" }
         val array=JSONArray(raw)
         (0 until minOf(array.length(),30)).mapNotNull { index ->
             val item=array.optJSONObject(index) ?: return@mapNotNull null
@@ -316,7 +318,8 @@ object ExpertTeamRunHistoryCodec {
                     task=item.optString("task").take(1200),
                     startedAt=item.optLong("startedAt").coerceAtLeast(0),
                     finishedAt=item.optLong("finishedAt").coerceAtLeast(0),
-                    members=decoded
+                    members=decoded,
+                    projectId=item.optString("projectId", "default").ifBlank { "default" }
                 )
         }
     }.getOrDefault(emptyList())

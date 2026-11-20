@@ -165,6 +165,25 @@ class LocalBackupRepository(context: Context, private val database: NestroDataba
         restoreLocalBackup(appContext, prefs, raw, database)
     }
 
+    suspend fun createProjectPackage(
+        prefs: SharedPreferences,
+        projectId: String,
+        readableProjectIds: Set<String>
+    ): String = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        ProjectPackageCodec.export(buildLocalBackup(appContext, prefs, database), projectId, readableProjectIds)
+    }
+
+    suspend fun importProjectPackage(prefs: SharedPreferences, raw: String): String = operationMutex.withLock {
+        recoverInterruptedLocalBackupRestore(appContext, prefs, database)
+        requireNoActivePhoneAgentTasks(database)
+        val currentBackup = buildLocalBackup(appContext, prefs, database)
+        val mergedBackup = ProjectPackageCodec.mergeIntoFullBackup(currentBackup, raw)
+        val importedProjectId = JSONObject(mergedBackup).getString("active_project_id")
+        restoreLocalBackup(appContext, prefs, mergedBackup, database, preserveModelPreferences = true)
+        importedProjectId
+    }
+
     suspend fun recoverInterruptedRestore(prefs: SharedPreferences) = operationMutex.withLock {
         recoverInterruptedLocalBackupRestore(appContext, prefs, database)
     }
@@ -235,6 +254,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("reasoning_effort_v1", reasoningEffort)
     root.put("tts_speech_rate", ttsSpeechRate.toDouble())
     root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
+    val projectMemorySettingsRaw = prefs.getString("project_memory_settings_v1", "{}") ?: "{}"
+    ProjectMemorySettingsStore.decode(projectMemorySettingsRaw)
+    root.put("project_memory_settings_v1", projectMemorySettingsRaw)
     val phoneAuditRaw = prefs.getString("phone_audit", "[]") ?: "[]"
     val phoneAudit = runCatching { JSONArray(phoneAuditRaw) }
         .getOrElse { error("Phone Agent 安全审计记录格式损坏，已中止备份") }
@@ -279,10 +301,22 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
     root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+    val resourceScopesRaw = prefs.getString("project_resource_scopes_v1", "{}") ?: "{}"
+    ProjectResourceScopeStore.decode(resourceScopesRaw)
+    root.put("project_resource_scopes_v1", resourceScopesRaw)
     val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
     val backupProjects = if (roomProjects.isEmpty()) loadProjectsForBackup(prefs) else parseProjectsForBackup(
         JSONArray(ProjectPreferencesStore.projectsToJson(roomProjects))
     )
+    val backupProjectIds = (backupProjects.map { it.id } + "default").toSet()
+    val backupResourceScopes = ProjectResourceScopeStore.decode(resourceScopesRaw)
+    require(backupResourceScopes.values.flatten().all { it == "*" || it in backupProjectIds }) {
+        "项目资源关联引用了不存在的项目，已中止备份"
+    }
+    val backupProjectMemorySettings = ProjectMemorySettingsStore.decode(projectMemorySettingsRaw)
+    require(backupProjectMemorySettings.keys.all { it in backupProjectIds }) {
+        "项目记忆设置引用了不存在的项目，已中止备份"
+    }
     val activeProjectId = prefs.getString("active_project_id", "default") ?: "default"
     // A restore journal is insurance for the restore itself, so it must stay writable
     // even when the current state is inconsistent — that is exactly when a restore is
@@ -461,11 +495,21 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     return encoded
 }
 
-internal suspend fun restoreLocalBackup(context: Context, prefs: SharedPreferences, raw: String, database: NestroDatabase) {
+internal suspend fun restoreLocalBackup(
+    context: Context,
+    prefs: SharedPreferences,
+    raw: String,
+    database: NestroDatabase,
+    preserveModelPreferences: Boolean = false
+) {
     recoverInterruptedLocalBackupRestore(context, prefs, database)
     persistLocalBackupRestoreJournal(context, prefs, database)
     try {
-        applyLocalBackup(context, prefs, raw, database, refuseActivePhoneTasks = true)
+        applyLocalBackup(
+            context, prefs, raw, database,
+            refuseActivePhoneTasks = true,
+            preserveModelPreferences = preserveModelPreferences
+        )
         deleteLocalBackupRestoreJournal(context)
     } catch (failure: Throwable) {
         if (failure is ActivePhoneAgentTasksException) {
@@ -595,7 +639,8 @@ private suspend fun applyLocalBackup(
     prefs: SharedPreferences,
     raw: String,
     database: NestroDatabase,
-    refuseActivePhoneTasks: Boolean = false
+    refuseActivePhoneTasks: Boolean = false,
+    preserveModelPreferences: Boolean = false
 ) {
     LocalBackupCompatibility.requireUtf8SizeWithin(raw, 10_000_000, "备份文件过大")
     val root = JSONObject(raw)
@@ -671,6 +716,15 @@ private suspend fun applyLocalBackup(
     }
     require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
     val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
+    val restoredResourceScopesRaw = root.stringOrDefault("project_resource_scopes_v1", "{}")
+    val restoredResourceScopes = ProjectResourceScopeStore.decode(restoredResourceScopesRaw)
+    val restoredProjectMemorySettings = ProjectMemorySettingsStore.decode(root.stringOrDefault("project_memory_settings_v1", "{}"))
+    require(restoredProjectMemorySettings.keys.all { it in restoredProjectIds }) {
+        "项目记忆设置引用了不存在的项目，拒绝恢复"
+    }
+    require(restoredResourceScopes.values.flatten().all { it == "*" || it in restoredProjectIds }) {
+        "项目资源关联引用了不存在的项目，拒绝恢复"
+    }
     val hasArtifactBackup = root.has("artifacts_v1")
     val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.arrayOrEmpty("artifacts_v1"), restoredProjectIds) else JSONArray()
     // The legacy format stored this field as a JSON string; current backups store an array.
@@ -736,7 +790,10 @@ private suspend fun applyLocalBackup(
         require(mimeType.length <= 120) { "知识库文档 MIME 类型过长" }
         KnowledgeDocumentEntity(id, projectId, name, mimeType, size, item.longOrDefault("importedAt", System.currentTimeMillis()), hash.lowercase())
     }
-    require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
+    require(
+        restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size &&
+            restoredKnowledgeDocuments.map { it.projectId to it.contentHash }.distinct().size == restoredKnowledgeDocuments.size
+    ) { "知识库文档 ID 重复，或同一项目内存在重复内容哈希" }
     val docsById = restoredKnowledgeDocuments.associateBy { it.id }
     val restoredKnowledgeChunks = (0 until chunkRows.length()).map { index ->
         val item = chunkRows.getJSONObject(index); val id = item.requiredString("id"); val documentId = item.requiredString("documentId")
@@ -1011,10 +1068,6 @@ private suspend fun applyLocalBackup(
         .putString("global_memory_v1", globalMemory)
         .putBoolean("automatic_memory_enabled", root.booleanOrDefault("automatic_memory_enabled", false))
         .putBoolean("chat_task_mode_enabled", root.booleanOrDefault("chat_task_mode_enabled", false))
-        .putString("active_model_registry_id", "")
-        .remove("base_url").remove("model").remove("model_profiles_v1")
-        .remove("model_registry_v1").remove("active_model_profile_id")
-        .remove("model_usage_v1").putBoolean("model_failover_enabled", false)
         .putString("reasoning_effort_v1", restoredReasoningEffort)
         .putFloat("tts_speech_rate", restoredTtsSpeechRate)
         .putString("phone_audit", restoredPhoneAudit.toString())
@@ -1032,6 +1085,8 @@ private suspend fun applyLocalBackup(
         .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
         .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
         .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
+        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(restoredResourceScopes))
+        .putString("project_memory_settings_v1", ProjectMemorySettingsStore.encode(restoredProjectMemorySettings))
         .putString("projects", ProjectPreferencesStore.projectsToJson(restoredProjects))
         .putString("active_project_id", (if (root.has("active_project_id")) root.requiredString("active_project_id") else "default").also { id ->
             require(restoredProjects.any { it.id == id && it.archivedAt == 0L }) {
@@ -1040,6 +1095,13 @@ private suspend fun applyLocalBackup(
         })
         .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
         .putLong("room_synced_at", restoreSyncTimestamp)
+    // A project package is not a device backup: keep the user's local model catalog and routing settings.
+    if (!preserveModelPreferences) {
+        editor.putString("active_model_registry_id", "")
+            .remove("base_url").remove("model").remove("model_profiles_v1")
+            .remove("model_registry_v1").remove("active_model_profile_id")
+            .remove("model_usage_v1").putBoolean("model_failover_enabled", false)
+    }
     // In-flight UI operations belong to the device/process being restored, not the backup.
     editor.remove("chat_request_state_v1")
         .remove("pending_project_delete_id")

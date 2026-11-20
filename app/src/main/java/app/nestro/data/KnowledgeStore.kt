@@ -62,8 +62,8 @@ object KnowledgeStore {
   val normalized=parsed.replace("\u0000","").replace("\r\n","\n").trim()
   require(normalized.isNotBlank()) { "文件没有可索引的文本内容。" }
   require(normalized.length<=MAX_TEXT_CHARS) { "文本超过 50 万字符，请拆分文件后导入。" }
-  val hash=MessageDigest.getInstance("SHA-256").digest((projectId+"\u0000"+normalized).toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-  val existing=dao.knowledgeDocumentByHash(hash)
+  val hash=MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+  val existing=dao.knowledgeDocumentByHash(projectId, hash)
   if(existing!=null) return@withContext KnowledgeImportResult(existing,true)
   val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.take(180),mime.ifBlank { "text/plain" },bytes.size.toLong(),System.currentTimeMillis(),hash)
   val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }

@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +31,7 @@ internal fun decodeMessageVersions(raw: String, activeVersion: Int): List<String
 
 
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
-class ConversationPersistenceService(private val database: NestroDatabase) {
+class ConversationPersistenceService(private val database: NestroDatabase, private val context: Context? = null) {
     internal data class RestoreResult(
         val conversations: List<ConversationRecord>,
         val projects: List<ProjectRecord>
@@ -58,7 +59,15 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                 it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
             }
             val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-            val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
+            val hasExclusiveResources = runCatching {
+                ProjectResourceScopeStore.resourcesOwnedOnlyByProject(
+                    ProjectResourceScopeStore.load(prefs), pendingProjectDeleteId
+                ).isNotEmpty()
+            }.getOrDefault(true)
+            val artifactsCleaned = context?.let { appContext ->
+                runCatching { ArtifactStore.deleteProjectIfEmpty(appContext, pendingProjectDeleteId) }.getOrDefault(false)
+            } ?: true
+            val canRecover = !hasExclusiveResources && artifactsCleaned && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
                 hasRunningRequest = hasRunningRequest,
@@ -79,9 +88,33 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     ProjectPreferencesStore.loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
                     markDirty = false
                 )
+                ProjectResourceScopeStore.save(
+                    prefs,
+                    ProjectResourceScopeStore.removeProjectScope(
+                        ProjectResourceScopeStore.load(prefs),
+                        pendingProjectDeleteId
+                    )
+                )
+                ProjectMemorySettingsStore.removeProject(prefs, pendingProjectDeleteId)
+                ProjectAccessControlStore.removeProject(prefs, pendingProjectDeleteId)
                 val editor = prefs.edit()
                 (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
                     .distinct().forEach { editor.remove("draft_$it") }
+                editor.putString(
+                    "workflow_runs_v1",
+                    WorkflowRunHistoryCodec.encode(
+                        WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                            .filterNot { it.projectId == pendingProjectDeleteId }
+                    )
+                )
+                editor.putString(
+                    "expert_team_runs_v1",
+                    ExpertTeamRunHistoryCodec.encode(
+                        ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+                            .filterNot { it.projectId == pendingProjectDeleteId }
+                    )
+                )
+                editor.remove("project_last_opened_$pendingProjectDeleteId")
                 editor.remove("pending_project_delete_id").commit()
             } else {
                 prefs.edit().remove("pending_project_delete_id").commit()

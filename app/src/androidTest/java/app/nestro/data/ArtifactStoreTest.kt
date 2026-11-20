@@ -6,6 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -84,6 +86,30 @@ class ArtifactStoreTest {
     }
 
     @Test
+    fun projectDeletionGuardDetectsRegisteredArtifactsAndOrphanedFiles() {
+        val record = ArtifactStore.save(context, "project-a", "Keep", "content")
+        assertTrue(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a"))
+        assertFalse(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-b"))
+
+        ArtifactStore.delete(context, record)
+        assertFalse(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a"))
+
+        val orphan = File(context.filesDir, "artifacts/${UUID.randomUUID()}.md")
+        orphan.writeText("orphaned content")
+        assertTrue(ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-b"))
+    }
+
+    @Test
+    fun projectDeletionGuardFailsClosedWhenArtifactIndexIsCorrupt() {
+        val directory = File(context.filesDir, "artifacts").apply { mkdirs() }
+        val index = File(directory, "index.json")
+        index.writeText("{not-json")
+        assertThrows(Exception::class.java) {
+            ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a")
+        }
+    }
+
+    @Test
     fun backupRejectsMissingArtifactInsteadOfSilentlyDroppingIt() {
         val record = ArtifactStore.save(context, "project-a", "Missing", "content")
         File(context.filesDir, "artifacts/${record.fileName}").delete()
@@ -141,6 +167,37 @@ class ArtifactStoreTest {
             rejected = true
         }
         assertTrue("artifact title must be rejected rather than truncated", rejected)
+    }
+
+
+    @Test
+    fun projectDuplicationCopiesAllArtifactVersionsAndKeepsTheSourceIndependent() {
+        ArtifactStore.save(context, "source", "Plan", "# first version")
+        ArtifactStore.save(context, "source", "Plan", "# second version")
+        ArtifactStore.save(context, "source", "Notes", "# notes")
+
+        val copied = ArtifactStore.duplicateProject(context, "source", "copy")
+
+        assertEquals(3, copied.size)
+        assertEquals(2, ArtifactStore.list(context, "copy").count { it.title == "Plan" })
+        assertEquals(
+            listOf("# first version", "# second version"),
+            ArtifactStore.list(context, "copy").filter { it.title == "Plan" }.sortedBy { it.version }
+                .map { ArtifactStore.read(context, it) }
+        )
+        assertEquals(3, ArtifactStore.list(context, "source").size)
+        assertTrue(ArtifactStore.list(context, "other").isEmpty())
+    }
+
+    @Test
+    fun deletingProjectArtifactsDoesNotTouchOtherProjects() {
+        ArtifactStore.save(context, "project-a", "A", "A content")
+        ArtifactStore.save(context, "project-b", "B", "B content")
+
+        ArtifactStore.deleteProject(context, "project-a")
+
+        assertTrue(ArtifactStore.list(context, "project-a").isEmpty())
+        assertEquals("B content", ArtifactStore.read(context, ArtifactStore.list(context, "project-b").single()))
     }
 
 }

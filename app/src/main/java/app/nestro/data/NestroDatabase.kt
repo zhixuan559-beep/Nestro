@@ -51,7 +51,7 @@ data class MessageEntity(
     val activeVersion: Int = 0
 )
 
-@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["contentHash"], unique = true)])
+@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["projectId", "contentHash"], unique = true)])
 data class KnowledgeDocumentEntity(
     @PrimaryKey val id: String, val projectId: String, val name: String,
     val mimeType: String, val sizeBytes: Long, val importedAt: Long, val contentHash: String
@@ -490,6 +490,87 @@ interface NestroDao {
         return true
     }
 
+    @Transaction
+    suspend fun duplicateProject(
+        sourceProjectId: String,
+        newProjectId: String,
+        newName: String,
+        createdAt: Long
+    ): Boolean {
+        if (sourceProjectId.isBlank() || newProjectId.isBlank() || sourceProjectId == newProjectId ||
+            createdAt < 0L || projectExists(newProjectId)) return false
+        val currentProjects = loadProjects()
+        val source = currentProjects.firstOrNull { it.id == sourceProjectId } ?: return false
+        val validation = ProjectSpaceRules.validate(
+            newName, "", currentProjects.map { ProjectSpaceRules.Entry(it.id, it.name) }
+        )
+        if (validation != null) return false
+
+        val sourceConversations = loadConversations().filter { it.conversation.projectId == sourceProjectId }
+        val conversationIds = sourceConversations.associate { it.conversation.id to java.util.UUID.randomUUID().toString() }
+        val messageIds = sourceConversations.flatMap { it.messages }.associate { it.id to java.util.UUID.randomUUID().toString() }
+
+        val sourceDocuments = knowledgeDocuments(sourceProjectId)
+        val documentIds = sourceDocuments.associate { it.id to java.util.UUID.randomUUID().toString() }
+        val sourceChunks = knowledgeChunksForProject(sourceProjectId)
+
+        putProjects(listOf(ProjectEntity(newProjectId, newName.trim(), source.instructions, createdAt, 0L)))
+        sourceConversations.forEach { row ->
+            val newConversationId = conversationIds.getValue(row.conversation.id)
+            putConversation(row.conversation.copy(id = newConversationId, projectId = newProjectId, updatedAt = createdAt))
+            val copiedMessages = row.messages.map { message ->
+                message.copy(
+                    id = messageIds.getValue(message.id),
+                    conversationId = newConversationId
+                )
+            }
+            if (copiedMessages.isNotEmpty()) putMessages(copiedMessages)
+        }
+
+        val copiedDocuments = sourceDocuments.map { document ->
+            document.copy(
+                id = documentIds.getValue(document.id),
+                projectId = newProjectId,
+                importedAt = createdAt
+            )
+        }
+        if (copiedDocuments.isNotEmpty()) insertKnowledgeDocuments(copiedDocuments)
+        val copiedChunks = sourceChunks.map { chunk ->
+            chunk.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                documentId = documentIds[chunk.documentId] ?: error("项目知识片段缺少所属文档"),
+                projectId = newProjectId
+            )
+        }
+        if (copiedChunks.isNotEmpty()) {
+            insertKnowledgeChunks(copiedChunks)
+            insertKnowledgeChunkFts(copiedChunks.map { chunk ->
+                KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, newProjectId, chunk.content)
+            })
+        }
+
+        userMemories(sourceProjectId).forEach { memory ->
+            putUserMemory(memory.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                projectId = newProjectId,
+                sourceConversationId = conversationIds[memory.sourceConversationId].orEmpty(),
+                sourceMessageId = messageIds[memory.sourceMessageId].orEmpty(),
+                fingerprint = UserMemoryStore.fingerprint(memory.category + "|" + memory.content.lowercase()),
+                createdAt = createdAt,
+                updatedAt = createdAt
+            ))
+        }
+        return true
+    }
+
+    @Transaction
+    suspend fun rollbackProjectDuplicate(projectId: String) {
+        require(projectId.isNotBlank() && projectId != "default") { "复制回滚项目 ID 无效" }
+        val ids = projectConversationIds(projectId)
+        if (ids.isNotEmpty()) deleteConversations(ids)
+        deleteProjectAndKnowledge(projectId)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 
@@ -497,8 +578,10 @@ interface NestroDao {
     suspend fun deleteProjects(ids: List<String>)
     @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId ORDER BY importedAt DESC")
     suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
-    @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
-    suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
+    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId, position")
+    suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
+    @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId AND contentHash = :hash LIMIT 1")
+    suspend fun knowledgeDocumentByHash(projectId: String, hash: String): KnowledgeDocumentEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -517,7 +600,7 @@ interface NestroDao {
         document: KnowledgeDocumentEntity,
         chunks: List<KnowledgeChunkEntity>
     ): KnowledgeDocumentEntity {
-        val existing = knowledgeDocumentByHash(document.contentHash)
+        val existing = knowledgeDocumentByHash(document.projectId, document.contentHash)
         if (existing != null) return existing
         insertKnowledgeDocument(document)
         insertKnowledgeChunks(chunks)
@@ -556,13 +639,20 @@ interface NestroDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_knowledge_documents_contentHash")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_knowledge_documents_projectId_contentHash ON knowledge_documents(projectId, contentHash)")
+            }
+        }
+
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content, tokenize=unicode61)")
@@ -638,7 +728,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =

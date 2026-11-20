@@ -37,7 +37,8 @@ internal class ConversationStartupCoordinator(
         val messages: List<ChatMessage>,
         val persistedConversationVersions: Map<String, Int>,
         val databaseReady: Boolean,
-        val statusMessage: String?
+        val statusMessage: String?,
+        val projectStorageReadOnly: Boolean
     )
 
     suspend fun restore(preferences: SharedPreferences): StartupState {
@@ -46,6 +47,7 @@ internal class ConversationStartupCoordinator(
         var conversations: List<ConversationRecord>
         val projects: List<ProjectRecord>
         val statusMessage: String?
+        var projectStorageReadOnly = false
 
         if (restored.isSuccess) {
             val data = restored.getOrThrow()
@@ -55,8 +57,17 @@ internal class ConversationStartupCoordinator(
             statusMessage = null
         } else {
             conversations = ConversationPreferencesStore.loadConversations(preferences)
-            projects = ProjectPreferencesStore.loadProjects(preferences)
-            statusMessage = "本地数据库暂不可用，已回退到本机旧存储"
+            val loadedProjects = runCatchingCancellable {
+                ProjectPreferencesStore.loadProjects(preferences)
+            }
+            if (loadedProjects.isSuccess) {
+                projects = loadedProjects.getOrThrow()
+                statusMessage = "本地数据库暂不可用，已回退到本机旧存储"
+            } else {
+                projects = listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))
+                projectStorageReadOnly = true
+                statusMessage = "项目空间旧存储校验失败，原始数据未覆盖；项目编辑已锁定，请先导出备份并修复数据"
+            }
         }
 
         val selection = resolveActiveConversationSelection(
@@ -95,7 +106,8 @@ internal class ConversationStartupCoordinator(
                 conversations.associate { it.id to it.hashCode() }
             } else emptyMap(),
             databaseReady = databaseReady,
-            statusMessage = statusMessage
+            statusMessage = statusMessage,
+            projectStorageReadOnly = projectStorageReadOnly
         )
     }
 }
