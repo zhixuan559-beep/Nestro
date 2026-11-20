@@ -35,26 +35,40 @@ object PhoneAgentTaskStore {
             val row = JSONObject()
             when (action) {
                 is PhoneAgentExecutor.Action.OpenUrl -> {
-                    require(!PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址包含个人敏感信息，不能持久化" }
+                    val uri = runCatching { URI(action.url) }.getOrElse { error("网页地址无效") }
+                    require(action.url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
                     row.put("type", "open_url").put("url", action.url)
                 }
-                is PhoneAgentExecutor.Action.LaunchApp -> row.put("type", "launch_app").put("package", action.packageName)
+                is PhoneAgentExecutor.Action.LaunchApp -> {
+                    require(action.packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+                    row.put("type", "launch_app").put("package", action.packageName)
+                }
                 is PhoneAgentExecutor.Action.ClickText -> {
-                    require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)) { "高风险或敏感点击必须由用户处理" }
+                    require(action.exactText.isNotBlank() && action.exactText.length <= 80 && (action.expectedAfter == null || action.expectedAfter.length <= 120) && !PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)) { "高风险、敏感或无效点击必须由用户处理" }
                     row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 }
                 is PhoneAgentExecutor.Action.EnterText -> {
-                    require(!PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感输入必须由用户本人处理" }
+                    require(action.fieldLabel.isNotBlank() && action.fieldLabel.length <= 80 && action.value.length <= 1000 && !PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感或无效输入必须由用户本人处理" }
                     row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
                 }
-                is PhoneAgentExecutor.Action.Scroll -> row.put("type", "scroll").put("direction", action.direction)
-                is PhoneAgentExecutor.Action.Wait -> row.put("type", "wait").put("millis", action.millis)
+                is PhoneAgentExecutor.Action.Scroll -> {
+                    require(action.direction == "forward" || action.direction == "backward") { "滚动方向无效" }
+                    row.put("type", "scroll").put("direction", action.direction)
+                }
+                is PhoneAgentExecutor.Action.Wait -> {
+                    require(action.millis in 0..10_000) { "等待时间无效" }
+                    row.put("type", "wait").put("millis", action.millis)
+                }
                 is PhoneAgentExecutor.Action.VerifyText -> {
-                    require(!PhoneAgentRiskPolicy.containsSensitiveValue(action.expected)) { "敏感页面文字不能持久化为核验条件" }
+                    require(action.expected.isNotBlank() && action.expected.length <= 100 && !PhoneAgentRiskPolicy.containsSensitiveValue(action.expected)) { "敏感或无效页面文字不能持久化为核验条件" }
                     row.put("type", "verify").put("text", action.expected)
                 }
                 PhoneAgentExecutor.Action.Back -> row.put("type", "back")
-                is PhoneAgentExecutor.Action.ConfirmSensitive -> row.put("type", "confirm_sensitive").put("description", PhoneAgentRiskPolicy.redactSensitiveText(action.description))
+                is PhoneAgentExecutor.Action.ConfirmSensitive -> {
+                    val description = PhoneAgentRiskPolicy.redactSensitiveText(action.description).take(240)
+                    require(description.isNotBlank()) { "用户接手说明无效" }
+                    row.put("type", "confirm_sensitive").put("description", description)
+                }
             }
             rows.put(row)
         }
