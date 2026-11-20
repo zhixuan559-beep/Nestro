@@ -26,6 +26,7 @@ internal object KnowledgeEmbeddingModelManager {
     private const val BATCH_SIZE = 4
     private val runtimeMutex = Mutex()
     private var cachedSession: OrtSession? = null
+    private var cachedSessionOptions: OrtSession.SessionOptions? = null
     private var cachedTokenizer: BgeWordPieceTokenizer? = null
 
     fun isInstalled(context: Context): Boolean {
@@ -57,6 +58,8 @@ internal object KnowledgeEmbeddingModelManager {
         runtimeMutex.withLock {
             cachedSession?.close()
             cachedSession = null
+            cachedSessionOptions?.close()
+            cachedSessionOptions = null
             cachedTokenizer = null
         }
     }
@@ -79,10 +82,18 @@ internal object KnowledgeEmbeddingModelManager {
             options.setIntraOpNumThreads(2)
             val session = try {
                 environment.createSession(File(directory, "model_int8.onnx").absolutePath, options)
-            } finally {
+            } catch (error: Exception) {
                 options.close()
+                throw error
             }
-            val loadedTokenizer = BgeWordPieceTokenizer(File(directory, "vocab.txt").readLines())
+            val loadedTokenizer = try {
+                BgeWordPieceTokenizer(File(directory, "vocab.txt").readLines())
+            } catch (error: Exception) {
+                session.close()
+                options.close()
+                throw error
+            }
+            cachedSessionOptions = options
             cachedSession = session
             cachedTokenizer = loadedTokenizer
             session to loadedTokenizer
