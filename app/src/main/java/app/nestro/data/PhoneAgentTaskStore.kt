@@ -6,7 +6,6 @@ import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentRiskPolicy
 import java.util.UUID
-import java.net.URI
 
 object PhoneAgentTaskStore {
     const val STATUS_PLANNED = "planned"
