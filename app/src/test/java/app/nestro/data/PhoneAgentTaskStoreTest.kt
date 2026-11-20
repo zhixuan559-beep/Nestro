@@ -93,6 +93,38 @@ class PhoneAgentTaskStoreTest {
     }
 
     @Test
+    fun restoredActionsUseTheSameSensitiveFieldAndValuePolicyAsNewPlans() {
+        val sensitiveLabel = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "enter_text").put("label", "Email address").put("value", "ordinary")
+            ))
+            .toString()
+        val bankCardValue = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "enter_text").put("label", "备注").put("value", "4111111111111111")
+            ))
+            .toString()
+        val sensitiveExpectedAfter = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click").put("text", "继续").put("expectedAfter", "test@example.com")
+            ))
+            .toString()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(sensitiveLabel)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(bankCardValue)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(sensitiveExpectedAfter)
+        }
+    }
+
+    @Test
     fun validatesLegacyPlanRiskAndConfirmationFields() {
         val valid = JSONArray().put(
             JSONObject()
