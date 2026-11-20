@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
+import app.nestro.phone.PhoneAgentRiskPolicy
 import java.util.UUID
 import java.net.URI
 
@@ -94,7 +95,7 @@ object PhoneAgentTaskStore {
                     val label = row.getString("text").trim()
                     val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
                     require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120)) { "已保存的点击目标无效" }
-                    require(listOf("付款", "支付", "转账", "购买", "预约", "提交", "下单", "删除账号", "清空数据", "永久删除").none { label.contains(it, true) }) { "已保存的高风险点击必须由用户重新确认" }
+                    require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "已保存的高风险点击必须由用户重新确认" }
                     PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                 }
                 "enter_text" -> {
