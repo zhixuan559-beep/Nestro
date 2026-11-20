@@ -50,6 +50,7 @@ object PhoneAgentScreenSafetyPolicy {
 
     private val permissionVerbs = listOf(
         "是否允许",
+        "允许",
         "允许访问",
         "使用应用时允许",
         "仅限这一次",
