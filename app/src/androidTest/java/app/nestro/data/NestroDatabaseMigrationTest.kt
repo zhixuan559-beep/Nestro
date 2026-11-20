@@ -81,7 +81,7 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionTenWithoutLosingConversationData() = runBlocking {
+    @Test fun migratesVersionOneDatabaseThroughVersionThirteenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -102,13 +102,17 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(12, schemaVersion)
+            assertEquals(13, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
             assertEquals("[]", rows.single().messages.single().versionsJson)
             assertEquals(0, rows.single().messages.single().activeVersion)
             assertNotNull(migrated.dao().allKnowledgeDocuments())
+            val embeddingTable = migrated.openHelper.readableDatabase.query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_chunk_embeddings'"
+            )
+            assertEquals(true, embeddingTable.use { it.moveToFirst() })
             migrated.dao().insertKnowledgeDocument(KnowledgeDocumentEntity("doc-fts", "default", "FTS 文档", "text/plain", 10, 2, "b".repeat(64)))
             val ftsChunk = KnowledgeChunkEntity("chunk-fts", "doc-fts", "default", 0, "统一调度 虚拟屏 工具权限")
             migrated.dao().insertKnowledgeChunks(listOf(ftsChunk))

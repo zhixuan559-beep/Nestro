@@ -49,6 +49,32 @@ class KnowledgeSearchEngineTest {
     }
 
     @Test
+    fun usesProjectWideCorpusStatisticsForBm25() {
+        val common = chunk("common", 0, "Android")
+        val rare = chunk("rare", 1, "Android GPS 定位")
+        val ranked = KnowledgeSearchEngine.rank("Android GPS", listOf(common, rare), corpusSize = 1_000,
+            documentFrequencies = mapOf("android" to 900, "gps" to 2), averageDocumentLength = 20.0)
+        assertEquals("rare", ranked.first().chunk.id)
+    }
+    @Test
+    fun extractsTermsFromLongChineseQueriesWithoutDroppingTheTail() {
+        val prompt = "骑手片区风险预警" + "夜间道路安全".repeat(40) + "定位异常处理"
+        val terms = KnowledgeSearchEngine.extractTerms(prompt)
+        assertTrue("长查询末尾的关键词也应参与召回", terms.any { it == "异常" || it == "处理" || it == "异常处" })
+    }
+    @Test
+    fun rewardsRareQueryTermsOverRepeatedCommonTerms() {
+        val focused = chunk("focused", 0, "Android GPS 定位导航")
+        val noisy = chunk("noisy", 1, "Android Android Android Android Android")
+        assertEquals("focused", KnowledgeSearchEngine.rank("Android GPS", listOf(noisy, focused)).first().chunk.id)
+    }
+    @Test
+    fun normalizesForChunkLength() {
+        val concise = chunk("concise", 0, "Android GPS")
+        val verbose = chunk("verbose", 1, "Android GPS " + "irrelevant ".repeat(300))
+        assertEquals("concise", KnowledgeSearchEngine.rank("Android GPS", listOf(verbose, concise)).first().chunk.id)
+    }
+    @Test
     fun orderingIsDeterministicForEqualScores() {
         val ranked = KnowledgeSearchEngine.rank(
             "Android",
