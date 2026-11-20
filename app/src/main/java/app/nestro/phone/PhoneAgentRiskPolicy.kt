@@ -42,7 +42,6 @@ object PhoneAgentRiskPolicy {
         email.containsMatchIn(value) ||
             phone.containsMatchIn(value) ||
             card.containsMatchIn(value) ||
-            verificationCode.containsMatchIn(value) ||
             nationalId.containsMatchIn(value)
 
     fun redactSensitiveText(value: String): String = value
