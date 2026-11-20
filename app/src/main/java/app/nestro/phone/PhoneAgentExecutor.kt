@@ -220,13 +220,13 @@ object PhoneAgentExecutor {
     private fun actionLabel(action: Action): String = when (action) {
         is Action.OpenUrl -> "打开网页：" + (runCatching { java.net.URI(action.url).host }.getOrNull() ?: "网页")
         is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
-        is Action.ClickText -> "点击目标：" + action.exactText.take(80)
+        is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
         is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
         is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"
         is Action.Wait -> "等待 ${action.millis.coerceIn(0, 10_000)} ms"
-        is Action.VerifyText -> "核验页面文字：" + action.expected.take(80)
+        is Action.VerifyText -> "核验页面文字：" + PhoneAgentRiskPolicy.redactSensitiveText(action.expected).take(80)
         Action.Back -> "返回上一页"
-        is Action.ConfirmSensitive -> "等待用户处理：" + action.description.take(100)
+        is Action.ConfirmSensitive -> "等待用户处理：" + PhoneAgentRiskPolicy.redactSensitiveText(action.description).take(100)
     }
 
     private fun toolIdFor(action: Action): String = when (action) {
