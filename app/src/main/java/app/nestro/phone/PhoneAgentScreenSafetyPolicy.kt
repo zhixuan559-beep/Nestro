@@ -33,6 +33,9 @@ object PhoneAgentScreenSafetyPolicy {
         "accept all cookies",
         "accept cookies",
         "cookie preferences",
+        "cookie consent",
+        "cookie settings",
+        "manage cookies",
         "by clicking accept you agree",
         "i agree to the terms",
         "agree and continue",
@@ -64,7 +67,7 @@ object PhoneAgentScreenSafetyPolicy {
 
     private val permissionResources = listOf(
         "位置", "通知", "相机", "摄像头", "麦克风", "照片", "视频",
-        "文件", "通讯录", "location", "notifications", "camera",
+        "文件", "通讯录", "蓝牙", "附近设备", "日历", "存储", "location", "notifications", "camera",
         "microphone", "photos", "videos", "files", "contacts"
     )
 
@@ -79,6 +82,11 @@ object PhoneAgentScreenSafetyPolicy {
         val hasPermissionResource = permissionResources.any {
             normalized.contains(it.replace(Regex("\\s+"), "").lowercase())
         }
-        return hasPermissionVerb && hasPermissionResource
+        if (hasPermissionVerb && hasPermissionResource) return true
+
+        val consentTerms = listOf("terms of service", "user agreement", "privacy policy", "用户协议", "服务条款", "隐私政策")
+        val consentVerbs = listOf("agree", "accept", "同意", "接受", "确认")
+        return consentTerms.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) } &&
+            consentVerbs.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) }
     }
 }
