@@ -16,6 +16,8 @@ object UserMemoryExportCodec {
         return JSONObject()
             .put("format", FORMAT)
             .put("version", VERSION)
+            .put("id", memory.id)
+            .put("project_id", memory.projectId)
             .put("category", memory.category)
             .put("content", memory.content)
             .put("confidence", memory.confidence)
