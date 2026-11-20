@@ -36,8 +36,8 @@ class KnowledgePdfImportTest {
 
     @Test
     fun recognizesTextFromScannedPdfOnDevice() {
-        val text = runBlocking { KnowledgeStore.extractPdfText(context, createScannedPdf("NESTRO OCR TEST")) }
-        assertTrue(text.uppercase().contains("NESTRO"))
+        val text = runBlocking { KnowledgeStore.extractPdfText(context, createScannedPdf("NESTRO 知识库测试")) }
+        assertTrue("OCR 未识别出预期内容，实际结果：<$text>", text.contains("知识库测试"))
     }
 
     @Test
