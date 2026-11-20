@@ -10,6 +10,8 @@ object PhoneAgentUrlPolicy {
         if (scheme != "https" && scheme != "http") return false
         val portAllowed = uri.port == -1 || (scheme == "https" && uri.port == 443) || (scheme == "http" && uri.port == 80)
         if (uri.userInfo != null || uri.host.isNullOrBlank() || !portAllowed) return false
+        val sensitiveQueryKey = Regex("(?i)(^|&)(access_token|refresh_token|api_key|apikey|token|secret|password|session|auth|credential|signature)=([^&]+)")
+        if (sensitiveQueryKey.containsMatchIn(uri.rawQuery.orEmpty())) return false
         val host = uri.host.lowercase().trimEnd('.').removePrefix("[").removeSuffix("]")
         if (host == "localhost" || host.endsWith(".localhost") ||
             host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan")
