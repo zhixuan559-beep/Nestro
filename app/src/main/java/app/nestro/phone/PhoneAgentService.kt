@@ -59,7 +59,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     override fun clickVisibleText(exactText: String): Boolean {
         val normalized = exactText.trim()
         require(normalized.isNotBlank() && normalized.length <= 80) { "目标文本无效" }
-        require(!isHighRisk(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
+        require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
         val node = findVisibleNode(root, normalized) { true } ?: return false
@@ -74,8 +74,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
-        require(!isHighRisk(value)) { "输入内容触发高风险规则，必须由用户本人处理" }
-        require(!isSensitiveLabel(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
+        require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(value)) { "输入内容触发高风险规则，必须由用户本人处理" }
+        require(!PhoneAgentRiskPolicy.isSensitiveField(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
         val node = findEditableField(root, target) ?: return false
@@ -192,7 +192,6 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         if (p.getLong("phone_task_grant_until", 0L) <= System.currentTimeMillis() && p.getBoolean("phone_single_grant", false)) p.edit().remove("phone_single_grant").apply()
     }
 
-    private fun isSensitiveLabel(value: String): Boolean = listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "手机号码", "电话", "邮箱", "电子邮件", "收货地址", "详细地址", "地址", "联系人", "收货人", "住址", "账号").any { value.contains(it, true) }
 
     private fun redactSensitiveText(value: String): String = value
         .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
@@ -203,10 +202,6 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
 
-    private fun isHighRisk(value: String): Boolean {
-        val terms = listOf("支付", "付款", "转账", "银行卡", "密码", "验证码", "删除账号", "确认购买", "购买", "立即购买", "预约", "提交订单", "提交", "下单", "确认", "立即下单", "确认支付", "发送验证码", "发送密码", "发送银行卡", "发送身份证", "上传通讯录", "分享屏幕", "确认提交", "退款")
-        return terms.any { value.contains(it, ignoreCase = true) }
-    }
 
     private fun audit(action: String, detail: String) {
         val prefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
