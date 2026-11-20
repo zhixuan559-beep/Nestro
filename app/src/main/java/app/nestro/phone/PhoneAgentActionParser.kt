@@ -106,7 +106,7 @@ object PhoneAgentActionParser {
         }
         return ParsedPlan(
             done = done,
-            completionEvidence = if (PhoneAgentRiskPolicy.containsSensitiveValue(completionEvidenceRaw)) "" else completionEvidenceRaw,
+            completionEvidence = if (PhoneAgentRiskPolicy.containsSensitiveValue(completionEvidenceRaw)) "" else sanitizeMessage(completionEvidenceRaw),
             summary = sanitizeMessage(root.optString("summary").take(600)),
             actions = actions
         )
