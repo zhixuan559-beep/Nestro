@@ -14,7 +14,8 @@ object PhoneAgentRiskPolicy {
         "提现", "充值", "pay now", "place order", "buy now", "confirm purchase",
         "submit order", "checkout", "confirm transfer", "send money", "withdraw now",
         "top up", "book now", "confirm booking", "reserve now", "delete account",
-        "send message", "publish", "upload"
+        "send message", "publish", "upload", "accept all", "accept cookies",
+        "grant permission", "allow location", "allow notifications", "share data"
     )
 
     private val sensitiveLabels = listOf(
@@ -36,7 +37,7 @@ object PhoneAgentRiskPolicy {
     fun requiresUserHandoffForClick(label: String): Boolean {
         val normalized = normalize(label)
         if (normalized.isBlank()) return false
-        if (normalized in setOf("购买", "预约", "预订", "确认", "提交")) return true
+        if (normalized in setOf("购买", "预约", "预订", "确认", "提交", "同意", "接受", "允许", "授权", "agree", "accept", "allow")) return true
         return commitActions.any { phrase -> normalized.contains(normalize(phrase)) }
     }
 
