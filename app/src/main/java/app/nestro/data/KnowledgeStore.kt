@@ -68,7 +68,18 @@ object KnowledgeStore {
   val hash=MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
   val existing=dao.knowledgeDocumentByHash(projectId, hash)
   if(existing!=null) return@withContext KnowledgeImportResult(existing,true)
-  val resolvedMime=mime.ifBlank { if(format=="pdf") "application/pdf" else "text/plain" }
+  val resolvedMime=when(format) {
+   "pdf" -> "application/pdf"
+   "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+   "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+   "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+   "html","htm" -> "text/html"
+   "csv" -> "text/csv"
+   "json" -> "application/json"
+   "xml" -> "application/xml"
+   "md","markdown" -> "text/markdown"
+   else -> mime.ifBlank { "text/plain" }
+  }
   val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().take(180).ifBlank { "导入文档" },resolvedMime,bytes.size.toLong(),System.currentTimeMillis(),hash)
   val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
