@@ -57,12 +57,14 @@ object PhoneAgentRiskPolicy {
 
     fun containsSensitiveValue(value: String): Boolean {
         val decoded = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
-        return email.containsMatchIn(decoded) ||
-            phone.containsMatchIn(decoded) ||
-            internationalPhone.containsMatchIn(decoded) ||
-            card.containsMatchIn(decoded) ||
-            nationalId.containsMatchIn(decoded) ||
-            socialSecurityNumber.containsMatchIn(decoded)
+        return listOf(value, decoded).any { candidate ->
+            email.containsMatchIn(candidate) ||
+                phone.containsMatchIn(candidate) ||
+                internationalPhone.containsMatchIn(candidate) ||
+                card.containsMatchIn(candidate) ||
+                nationalId.containsMatchIn(candidate) ||
+                socialSecurityNumber.containsMatchIn(candidate)
+        }
     }
 
     fun redactSensitiveText(value: String): String = value
