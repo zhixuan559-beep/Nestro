@@ -25,6 +25,8 @@ class PhoneAgentRiskPolicyTest {
         assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Email address"))
         assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Passport number"))
         assertTrue(PhoneAgentRiskPolicy.isSensitiveField("IBAN"))
+        assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Phone number"))
+        assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Date of birth"))
         assertFalse(PhoneAgentRiskPolicy.isSensitiveField("商品名称"))
     }
 
@@ -52,6 +54,9 @@ class PhoneAgentRiskPolicyTest {
         val identifiers = PhoneAgentRiskPolicy.redactSensitiveText("Passport number: X1234567; 银行卡号：6222021234567890123")
         assertFalse(identifiers.contains("X1234567"))
         assertFalse(identifiers.contains("6222021234567890123"))
+        val personal = PhoneAgentRiskPolicy.redactSensitiveText("Phone number: +1 202 555 0123; Date of birth: 2000-01-01")
+        assertFalse(personal.contains("+1 202 555 0123"))
+        assertFalse(personal.contains("2000-01-01"))
     }
 
     @Test
