@@ -11,13 +11,18 @@ object PhoneAgentActionParser {
     )
 
     fun parse(raw: String): ParsedPlan {
+        require(raw.length <= 32_000) { "模型动作响应超过大小限制" }
         val start = raw.indexOf('{')
         val end = raw.lastIndexOf('}')
         require(start >= 0 && end > start) { "模型没有返回有效动作 JSON" }
         val root = JSONObject(raw.substring(start, end + 1))
-        val rows = root.optJSONArray("actions") ?: org.json.JSONArray()
+        require(root.opt("done") is Boolean) { "模型动作响应缺少布尔型 done 字段" }
+        require(root.opt("actions") is org.json.JSONArray) { "模型动作响应缺少 actions 数组" }
+        require(!root.has("summary") || root.opt("summary") is String) { "任务进度摘要格式无效" }
+        require(!root.has("completionEvidence") || root.opt("completionEvidence") is String) { "任务完成核验文字格式无效" }
+        val rows = root.getJSONArray("actions")
         require(rows.length() <= 12) { "单轮动作数量超过安全上限" }
-        val done = root.optBoolean("done", false)
+        val done = root.getBoolean("done")
         val completionEvidenceRaw = root.optString("completionEvidence").trim()
         require(completionEvidenceRaw.length <= 120) { "任务完成核验文字过长" }
         require(root.optString("summary").length <= 600) { "任务进度摘要过长" }
@@ -44,14 +49,14 @@ object PhoneAgentActionParser {
                 }
                 "open_url" -> {
                     val url = item.getString("url").trim()
-                    require(PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "模型生成了不安全或非公开的网址" }
+                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "模型生成了不安全、过长或非公开的网址" }
                     if (PhoneAgentRiskPolicy.containsSensitiveValue(url)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("网页地址包含个人敏感信息，已暂停打开。")
                     } else PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
                     val packageName = item.getString("package").trim()
-                    require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用包名无效" }
+                    require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用包名无效" }
                     PhoneAgentExecutor.Action.LaunchApp(packageName)
                 }
                 "click" -> {
