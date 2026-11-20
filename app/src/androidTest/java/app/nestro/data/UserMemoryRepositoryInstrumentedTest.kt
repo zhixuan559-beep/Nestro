@@ -35,6 +35,7 @@ class UserMemoryRepositoryInstrumentedTest {
         try {
             val dao = database.dao()
             dao.putUserMemory(memory())
+            dao.putConversation(ConversationEntity("conversation-a", "来源会话", 200L, "project-a"))
             val repository = UserMemoryRepository(database)
             val exported = UserMemoryExportCodec.encode(memory())
 
@@ -46,15 +47,44 @@ class UserMemoryRepositoryInstrumentedTest {
             assertEquals("conversation-a", imported.sourceConversationId)
             assertEquals("message-a", imported.sourceMessageId)
 
+            // Removing the original conversation must not delete a memory imported into another project.
+            dao.deleteConversations(listOf("conversation-a"))
+            assertTrue(repository.list("project-a").isEmpty())
+            assertEquals(1, repository.list("project-b").size)
+
             repository.edit(imported.id, "project-b", "表达风格保持清楚简洁", "workflow")
             val edited = repository.list("project-b").single()
             assertEquals("workflow", edited.category)
             assertEquals("表达风格保持清楚简洁", edited.content)
-            assertEquals(listOf("source-memory"), repository.list("project-a").map { it.id })
+            assertTrue(repository.list("project-a").isEmpty())
 
             repository.delete(edited.id, "project-b")
             assertTrue(repository.list("project-b").isEmpty())
-            assertEquals(listOf("source-memory"), repository.list("project-a").map { it.id })
+            assertTrue(repository.list("project-a").isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun clearingAutomaticMemoriesOnlyAffectsTheSelectedProject() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = database.dao()
+            dao.putUserMemory(memory())
+            dao.putUserMemory(memory().copy(
+                id = "other-project-memory",
+                projectId = "project-b",
+                content = "另一项目的独立记忆",
+                fingerprint = UserMemoryStore.fingerprint("preference|另一项目的独立记忆")
+            ))
+            val repository = UserMemoryRepository(database)
+            repository.clearProject("project-a")
+            assertTrue(repository.list("project-a").isEmpty())
+            assertEquals(listOf("other-project-memory"), repository.list("project-b").map { it.id })
         } finally {
             database.close()
         }

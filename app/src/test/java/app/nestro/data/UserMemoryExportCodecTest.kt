@@ -88,6 +88,15 @@ class UserMemoryExportCodecTest {
     }
 
     @Test
+    fun rejectsPayloadsThatExceedTheUtf8ByteLimit() {
+        val oversized = JSONObject(UserMemoryExportCodec.encode(memory()))
+            .put("padding", "界".repeat(11_000))
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.decode(oversized.toString(), "target-project")
+        }
+    }
+
+    @Test
     fun refusesToExportInvalidCategoryOrTimestamp() {
         assertThrows(IllegalArgumentException::class.java) {
             UserMemoryExportCodec.encode(memory().copy(category = "secret"))

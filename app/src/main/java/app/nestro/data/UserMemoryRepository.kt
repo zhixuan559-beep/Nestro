@@ -61,11 +61,13 @@ class UserMemoryRepository(
 
     suspend fun importOne(projectId: String, rawJson: String): Boolean {
         val imported = UserMemoryExportCodec.decode(rawJson, projectId)
-        val dao = database.dao()
-        if (dao.userMemoryByFingerprint(projectId, imported.fingerprint) != null) return false
-        dao.putUserMemory(imported)
-        dao.trimUserMemories(projectId, 200)
-        return true
+        return database.dao().importUserMemoryIfAbsent(imported)
+    }
+
+    suspend fun clearProject(projectId: String) {
+        require(projectId.isNotBlank()) { "记忆项目 ID 无效" }
+        database.dao().deleteUserMemoriesForProject(projectId)
+        synchronized(embeddingCache) { embeddingCache.clear() }
     }
 
     suspend fun delete(id: String, projectId: String) =

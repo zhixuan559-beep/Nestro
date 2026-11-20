@@ -211,6 +211,7 @@ fun NestroApp() {
     var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
     var memoryEdits by memoryUiState.memoryEdits
     var memoryStatus by memoryUiState.memoryStatus
+    var showClearAutomaticMemoryConfirm by remember { mutableStateOf(false) }
     var embeddingModelInstalled by remember { mutableStateOf(false) }
     var embeddingModelInstalling by remember { mutableStateOf(false) }
     var embeddingModelStatus by remember { mutableStateOf("正在检查本地语义模型…") }
@@ -542,8 +543,17 @@ fun NestroApp() {
             memoryStatus = "正在导入单条记忆…"
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                        ?: error("无法读取记忆文件")
+                    val raw = context.contentResolver.openInputStream(uri)?.use { input ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(4096)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            require(output.size() + count <= 32_768) { "记忆文件超过 32 KB，拒绝导入" }
+                            output.write(buffer, 0, count)
+                        }
+                        String(output.toByteArray(), Charsets.UTF_8)
+                    } ?: error("无法读取记忆文件")
                     appRuntime.userMemoryRepository.importOne(activeProjectId, raw)
                 }
             }
@@ -2223,10 +2233,16 @@ fun NestroApp() {
                                     enabled = globalMemory.isNotBlank() || memoryDraft.isNotBlank()
                                 ) { Text("清空全局记忆", color = ColorStop) }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                OutlinedButton(
-                                    onClick = { importMemoryLauncher.launch(arrayOf("application/json", "text/plain")) },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { Text("导入单条记忆 JSON") }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { importMemoryLauncher.launch(arrayOf("application/json", "text/plain")) },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("导入单条记忆 JSON") }
+                                    TextButton(
+                                        onClick = { showClearAutomaticMemoryConfirm = true },
+                                        enabled = automaticMemories.isNotEmpty()
+                                    ) { Text("清空本项目", color = ColorStop) }
+                                }
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.weight(1f)) {
                                         Text("允许自动提取记忆", color = Ink)
@@ -2291,6 +2307,9 @@ fun NestroApp() {
                                     automaticMemories.forEach { memory ->
                                         Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                val sourceConversation = conversations.firstOrNull { it.id == memory.sourceConversationId }
+                                                val canOpenSource = sourceConversation != null &&
+                                                    (sourceConversation.projectId == activeProjectId || sourceConversation.projectId in readableProjectIds)
                                                 var categoryMenuExpanded by remember(memory.id) { mutableStateOf(false) }
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text("分类：${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
@@ -2335,6 +2354,7 @@ fun NestroApp() {
                                                 TextButton(
                                                     onClick = {
                                                         val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
+                                                            ?.takeIf { it.projectId == activeProjectId || it.projectId in readableProjectIds }
                                                         if (source != null) {
                                                             scope.launch {
                                                                 val sourceMessages = if (databaseReady) {
@@ -2352,7 +2372,7 @@ fun NestroApp() {
                                                             }
                                                         }
                                                     },
-                                                    enabled = conversations.any { it.id == memory.sourceConversationId }
+                                                    enabled = canOpenSource
                                                 ) { Text("打开来源会话", color = Mint) }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
@@ -2403,6 +2423,33 @@ fun NestroApp() {
                                     }
                                 }
                                 if (memoryStatus.isNotBlank()) Text(memoryStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (showClearAutomaticMemoryConfirm) {
+                                    AlertDialog(
+                                        onDismissRequest = { showClearAutomaticMemoryConfirm = false },
+                                        title = { Text("清空当前项目自动记忆？") },
+                                        text = { Text("这会删除当前项目的全部自动记忆，不影响其他项目和手动全局记忆。此操作无法撤销。") },
+                                        confirmButton = {
+                                            TextButton(onClick = {
+                                                showClearAutomaticMemoryConfirm = false
+                                                scope.launch {
+                                                    val result = withContext(Dispatchers.IO) {
+                                                        runCatching { appRuntime.userMemoryRepository.clearProject(activeProjectId) }
+                                                    }
+                                                    if (result.isSuccess) {
+                                                        automaticMemories = emptyList()
+                                                        memoryEdits = emptyMap()
+                                                        memoryStatus = "当前项目自动记忆已全部清空"
+                                                    } else {
+                                                        memoryStatus = "清空失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+                                                    }
+                                                }
+                                            }) { Text("确认清空", color = ColorStop) }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showClearAutomaticMemoryConfirm = false }) { Text("取消") }
+                                        }
+                                    )
+                                }
                             }
                         }
                         "spaces" -> {

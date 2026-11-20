@@ -333,6 +333,14 @@ interface NestroDao {
     @Query("DELETE FROM user_memories WHERE projectId = :projectId")
     suspend fun deleteUserMemoriesForProject(projectId: String)
 
+    @Transaction
+    suspend fun importUserMemoryIfAbsent(memory: UserMemoryEntity): Boolean {
+        if (userMemoryByFingerprint(memory.projectId, memory.fingerprint) != null) return false
+        putUserMemory(memory)
+        trimUserMemories(memory.projectId, 200)
+        return true
+    }
+
     @Query("DELETE FROM user_memories WHERE projectId = :projectId AND id NOT IN (SELECT id FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :keep)")
     suspend fun trimUserMemories(projectId: String, keep: Int = 200)
 
@@ -452,13 +460,18 @@ interface NestroDao {
     @Query("DELETE FROM conversations WHERE id IN (:ids)")
     suspend fun deleteConversationRows(ids: List<String>)
 
-    @Query("DELETE FROM user_memories WHERE sourceConversationId IN (:ids)")
-    suspend fun deleteUserMemoriesForConversations(ids: List<String>)
+    @Query("SELECT DISTINCT projectId FROM conversations WHERE id IN (:ids)")
+    suspend fun conversationProjectIds(ids: List<String>): List<String>
+
+    @Query("DELETE FROM user_memories WHERE projectId = :projectId AND sourceConversationId IN (:ids)")
+    suspend fun deleteUserMemoriesForConversations(ids: List<String>, projectId: String)
 
     @Transaction
     suspend fun deleteConversations(ids: List<String>) {
         if (ids.isEmpty()) return
-        deleteUserMemoriesForConversations(ids)
+        conversationProjectIds(ids).forEach { projectId ->
+            deleteUserMemoriesForConversations(ids, projectId)
+        }
         deleteConversationRows(ids)
     }
 

@@ -9,7 +9,7 @@ object UserMemoryExportCodec {
 
     fun decode(raw: String, targetProjectId: String): UserMemoryEntity {
         require(targetProjectId.isNotBlank() && targetProjectId.length <= 120) { "目标项目 ID 无效" }
-        require(raw.length <= 32_768) { "记忆文件超过 32 KB，拒绝导入" }
+        require(raw.toByteArray(Charsets.UTF_8).size <= 32_768) { "记忆文件超过 32 KB，拒绝导入" }
         val json = JSONObject(raw)
         require(json.getString("format") == FORMAT) { "不是 Nestro 单条记忆文件" }
         require(json.getInt("version") == VERSION) { "不支持的记忆文件版本" }
