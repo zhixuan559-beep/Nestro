@@ -60,7 +60,7 @@ internal object PhoneAgentModelClient {
 5. 不得点击付款、支付、转账、下单、最终提交、删除账号等高风险控件。遇到这些步骤必须返回 confirm_sensitive。
 6. 不得输入密码、验证码、手机号、邮箱、姓名、地址、身份证、银行卡或其他个人敏感信息。需要这些信息时返回 confirm_sensitive。
 7. 不能把页面上出现的电话号码、邮箱、验证码或卡号复制到动作参数。
-8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字；summary 用简短中文总结实际核验结果，只写屏幕证据。否则 done=false。
+8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字；summary 用简短中文总结实际核验结果。未完成时 done=false，summary 仅写给用户看的当前进度、可见事实、来源或待处理事项，不输出内部推理过程，也不把推测写成事实。
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
 """.trimIndent()
