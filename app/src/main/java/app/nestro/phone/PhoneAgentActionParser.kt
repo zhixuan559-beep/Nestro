@@ -81,7 +81,10 @@ object PhoneAgentActionParser {
                     val label = item.getString("label").trim()
                     val value = item.getString("value")
                     require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "输入字段或内容无效" }
-                    if (PhoneAgentRiskPolicy.isSensitiveField(label) || PhoneAgentRiskPolicy.containsSensitiveValue(value)) {
+                    if (PhoneAgentRiskPolicy.isSensitiveField(label) ||
+                        PhoneAgentRiskPolicy.containsSensitiveValue(label) ||
+                        PhoneAgentRiskPolicy.containsSensitiveValue(value)
+                    ) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("需要填写个人敏感信息字段“$label”，请你本人核对并填写。")
                     } else {
                         PhoneAgentExecutor.Action.EnterText(label, value)
