@@ -101,4 +101,21 @@ class SkillBundleParserTest {
         assertEquals("短技能", imported.name)
         assertEquals("只输出摘要。", imported.prompt)
     }
+    @Test
+    fun refusesToExportCorruptStoredSkillMetadata() {
+        try {
+            SkillBundleParser.exportJson("损坏技能", prompt, "{not-json")
+            fail("corrupt metadata must not be silently replaced with defaults")
+        } catch (_: IllegalArgumentException) {
+        }
+        try {
+            SkillBundleParser.exportJson(
+                "权限异常技能", prompt,
+                """{"version":"1.0.0","permissions":["root_access"]}"""
+            )
+            fail("invalid stored permission declarations must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
 }
