@@ -126,7 +126,7 @@ class SkillCommunityInstallPlannerTest {
     fun rejectsCommunityUpgradeThatBreaksAnInstalledDependent() {
         val target = release("目标技能", "2.0.0")
         val installed = mapOf("目标技能" to "old prompt", "下游技能" to "child prompt")
-        val metadata = mapOf(
+        val installedMetadata = mapOf(
             "目标技能" to metadata("1.0.0"),
             "下游技能" to JSONObject().put("version", "1.0.0").put(
                 "dependencies", org.json.JSONArray().put(
@@ -135,7 +135,7 @@ class SkillCommunityInstallPlannerTest {
             ).toString()
         )
         assertThrows(IllegalArgumentException::class.java) {
-            SkillCommunityInstallPlanner.createPlan(target, listOf(target), installed, metadata) {
+            SkillCommunityInstallPlanner.createPlan(target, listOf(target), installed, installedMetadata) {
                 bundle(it.name, it.version)
             }
         }
