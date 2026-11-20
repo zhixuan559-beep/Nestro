@@ -43,7 +43,15 @@ object PhoneAgentTaskStore {
                     row.put("type", "launch_app").put("package", action.packageName)
                 }
                 is PhoneAgentExecutor.Action.ClickText -> {
-                    require(action.exactText.isNotBlank() && action.exactText.length <= 80 && (action.expectedAfter == null || action.expectedAfter.length <= 120) && !PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)) { "高风险、敏感或无效点击必须由用户处理" }
+                    require(
+                        action.exactText.isNotBlank() && action.exactText.length <= 80 &&
+                            (action.expectedAfter == null || (
+                                action.expectedAfter.length <= 120 &&
+                                    !PhoneAgentRiskPolicy.containsSensitiveValue(action.expectedAfter)
+                            )) &&
+                            !PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)
+                    ) { "高风险、敏感或无效点击必须由用户处理" }
                     row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 }
                 is PhoneAgentExecutor.Action.EnterText -> {
