@@ -1027,6 +1027,21 @@ private suspend fun applyLocalBackup(
     }
     require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
     val availableSkillNames = buildSet { val names = cleanSkills.keys(); while (names.hasNext()) add(names.next()) }
+    val skillNamesWithMetadata = buildSet { val names = cleanSkillMetadata.keys(); while (names.hasNext()) add(names.next()) }
+    require(skillNamesWithMetadata.all { it in availableSkillNames }) { "备份包含未关联技能的元数据" }
+    val storedSkills = availableSkillNames.associateWith { cleanSkills.getString(it) }
+    val storedMetadata = skillNamesWithMetadata.associateWith { cleanSkillMetadata.getString(it) }
+    skillNamesWithMetadata.forEach { name ->
+        SkillBundleParser.fromStored(name, storedSkills.getValue(name), storedMetadata[name])
+    }
+    storedSkills.forEach { (name, prompt) ->
+        if (name !in disabledSkillNames) {
+            val report = SkillDependencyResolver.inspectInstalledSkill(name, prompt, storedSkills, storedMetadata, disabledSkillNames)
+            require(report.isSatisfied) {
+                "备份技能「$name」依赖无效：" + report.issues.joinToString("；") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }
+            }
+        }
+    }
     val restoredSelectedExpert = ExpertCatalogRules.resolveSelection(restoredSelectedExpertRaw, expertNames.toList(), restoredExpertProfiles)
     restoredExpertProfiles.forEach { (name, profile) ->
         val profileError = ExpertProfileCodec.validate(profile, availableSkillNames)
