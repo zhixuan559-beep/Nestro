@@ -52,6 +52,16 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun webSearchBecomesEncodedHttpsSearchUrl() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"成都 咖啡 到手价"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://html.duckduckgo.com/html/?q="))
+        assertTrue(action.url.contains("%"))
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""
