@@ -396,7 +396,7 @@ object KnowledgeStore {
  private fun parseXml(bytes:ByteArray):Document {
   val factory=DocumentBuilderFactory.newInstance().apply {
    isNamespaceAware=true
-   isXIncludeAware=false
+   // Android's built-in XML parser disables XInclude by default; its setter throws UnsupportedOperationException.
    isExpandEntityReferences=false
    setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING,true)
    setFeature("http://apache.org/xml/features/disallow-doctype-decl",true)
