@@ -96,7 +96,10 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
         require(!PhoneAgentRiskPolicy.containsSensitiveValue(value)) { "输入内容包含敏感信息，必须由用户本人处理" }
-        require(!PhoneAgentRiskPolicy.isSensitiveField(target)) { "密码、验证码及敏感字段必须由用户本人填写" }
+        require(
+            !PhoneAgentRiskPolicy.isSensitiveField(target) &&
+                !PhoneAgentRiskPolicy.containsSensitiveValue(target)
+        ) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
         val matches = findEditableFields(root, target)
@@ -186,7 +189,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     override fun launchPackage(packageName: String): Boolean {
-        require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+        require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
