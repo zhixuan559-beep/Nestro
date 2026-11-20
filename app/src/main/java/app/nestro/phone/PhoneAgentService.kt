@@ -8,6 +8,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment {
+    private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String)
+    @Volatile private var lastTextUndo: TextUndoRecord? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         activeService = this
@@ -110,12 +113,46 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
             audit("SET_TEXT_BLOCKED", "输入框不可见、不可用或属于密码字段")
             return false
         }
+        val previousValue = node.text?.toString().orEmpty()
+        if (PhoneAgentRiskPolicy.containsSensitiveValue(previousValue)) {
+            audit("SET_TEXT_BLOCKED", "原输入框包含敏感信息，已阻止覆盖以避免保存敏感撤销数据")
+            return false
+        }
         val args = android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
         val performed = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         val success = performed && node.text?.toString() == value
+        if (success) lastTextUndo = TextUndoRecord(target, previousValue, value)
         consumeSingleGrantIfNeeded()
         audit("SET_TEXT", "字段=$target，字符数=" + value.length)
         return success
+    }
+
+    fun canUndoLastTextEdit(): Boolean = lastTextUndo != null
+
+    fun undoLastTextEdit(): Boolean {
+        val record = lastTextUndo ?: return false
+        if (!hasValidGrant() || PhoneAgentRiskPolicy.isSensitiveField(record.label) ||
+            PhoneAgentRiskPolicy.containsSensitiveValue(record.previousValue) ||
+            PhoneAgentRiskPolicy.containsSensitiveValue(record.appliedValue)
+        ) return false
+        val root = rootInActiveWindow ?: return false
+        val matches = findEditableFields(root, record.label)
+        if (matches.size != 1) return false
+        val node = matches.single()
+        if (!PhoneAgentTargetPolicy.canFillField(matches.size, node.isVisibleToUser, node.isEnabled, node.isPassword) ||
+            node.text?.toString().orEmpty() != record.appliedValue
+        ) return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, record.previousValue)
+        }
+        val performed = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        val restored = performed && node.text?.toString().orEmpty() == record.previousValue
+        if (restored) {
+            lastTextUndo = null
+            consumeSingleGrantIfNeeded()
+            audit("UNDO_SET_TEXT", "已撤销字段填写：${record.label.take(60)}")
+        }
+        return restored
     }
 
     override fun scroll(direction: String): Boolean {
