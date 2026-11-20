@@ -82,6 +82,25 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun sensitivePostClickEvidenceBecomesUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"继续","expectedAfter":"test@example.com"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun completedPlanCannotAlsoRequestNewActions() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":true,"completionEvidence":"已完成","actions":[{"type":"wait","millis":1}]}"""
+            )
+            fail("a completed plan must not include executable actions")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""
