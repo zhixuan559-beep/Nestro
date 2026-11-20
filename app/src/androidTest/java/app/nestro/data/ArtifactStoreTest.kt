@@ -101,7 +101,8 @@ class ArtifactStoreTest {
 
     @Test
     fun projectDeletionGuardFailsClosedWhenArtifactIndexIsCorrupt() {
-        val index = File(context.filesDir, "artifacts/index.json")
+        val directory = File(context.filesDir, "artifacts").apply { mkdirs() }
+        val index = File(directory, "index.json")
         index.writeText("{not-json")
         assertThrows(Exception::class.java) {
             ArtifactStore.hasProjectArtifactsOrOrphans(context, "project-a")
