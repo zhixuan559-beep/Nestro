@@ -91,7 +91,8 @@ class SkillCommunityInstallPlannerTest {
             root.name to bundle(root.name, root.version,
                 SkillDependency("父级甲", "*"), SkillDependency("父级乙", "*")),
             "父级甲" to bundle("父级甲", "1.0.0", SkillDependency("共享依赖", "^1.0.0")),
-            "父级乙" to bundle("父级乙", "1.0.0", SkillDependency("共享依赖", "^2.0.0"))
+            "父级乙" to bundle("父级乙", "1.0.0", SkillDependency("共享依赖", "^2.0.0")),
+            "共享依赖" to bundle("共享依赖", "1.5.0")
         )
         assertThrows(IllegalArgumentException::class.java) {
             SkillCommunityInstallPlanner.createPlan(root, listOf(root, dep1, dep2, release("父级甲"), release("父级乙")), emptyMap(), emptyMap()) {

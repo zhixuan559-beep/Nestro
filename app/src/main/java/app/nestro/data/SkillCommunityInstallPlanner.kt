@@ -96,8 +96,8 @@ object SkillCommunityInstallPlanner {
                     SkillDependencyResolver.versionSatisfies(installedDependencyVersion, dependency.version)) {
                     return@forEach
                 }
-                if (dependency.name in disabledSkills) {
-                    error("依赖技能“${dependency.name}”已停用，请先在本地技能库启用")
+                require(dependency.name !in disabledSkills) {
+                    "依赖技能“${dependency.name}”已停用，请先在本地技能库启用"
                 }
                 val dependencyRelease = chooseRelease(dependency.name, dependency.version)
                 visit(dependencyRelease, dependency.version)
