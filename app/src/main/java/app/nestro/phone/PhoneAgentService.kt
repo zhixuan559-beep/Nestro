@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment {
-    private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String)
+    private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String, val screenSnapshot: String)
     @Volatile private var lastTextUndo: TextUndoRecord? = null
 
     override fun onServiceConnected() {
@@ -43,7 +43,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
 
     private fun collect(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
         if (depth > 12 || out.size >= 120) return
-        if (!node.isPassword) {
+        if (node.isVisibleToUser && !node.isPassword) {
             val text = node.text?.toString()?.trim().orEmpty()
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
             val value = redactSensitiveText((text.ifBlank { desc }).take(180))
@@ -72,6 +72,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         val normalized = exactText.trim()
         require(normalized.isNotBlank() && normalized.length <= 80) { "目标文本无效" }
         require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
+        require(!PhoneAgentRiskPolicy.containsSensitiveValue(normalized)) { "页面目标包含个人敏感信息，已阻止点击" }
         require(hasValidGrant()) { "没有有效的操作授权" }
         val root = rootInActiveWindow ?: return false
         val matches = findVisibleNodes(root, normalized) { true }
@@ -124,7 +125,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         val success = performed && node.text?.toString() == value
         if (success) {
             lastTextUndo = if (PhoneAgentRiskPolicy.redactSensitiveText(value) == value) {
-                TextUndoRecord(target, previousValue, value)
+                TextUndoRecord(target, previousValue, value, captureVisibleText())
             } else null
         }
         consumeSingleGrantIfNeeded()
@@ -140,6 +141,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
             PhoneAgentRiskPolicy.redactSensitiveText(record.previousValue) != record.previousValue ||
             PhoneAgentRiskPolicy.redactSensitiveText(record.appliedValue) != record.appliedValue
         ) return false
+        val currentSnapshot = captureVisibleText()
+        if (currentSnapshot != record.screenSnapshot) return false
         val root = rootInActiveWindow ?: return false
         val matches = findEditableFields(root, record.label)
         if (matches.size != 1) return false
