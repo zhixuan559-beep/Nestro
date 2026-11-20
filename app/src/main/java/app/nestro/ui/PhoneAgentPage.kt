@@ -129,6 +129,15 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             modifier = Modifier.fillMaxWidth()
         ) { Text("读取当前界面（仅本次主动触发）") }
         Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(
+            onClick = {
+                val undone = PhoneAgentService.activeService?.undoLastTextEdit() == true
+                taskMessage = if (undone) "已撤销上一次安全文本填写" else "当前没有可撤销的安全文本填写，或页面已发生变化"
+                refresh++
+            },
+            enabled = serviceEnabled,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("撤销上次安全文本填写") }
         if (taskMessage.isNotBlank()) Text(taskMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
