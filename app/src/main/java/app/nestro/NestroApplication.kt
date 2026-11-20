@@ -123,8 +123,8 @@ class NestroApplication : Application() {
                     }
                 )
             },
-            saveCandidates = { projectId, conversationId, userId, candidates ->
-                userMemoryRepository.saveCandidates(projectId, conversationId, userId, candidates)
+            saveCandidates = { projectId, conversationId, messageId, candidates ->
+                userMemoryRepository.saveCandidates(projectId, conversationId, messageId, candidates)
             }
         )
     }
