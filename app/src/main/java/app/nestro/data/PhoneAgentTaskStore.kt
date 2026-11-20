@@ -35,8 +35,7 @@ object PhoneAgentTaskStore {
             val row = JSONObject()
             when (action) {
                 is PhoneAgentExecutor.Action.OpenUrl -> {
-                    val uri = runCatching { URI(action.url) }.getOrElse { error("网页地址无效") }
-                    require(action.url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
+                    require(action.url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
                     row.put("type", "open_url").put("url", action.url)
                 }
                 is PhoneAgentExecutor.Action.LaunchApp -> {
@@ -108,8 +107,7 @@ object PhoneAgentTaskStore {
             when (row.getString("type")) {
                 "open_url" -> {
                     val url = row.getString("url").trim()
-                    val uri = runCatching { URI(url) }.getOrElse { error("已保存的网址格式无效") }
-                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
+                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
