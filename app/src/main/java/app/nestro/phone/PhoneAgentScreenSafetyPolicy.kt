@@ -17,7 +17,16 @@ object PhoneAgentScreenSafetyPolicy {
         "账号存在风险",
         "请先登录后继续",
         "登录后继续",
-        "请输入登录密码"
+        "请输入登录密码",
+        "enter verification code",
+        "enter your password",
+        "complete the captcha",
+        "verify you are human",
+        "security check required",
+        "suspicious traffic",
+        "login to continue",
+        "sign in to continue",
+        "unusual activity detected"
     )
 
     fun requiresUserHandoff(screenText: String): Boolean {
