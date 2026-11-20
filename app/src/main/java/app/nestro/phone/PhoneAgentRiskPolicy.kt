@@ -32,7 +32,7 @@ object PhoneAgentRiskPolicy {
         "credit card", "card number", "security code", "phone number",
         "email address", "shipping address", "street address", "home address",
         "postal address", "zip code", "postal code", "recipient", "full name", "account number",
-        "bank account", "routing number", "passport number", "social security", "tax id"
+        "bank account", "routing number", "passport number", "passport", "social security", "ssn", "tax id", "iban", "swift code", "security answer"
     )
 
     private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
@@ -74,7 +74,7 @@ object PhoneAgentRiskPolicy {
         .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
         .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
         .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
-        .replace(Regex("(passport number|social security|tax id|bank account|routing number|card number|security code|account number)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[敏感信息已隐藏]")
+        .replace(Regex("(护照号|护照号码|社保号|税号|银行卡号|卡号|银行账号|账号|passport number|passport|social security|ssn|tax id|iban|swift code|bank account|routing number|card number|security code|account number)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1:[敏感信息已隐藏]")
 
     private fun normalize(value: String): String =
         value.trim().lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
