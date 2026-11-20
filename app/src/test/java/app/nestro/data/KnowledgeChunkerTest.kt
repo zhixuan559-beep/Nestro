@@ -58,4 +58,13 @@ class KnowledgeChunkerTest {
     fun rejectsInvalidChunkConfiguration() {
         assertTrue(runCatching { KnowledgeChunker.split("abc", chunkSize = 10, overlap = 10) }.isFailure)
     }
+
+    @Test fun chunkLengthNeverExceedsLimitAtSurrogateBoundary() {
+        val source = "a".repeat(9) + "😀" + "b".repeat(20)
+        val chunks = KnowledgeChunker.split(source, chunkSize = 10, overlap = 2)
+        assertTrue(chunks.all { it.length <= 10 })
+        assertFalse(chunks.any { it.lastOrNull()?.isHighSurrogate() == true })
+        assertFalse(chunks.any { it.firstOrNull()?.isLowSurrogate() == true })
+        assertEquals(source, KnowledgeChunker.reassemble(chunks))
+    }
 }

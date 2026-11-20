@@ -36,17 +36,30 @@ object KnowledgeStore {
   val mime=resolver.getType(uri).orEmpty().lowercase()
   val name=resolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c -> if(c.moveToFirst()) c.getString(0) else null } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "导入文档"
   val ext=name.substringAfterLast('.',"").lowercase()
-  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/") || mime=="application/json" || mime=="application/xml" || mime.endsWith("+xml") || mime=="application/pdf") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。" }
+  val format = ext.ifBlank {
+   when {
+    mime=="application/pdf" -> "pdf"
+    mime=="application/xml" || mime=="text/xml" || mime.endsWith("+xml") -> "xml"
+    mime.contains("html") -> "html"
+    mime=="text/csv" -> "csv"
+    mime=="application/json" -> "json"
+    mime=="application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
+    mime=="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> "xlsx"
+    mime=="application/vnd.openxmlformats-officedocument.presentationml.presentation" -> "pptx"
+    else -> ""
+   }
+  }
+  require(format in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/")) { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。" }
   val bytes=resolver.openInputStream(uri)?.use { input ->
    val out=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0
    while(true) { val n=input.read(buffer); if(n<0) break; total+=n; require(total<=MAX_FILE_BYTES) { "文件超过 2 MB，请先拆分或压缩。" }; out.write(buffer,0,n) }
    out.toByteArray()
   } ?: error("无法读取所选文件")
   val parsed=when {
-   ext=="pdf" || mime=="application/pdf" -> extractPdfText(context,bytes)
-   ext in setOf("docx","xlsx","pptx") -> extractOfficeText(ext, bytes)
-   ext in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(KnowledgeTextDecoder.decode(bytes),Html.FROM_HTML_MODE_COMPACT).toString()
-   ext=="xml" || mime=="application/xml" || mime.endsWith("+xml") -> extractXmlText(bytes)
+   format=="pdf" || mime=="application/pdf" -> extractPdfText(context,bytes)
+   format in setOf("docx","xlsx","pptx") -> extractOfficeText(format, bytes)
+   format in setOf("html","htm") || mime.contains("html") -> Html.fromHtml(KnowledgeTextDecoder.decode(bytes),Html.FROM_HTML_MODE_COMPACT).toString()
+   format=="xml" || mime=="application/xml" || mime.endsWith("+xml") -> extractXmlText(bytes)
    else -> KnowledgeTextDecoder.decode(bytes)
   }
   val normalized=parsed.replace("\u0000","").replace("\r\n","\n").trim()
@@ -55,7 +68,7 @@ object KnowledgeStore {
   val hash=MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
   val existing=dao.knowledgeDocumentByHash(projectId, hash)
   if(existing!=null) return@withContext KnowledgeImportResult(existing,true)
-  val resolvedMime=mime.ifBlank { if(ext=="pdf") "application/pdf" else "text/plain" }
+  val resolvedMime=mime.ifBlank { if(format=="pdf") "application/pdf" else "text/plain" }
   val document=KnowledgeDocumentEntity(UUID.randomUUID().toString(),projectId,name.replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().take(180).ifBlank { "导入文档" },resolvedMime,bytes.size.toLong(),System.currentTimeMillis(),hash)
   val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
@@ -89,6 +102,7 @@ object KnowledgeStore {
      val matchQuery = "\"" + term.replace("\"", "\"\"") + "\""
      try {
       dao.searchKnowledgeChunksFts(projectId, matchQuery, MAX_CANDIDATES_PER_TERM)
+       .ifEmpty { dao.searchKnowledgeChunks(projectId, term, MAX_CANDIDATES_PER_TERM) }
      } catch (cancel: CancellationException) {
       throw cancel
      } catch (_: Exception) {
@@ -113,6 +127,7 @@ object KnowledgeStore {
      if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
       try {
        dao.knowledgeFtsDocumentFrequency(projectId, "\"" + term.replace("\"", "\"\"") + "\"")
+        .takeIf { it > 0 } ?: dao.knowledgeChunkDocumentFrequency(projectId, term)
       } catch (cancel: CancellationException) {
        throw cancel
       } catch (_: Exception) {

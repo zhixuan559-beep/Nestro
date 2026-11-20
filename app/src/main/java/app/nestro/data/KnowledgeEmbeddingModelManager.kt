@@ -145,6 +145,7 @@ internal object KnowledgeEmbeddingModelManager {
     }
 
     private fun normalize(vector: FloatArray): FloatArray {
+        require(vector.size == 512) { "BGE-small-zh-v1.5 应返回 512 维向量。" }
         val norm = kotlin.math.sqrt(vector.sumOf { it.toDouble() * it.toDouble() })
         require(norm > 0.0 && norm.isFinite()) { "模型返回了无效向量。" }
         return FloatArray(vector.size) { (vector[it] / norm).toFloat() }

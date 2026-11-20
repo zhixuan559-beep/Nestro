@@ -11,7 +11,7 @@ object KnowledgeChunker {
         overlap: Int = 120,
         maxChunks: Int = 600
     ): List<String> {
-        require(chunkSize > 0) { "chunkSize must be positive" }
+        require(chunkSize >= 2) { "chunkSize must be at least 2 to preserve UTF-16 surrogate pairs" }
         require(overlap >= 0 && overlap < chunkSize) { "overlap must be smaller than chunkSize" }
         require(maxChunks > 0) { "maxChunks must be positive" }
         if (text.isEmpty()) return emptyList()

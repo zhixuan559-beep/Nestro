@@ -10,14 +10,14 @@ internal object KnowledgeVectorSearch {
     fun encode(vector: FloatArray): ByteArray {
         require(vector.isNotEmpty() && vector.all { it.isFinite() }) { "向量必须包含有限数值。" }
         val buffer = ByteBuffer.allocate(vector.size * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-        vector.forEach(buffer::putFloat)
+        vector.forEach { buffer.putFloat(it) }
         return buffer.array()
     }
 
     fun decode(bytes: ByteArray, dimensions: Int): FloatArray? {
         if (dimensions <= 0 || bytes.size != dimensions * Float.SIZE_BYTES) return null
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
-        return FloatArray(dimensions).also(buffer::get).takeIf { vector -> vector.all { it.isFinite() } }
+        return FloatArray(dimensions).also { buffer.get(it) }.takeIf { vector -> vector.all { it.isFinite() } }
     }
 
     fun rank(

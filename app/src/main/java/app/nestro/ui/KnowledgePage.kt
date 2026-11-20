@@ -65,6 +65,9 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
   previewDocument=null
   previewContent=""
   previewLoading=false
+  loading=false
+  searching=false
+  semanticModelBusy=false
   status="正在读取当前项目的本地知识库…"
   semanticModelReady = KnowledgeEmbeddingModelManager.isInstalled(context)
   runCatchingCancellable { refresh(projectId) }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
@@ -74,12 +77,21 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
    loading=true; status="正在读取并建立本地索引…"
    val requestedProjectId=projectId
    scope.launch {
-    val result=runCatchingCancellable { repository.importText(context,context.contentResolver,uri,requestedProjectId) }
-    if(latestProjectId==requestedProjectId) {
-     result.onSuccess { refresh(requestedProjectId); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
-      .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
+    try {
+     val result=runCatchingCancellable { repository.importText(context,context.contentResolver,uri,requestedProjectId) }
+     if(latestProjectId==requestedProjectId) {
+      result.onSuccess {
+       refresh(requestedProjectId)
+       status=when {
+        it.duplicate -> "这份文档已存在，无需重复导入。"
+        it.vectorIndexPending -> "文档已导入，但语义向量索引暂未完成；可重建当前项目索引。"
+        else -> "已导入「${it.document.name}」，可在当前项目对话中检索。"
+       }
+      }.onFailure { status="导入失败：${it.message ?: "未知错误"}" }
+     }
+    } finally {
+     if(latestProjectId==requestedProjectId) loading=false
     }
-    loading=false
    }
   }
  }
@@ -144,18 +156,21 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
     val requestedProjectId=projectId
     val requestedQuery=searchQuery
     scope.launch {
-     val result=runCatchingCancellable {
-      accessibleProjectIds()
-       .flatMap { sourceProjectId -> repository.search(sourceProjectId,requestedQuery,6) }
-       .take(6)
+     try {
+      val result=runCatchingCancellable {
+       accessibleProjectIds()
+        .flatMap { sourceProjectId -> repository.search(sourceProjectId,requestedQuery,6) }
+        .take(6)
+      }
+      if(latestProjectId==requestedProjectId) {
+       result.onSuccess {
+        searchResults.clear(); searchResults.addAll(it)
+        status=if(it.isEmpty()) "没有找到匹配片段，可以换一种关键词表达。" else "找到 ${it.size} 个相关片段，下面展示实际命中内容。"
+       }.onFailure { status="检索失败：${it.message ?: "未知错误"}" }
+      }
+     } finally {
+      if(latestProjectId==requestedProjectId) searching=false
      }
-     if(latestProjectId==requestedProjectId) {
-      result.onSuccess {
-       searchResults.clear(); searchResults.addAll(it)
-       status=if(it.isEmpty()) "没有找到匹配片段，可以换一种关键词表达。" else "找到 ${it.size} 个相关片段，下面展示实际命中内容。"
-      }.onFailure { status="检索失败：${it.message ?: "未知错误"}" }
-     }
-     searching=false
     }
    },
    enabled=!searching && searchQuery.isNotBlank() && documents.isNotEmpty(),
@@ -185,10 +200,13 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
         previewDocument=doc; previewLoading=true; previewContent=""
         val requestedProjectId=projectId
         scope.launch {
-         val result=runCatchingCancellable { repository.documentContent(doc.id,doc.projectId) }
-         if(latestProjectId==requestedProjectId && previewDocument?.id==doc.id) {
-          previewContent=result.fold({ it },{ "读取文档失败：" + (it.message ?: "未知错误") })
-          previewLoading=false
+         try {
+          val result=runCatchingCancellable { repository.documentContent(doc.id,doc.projectId) }
+          if(latestProjectId==requestedProjectId && previewDocument?.id==doc.id) {
+           previewContent=result.fold({ it },{ "读取文档失败：" + (it.message ?: "未知错误") })
+          }
+         } finally {
+          if(latestProjectId==requestedProjectId && previewDocument?.id==doc.id) previewLoading=false
          }
         }
        }) { Text("查看内容") }
