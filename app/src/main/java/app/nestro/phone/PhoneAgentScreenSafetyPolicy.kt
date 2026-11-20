@@ -1,8 +1,11 @@
 package app.nestro.phone
 
-/** Deterministic stop gate for authentication, CAPTCHA and anti-abuse screens. */
+/**
+ * Deterministic, fail-closed handoff gate for authentication, anti-abuse,
+ * consent and Android permission screens. Checked before every device action.
+ */
 object PhoneAgentScreenSafetyPolicy {
-    private val handoffSignals = listOf(
+    private val directHandoffSignals = listOf(
         "请输入验证码",
         "短信验证码",
         "图形验证码",
@@ -26,11 +29,55 @@ object PhoneAgentScreenSafetyPolicy {
         "suspicious traffic",
         "login to continue",
         "sign in to continue",
-        "unusual activity detected"
+        "unusual activity detected",
+        "accept all cookies",
+        "accept cookies",
+        "cookie preferences",
+        "by clicking accept you agree",
+        "i agree to the terms",
+        "agree and continue",
+        "accept and continue",
+        "同意并继续",
+        "接受并继续",
+        "接受全部cookie",
+        "请阅读并同意",
+        "我已阅读并同意",
+        "请勾选同意",
+        "隐私政策与用户协议",
+        "权限请求",
+        "请求访问权限"
+    )
+
+    private val permissionVerbs = listOf(
+        "是否允许",
+        "允许访问",
+        "使用应用时允许",
+        "仅限这一次",
+        "allow while using",
+        "only this time",
+        "don't allow",
+        "do not allow",
+        "allow access",
+        "allow nestro to"
+    )
+
+    private val permissionResources = listOf(
+        "位置", "通知", "相机", "摄像头", "麦克风", "照片", "视频",
+        "文件", "通讯录", "location", "notifications", "camera",
+        "microphone", "photos", "videos", "files", "contacts"
     )
 
     fun requiresUserHandoff(screenText: String): Boolean {
         val normalized = screenText.replace(Regex("\\s+"), "").lowercase()
-        return handoffSignals.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) }
+        if (directHandoffSignals.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) }) {
+            return true
+        }
+        val hasPermissionVerb = permissionVerbs.any {
+            normalized.contains(it.replace(Regex("\\s+"), "").lowercase())
+        }
+        val hasPermissionResource = permissionResources.any {
+            normalized.contains(it.replace(Regex("\\s+"), "").lowercase())
+        }
+        return hasPermissionVerb && hasPermissionResource
     }
 }
