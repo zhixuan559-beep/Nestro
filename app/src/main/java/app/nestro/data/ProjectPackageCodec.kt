@@ -509,6 +509,29 @@ internal object ProjectPackageCodec {
             }
         }
         current.put("project_resource_scopes_v1", ProjectResourceScopeStore.encode(scopes))
+        val mergedSkillsObject = objectField(current, "skills")
+        val mergedMetadataObject = objectField(current, "skill_metadata_v1")
+        val mergedSkillNames = mergedSkillsObject.keys().asSequence().toSet()
+        val mergedMetadataNames = mergedMetadataObject.keys().asSequence().toSet()
+        require(mergedMetadataNames.all { it in mergedSkillNames }) { "项目包包含未关联技能的元数据" }
+        val mergedSkills = mergedSkillNames.associateWith { mergedSkillsObject.optString(it) }
+        val mergedMetadata = mergedMetadataNames.associateWith { mergedMetadataObject.optString(it) }
+        mergedMetadata.forEach { (name, metadata) ->
+            SkillBundleParser.fromStored(name, mergedSkills.getValue(name), metadata)
+        }
+        val disabledSkillNames = arrayField(current, "disabled_skills_v1").toStringList().toSet()
+        val visibleSkills = mergedSkills.filterKeys { name ->
+            ProjectResourceScopeStore.isVisibleFromProjects(scopes, ProjectResourceKind.SKILL, name, projectId, setOf(projectId))
+        }
+        visibleSkills.forEach { (name, prompt) ->
+            if (name !in disabledSkillNames) {
+                val report = SkillDependencyResolver.inspectInstalledSkill(name, prompt, visibleSkills, mergedMetadata, disabledSkillNames)
+                require(report.isSatisfied) {
+                    "项目包技能「$name」依赖无效或超出当前项目权限：" +
+                        report.issues.joinToString("；") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }
+                }
+            }
+        }
         current.put("selected_team_id", teamIdMap.values.firstOrNull() ?: "")
         current.put("selected_expert", "通用助手")
     }
