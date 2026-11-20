@@ -23,7 +23,6 @@ object SkillCommunityInstallPlanner {
         val selected = linkedMapOf<String, SkillBundle>()
         val visiting = linkedSetOf<String>()
         val ordered = mutableListOf<SkillBundle>()
-        val resolvedReleases = mutableMapOf<String, SignedSkillRelease>()
 
         fun installedVersion(name: String): String? {
             if (name !in installedSkills) return null
@@ -68,12 +67,12 @@ object SkillCommunityInstallPlanner {
                 return
             }
             require(selected.size < 25) { "单次安装依赖超过 25 个技能，已停止解析" }
-            ensureReplaceable(release)
             val installed = installedVersion(name)
             if (!isRoot && installed != null) {
                 require(name !in disabledSkills) { "依赖技能“$name”已停用，请先在本地技能库启用" }
                 if (expectedConstraint != null && SkillDependencyResolver.versionSatisfies(installed, expectedConstraint)) return
             }
+            ensureReplaceable(release)
             if (!isRoot && name in installedSkills) {
                 val meta = installedMetadata[name]?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
                 require(meta?.optString("source") == SkillInstallPolicy.VERIFIED_COMMUNITY_SOURCE) {
@@ -105,7 +104,6 @@ object SkillCommunityInstallPlanner {
             }
             visiting -= name
             selected[name] = bundle
-            resolvedReleases[name] = release
             ordered += bundle
         }
 
