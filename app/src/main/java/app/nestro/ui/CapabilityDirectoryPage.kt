@@ -171,6 +171,16 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
             stagedSkills = stagedSkills + (bundle.name to bundle.prompt)
             stagedMetadata = stagedMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
         }
+        plan.forEach { bundle ->
+            val incompatible = SkillDependencyResolver.findIncompatibleDependents(
+                bundle.name, bundle.version, stagedSkills, stagedMetadata
+            )
+            if (incompatible == null) {
+                issues += "${bundle.name}：现有依赖元数据损坏，无法证明升级安全"
+            } else if (incompatible.isNotEmpty()) {
+                issues += "${bundle.name}：升级会破坏以下技能的版本约束：" + incompatible.joinToString("、")
+            }
+        }
         val canInstall = issues.isEmpty()
         AlertDialog(
             onDismissRequest={pendingPlan=null},
@@ -191,18 +201,41 @@ fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, S
                 Text("仅保存提示词与元数据，不执行第三方包内代码；权限声明不会自动授予系统权限。")
             }},
             confirmButton={TextButton(enabled=canInstall,onClick={
-                val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
-                val metadata=runCatching { JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}") }.getOrDefault(JSONObject())
+                val currentSkillsJson = runCatching { JSONObject(prefs.getString("skills", "{}") ?: "{}") }.getOrDefault(JSONObject())
+                val currentMetadataJson = runCatching { JSONObject(prefs.getString("skill_metadata_v1", "{}") ?: "{}") }.getOrDefault(JSONObject())
+                val currentDisabledJson = runCatching { JSONArray(prefs.getString("disabled_skills_v1", "[]") ?: "[]") }.getOrDefault(JSONArray())
+                val currentSkills = currentSkillsJson.keys().asSequence().associateWith { currentSkillsJson.optString(it) }
+                val currentMetadata = currentMetadataJson.keys().asSequence().associateWith { currentMetadataJson.optString(it) }
+                val currentDisabled = (0 until currentDisabledJson.length()).map { currentDisabledJson.optString(it) }.toSet()
+                var finalSkills = currentSkills
+                var finalMetadata = currentMetadata
+                val finalIssues = mutableListOf<String>()
                 plan.forEach { bundle ->
-                    skills.put(bundle.name,bundle.prompt)
-                    metadata.put(bundle.name,SkillBundleParser.metadataJson(bundle))
+                    val assessment = SkillInstallPolicy.inspectCommunityRelease(bundle, finalSkills, finalMetadata, currentDisabled)
+                    assessment.issues.forEach { finalIssues += "${bundle.name}：$it" }
+                    finalSkills = finalSkills + (bundle.name to bundle.prompt)
+                    finalMetadata = finalMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
                 }
-                val saved = prefs.edit().putString("skills",skills.toString())
-                    .putString("skill_metadata_v1",metadata.toString()).commit()
+                plan.forEach { bundle ->
+                    val incompatible = SkillDependencyResolver.findIncompatibleDependents(
+                        bundle.name, bundle.version, finalSkills, finalMetadata
+                    )
+                    if (incompatible == null) finalIssues += "${bundle.name}：依赖元数据损坏，无法证明升级安全"
+                    else if (incompatible.isNotEmpty()) finalIssues += "${bundle.name}：升级会破坏 " + incompatible.joinToString("、")
+                }
+                if (finalIssues.isNotEmpty()) {
+                    installStatus = "安装前复核失败，已取消：" + finalIssues.distinct().joinToString("；")
+                    pendingPlan = null
+                    return@TextButton
+                }
+                val skills = JSONObject().apply { finalSkills.forEach { (name, prompt) -> put(name, prompt) } }
+                val metadata = JSONObject().apply { finalMetadata.forEach { (name, raw) -> put(name, raw) } }
+                val saved = prefs.edit().putString("skills", skills.toString())
+                    .putString("skill_metadata_v1", metadata.toString()).commit()
                 installStatus=if(saved) "已原子安装/更新 ${plan.size} 个社区技能；未自动选为当前技能。" else "安装失败：本地存储提交失败。"
                 if(saved) {
-                    val updatedSkills = skills.keys().asSequence().associateWith { skills.optString(it) }
-                    val updatedMetadata = metadata.keys().asSequence().associateWith { metadata.optString(it) }
+                    val updatedSkills = finalSkills
+                    val updatedMetadata = finalMetadata
                     onSkillsChanged(updatedSkills, updatedMetadata)
                     pendingPlan=null
                 }
