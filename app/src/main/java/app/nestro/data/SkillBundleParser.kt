@@ -37,7 +37,7 @@ object SkillBundleParser {
         val prompt = json.optString("prompt").trim()
         val source = json.optString("source", safeSource).take(200)
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
-        require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本必须使用语义版本格式" }
+        require(SkillDependencyResolver.isValidVersion(version)) { "技能版本必须使用不超过 40 字符的有效语义版本格式" }
         require(description.length <= 300) { "技能描述过长" }
         require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
@@ -54,9 +54,10 @@ object SkillBundleParser {
             val item = dependencyArray.getJSONObject(index)
             val dependencyName = item.optString("name").trim()
             val dependencyVersion = item.optString("version", "*").trim()
-            require(dependencyName.isNotBlank() && dependencyName.length <= 80 && dependencyVersion.length <= 40) { "技能依赖格式无效" }
+            require(dependencyName.isNotBlank() && dependencyName.length <= 40 && SkillDependencyResolver.isValidConstraint(dependencyVersion)) { "技能依赖名称或版本约束格式无效" }
             SkillDependency(dependencyName, dependencyVersion)
         }
+        require(dependencies.map { it.name }.distinct().size == dependencies.size) { "技能依赖不能重复声明" }
         return SkillBundle(name, version, description, prompt, source, permissions, dependencies)
     }
 

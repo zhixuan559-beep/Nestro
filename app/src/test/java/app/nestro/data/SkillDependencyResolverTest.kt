@@ -60,6 +60,18 @@ class SkillDependencyResolverTest {
     }
 
     @Test
+    fun rejectsOversizedVersionComponentsAndMalformedDependencyMetadata() {
+        assertFalse(SkillDependencyResolver.isValidVersion("99999999999999999999.0.0"))
+        val report = SkillDependencyResolver.inspect(
+            bundle(SkillDependency("损坏元数据", "*")),
+            mapOf("损坏元数据" to "prompt"),
+            mapOf("损坏元数据" to """{"version":"1.0.0","dependencies":"not-an-array"}""")
+        )
+        assertFalse(report.isSatisfied)
+        assertTrue(report.issues.single().reason == "依赖元数据格式无效")
+    }
+
+    @Test
     fun supportsCaretTildeAndLegacyTwoPartMinimumVersions() {
         assertTrue(SkillDependencyResolver.versionSatisfies("1.8.0", "^1.2.0"))
         assertFalse(SkillDependencyResolver.versionSatisfies("2.0.0", "^1.2.0"))

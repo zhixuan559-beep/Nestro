@@ -22,8 +22,17 @@ object SkillDependencyResolver {
     )
     private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.-]+)?$")
 
-    fun isValidConstraint(raw: String): Boolean =
-        raw.length <= 40 && constraintPattern.matches(raw.trim())
+    fun isValidConstraint(raw: String): Boolean {
+        val value = raw.trim()
+        if (value.length > 40 || !constraintPattern.matches(value)) return false
+        if (value == "*") return true
+        val version = value.removePrefix(">=").removePrefix("^").removePrefix("~")
+        return version.substringBefore("-").substringBefore("+").split(".").all { it.length in 1..18 }
+    }
+
+    fun isValidVersion(raw: String): Boolean =
+        raw.length <= 40 && versionPattern.matches(raw) &&
+            raw.substringBefore("-").substringBefore("+").split(".").all { it.length in 1..18 }
 
     fun inspect(
         candidate: SkillBundle,
@@ -63,6 +72,10 @@ object SkillDependencyResolver {
             }
             resolved += name
             if (!visited.add(issueKey)) return
+            if (metadata.has("dependencies") && metadata.optJSONArray("dependencies") == null) {
+                issues[issueKey] = SkillDependencyIssue(name, dependency.version, "依赖元数据格式无效")
+                return
+            }
             val nested = metadata.optJSONArray("dependencies") ?: return
             val nextChain = chain + name
             for (index in 0 until nested.length()) {
@@ -87,8 +100,8 @@ object SkillDependencyResolver {
 
     fun versionSatisfies(installed: String, constraint: String): Boolean {
         val required = constraint.trim()
-        if (required == "*") return versionPattern.matches(installed)
-        if (!versionPattern.matches(installed)) return false
+        if (required == "*") return isValidVersion(installed)
+        if (!isValidVersion(installed) || !isValidConstraint(required)) return false
 
         fun normalize(raw: String): String {
             val withoutBuild = raw.substringBefore("+")
