@@ -43,6 +43,9 @@ class PhoneAgentRiskPolicyTest {
         assertFalse(redacted.contains("test@example.com"))
         assertTrue(redacted.contains("[手机号已隐藏]"))
         assertTrue(redacted.contains("[邮箱已隐藏]"))
+        val english = PhoneAgentRiskPolicy.redactSensitiveText("Shipping address: 123 Main Street; Full name: Alex")
+        assertFalse(english.contains("123 Main Street"))
+        assertFalse(english.contains("Alex"))
     }
 
     @Test
