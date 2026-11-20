@@ -25,10 +25,17 @@ object PhoneAgentActionParser {
                     val query = item.getString("query").trim()
                     require(query.isNotBlank() && query.length <= 240) { "网页搜索关键词无效" }
                     val encoded = java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
+                    val engine = item.optString("engine", "duckduckgo").trim().lowercase()
+                    val searchBase = when (engine) {
+                        "duckduckgo" -> "https://html.duckduckgo.com/html/?q="
+                        "google" -> "https://www.google.com/search?q="
+                        "bing" -> "https://www.bing.com/search?q="
+                        else -> error("不支持的网页搜索服务")
+                    }
                     if (PhoneAgentRiskPolicy.containsSensitiveValue(query) || PhoneAgentRiskPolicy.isSensitiveField(query)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("搜索内容包含个人敏感信息，请先移除敏感内容再继续检索。")
                     } else {
-                        PhoneAgentExecutor.Action.OpenUrl("https://html.duckduckgo.com/html/?q=$encoded")
+                        PhoneAgentExecutor.Action.OpenUrl(searchBase + encoded)
                     }
                 }
                 "open_url" -> {
