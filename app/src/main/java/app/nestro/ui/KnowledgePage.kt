@@ -3,6 +3,7 @@ import android.content.Context
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeSearchResult
 import app.nestro.data.KnowledgeRepository
+import app.nestro.data.KnowledgeEmbeddingModelManager
 import app.nestro.data.ProjectAccessControlStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,8 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
  var previewContent by remember { mutableStateOf("") }
  var previewLoading by remember { mutableStateOf(false) }
  var searching by remember { mutableStateOf(false) }
+ var semanticModelReady by remember { mutableStateOf(KnowledgeEmbeddingModelManager.isInstalled(context)) }
+ var semanticModelBusy by remember { mutableStateOf(false) }
  val searchResults=remember { mutableStateListOf<KnowledgeSearchResult>() }
  suspend fun accessibleProjectIds():List<String> {
   val granted=readableProjectIds.filter { sourceProjectId ->
@@ -63,6 +66,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
   previewContent=""
   previewLoading=false
   status="正在读取当前项目的本地知识库…"
+  semanticModelReady = KnowledgeEmbeddingModelManager.isInstalled(context)
   runCatchingCancellable { refresh(projectId) }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
  }
  val launcher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -84,6 +88,46 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
   Text("当前空间：$projectId。已授权读取的项目知识库也会显示；写入授权可管理对应项目的文档。资料保存在本机 Room 数据库。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   Button(onClick={launcher.launch(arrayOf("text/*","application/json","application/xml","application/octet-stream","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/pdf"))},enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=KnowledgeMint,contentColor=androidx.compose.ui.graphics.Color(0xFF0F1115))) { Text(if(loading) "处理中…" else "＋ 导入文档") }
   Text("支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。单文件上限 2 MB，Office 文件解压后上限 8 MB。PDF 文本层直接提取，扫描页自动使用本机中文 OCR 后进入索引。",color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
+  Text(
+   if (semanticModelReady) "本地语义模型：BGE-small-zh-v1.5 已安装；检索支持 BM25 + 向量混合排序。"
+   else "本地语义模型尚未安装；当前使用 BM25。首次下载约 24 MB，下载后可离线检索。",
+   color = KnowledgeMuted,
+   style = MaterialTheme.typography.bodySmall
+  )
+  OutlinedButton(
+   onClick = {
+    val requestedProjectId = projectId
+    semanticModelBusy = true
+    scope.launch {
+     try {
+      if (!KnowledgeEmbeddingModelManager.isInstalled(context)) {
+       status = "正在下载并校验本地语义模型…"
+       KnowledgeEmbeddingModelManager.install(context)
+       semanticModelReady = true
+      }
+      status = "正在为当前项目建立语义向量索引…"
+      repository.rebuildVectorIndex(requestedProjectId)
+      if (latestProjectId == requestedProjectId) status = "本地语义检索已启用，当前项目索引已建立。"
+     } catch (cancel: CancellationException) {
+      throw cancel
+     } catch (error: Exception) {
+      if (latestProjectId == requestedProjectId) status = "语义检索准备失败：${error.message ?: "未知错误"}"
+     } finally {
+      if (latestProjectId == requestedProjectId) semanticModelBusy = false
+     }
+    }
+   },
+   enabled = !semanticModelBusy,
+   modifier = Modifier.fillMaxWidth()
+  ) {
+   Text(
+    when {
+     semanticModelBusy -> "正在准备语义检索…"
+     semanticModelReady -> "重建当前项目语义索引"
+     else -> "启用本地语义检索（约 24 MB）"
+    }
+   )
+  }
   Text(status,color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
   OutlinedTextField(
    value=searchQuery,
@@ -123,7 +167,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
     Surface(color=KnowledgeCard,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
      Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
       Text(result.documentName,color=KnowledgeInk,style=MaterialTheme.typography.titleSmall)
-      Text("片段 ${result.chunkPosition+1} · 匹配词：${result.matchedTerms.joinToString("、")}",color=KnowledgeMint,style=MaterialTheme.typography.labelSmall)
+      Text("${result.retrievalMode} · 片段 ${result.chunkPosition+1} · ${if (result.matchedTerms.isEmpty()) "语义相关" else "匹配词：" + result.matchedTerms.joinToString("、")}",color=KnowledgeMint,style=MaterialTheme.typography.labelSmall)
       Text(result.content.take(700),color=KnowledgeMuted,style=MaterialTheme.typography.bodySmall)
      }
     }

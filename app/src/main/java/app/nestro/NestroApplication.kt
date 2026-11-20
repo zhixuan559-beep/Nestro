@@ -67,9 +67,9 @@ class NestroApplication : Application() {
         ConversationStartupCoordinator(conversationPersistenceService)
     }
     val userMemoryRepository: UserMemoryRepository by lazy { UserMemoryRepository(database) }
-    val conversationContextRepository: ConversationContextRepository by lazy { ConversationContextRepository(database) }
+    val conversationContextRepository: ConversationContextRepository by lazy { ConversationContextRepository(database, this) }
     val projectSpaceRepository: ProjectSpaceRepository by lazy { ProjectSpaceRepository(database) }
-    val knowledgeRepository: KnowledgeRepository by lazy { KnowledgeRepository(database) }
+    val knowledgeRepository: KnowledgeRepository by lazy { KnowledgeRepository(database, this) }
     val localBackupRepository: LocalBackupRepository by lazy { LocalBackupRepository(this, database) }
     val modelConfigurationRepository: ModelConfigurationRepository by lazy {
         ModelConfigurationRepository(this)

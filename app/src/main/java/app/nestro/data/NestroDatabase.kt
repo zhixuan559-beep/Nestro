@@ -59,6 +59,27 @@ data class KnowledgeDocumentEntity(
 @Entity(tableName = "knowledge_chunks", foreignKeys = [ForeignKey(entity = KnowledgeDocumentEntity::class, parentColumns = ["id"], childColumns = ["documentId"], onDelete = ForeignKey.CASCADE)], indices = [Index(value = ["documentId"]), Index(value = ["projectId"])])
 data class KnowledgeChunkEntity(@PrimaryKey val id: String, val documentId: String, val projectId: String, val position: Int, val content: String)
 
+@Entity(
+    tableName = "knowledge_chunk_embeddings",
+    primaryKeys = ["chunkId", "modelId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = KnowledgeChunkEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["chunkId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["modelId"])]
+)
+data class KnowledgeChunkEmbeddingEntity(
+    val chunkId: String,
+    val modelId: String,
+    val dimensions: Int,
+    val embedding: ByteArray
+)
+
+
 @Fts4(tokenizer = androidx.room.FtsOptions.TOKENIZER_UNICODE61)
 @Entity(tableName = "knowledge_chunks_fts")
 data class KnowledgeChunkFtsEntity(
@@ -637,6 +658,21 @@ interface NestroDao {
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
     @Query("SELECT * FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId ORDER BY position ASC")
     suspend fun knowledgeChunksForDocument(documentId: String, projectId: String): List<KnowledgeChunkEntity>
+
+    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId ASC, position ASC")
+    suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putKnowledgeChunkEmbeddings(embeddings: List<KnowledgeChunkEmbeddingEntity>)
+
+    @Query("SELECT e.* FROM knowledge_chunk_embeddings AS e INNER JOIN knowledge_chunks AS c ON c.id = e.chunkId WHERE c.projectId = :projectId AND e.modelId = :modelId ORDER BY c.documentId ASC, c.position ASC")
+    suspend fun knowledgeChunkEmbeddingsForProject(projectId: String, modelId: String): List<KnowledgeChunkEmbeddingEntity>
+
+    @Query("DELETE FROM knowledge_chunk_embeddings WHERE modelId = :modelId AND chunkId IN (SELECT id FROM knowledge_chunks WHERE projectId = :projectId)")
+    suspend fun deleteKnowledgeChunkEmbeddingsForProject(projectId: String, modelId: String)
+
+    @Query("SELECT COUNT(*) FROM knowledge_chunk_embeddings AS e INNER JOIN knowledge_chunks AS c ON c.id = e.chunkId WHERE c.projectId = :projectId AND e.modelId = :modelId")
+    suspend fun knowledgeChunkEmbeddingCount(projectId: String, modelId: String): Int
     @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId")
     suspend fun knowledgeChunkCount(projectId: String): Int
     @Query("SELECT AVG(LENGTH(content)) FROM knowledge_chunks WHERE projectId = :projectId")
@@ -649,14 +685,21 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 12,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, KnowledgeChunkEmbeddingEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
+    version = 13,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS knowledge_chunk_embeddings (chunkId TEXT NOT NULL, modelId TEXT NOT NULL, dimensions INTEGER NOT NULL, embedding BLOB NOT NULL, PRIMARY KEY(chunkId, modelId), FOREIGN KEY(chunkId) REFERENCES knowledge_chunks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunk_embeddings_modelId ON knowledge_chunk_embeddings(modelId)")
+            }
+        }
+
         private val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP INDEX IF EXISTS index_knowledge_documents_contentHash")
@@ -739,7 +782,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =

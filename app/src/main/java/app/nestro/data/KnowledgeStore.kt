@@ -16,25 +16,27 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 
-data class KnowledgeImportResult(val document: KnowledgeDocumentEntity, val duplicate: Boolean)
+data class KnowledgeImportResult(val document: KnowledgeDocumentEntity, val duplicate: Boolean, val vectorIndexPending: Boolean = false)
 data class KnowledgeSearchResult(
  val documentName: String,
  val chunkPosition: Int,
  val content: String,
  val matchedTerms: List<String>,
- val score: Int
+ val score: Int,
+ val retrievalMode: String = "BM25"
 )
 object KnowledgeStore {
  private const val MAX_FILE_BYTES=2*1024*1024
  private const val MAX_TEXT_CHARS=500_000
- private const val MAX_CANDIDATES_PER_TERM=600
+ private const val MAX_CANDIDATES_PER_TERM=200
+ private const val MAX_CANDIDATE_CHUNKS=1200
 
  suspend fun importText(context:Context,resolver:ContentResolver,uri:Uri,projectId:String,dao:NestroDao):KnowledgeImportResult=withContext(Dispatchers.IO) {
   require(projectId.isNotBlank()) { "请先选择有效的项目空间。" }
   val mime=resolver.getType(uri).orEmpty().lowercase()
   val name=resolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c -> if(c.moveToFirst()) c.getString(0) else null } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "导入文档"
   val ext=name.substringAfterLast('.',"").lowercase()
-  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/") || mime=="application/json" || mime=="application/pdf") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。" }
+  require(ext in setOf("txt","md","markdown","html","htm","csv","json","xml","log","docx","xlsx","pptx","pdf") || mime.startsWith("text/") || mime=="application/json" || mime=="application/xml" || mime.endsWith("+xml") || mime=="application/pdf") { "当前支持 TXT、Markdown、HTML、CSV、JSON、XML、DOCX、XLSX、PPTX、PDF。" }
   val bytes=resolver.openInputStream(uri)?.use { input ->
    val out=ByteArrayOutputStream(); val buffer=ByteArray(8192); var total=0
    while(true) { val n=input.read(buffer); if(n<0) break; total+=n; require(total<=MAX_FILE_BYTES) { "文件超过 2 MB，请先拆分或压缩。" }; out.write(buffer,0,n) }
@@ -58,20 +60,31 @@ object KnowledgeStore {
   val chunks=KnowledgeChunker.split(normalized).mapIndexed { i,part -> KnowledgeChunkEntity(UUID.randomUUID().toString(),document.id,projectId,i,part) }
   require(chunks.isNotEmpty()) { "无法生成有效文档片段。" }
   val saved=dao.insertKnowledgeBundleIfAbsent(document,chunks)
-  KnowledgeImportResult(saved,saved.id!=document.id)
+  var vectorIndexPending = false
+  if (saved.id == document.id && KnowledgeEmbeddingModelManager.isInstalled(context)) {
+   try {
+    indexChunks(context, dao, chunks)
+   } catch (cancel: CancellationException) {
+    throw cancel
+   } catch (_: Exception) {
+    vectorIndexPending = true
+   }
+  }
+  KnowledgeImportResult(saved,saved.id!=document.id,vectorIndexPending)
  }
 
  suspend fun search(
-   dao:NestroDao,
-   projectId:String,
-   prompt:String,
-   limit:Int=6
-  ):List<KnowledgeSearchResult> = withContext(Dispatchers.IO) {
-   if(limit<=0 || projectId.isBlank()) return@withContext emptyList()
-   val terms=KnowledgeSearchEngine.extractTerms(prompt)
-   if(terms.isEmpty()) return@withContext emptyList()
-   val candidates=linkedMapOf<String,KnowledgeChunkEntity>()
-   terms.forEach { term ->
+   dao: NestroDao,
+   projectId: String,
+   prompt: String,
+   limit: Int = 6,
+   context: Context? = null,
+   ensureVectorIndex: Boolean = false
+  ): List<KnowledgeSearchResult> = withContext(Dispatchers.IO) {
+   if (limit <= 0 || projectId.isBlank() || prompt.isBlank()) return@withContext emptyList()
+   val terms = KnowledgeSearchEngine.extractTerms(prompt)
+   val candidates = linkedMapOf<String, KnowledgeChunkEntity>()
+   for (term in terms) {
     val matches = if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
      val matchQuery = "\"" + term.replace("\"", "\"\"") + "\""
      try {
@@ -84,53 +97,132 @@ object KnowledgeStore {
     } else {
      dao.searchKnowledgeChunks(projectId, term, MAX_CANDIDATES_PER_TERM)
     }
-    matches.forEach { chunk -> candidates.putIfAbsent(chunk.id,chunk) }
+    for (chunk in matches) {
+     candidates.putIfAbsent(chunk.id, chunk)
+     if (candidates.size >= MAX_CANDIDATE_CHUNKS) break
+    }
+    if (candidates.size >= MAX_CANDIDATE_CHUNKS) break
    }
-   if(candidates.isEmpty()) return@withContext emptyList()
-   val documents=dao.knowledgeDocuments(projectId).associateBy { it.id }
-   val corpusSize = dao.knowledgeChunkCount(projectId)
-   val averageDocumentLength = dao.knowledgeAverageChunkLength(projectId) ?: 1.0
-   val documentFrequencies = terms.associateWith { term ->
-    if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
-     try {
-      dao.knowledgeFtsDocumentFrequency(
-       projectId,
-       "\"" + term.replace("\"", "\"\"") + "\""
-      )
-     } catch (cancel: CancellationException) {
-      throw cancel
-     } catch (_: Exception) {
+
+   val bm25Matches = if (candidates.isEmpty() || terms.isEmpty()) {
+    emptyList()
+   } else {
+    val corpusSize = dao.knowledgeChunkCount(projectId)
+    val averageDocumentLength = dao.knowledgeAverageChunkLength(projectId) ?: 1.0
+    val documentFrequencies = terms.associateWith { term ->
+     if (term.matches(Regex("[a-z0-9][a-z0-9_-]{1,31}"))) {
+      try {
+       dao.knowledgeFtsDocumentFrequency(projectId, "\"" + term.replace("\"", "\"\"") + "\"")
+      } catch (cancel: CancellationException) {
+       throw cancel
+      } catch (_: Exception) {
+       dao.knowledgeChunkDocumentFrequency(projectId, term)
+      }
+     } else {
       dao.knowledgeChunkDocumentFrequency(projectId, term)
      }
-    } else {
-     dao.knowledgeChunkDocumentFrequency(projectId, term)
     }
-   }
-   KnowledgeSearchEngine.rank(
-    prompt,
-    candidates.values.toList(),
-    limit,
-    corpusSize = corpusSize,
-    documentFrequencies = documentFrequencies,
-    averageDocumentLength = averageDocumentLength
-   ).map { match ->
-    KnowledgeSearchResult(
-     documentName=documents[match.chunk.documentId]?.name ?: "本地文档",
-     chunkPosition=match.chunk.position,
-     content=match.chunk.content,
-     matchedTerms=match.matchedTerms,
-     score=match.score
+    KnowledgeSearchEngine.rank(
+     prompt,
+     candidates.values.toList(),
+     maxOf(limit * 4, 24),
+     corpusSize = corpusSize,
+     documentFrequencies = documentFrequencies,
+     averageDocumentLength = averageDocumentLength
     )
    }
+
+   val vectorMatches = if (context != null && KnowledgeEmbeddingModelManager.isInstalled(context)) {
+    try {
+     if (ensureVectorIndex) ensureProjectVectorIndex(context, dao, projectId)
+     val rows = dao.knowledgeChunkEmbeddingsForProject(projectId, KnowledgeEmbeddingModelManager.MODEL_ID)
+     if (rows.isEmpty()) emptyList()
+     else {
+      val queryVector = KnowledgeEmbeddingModelManager.embed(context, listOf(prompt)).single()
+      KnowledgeVectorSearch.rank(queryVector, rows, maxOf(limit * 4, 24))
+     }
+    } catch (cancel: CancellationException) {
+     throw cancel
+    } catch (_: Exception) {
+     emptyList()
+    }
+   } else {
+    emptyList()
+   }
+
+   if (bm25Matches.isEmpty() && vectorMatches.isEmpty()) return@withContext emptyList()
+   val allChunks = if (vectorMatches.isNotEmpty()) {
+    dao.knowledgeChunksForProject(projectId).associateBy { it.id } + candidates
+   } else {
+    candidates
+   }
+   val bm25ById = bm25Matches.associateBy { it.chunk.id }
+   val vectorById = vectorMatches.associateBy { it.chunkId }
+   val maxBm25 = bm25Matches.maxOfOrNull { it.score }?.coerceAtLeast(1) ?: 1
+   val ids = (bm25ById.keys + vectorById.keys).distinct()
+   val documents = dao.knowledgeDocuments(projectId).associateBy { it.id }
+
+   ids.mapNotNull { chunkId ->
+    val chunk = allChunks[chunkId] ?: return@mapNotNull null
+    val lexical = bm25ById[chunkId]
+    val semantic = vectorById[chunkId]
+    val lexicalScore = lexical?.score?.toDouble()?.div(maxBm25) ?: 0.0
+    val semanticScore = semantic?.similarity?.plus(1.0)?.div(2.0)?.coerceIn(0.0, 1.0) ?: 0.0
+    val combinedScore = if (vectorMatches.isNotEmpty()) {
+     lexicalScore * 0.45 + semanticScore * 0.55
+    } else {
+     lexicalScore
+    }
+    KnowledgeSearchResult(
+     documentName = documents[chunk.documentId]?.name ?: "本地文档",
+     chunkPosition = chunk.position,
+     content = chunk.content,
+     matchedTerms = lexical?.matchedTerms.orEmpty(),
+     score = (combinedScore * 10_000).toInt(),
+     retrievalMode = when {
+      lexical != null && semantic != null -> "混合"
+      semantic != null -> "语义"
+      else -> "BM25"
+     }
+    )
+   }.sortedWith(compareByDescending<KnowledgeSearchResult> { it.score }.thenBy { it.chunkPosition }).take(limit)
   }
 
-  suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String):String {
-   val matches=search(dao,projectId,prompt,6)
+ private suspend fun indexChunks(context: Context, dao: NestroDao, chunks: List<KnowledgeChunkEntity>) {
+  for (batch in chunks.chunked(4)) {
+   val vectors = KnowledgeEmbeddingModelManager.embed(context, batch.map { it.content })
+   dao.putKnowledgeChunkEmbeddings(batch.zip(vectors).map { (chunk, vector) ->
+    KnowledgeChunkEmbeddingEntity(
+     chunkId = chunk.id,
+     modelId = KnowledgeEmbeddingModelManager.MODEL_ID,
+     dimensions = vector.size,
+     embedding = KnowledgeVectorSearch.encode(vector)
+    )
+   })
+  }
+ }
+
+ private suspend fun ensureProjectVectorIndex(context: Context, dao: NestroDao, projectId: String) {
+  val chunks = dao.knowledgeChunksForProject(projectId)
+  val indexed = dao.knowledgeChunkEmbeddingsForProject(projectId, KnowledgeEmbeddingModelManager.MODEL_ID)
+   .mapTo(hashSetOf()) { it.chunkId }
+  val missing = chunks.filterNot { it.id in indexed }
+  if (missing.isNotEmpty()) indexChunks(context, dao, missing)
+ }
+
+ suspend fun rebuildVectorIndex(context: Context, dao: NestroDao, projectId: String) = withContext(Dispatchers.IO) {
+  require(KnowledgeEmbeddingModelManager.isInstalled(context)) { "本地语义模型尚未安装。" }
+  dao.deleteKnowledgeChunkEmbeddingsForProject(projectId, KnowledgeEmbeddingModelManager.MODEL_ID)
+  ensureProjectVectorIndex(context, dao, projectId)
+ }
+  suspend fun retrieve(dao:NestroDao,projectId:String,prompt:String,context:Context?=null):String {
+   val matches=search(dao,projectId,prompt,6,context,ensureVectorIndex=false)
    if(matches.isEmpty()) return ""
    val context=StringBuilder()
    for(match in matches.distinctBy { it.documentName to it.content }) {
     val sourceName=match.documentName.replace(Regex("[\\p{Cntrl}]"), " ").take(180)
-    val label="[来源：$sourceName · 片段 ${match.chunkPosition+1} · 匹配词：${match.matchedTerms.joinToString("、")}]\n"
+    val matchedLabel = if (match.matchedTerms.isEmpty()) "语义相关" else "匹配词：${match.matchedTerms.joinToString("、")}"
+    val label="[来源：$sourceName · 片段 ${match.chunkPosition+1} · ${match.retrievalMode} · $matchedLabel]\n"
     if(context.length+label.length>=7000) break
     context.append(label)
     val remaining=7000-context.length
@@ -145,7 +237,7 @@ object KnowledgeStore {
 
   internal suspend fun extractPdfText(context:Context,bytes:ByteArray):String = KnowledgePdfOcr.extract(context, bytes)
 
- private fun extractOfficeText(ext:String,bytes:ByteArray):String {
+ internal fun extractOfficeText(ext:String,bytes:ByteArray):String {
   val entries=linkedMapOf<String,ByteArray>()
   var expanded=0
   ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
@@ -249,7 +341,7 @@ object KnowledgeStore {
   }.trim()
  }
 
- private fun extractXmlText(bytes: ByteArray): String {
+ internal fun extractXmlText(bytes: ByteArray): String {
   val document = parseXml(bytes)
   val elements = document.getElementsByTagName("*")
   return buildString {
