@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Html
+import android.util.Xml
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import java.util.UUID
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
+import org.xmlpull.v1.XmlPullParser
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 
@@ -394,15 +396,51 @@ object KnowledgeStore {
  }
 
  private fun parseXml(bytes:ByteArray):Document {
-  val factory=DocumentBuilderFactory.newInstance().apply {
-   isNamespaceAware=true
-   // Android's built-in XML parser disables XInclude by default; its setter throws UnsupportedOperationException.
-   isExpandEntityReferences=false
-   setFeature("http://apache.org/xml/features/disallow-doctype-decl",true)
-   setFeature("http://xml.org/sax/features/external-general-entities",false)
-   setFeature("http://xml.org/sax/features/external-parameter-entities",false)
+  // Android's KXmlParser does not implement several SAX security feature URIs.
+  // Disable DTD processing at the parser level and reject any DOCDECL event;
+  // without DTD processing, external entities cannot be declared or expanded.
+  val parser=Xml.newPullParser().apply {
+   setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL,false)
+   setInput(ByteArrayInputStream(bytes),null)
   }
-  return factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+  val document=DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument()
+  val elements=java.util.ArrayDeque<Element>()
+  var nodeCount=0
+  var textLength=0
+  while(true) {
+   when(parser.eventType) {
+    XmlPullParser.DOCDECL -> throw IllegalArgumentException("XML 文档不允许包含 DTD。")
+    XmlPullParser.START_TAG -> {
+     require(elements.size<128) { "XML 嵌套层级过深。" }
+     nodeCount++
+     require(nodeCount<=100_000) { "XML 节点数量过多。" }
+     val prefix=parser.prefix.orEmpty()
+     val qualifiedName=if(prefix.isEmpty()) parser.name else "$prefix:${parser.name}"
+     val namespace=parser.namespace.orEmpty().ifEmpty { null }
+     val element=document.createElementNS(namespace,qualifiedName)
+     for(index in 0 until parser.attributeCount) {
+      val attributePrefix=parser.getAttributePrefix(index).orEmpty()
+      val attributeName=parser.getAttributeName(index)
+      val qualifiedAttributeName=if(attributePrefix.isEmpty()) attributeName else "$attributePrefix:$attributeName"
+      val attributeNamespace=parser.getAttributeNamespace(index).orEmpty().ifEmpty { null }
+      if(attributeNamespace==null) element.setAttribute(qualifiedAttributeName,parser.getAttributeValue(index))
+      else element.setAttributeNS(attributeNamespace,qualifiedAttributeName,parser.getAttributeValue(index))
+     }
+     if(elements.isEmpty()) document.appendChild(element) else elements.peekLast().appendChild(element)
+     elements.addLast(element)
+    }
+    XmlPullParser.END_TAG -> if(elements.isNotEmpty()) elements.removeLast()
+    XmlPullParser.TEXT, XmlPullParser.CDSECT -> {
+     val value=parser.text.orEmpty()
+     textLength+=value.length
+     require(textLength<=MAX_TEXT_CHARS) { "XML 文本超过 50 万字符。" }
+     if(value.isNotEmpty() && elements.isNotEmpty()) elements.peekLast().appendChild(document.createTextNode(value))
+    }
+    XmlPullParser.ENTITY_REF -> throw IllegalArgumentException("XML 不允许使用实体引用。")
+   }
+   if(parser.next()==XmlPullParser.END_DOCUMENT) break
+  }
+  return document
  }
  
 }
