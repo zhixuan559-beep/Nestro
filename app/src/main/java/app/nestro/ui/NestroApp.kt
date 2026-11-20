@@ -2579,7 +2579,7 @@ fun NestroApp() {
                         }
                         "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
-                        "capabilities" -> CapabilityDirectoryPage()
+                        "capabilities" -> CapabilityDirectoryPage(onSkillsChanged = { updatedSkills, updatedMetadata -> skills = updatedSkills; skillMetadata = updatedMetadata })
                         "voice" -> {
                             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("语音输入", color = Ink, style = MaterialTheme.typography.headlineSmall)

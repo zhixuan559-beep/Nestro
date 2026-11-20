@@ -25,7 +25,7 @@ import org.json.JSONObject
 private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
 
 @Composable
-fun CapabilityDirectoryPage() {
+fun CapabilityDirectoryPage(onSkillsChanged: (Map<String, String>, Map<String, String>) -> Unit = { _, _ -> }) {
     val context=LocalContext.current
     val prefs=remember { context.getSharedPreferences("nestro_local",Context.MODE_PRIVATE) }
     val scope=rememberCoroutineScope()
