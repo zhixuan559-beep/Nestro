@@ -23,6 +23,8 @@ class PhoneAgentRiskPolicyTest {
             .forEach { assertTrue("$it is sensitive", PhoneAgentRiskPolicy.isSensitiveField(it)) }
         assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Password"))
         assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Email address"))
+        assertTrue(PhoneAgentRiskPolicy.isSensitiveField("Passport number"))
+        assertTrue(PhoneAgentRiskPolicy.isSensitiveField("IBAN"))
         assertFalse(PhoneAgentRiskPolicy.isSensitiveField("商品名称"))
     }
 
@@ -47,6 +49,9 @@ class PhoneAgentRiskPolicyTest {
         val english = PhoneAgentRiskPolicy.redactSensitiveText("Shipping address: 123 Main Street; Full name: Alex")
         assertFalse(english.contains("123 Main Street"))
         assertFalse(english.contains("Alex"))
+        val identifiers = PhoneAgentRiskPolicy.redactSensitiveText("Passport number: X1234567; 银行卡号：6222021234567890123")
+        assertFalse(identifiers.contains("X1234567"))
+        assertFalse(identifiers.contains("6222021234567890123"))
     }
 
     @Test
