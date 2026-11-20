@@ -9,11 +9,26 @@ on:
       - refactor/phase-2-architecture
   workflow_dispatch:
     inputs:
+      jvm_test_filter:
+        description: "Optional Gradle JVM test class or class#method filter"
+        required: false
+        type: string
+        default: ""
+      skip_jvm_tests:
+        description: "Skip the full JVM suite when running one Android instrumentation test"
+        required: false
+        type: boolean
+        default: false
       instrumentation_filter:
         description: "Optional AndroidJUnitRunner class#method filter; leave empty for the full suite"
         required: false
         type: string
         default: ""
+      skip_instrumentation:
+        description: "Skip emulator tests when running one JVM test"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,7 +60,15 @@ jobs:
       - name: Compile production Kotlin
         run: gradle --no-daemon --stacktrace compileDebugKotlin
       - name: Run JVM unit tests
-        run: gradle --no-daemon --stacktrace testDebugUnitTest
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_jvm_tests != true }}
+        env:
+          JVM_TEST_FILTER: ${{ inputs.jvm_test_filter }}
+        run: |
+          if [ -n "$JVM_TEST_FILTER" ]; then
+            gradle --no-daemon --stacktrace testDebugUnitTest --tests "$JVM_TEST_FILTER"
+          else
+            gradle --no-daemon --stacktrace testDebugUnitTest
+          fi
       - name: Run Android lint
         run: gradle --no-daemon --stacktrace lintDebug
       - name: Compile and package Android instrumentation tests
@@ -61,6 +84,7 @@ jobs:
           retention-days: 3
 
   instrumentation:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_instrumentation != true }}
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 60

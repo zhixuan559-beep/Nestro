@@ -42,7 +42,7 @@ class KnowledgeChunkerTest {
     fun neverSplitsUtf16SurrogatePairs() {
         val source = "a".repeat(999) + "😀" + "b".repeat(1_500)
         val chunks = KnowledgeChunker.split(source)
-        assertEquals(source, KnowledgeChunker.reassemble(chunks))
+        assertEquals(source, KnowledgeChunker.reassemble(chunks, maxOverlap = 2))
         assertTrue(chunks.all { chunk -> chunk.zipWithNext().none { (left, right) -> left.isHighSurrogate() && !right.isLowSurrogate() } })
     }
     @Test
