@@ -91,6 +91,9 @@ object PhoneAgentAgent {
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
+            if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screen)) {
+                return handoffToUser(dao, taskId, "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。")
+            }
             val plan = try {
                 PhoneAgentModelClient.planNext(
                     context = context,
@@ -173,6 +176,21 @@ object PhoneAgentAgent {
             loop++
         }
         return pause(dao, taskId, "达到单次自动执行轮数上限，任务已暂停，避免无限操作。")
+    }
+
+    private suspend fun handoffToUser(dao: NestroDao, taskId: String, message: String): Result {
+        val task = dao.phoneAgentTask(taskId) ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, task.currentStep)
+        PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "需要用户接手", false, message)
+        val stateStore = RoomAgentTaskStateStore(dao)
+        stateStore.get(taskId)?.let { state ->
+            stateStore.put(state.copy(
+                status = AgentTaskStatus.WAITING_FOR_USER,
+                lastError = message.take(2_000),
+                updatedAt = System.currentTimeMillis()
+            ))
+        }
+        return Result(PhoneAgentExecutor.Outcome.WAITING_USER, message)
     }
 
     private fun isCancellationRequested(context: Context, taskId: String, taskStatus: String): Boolean =
