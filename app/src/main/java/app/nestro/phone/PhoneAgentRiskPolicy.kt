@@ -45,6 +45,15 @@ object PhoneAgentRiskPolicy {
             verificationCode.containsMatchIn(value) ||
             nationalId.containsMatchIn(value)
 
+    fun redactSensitiveText(value: String): String = value
+        .replace(email, "[邮箱已隐藏]")
+        .replace(phone, "[手机号已隐藏]")
+        .replace(card, "[疑似卡号已隐藏]")
+        .replace(verificationCode, "[六位数字已隐藏]")
+        .replace(nationalId, "[身份证号已隐藏]")
+        .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
+        .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
+
     private fun normalize(value: String): String =
         value.trim().lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
 }
