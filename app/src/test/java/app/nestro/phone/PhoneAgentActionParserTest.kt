@@ -82,6 +82,18 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun sensitiveSearchTermsAndFieldLabelsBecomeUserHandoff() {
+        val search = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"phone number: +1 202 555 0123"}]}"""
+        )
+        val field = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"test@example.com","value":"ordinary"}]}"""
+        )
+        assertTrue(search.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        assertTrue(field.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun sensitivePostClickEvidenceBecomesUserHandoff() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"click","text":"继续","expectedAfter":"test@example.com"}]}"""
