@@ -112,7 +112,7 @@ object PhoneAgentTaskStore {
                 }
                 "launch_app" -> {
                     val packageName = row.getString("package").trim()
-                    require(packageName.matches(Regex("[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+"))) { "已保存的应用包名无效" }
+                    require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+"))) { "已保存的应用包名无效" }
                     PhoneAgentExecutor.Action.LaunchApp(packageName)
                 }
                 "click" -> {
@@ -154,7 +154,11 @@ object PhoneAgentTaskStore {
                 "back" -> PhoneAgentExecutor.Action.Back
                 "confirm_sensitive" -> {
                     val description = row.getString("description").trim()
-                    require(description.isNotBlank() && description.length <= 240 && !PhoneAgentRiskPolicy.containsSensitiveValue(description)) { "已保存的用户确认说明无效或包含个人敏感信息" }
+                    require(
+                        description.isNotBlank() && description.length <= 240 &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(description) &&
+                            PhoneAgentRiskPolicy.redactSensitiveText(description) == description
+                    ) { "已保存的用户确认说明无效或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.ConfirmSensitive(description)
                 }
                 else -> error("任务包含未知动作类型")
