@@ -7,7 +7,7 @@ import org.junit.Test
 class PhoneAgentRiskPolicyTest {
     @Test
     fun finalCommitActionsRequireUserHandoff() {
-        listOf("立即购买", "确认支付", "提交订单", "确认预约", "删除账号", "发布内容", "发送消息", "Pay now", "Place order", "Delete account")
+        listOf("立即购买", "确认支付", "提交订单", "确认预约", "删除账号", "发布内容", "发送消息", "Pay now", "Place order", "Delete account", "同意", "Accept all cookies", "Allow location")
             .forEach { assertTrue("$it must be handed to the user", PhoneAgentRiskPolicy.requiresUserHandoffForClick(it)) }
     }
 
