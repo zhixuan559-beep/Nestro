@@ -17,6 +17,11 @@ object PhoneAgentActionParser {
         val root = JSONObject(raw.substring(start, end + 1))
         val rows = root.optJSONArray("actions") ?: org.json.JSONArray()
         require(rows.length() <= 12) { "单轮动作数量超过安全上限" }
+        val done = root.optBoolean("done", false)
+        val completionEvidenceRaw = root.optString("completionEvidence").trim()
+        require(completionEvidenceRaw.length <= 120) { "任务完成核验文字过长" }
+        require(root.optString("summary").length <= 600) { "任务进度摘要过长" }
+        require(!(done && rows.length() > 0)) { "任务标记完成时不能同时要求执行新动作" }
         val actions = (0 until rows.length()).map { index ->
             val item = rows.getJSONObject(index)
             when (item.getString("type")) {
@@ -57,7 +62,14 @@ object PhoneAgentActionParser {
                     } else if (PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("页面出现高风险操作“$label”，请核对页面后由你本人处理。")
                     } else {
-                        PhoneAgentExecutor.Action.ClickText(label, item.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
+                        val expectedAfter = item.optString("expectedAfter").trim()
+                            .takeIf { it.isNotBlank() && it != "null" }
+                        require(expectedAfter == null || expectedAfter.length <= 120) { "动作后核验文字过长" }
+                        if (expectedAfter != null && PhoneAgentRiskPolicy.containsSensitiveValue(expectedAfter)) {
+                            PhoneAgentExecutor.Action.ConfirmSensitive("动作后的核验目标包含个人敏感信息，已暂停并交由你处理。")
+                        } else {
+                            PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
+                        }
                     }
                 }
                 "enter_text" -> {
@@ -93,8 +105,8 @@ object PhoneAgentActionParser {
             }
         }
         return ParsedPlan(
-            done = root.optBoolean("done", false),
-            completionEvidence = root.optString("completionEvidence").take(120),
+            done = done,
+            completionEvidence = if (PhoneAgentRiskPolicy.containsSensitiveValue(completionEvidenceRaw)) "" else completionEvidenceRaw,
             summary = sanitizeMessage(root.optString("summary").take(600)),
             actions = actions
         )
