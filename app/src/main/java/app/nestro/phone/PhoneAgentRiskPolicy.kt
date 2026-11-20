@@ -37,6 +37,7 @@ object PhoneAgentRiskPolicy {
 
     private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
     private val phone = Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)")
+    private val internationalPhone = Regex("(?<!\\w)\\+\\d{1,3}[\\s().-]?(?:\\d[\\s().-]?){7,14}(?!\\w)")
     private val card = Regex("(?<!\\d)\\d{16,19}(?!\\d)")
     private val verificationCode = Regex("(?<!\\d)\\d{6}(?!\\d)")
     private val nationalId = Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])")
@@ -58,6 +59,7 @@ object PhoneAgentRiskPolicy {
         val decoded = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
         return email.containsMatchIn(decoded) ||
             phone.containsMatchIn(decoded) ||
+            internationalPhone.containsMatchIn(decoded) ||
             card.containsMatchIn(decoded) ||
             nationalId.containsMatchIn(decoded) ||
             socialSecurityNumber.containsMatchIn(decoded)
@@ -66,6 +68,7 @@ object PhoneAgentRiskPolicy {
     fun redactSensitiveText(value: String): String = value
         .replace(email, "[邮箱已隐藏]")
         .replace(phone, "[手机号已隐藏]")
+        .replace(internationalPhone, "[国际电话已隐藏]")
         .replace(card, "[疑似卡号已隐藏]")
         .replace(verificationCode, "[六位数字已隐藏]")
         .replace(nationalId, "[身份证号已隐藏]")
