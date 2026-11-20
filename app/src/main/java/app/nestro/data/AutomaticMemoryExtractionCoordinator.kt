@@ -57,12 +57,12 @@ internal class AutomaticMemoryExtractionCoordinator(
         modelConfigs: List<ModelConfig>,
         projectId: String,
         conversationId: String,
-        userId: String
+        messageId: String
     ) {
-        if (!enabled || !shouldExtractAutomaticMemory(prompt) || !UserMemoryStore.isSafeContent(prompt)) return
+        if (!enabled || messageId.isBlank() || !shouldExtractAutomaticMemory(prompt) || !UserMemoryStore.isSafeContent(prompt)) return
         val candidates = runCatchingCancellable { extractCandidates(modelConfigs, listOf(prompt)) }.getOrDefault(emptyList())
         if (candidates.isNotEmpty()) {
-            runCatchingCancellable { saveCandidates(projectId, conversationId, userId, candidates) }
+            runCatchingCancellable { saveCandidates(projectId, conversationId, messageId, candidates) }
         }
     }
 }
