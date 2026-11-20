@@ -21,6 +21,9 @@ class PhoneAgentUrlPolicyTest {
             "http://172.16.0.1",
             "http://169.254.1.2",
             "http://127.0.0.1",
+            "http://127.1",
+            "http://2130706433",
+            "http://0x7f000001",
             "http://[::1]"
         ).forEach { assertFalse(it, PhoneAgentUrlPolicy.isSafePublicWebUrl(it)) }
     }
