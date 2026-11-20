@@ -48,6 +48,46 @@ class UserMemoryExportCodecTest {
     }
 
     @Test
+    fun importsPortableMemoryIntoTargetProjectWithFreshIdentity() {
+        val imported = UserMemoryExportCodec.decode(UserMemoryExportCodec.encode(memory()), "target-project")
+        assertEquals("target-project", imported.projectId)
+        assertEquals("preference", imported.category)
+        assertEquals("偏好清晰直接的表达方式", imported.content)
+        assertEquals("conversation-1", imported.sourceConversationId)
+        assertEquals("message-1", imported.sourceMessageId)
+        assertEquals(0.93, imported.confidence, 0.0001)
+        assertEquals(100L, imported.createdAt)
+        assertEquals(200L, imported.updatedAt)
+        org.junit.Assert.assertNotEquals("memory-1", imported.id)
+    }
+
+    @Test
+    fun rejectsUnsupportedVersionAndWrongFormatOnImport() {
+        val valid = JSONObject(UserMemoryExportCodec.encode(memory()))
+        valid.put("version", 99)
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.decode(valid.toString(), "target-project")
+        }
+        valid.put("version", UserMemoryExportCodec.VERSION)
+        valid.put("format", "other-format")
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.decode(valid.toString(), "target-project")
+        }
+    }
+
+    @Test
+    fun rejectsSensitiveAndOversizedImportPayloads() {
+        val sensitive = JSONObject(UserMemoryExportCodec.encode(memory()))
+        sensitive.put("content", "我的银行卡号是 6222021234567890123")
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.decode(sensitive.toString(), "target-project")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UserMemoryExportCodec.decode(" ".repeat(32_769), "target-project")
+        }
+    }
+
+    @Test
     fun refusesToExportInvalidCategoryOrTimestamp() {
         assertThrows(IllegalArgumentException::class.java) {
             UserMemoryExportCodec.encode(memory().copy(category = "secret"))

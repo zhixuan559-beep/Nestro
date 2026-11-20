@@ -59,6 +59,15 @@ class UserMemoryRepository(
     suspend fun edit(id: String, projectId: String, content: String, category: String) =
         UserMemoryStore.edit(database.dao(), id, projectId, content, category)
 
+    suspend fun importOne(projectId: String, rawJson: String): Boolean {
+        val imported = UserMemoryExportCodec.decode(rawJson, projectId)
+        val dao = database.dao()
+        if (dao.userMemoryByFingerprint(projectId, imported.fingerprint) != null) return false
+        dao.putUserMemory(imported)
+        dao.trimUserMemories(projectId, 200)
+        return true
+    }
+
     suspend fun delete(id: String, projectId: String) =
         UserMemoryStore.delete(database.dao(), id, projectId)
 }

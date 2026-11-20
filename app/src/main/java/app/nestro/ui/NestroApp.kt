@@ -537,6 +537,25 @@ fun NestroApp() {
         }
     }
 
+    val importMemoryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            memoryStatus = "正在导入单条记忆…"
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: error("无法读取记忆文件")
+                    appRuntime.userMemoryRepository.importOne(activeProjectId, raw)
+                }
+            }
+            if (result.isSuccess) {
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                memoryStatus = if (result.getOrThrow()) "单条记忆已导入当前项目。" else "当前项目已存在相同记忆，未重复导入。"
+            } else {
+                memoryStatus = "导入失败：${result.exceptionOrNull()?.message ?: "文件格式无效"}"
+            }
+        }
+    }
+
     val importTeamLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) scope.launch {
             val result=withContext(Dispatchers.IO) { runCatching {
@@ -2194,7 +2213,20 @@ fun NestroApp() {
                                 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("保存全局记忆")
                                 }
+                                TextButton(
+                                    onClick = {
+                                        globalMemory = ""
+                                        memoryDraft = ""
+                                        check(prefs.edit().remove("global_memory_v1").commit())
+                                        memoryStatus = "全局记忆已清空"
+                                    },
+                                    enabled = globalMemory.isNotBlank() || memoryDraft.isNotBlank()
+                                ) { Text("清空全局记忆", color = ColorStop) }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                OutlinedButton(
+                                    onClick = { importMemoryLauncher.launch(arrayOf("application/json", "text/plain")) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("导入单条记忆 JSON") }
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.weight(1f)) {
                                         Text("允许自动提取记忆", color = Ink)
@@ -2259,7 +2291,39 @@ fun NestroApp() {
                                     automaticMemories.forEach { memory ->
                                         Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Text("${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                var categoryMenuExpanded by remember(memory.id) { mutableStateOf(false) }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("分类：${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                    Spacer(Modifier.weight(1f))
+                                                    TextButton(onClick = { categoryMenuExpanded = true }) { Text("修改分类") }
+                                                    DropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                                                        listOf("preference", "workflow", "project", "constraint").forEach { categoryOption ->
+                                                            DropdownMenuItem(
+                                                                text = { Text(categoryOption) },
+                                                                onClick = {
+                                                                    categoryMenuExpanded = false
+                                                                    scope.launch {
+                                                                        val result = withContext(Dispatchers.IO) {
+                                                                            runCatching {
+                                                                                appRuntime.userMemoryRepository.edit(
+                                                                                    memory.id, activeProjectId,
+                                                                                    memoryEdits[memory.id] ?: memory.content, categoryOption
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                        if (result.isSuccess) {
+                                                                            automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                                                                            memoryEdits = memoryEdits - memory.id
+                                                                            memoryStatus = "记忆分类已更新"
+                                                                        } else {
+                                                                            memoryStatus = "分类更新失败：${result.exceptionOrNull()?.message ?: "分类无效"}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 OutlinedTextField(
                                                     value = memoryEdits[memory.id] ?: memory.content,
                                                     onValueChange = { memoryEdits = memoryEdits + (memory.id to it) },
