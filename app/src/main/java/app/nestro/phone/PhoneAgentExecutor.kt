@@ -93,7 +93,7 @@ object PhoneAgentExecutor {
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
-                    service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
+                    service.isTaskStopped(taskId) -> AgentAuthorization.Deny("用户已请求停止")
                     !service.hasValidGrant() -> AgentAuthorization.Deny("操作授权已失效")
                     else -> AgentAuthorization.Allow
                 }
@@ -104,7 +104,7 @@ object PhoneAgentExecutor {
             if (latestTask.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
                 return ExecutionResult(Outcome.CANCELLED, results.size, results, "任务已取消")
             }
-            if (service.isTaskStopped()) {
+            if (service.isTaskStopped(taskId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "用户已请求停止"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
