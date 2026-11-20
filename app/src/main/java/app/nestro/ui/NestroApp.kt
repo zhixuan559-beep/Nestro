@@ -351,12 +351,55 @@ fun NestroApp() {
         }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
         return teamsAllowed && workflowsAllowed
     }
+    fun findSkillDependents(skillName: String): List<String>? {
+        val parsed = skillMetadata.mapValues { (_, raw) ->
+            if (raw.isBlank()) JSONObject() else runCatching { JSONObject(raw) }.getOrNull()
+        }
+        if (parsed.values.any { it == null }) return null
+        val dependents = mutableListOf<String>()
+        parsed.forEach { (otherName, metadata) ->
+            if (otherName == skillName) return@forEach
+            val dependencies = metadata?.optJSONArray("dependencies")
+            if (metadata?.has("dependencies") == true && dependencies == null) return null
+            if ((0 until (dependencies?.length() ?: 0)).any { index ->
+                dependencies?.optJSONObject(index)?.optString("name") == skillName
+            }) dependents += otherName
+        }
+        return dependents
+    }
     fun canWriteSkillDependents(skillName: String): Boolean {
+        val dependents = findSkillDependents(skillName)
+        if (dependents == null) {
+            status = "技能依赖元数据损坏，已阻止重命名或删除，避免破坏依赖关系。"
+            return false
+        }
+        if (dependents.isNotEmpty()) {
+            status = "技能「$skillName」仍被以下技能依赖：${dependents.joinToString("、")}。请先调整依赖，再重命名或删除。"
+            return false
+        }
         val expertsAllowed = expertProfiles.filterValues { skillName in it.skillNames }.keys
             .all { canWriteProjectResource(ProjectResourceKind.EXPERT, it) }
         val workflowsAllowed = workflows.filter { workflow ->
             workflow.steps.any { it.kind == WorkflowStepKind.SKILL && it.targetId.ifBlank { it.title } == skillName }
         }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skillName)
+        val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
+        if (!templatesAllowed) status = "该技能被全局专家模板引用，不能在项目空间内单独重命名或删除。"
+        return expertsAllowed && workflowsAllowed && templatesAllowed
+    }
+    fun canDisableSkill(skillName: String): Boolean {
+        val dependents = findSkillDependents(skillName)
+        if (dependents == null) {
+            status = "技能依赖元数据损坏，已阻止停用。"
+            return false
+        }
+        val activeDependents = dependents.filterNot { it in disabledSkills }
+        if (activeDependents.isNotEmpty()) {
+            status = "技能「$skillName」被启用中的技能依赖：${activeDependents.joinToString("、")}。请先处理依赖技能。"
+            return false
+        }
+        return true
+    }
         val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skillName)
         val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
         if (!templatesAllowed) status = "该技能被全局专家模板引用，不能在项目空间内单独重命名或删除。"
@@ -919,11 +962,14 @@ fun NestroApp() {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
             }
-            val requestSkills = skills.filterKeys {
+            val requestDisabledSkills = disabledSkills.toSet()
+            val requestVisibleSkills = skills.filterKeys {
                 !projectResourceScopesReadOnly &&
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
             }
-            val requestDisabledSkills = disabledSkills.toSet()
+            val requestSkills = SkillDependencyResolver.filterSatisfiedSkills(
+                requestVisibleSkills, skillMetadata, requestDisabledSkills
+            )
             val requestExperts = experts.filter {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
@@ -1626,10 +1672,13 @@ fun NestroApp() {
                                                                              }
                                                                              val profile = expertProfiles[expertName]
                                                                              check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
-                                                                             val workflowSkills = skills.filterKeys { skillName ->
+                                                                             val workflowVisibleSkills = skills.filterKeys { skillName ->
                                                                                  !projectResourceScopesReadOnly &&
                                                                                      ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
                                                                              }
+                                                                             val workflowSkills = SkillDependencyResolver.filterSatisfiedSkills(
+                                                                                 workflowVisibleSkills, skillMetadata, disabledSkills
+                                                                             )
                                                                              listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
                                                                          }
                                                                          WorkflowStepKind.SKILL -> {
@@ -2627,6 +2676,7 @@ fun NestroApp() {
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
+                                                    if (!isDisabled && !canDisableSkill(name)) return@TextButton
                                                     disabledSkills = if(isDisabled) disabledSkills - name else disabledSkills + name
                                                     if(!isDisabled && selectedSkill==name) selectedSkill = ""
                                                     prefs.edit().putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills)).apply()
