@@ -15,8 +15,9 @@ object PhoneAgentRiskPolicy {
         "同意并继续", "接受并继续", "接受全部cookie", "pay now", "place order", "buy now", "confirm purchase",
         "submit order", "checkout", "confirm transfer", "send money", "withdraw now",
         "top up", "book now", "confirm booking", "reserve now", "delete account",
-        "send message", "publish", "upload", "accept all", "accept cookies",
-        "grant permission", "allow location", "allow notifications", "share data"
+        "send message", "publish", "upload", "accept all", "accept cookies", "accept terms", "accept and continue",
+        "agree to terms", "agree and continue", "grant permission", "allow access",
+        "allow location", "allow notifications", "share data"
     )
 
     private val sensitiveLabels = listOf(
