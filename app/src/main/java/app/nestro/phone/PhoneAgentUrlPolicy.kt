@@ -25,7 +25,7 @@ object PhoneAgentUrlPolicy {
                 a >= 224
             ) return false
         }
-        if (host == "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return false
+        if (host.contains(":")) return false
         return true
     }
 }
