@@ -230,14 +230,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
 
-    private fun redactSensitiveText(value: String): String = value
-        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
-        .replace(Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)"), "[手机号已隐藏]")
-        .replace(Regex("(?<!\\d)\\d{16,19}(?!\\d)"), "[疑似卡号已隐藏]")
-        .replace(Regex("(?<!\\d)\\d{6}(?!\\d)"), "[六位数字已隐藏]")
-        .replace(Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])"), "[身份证号已隐藏]")
-        .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
-        .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
+    private fun redactSensitiveText(value: String): String = PhoneAgentRiskPolicy.redactSensitiveText(value)
 
 
     private fun audit(action: String, detail: String) {
