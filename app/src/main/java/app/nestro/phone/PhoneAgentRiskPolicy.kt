@@ -12,7 +12,7 @@ object PhoneAgentRiskPolicy {
         "确认预约", "立即预约", "确认预订", "立即预订", "删除账号",
         "删除账户", "删除", "发布", "发送", "分享", "上传", "申请退款", "确认退款", "提交退款",
         "提现", "充值", "pay now", "place order", "buy now", "confirm purchase",
-        "submit order", "checkout", "purchase", "transfer money", "withdraw",
+        "submit order", "checkout", "confirm transfer", "send money", "withdraw now",
         "top up", "book now", "confirm booking", "reserve now", "delete account",
         "send message", "publish", "upload"
     )
