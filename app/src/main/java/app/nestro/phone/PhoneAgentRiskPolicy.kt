@@ -40,7 +40,7 @@ object PhoneAgentRiskPolicy {
     fun requiresUserHandoffForClick(label: String): Boolean {
         val normalized = normalize(label)
         if (normalized.isBlank()) return false
-        if (normalized in setOf("购买", "预约", "预订", "确认", "提交", "同意", "接受", "允许", "授权", "agree", "accept", "allow")) return true
+        if (normalized in setOf("购买", "预约", "预订", "确认", "提交", "同意", "接受", "允许", "授权", "agree", "accept", "allow", "confirm", "submit", "pay", "buy", "book", "reserve")) return true
         return commitActions.any { phrase -> normalized.contains(normalize(phrase)) }
     }
 
