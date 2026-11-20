@@ -659,9 +659,6 @@ interface NestroDao {
     @Query("SELECT * FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId ORDER BY position ASC")
     suspend fun knowledgeChunksForDocument(documentId: String, projectId: String): List<KnowledgeChunkEntity>
 
-    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId ASC, position ASC")
-    suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putKnowledgeChunkEmbeddings(embeddings: List<KnowledgeChunkEmbeddingEntity>)
 

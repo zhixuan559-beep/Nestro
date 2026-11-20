@@ -215,7 +215,7 @@ object KnowledgeStore {
   }
 
  private suspend fun indexChunks(context: Context, dao: NestroDao, chunks: List<KnowledgeChunkEntity>) {
-  for (batch in chunks.chunked(4)) {
+  for (batch in chunks.chunked(16)) {
    val vectors = KnowledgeEmbeddingModelManager.embed(context, batch.map { it.content })
    dao.putKnowledgeChunkEmbeddings(batch.zip(vectors).map { (chunk, vector) ->
     KnowledgeChunkEmbeddingEntity(

@@ -118,7 +118,7 @@ internal object KnowledgeEmbeddingModelManager {
         val shape = longArrayOf(batchSize.toLong(), sequenceLength.toLong())
         val environment = OrtEnvironment.getEnvironment()
         val tensors = mutableListOf<OnnxTensor>()
-        try {
+        return try {
             val inputs = linkedMapOf<String, OnnxTensor>()
             val idsTensor = OnnxTensor.createTensor(environment, LongBuffer.wrap(ids), shape)
             tensors += idsTensor
