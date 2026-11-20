@@ -24,7 +24,7 @@ data class SignedSkillRelease(
  * the signed SHA-256 authenticates each downloaded bundle. This class never installs or grants permissions. */
 object SkillCommunityClient {
     private const val MAX_CATALOG_BYTES = 512 * 1024
-    private const val MAX_BUNDLE_BYTES = 64 * 1024
+    private const val MAX_BUNDLE_BYTES = 30_000
 
     fun verifyCatalogEnvelope(rawEnvelope: String, trustedPublicKeyBase64: String): List<SignedSkillRelease> {
         require(rawEnvelope.toByteArray(Charsets.UTF_8).size in 1..MAX_CATALOG_BYTES) { "目录数据为空或超过 512 KB" }

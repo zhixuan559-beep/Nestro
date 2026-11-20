@@ -640,8 +640,20 @@ fun NestroApp() {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                            ?: error("无法读取技能文件")
+                        val input = context.contentResolver.openInputStream(uri) ?: error("无法读取技能文件")
+                        val bytes = java.io.ByteArrayOutputStream().use { output ->
+                            input.use { stream ->
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val count = stream.read(buffer)
+                                    if (count < 0) break
+                                    require(output.size() + count <= 30_000) { "技能文件超过 30 KB，已停止读取" }
+                                    output.write(buffer, 0, count)
+                                }
+                            }
+                            output.toByteArray()
+                        }
+                        val raw = bytes.toString(Charsets.UTF_8)
                         SkillBundleParser.parse(raw, uri.lastPathSegment ?: "本地技能")
                     }
                 }

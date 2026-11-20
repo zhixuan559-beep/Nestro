@@ -129,6 +129,12 @@ class SkillBundleParserTest {
         assertThrows(IllegalArgumentException::class.java) {
             SkillBundleParser.exportJson("坏依赖", prompt, malformedDependencies)
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillBundleParser.exportJson("坏权限项", prompt, """{"version":"1.0.0","permissions":[1]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SkillBundleParser.exportJson("坏依赖项", prompt, """{"version":"1.0.0","dependencies":[1]}""")
+        }
     }
 
 }

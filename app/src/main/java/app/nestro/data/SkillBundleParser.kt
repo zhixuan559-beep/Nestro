@@ -99,7 +99,11 @@ object SkillBundleParser {
             .toString()
 
     fun exportJson(name: String, prompt: String, metadataRaw: String?): String {
-        val bundle = fromStored(name, prompt, metadataRaw)
+        val bundle = try {
+            fromStored(name, prompt, metadataRaw)
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能元数据无效，拒绝导出", error)
+        }
         val exported = JSONObject()
             .put("name", bundle.name)
             .put("version", bundle.version)
