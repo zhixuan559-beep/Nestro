@@ -38,11 +38,13 @@ object PhoneAgentRiskPolicy {
         return normalized.isNotBlank() && sensitiveLabels.any { normalized.contains(normalize(it)) }
     }
 
-    fun containsSensitiveValue(value: String): Boolean =
-        email.containsMatchIn(value) ||
-            phone.containsMatchIn(value) ||
-            card.containsMatchIn(value) ||
-            nationalId.containsMatchIn(value)
+    fun containsSensitiveValue(value: String): Boolean {
+        val decoded = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
+        return email.containsMatchIn(decoded) ||
+            phone.containsMatchIn(decoded) ||
+            card.containsMatchIn(decoded) ||
+            nationalId.containsMatchIn(decoded)
+    }
 
     fun redactSensitiveText(value: String): String = value
         .replace(email, "[邮箱已隐藏]")
