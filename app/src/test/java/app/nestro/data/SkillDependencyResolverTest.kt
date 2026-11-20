@@ -112,4 +112,26 @@ class SkillDependencyResolverTest {
         assertFalse(SkillDependencyResolver.filterSatisfiedSkills(installed, mapOf("损坏技能" to "{not-json")).containsKey("损坏技能"))
     }
 
+    @Test
+    fun rejectsNonSemverLeadingZerosAndExcessiveDependencyDepth() {
+        assertFalse(SkillDependencyResolver.isValidVersion("01.0.0"))
+        assertFalse(SkillDependencyResolver.isValidVersion("1.0.0-01"))
+        assertTrue(SkillDependencyResolver.isValidVersion("1.0.0-rc.1"))
+
+        val installed = linkedMapOf<String, String>()
+        val metadata = linkedMapOf<String, String>()
+        for (index in 1..35) {
+            val name = "链路$index"
+            installed[name] = "prompt"
+            val dependency = if (index == 35) org.json.JSONArray()
+                else org.json.JSONArray().put(JSONObject().put("name", "链路${index + 1}").put("version", "*"))
+            metadata[name] = JSONObject().put("version", "1.0.0").put("dependencies", dependency).toString()
+        }
+        val report = SkillDependencyResolver.inspect(
+            bundle(SkillDependency("链路1", "*")), installed, metadata
+        )
+        assertFalse(report.isSatisfied)
+        assertTrue(report.issues.any { it.reason.contains("依赖深度超过") })
+    }
+
 }

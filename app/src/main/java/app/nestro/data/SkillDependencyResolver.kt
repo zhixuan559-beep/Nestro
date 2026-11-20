@@ -17,10 +17,15 @@ data class SkillDependencyReport(
 
 /** Validates installed dependency closure. Dependencies are metadata references only. */
 object SkillDependencyResolver {
-    private val constraintPattern = Regex(
-        "^(?:\\*|(?:>=|\\^|~)?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.-]+)?)$"
-    )
-    private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.-]+)?$")
+    private const val MAX_DEPENDENCY_DEPTH = 32
+    private const val MAX_DEPENDENCY_VISITS = 100
+    private val numericIdentifier = "(?:0|[1-9][0-9]*)"
+    private val prereleaseIdentifier = "(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    private val buildIdentifiers = "[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*"
+    private val constraintVersion = "$numericIdentifier\\.$numericIdentifier(?:\\.$numericIdentifier)?(?:-(?:$prereleaseIdentifier)(?:\\.(?:$prereleaseIdentifier))*)?(?:\\+$buildIdentifiers)?"
+    private val strictVersion = "$numericIdentifier\\.$numericIdentifier\\.$numericIdentifier(?:-(?:$prereleaseIdentifier)(?:\\.(?:$prereleaseIdentifier))*)?(?:\\+$buildIdentifiers)?"
+    private val constraintPattern = Regex("^(?:\\*|(?:>=|\\^|~)?$constraintVersion)$")
+    private val versionPattern = Regex("^$strictVersion$")
 
     fun isValidConstraint(raw: String): Boolean {
         val value = raw.trim()
@@ -46,6 +51,10 @@ object SkillDependencyResolver {
         fun visit(dependency: SkillDependency, chain: Set<String>) {
             val name = dependency.name
             val issueKey = name + "@" + dependency.version
+            if (chain.size >= MAX_DEPENDENCY_DEPTH) {
+                issues[issueKey] = SkillDependencyIssue(name, dependency.version, "依赖深度超过 $MAX_DEPENDENCY_DEPTH 层")
+                return
+            }
             if (name in chain) {
                 issues[issueKey] = SkillDependencyIssue(name, dependency.version, "依赖链形成循环")
                 return
@@ -71,6 +80,10 @@ object SkillDependencyResolver {
                 return
             }
             resolved += name
+            if (issueKey !in visited && visited.size >= MAX_DEPENDENCY_VISITS) {
+                issues[issueKey] = SkillDependencyIssue(name, dependency.version, "依赖检查节点超过 $MAX_DEPENDENCY_VISITS 个")
+                return
+            }
             if (!visited.add(issueKey)) return
             if (metadata.has("dependencies") && metadata.optJSONArray("dependencies") == null) {
                 issues[issueKey] = SkillDependencyIssue(name, dependency.version, "依赖元数据格式无效")

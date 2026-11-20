@@ -8,6 +8,7 @@ import java.net.URL
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.Signature
+import java.security.interfaces.RSAPublicKey
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 
@@ -34,7 +35,9 @@ object SkillCommunityClient {
         require(payload.isNotEmpty() && payload.size <= MAX_CATALOG_BYTES) { "目录数据为空或超过 512 KB" }
         val keyBytes = decoder.decode(trustedPublicKeyBase64.filterNot(Char::isWhitespace))
         require(keyBytes.isNotEmpty() && keyBytes.size <= 8192) { "受信任公钥格式无效" }
-        val publicKey = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(keyBytes))
+        val publicKey = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(keyBytes)) as? RSAPublicKey
+            ?: throw IllegalArgumentException("受信任公钥必须为 RSA")
+        require(publicKey.modulus.bitLength() in 2048..8192) { "RSA 公钥长度必须为 2048 到 8192 位" }
         val verifier = Signature.getInstance("SHA256withRSA")
         verifier.initVerify(publicKey)
         verifier.update(payload)
@@ -42,7 +45,8 @@ object SkillCommunityClient {
 
         val root = JSONObject(payload.toString(Charsets.UTF_8))
         require(root.optInt("schema") == 1) { "不支持的社区目录格式" }
-        val rows = root.optJSONArray("releases") ?: JSONArray()
+        require(root.has("releases") && root.optJSONArray("releases") != null) { "社区目录缺少有效的 releases 数组" }
+        val rows = root.getJSONArray("releases")
         require(rows.length() <= 200) { "社区目录条目超过 200 项" }
         val seen = mutableSetOf<String>()
         return (0 until rows.length()).map { index ->

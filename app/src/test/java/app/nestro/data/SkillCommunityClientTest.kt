@@ -100,4 +100,25 @@ class SkillCommunityClientTest {
         assertEquals("已验证签名社区目录", bundle.source)
     }
 
+    @Test
+    fun rejectsWeakRsaKeysAndCatalogsWithoutReleaseArray() {
+        val weakPair = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }.generateKeyPair()
+        val key = Base64.getEncoder().encodeToString(weakPair.public.encoded)
+        val payload = """{"schema":1,"releases":[]}""".toByteArray()
+        try {
+            SkillCommunityClient.verifyCatalogEnvelope(signedEnvelope(payload, weakPair), key)
+            throw AssertionError("weak RSA key must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+
+        val strongPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val malformedPayload = """{"schema":1}""".toByteArray()
+        val strongKey = Base64.getEncoder().encodeToString(strongPair.public.encoded)
+        try {
+            SkillCommunityClient.verifyCatalogEnvelope(signedEnvelope(malformedPayload, strongPair), strongKey)
+            throw AssertionError("catalog without releases array must be rejected")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
 }
