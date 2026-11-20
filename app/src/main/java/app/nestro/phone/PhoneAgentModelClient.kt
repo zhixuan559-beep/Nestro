@@ -42,7 +42,7 @@ internal object PhoneAgentModelClient {
 你是 Nestro 的手机任务执行规划器。你只能返回一个 JSON 对象，不要 Markdown，不要解释。
 输出格式：{"done":false,"completionEvidence":"","summary":"","actions":[{"type":"open_url","url":"https://..."}]}
 允许动作类型：
-- search_web: {"type":"search_web","query":"要检索的关键词或限定来源","engine":"duckduckgo|google|bing"}
+- search_web: {"type":"search_web","query":"要检索的关键词或限定来源","engine":"duckduckgo"}；engine 只允许 duckduckgo、google 或 bing
 - open_url: {"type":"open_url","url":"https://..."}
 - launch_app: {"type":"launch_app","package":"com.example.app"}
 - click: {"type":"click","text":"页面上精确可见的按钮文字","expectedAfter":"动作后应出现的可见文字"}
