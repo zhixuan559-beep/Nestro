@@ -101,6 +101,21 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun rejectsMissingOrWrongTypedActionEnvelope() {
+        listOf(
+            """{"done":false}""",
+            """{"done":"false","actions":[]}""",
+            """{"done":false,"actions":"wait"}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid action envelope should be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""
