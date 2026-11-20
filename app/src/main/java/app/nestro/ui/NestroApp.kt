@@ -2938,8 +2938,16 @@ fun NestroApp() {
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
         val protectedBuiltin = bundle.name in DEFAULT_SKILLS
-        val dependencyReport = remember(bundle, skills, skillMetadata, disabledSkills) {
-            SkillDependencyResolver.inspect(bundle, skills.filterKeys { it !in disabledSkills }, skillMetadata)
+        val importReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+            prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
+        ) else emptySet()
+        val importVisibleSkills = skills.filterKeys { skillName ->
+            !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, importReadableProjectIds
+            )
+        }
+        val dependencyReport = remember(bundle, importVisibleSkills, skillMetadata, disabledSkills) {
+            SkillDependencyResolver.inspect(bundle, importVisibleSkills.filterKeys { it !in disabledSkills }, skillMetadata)
         }
         val incompatibleDependents = remember(bundle, skills, skillMetadata) {
             SkillDependencyResolver.findIncompatibleDependents(bundle.name, bundle.version, skills, skillMetadata)
@@ -2973,6 +2981,22 @@ fun NestroApp() {
                     }
                     if (projectResourceScopesReadOnly) {
                         skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                        return@TextButton
+                    }
+                    val liveReadableProjectIds = ProjectAccessControlStore.readableSourceProjects(
+                        prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
+                    )
+                    val liveVisibleSkills = skills.filterKeys { skillName ->
+                        ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, liveReadableProjectIds
+                        )
+                    }
+                    val liveDependencyReport = SkillDependencyResolver.inspect(
+                        bundle, liveVisibleSkills.filterKeys { it !in disabledSkills }, skillMetadata
+                    )
+                    if (!liveDependencyReport.isSatisfied) {
+                        skillImportStatus = "技能依赖在当前项目中不可用，已阻止安装：" +
+                            liveDependencyReport.issues.joinToString("；") { it.skillName + "@" + it.requiredVersion + "：" + it.reason }
                         return@TextButton
                     }
                     val replacing = bundle.name in skills
