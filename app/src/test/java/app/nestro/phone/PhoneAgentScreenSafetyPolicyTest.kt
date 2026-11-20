@@ -21,6 +21,19 @@ class PhoneAgentScreenSafetyPolicyTest {
     }
 
     @Test
+    fun consentAndAndroidPermissionScreensRequireUserHandoff() {
+        listOf(
+            "Accept all cookies",
+            "I agree to the terms",
+            "请阅读并同意用户协议",
+            "允许 Nestro 访问位置信息",
+            "Allow Nestro to access your location",
+            "Only this time · Location",
+            "Don't allow Nestro to use the camera"
+        ).forEach { assertTrue(it, PhoneAgentScreenSafetyPolicy.requiresUserHandoff(it)) }
+    }
+
+    @Test
     fun ordinaryPagesAndInformationalMentionsDoNotTriggerHandoff() {
         listOf(
             "商品详情：咖啡 价格 29 元",
