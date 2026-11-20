@@ -104,12 +104,16 @@ object SkillCommunityClient {
         val nextParts = nextPre.split(".")
         val currentParts = currentPre.split(".")
         for (index in 0 until minOf(nextParts.size, currentParts.size)) {
-            val nextNumber = nextParts[index].toLongOrNull()
-            val currentNumber = currentParts[index].toLongOrNull()
+            val nextNumeric = nextParts[index].all { it.isDigit() }
+            val currentNumeric = currentParts[index].all { it.isDigit() }
             val comparison = when {
-                nextNumber != null && currentNumber != null -> nextNumber.compareTo(currentNumber)
-                nextNumber != null -> -1
-                currentNumber != null -> 1
+                nextNumeric && currentNumeric -> {
+                    if (nextParts[index].length != currentParts[index].length) {
+                        nextParts[index].length.compareTo(currentParts[index].length)
+                    } else nextParts[index].compareTo(currentParts[index])
+                }
+                nextNumeric -> -1
+                currentNumeric -> 1
                 else -> nextParts[index].compareTo(currentParts[index])
             }
             if (comparison != 0) return comparison > 0

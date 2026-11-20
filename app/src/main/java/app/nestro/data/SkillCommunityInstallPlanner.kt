@@ -58,12 +58,6 @@ object SkillCommunityInstallPlanner {
             require(current.isNotBlank() && SkillCommunityClient.isNewerVersion(release.version, current)) {
                 "技能“${release.name}”仅允许升级到严格高于本机的社区版本"
             }
-            val incompatibleDependents = SkillDependencyResolver.findIncompatibleDependents(
-                release.name, release.version, installedSkills, installedMetadata
-            ) ?: error("本机技能依赖元数据损坏，无法证明升级安全，已拒绝覆盖")
-            require(incompatibleDependents.isEmpty()) {
-                "升级技能“${release.name}”会破坏以下技能的版本约束：" + incompatibleDependents.joinToString("、")
-            }
         }
 
         fun chooseRelease(name: String, constraint: String): SignedSkillRelease {
@@ -127,6 +121,23 @@ object SkillCommunityInstallPlanner {
             it.name == rootRelease.name && it.version == rootRelease.version && it.sha256 == rootRelease.sha256
         }) { "请求安装的技能不在当前已验签社区目录中" }
         visit(rootRelease, null, isRoot = true)
+
+        // Validate replacement compatibility against the complete staged plan. This allows
+        // coordinated upgrades where a dependent skill is upgraded in the same transaction.
+        val stagedSkills = installedSkills.toMutableMap()
+        val stagedMetadata = installedMetadata.toMutableMap()
+        ordered.forEach { bundle ->
+            stagedSkills[bundle.name] = bundle.prompt
+            stagedMetadata[bundle.name] = SkillBundleParser.metadataJson(bundle)
+        }
+        ordered.forEach { bundle ->
+            val incompatibleDependents = SkillDependencyResolver.findIncompatibleDependents(
+                bundle.name, bundle.version, stagedSkills, stagedMetadata
+            ) ?: error("技能“${bundle.name}”的依赖元数据损坏，无法证明升级安全")
+            require(incompatibleDependents.isEmpty()) {
+                "升级技能“${bundle.name}”会破坏以下技能的版本约束：" + incompatibleDependents.joinToString("、")
+            }
+        }
         return SkillCommunityInstallPlan(ordered.toList())
     }
 }

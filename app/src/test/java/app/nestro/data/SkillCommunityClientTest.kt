@@ -121,4 +121,11 @@ class SkillCommunityClientTest {
         }
     }
 
+    @Test
+    fun comparesLongNumericPrereleaseIdentifiersBySemverRules() {
+        assertTrue(SkillCommunityClient.isNewerVersion("1.0.0-0abc", "1.0.0-99999999999999999999"))
+        assertTrue(SkillCommunityClient.isNewerVersion("1.0.0-100000000000000000000", "1.0.0-99999999999999999999"))
+        assertEquals(false, SkillCommunityClient.isNewerVersion("1.0.0-99999999999999999999", "1.0.0-0abc"))
+    }
+
 }

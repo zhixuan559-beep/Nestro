@@ -141,4 +141,27 @@ class SkillCommunityInstallPlannerTest {
         }
     }
 
+    @Test
+    fun allowsCoordinatedUpgradeWhenDependentIsUpdatedInSamePlan() {
+        val root = release("父技能", "2.0.0")
+        val dependency = release("共享依赖", "2.1.0")
+        val installed = mapOf("父技能" to "old parent", "共享依赖" to "old dependency")
+        val metadata = mapOf(
+            "父技能" to JSONObject().put("version", "1.0.0")
+                .put("source", SkillInstallPolicy.VERIFIED_COMMUNITY_SOURCE)
+                .put("dependencies", org.json.JSONArray().put(
+                    JSONObject().put("name", "共享依赖").put("version", "^1.0.0")
+                )).toString(),
+            "共享依赖" to JSONObject().put("version", "1.5.0")
+                .put("source", SkillInstallPolicy.VERIFIED_COMMUNITY_SOURCE).toString()
+        )
+        val plan = SkillCommunityInstallPlanner.createPlan(
+            root, listOf(root, dependency), installed, metadata
+        ) {
+            if (it.name == root.name) bundle(root.name, root.version, SkillDependency("共享依赖", "^2.0.0"))
+            else bundle(it.name, it.version)
+        }
+        assertEquals(listOf("共享依赖", "父技能"), plan.bundles.map { it.name })
+    }
+
 }
