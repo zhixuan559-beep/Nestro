@@ -2874,8 +2874,8 @@ fun NestroApp() {
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
         val protectedBuiltin = bundle.name in DEFAULT_SKILLS
-        val dependencyReport = remember(bundle, skills, skillMetadata) {
-            SkillDependencyResolver.inspect(bundle, skills, skillMetadata)
+        val dependencyReport = remember(bundle, skills, skillMetadata, disabledSkills) {
+            SkillDependencyResolver.inspect(bundle, skills.filterKeys { it !in disabledSkills }, skillMetadata)
         }
         AlertDialog(
             onDismissRequest = { showSkillImportDialog = false; pendingSkillBundle = null },
