@@ -52,7 +52,7 @@ class PhoneAgentWorker(
             return executeTask(taskId)
         } finally {
             applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.pendingAtKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove("phone_task_stop_requested").apply()
+                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.pendingAtKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove(PhoneAgentWorkScheduler.stopKey(taskId)).apply()
         }
     }
 
@@ -137,7 +137,6 @@ class PhoneAgentWorker(
             PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
             return Result.success()
         }
-        preferences.edit().remove("phone_task_stop_requested").apply()
         setForeground(PhoneAgentNotifications.foregroundInfo(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100)))
         PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100), true)
         if (PhoneAgentExecutionEnvironmentProvider.active == null) {
