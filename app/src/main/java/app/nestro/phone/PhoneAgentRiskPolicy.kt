@@ -26,7 +26,8 @@ object PhoneAgentRiskPolicy {
         "password", "passcode", "verification code", "one-time code", "otp",
         "credit card", "card number", "security code", "phone number",
         "email address", "shipping address", "street address", "home address",
-        "postal address", "zip code", "postal code", "recipient", "full name", "account number"
+        "postal address", "zip code", "postal code", "recipient", "full name", "account number",
+        "bank account", "routing number", "passport number", "social security", "tax id"
     )
 
     private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
