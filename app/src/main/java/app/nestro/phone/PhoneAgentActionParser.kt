@@ -1,6 +1,5 @@
 package app.nestro.phone
 
-import java.net.URI
 import org.json.JSONObject
 
 object PhoneAgentActionParser {
@@ -40,8 +39,7 @@ object PhoneAgentActionParser {
                 }
                 "open_url" -> {
                     val url = item.getString("url").trim()
-                    val uri = runCatching { URI(url) }.getOrElse { error("模型生成的网址无效") }
-                    require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "模型生成了不安全的网址" }
+                    require(PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "模型生成了不安全或非公开的网址" }
                     if (PhoneAgentRiskPolicy.containsSensitiveValue(url)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("网页地址包含个人敏感信息，已暂停打开。")
                     } else PhoneAgentExecutor.Action.OpenUrl(url)
