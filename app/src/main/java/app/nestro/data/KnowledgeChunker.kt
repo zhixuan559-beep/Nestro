@@ -28,7 +28,7 @@ object KnowledgeChunker {
                 if (boundary > start + chunkSize / 2) end = boundary + 1
                 if (end < text.length && end > 0 &&
                     text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()
-                ) end++
+                ) end--
             }
 
             result += text.substring(start, end)

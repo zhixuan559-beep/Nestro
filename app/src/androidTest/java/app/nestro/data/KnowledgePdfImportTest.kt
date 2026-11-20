@@ -30,20 +30,20 @@ class KnowledgePdfImportTest {
     @Test
     fun extractsTextFromPdfForKnowledgeIndexing() {
         val bytes = createPdf("Nestro knowledge base PDF extraction")
-        val text = KnowledgeStore.extractPdfText(context, bytes)
+        val text = runBlocking { KnowledgeStore.extractPdfText(context, bytes) }
         assertTrue(text.contains("Nestro knowledge base PDF extraction"))
     }
 
     @Test
     fun recognizesTextFromScannedPdfOnDevice() {
-        val text = KnowledgeStore.extractPdfText(context, createScannedPdf("NESTRO OCR TEST"))
+        val text = runBlocking { KnowledgeStore.extractPdfText(context, createScannedPdf("NESTRO OCR TEST")) }
         assertTrue(text.uppercase().contains("NESTRO"))
     }
 
     @Test
     fun rejectsPdfWithoutExtractableText() {
         val bytes = createPdf(null)
-        val failure = runCatching { KnowledgeStore.extractPdfText(context, bytes) }.exceptionOrNull()
+        val failure = runCatching { runBlocking { KnowledgeStore.extractPdfText(context, bytes) } }.exceptionOrNull()
         assertTrue(failure?.message?.contains("扫描图片版") == true)
     }
 
@@ -55,7 +55,7 @@ class KnowledgePdfImportTest {
             val output = ByteArrayOutputStream()
             document.save(output)
             val failure = runCatching {
-                KnowledgeStore.extractPdfText(context, output.toByteArray())
+                runBlocking { KnowledgeStore.extractPdfText(context, output.toByteArray()) }
             }.exceptionOrNull()
             assertTrue(failure?.message?.contains("300 页") == true)
         } finally {

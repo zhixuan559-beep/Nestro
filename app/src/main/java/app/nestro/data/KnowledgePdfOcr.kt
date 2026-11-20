@@ -13,7 +13,6 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.Writer
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 
 /** Extract embedded text first; OCR only pages without a text layer. */
@@ -23,7 +22,7 @@ internal object KnowledgePdfOcr {
     private const val MAX_RENDER_EDGE = 1_800
     private const val MAX_SCALE = 2.0
 
-    fun extract(context: Context, bytes: ByteArray): String {
+    suspend fun extract(context: Context, bytes: ByteArray): String {
         PDFBoxResourceLoader.init(context.applicationContext)
         val tempFile = File.createTempFile("nestro-knowledge-", ".pdf", context.cacheDir)
         tempFile.writeBytes(bytes)
@@ -65,7 +64,7 @@ internal object KnowledgePdfOcr {
                         } finally { page.close() }
                         try {
                             if (recognizer == null) recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-                            text = runBlocking { recognizer!!.process(InputImage.fromBitmap(bitmap, 0)).await().text.trim() }
+                            text = recognizer!!.process(InputImage.fromBitmap(bitmap, 0)).await().text.trim()
                         } finally { bitmap.recycle() }
                     }
                     if (text.isNotBlank()) {

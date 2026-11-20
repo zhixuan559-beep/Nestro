@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -62,14 +63,14 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
   previewContent=""
   previewLoading=false
   status="正在读取当前项目的本地知识库…"
-  runCatching { refresh(projectId) }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
+  runCatchingCancellable { refresh(projectId) }.onFailure { status="读取知识库失败：${it.message ?: "未知错误"}" }
  }
  val launcher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
   if(uri!=null) {
    loading=true; status="正在读取并建立本地索引…"
    val requestedProjectId=projectId
    scope.launch {
-    val result=runCatching { repository.importText(context,context.contentResolver,uri,requestedProjectId) }
+    val result=runCatchingCancellable { repository.importText(context,context.contentResolver,uri,requestedProjectId) }
     if(latestProjectId==requestedProjectId) {
      result.onSuccess { refresh(requestedProjectId); status=if(it.duplicate) "这份文档已存在，无需重复导入。" else "已导入「${it.document.name}」，可在当前项目对话中检索。" }
       .onFailure { status="导入失败：${it.message ?: "未知错误"}" }
@@ -99,7 +100,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
     val requestedProjectId=projectId
     val requestedQuery=searchQuery
     scope.launch {
-     val result=runCatching {
+     val result=runCatchingCancellable {
       accessibleProjectIds()
        .flatMap { sourceProjectId -> repository.search(sourceProjectId,requestedQuery,6) }
        .take(6)
@@ -140,7 +141,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
         previewDocument=doc; previewLoading=true; previewContent=""
         val requestedProjectId=projectId
         scope.launch {
-         val result=runCatching { repository.documentContent(doc.id,doc.projectId) }
+         val result=runCatchingCancellable { repository.documentContent(doc.id,doc.projectId) }
          if(latestProjectId==requestedProjectId && previewDocument?.id==doc.id) {
           previewContent=result.fold({ it },{ "读取文档失败：" + (it.message ?: "未知错误") })
           previewLoading=false
@@ -180,7 +181,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
      pendingDelete=null
      val requestedProjectId=projectId
      scope.launch {
-      val result=runCatching {
+      val result=runCatchingCancellable {
        if(target.projectId!=requestedProjectId) {
         check(ProjectAccessControlStore.authorize(prefs,target.projectId,requestedProjectId,ProjectAccessControlStore.Access.WRITE)) {
          "当前项目没有该空间的写入授权，已阻止删除"
@@ -201,4 +202,13 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
    dismissButton={TextButton(onClick={pendingDelete=null}) { Text("取消") }}
   )
  }
+}
+ 
+private suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> =
+ try {
+  Result.success(block())
+ } catch (cancel: CancellationException) {
+  throw cancel
+ } catch (error: Exception) {
+  Result.failure(error)
 }
