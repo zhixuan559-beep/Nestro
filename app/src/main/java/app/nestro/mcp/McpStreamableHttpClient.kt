@@ -75,7 +75,8 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
    val parsed=reply.body.takeIf{it.isNotBlank()}?.let{parseBody(it,reply.contentType)}
    if(reply.code !in 200..299){
     val rpcError=parsed?.optJSONObject("error");val message=rpcError?.optString("message").orEmpty()
-    val supported=rpcError?.optJSONObject("data")?.optJSONArray("supported")
+    val errorData=rpcError?.optJSONObject("data")
+    val supported=errorData?.optJSONArray("supported")?:errorData?.optJSONArray("supportedVersions")
     if(reply.code==400&&(message.contains("protocol",true)||message.contains("unsupported",true)||supported!=null)){
      legacyMode=true;return rpc(method,params,name,schemaJson)
     }
