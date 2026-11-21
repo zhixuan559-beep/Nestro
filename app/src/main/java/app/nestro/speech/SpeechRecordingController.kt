@@ -11,6 +11,7 @@ import kotlin.math.max
 class SpeechRecordingController : AutoCloseable {
     private val running = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
+    private val finished = AtomicBoolean(false)
     private val pcm = ByteArrayOutputStream()
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var captureThread: Thread? = null
@@ -18,6 +19,7 @@ class SpeechRecordingController : AutoCloseable {
 
     fun start() {
         check(!closed.get()) { "录音控制器已关闭" }
+        check(!finished.get()) { "本次录音已经结束" }
         check(running.compareAndSet(false, true)) { "录音已经开始" }
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
@@ -81,6 +83,7 @@ class SpeechRecordingController : AutoCloseable {
 
     fun stopAndGetWav(): ByteArray {
         check(!closed.get()) { "录音控制器已关闭" }
+        check(finished.compareAndSet(false, true)) { "本次录音已经结束" }
         running.set(false)
         runCatching { recorder?.stop() }
         val thread = captureThread
