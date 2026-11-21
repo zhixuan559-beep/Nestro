@@ -368,7 +368,7 @@ fun AiCoworkbenchPage(
                         status = if (result.successful) "隔离构建与测试通过：" + result.url
                             else "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
                     } catch (cancelled: CancellationException) {
-                        status = "已取消本次隔离构建等待；远端任务可能仍在运行，请到 Actions 页面确认。"
+                        status = cancelled.message ?: "已取消隔离构建等待；请到 GitHub Actions 页面确认远端状态。"
                     } catch (error: Exception) {
                         status = error.message ?: "隔离构建未能启动"
                     } finally { busy = false; validationJob = null }
