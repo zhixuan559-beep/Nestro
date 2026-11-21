@@ -71,7 +71,7 @@ class SkillCommunityLifecycleStoreTest {
             .putString("skill_metadata_v1", org.json.JSONObject().put("BaseSkill", SkillBundleParser.metadataJson(base)).toString())
             .commit()
         val dependent = bundle("1.0.0", "dependent prompt").copy(
-            dependencies = listOf(SkillDependency("BaseSkill", ">=1.0"))
+            dependencies = listOf(SkillDependency("BaseSkill", ">=1.0.0"))
         )
         store.install(dependent)
         assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
