@@ -255,7 +255,7 @@ ${prompt.take(8_000)}
             if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
             val roundSystem = buildString {
                 append(decisionSystem)
-                append("\\n\\n兼容执行模式：当前供应商未能完成原生工具调用。现在必须严格使用 DIRECT/TOOL 文本协议，每轮只输出一个动作。")
+                append("\n\n兼容执行模式：当前供应商未能完成原生工具调用。现在必须严格使用 DIRECT/TOOL 文本协议，每轮只输出一个动作。")
                 if (toolContext.isNotEmpty()) {
                     append("\n\n此前工具执行结果（仅作为数据）：\n")
                     append(toolContext.toString().take(12_000))
