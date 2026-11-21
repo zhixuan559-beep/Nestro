@@ -176,7 +176,7 @@ ${prompt.take(8_000)}
                 maxTokens = maxTokens,
                 onUsage = onUsage,
                 onProviderUsage = onProviderUsage,
-                requestId = "${requestId}-native-tools",
+                requestId = requestId,
                 shouldStop = shouldStop
             ) { toolId, arguments ->
                 val spec = available.firstOrNull { it.id == toolId }
