@@ -6,8 +6,10 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import app.nestro.git.GitWorkbenchRepository
 
 data class CoworkbenchProposal(val path: String, val content: String?)
@@ -102,6 +104,14 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     }
 
     suspend fun loadReview(id: String): CoworkbenchReview = lock.withLock { loadReviewUnlocked(id) }
+
+    suspend fun analyzeRepository(repositoryId: String): CoworkbenchAnalysisReport = lock.withLock {
+        val repository = git.localRepositories().firstOrNull { it.id == repositoryId }
+            ?: error("本地仓库不存在")
+        withContext(Dispatchers.IO) {
+            CoworkbenchStaticAnalyzer.analyze(File(repository.localPath))
+        }
+    }
 
     suspend fun listSnapshots(repositoryId: String): List<CoworkbenchSnapshot> = lock.withLock {
         require(repositoryId.isNotBlank()) { "仓库标识无效" }
