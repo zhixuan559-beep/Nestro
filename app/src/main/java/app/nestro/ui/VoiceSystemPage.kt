@@ -243,6 +243,9 @@ fun VoiceSystemPage() {
                         audio.close()
                     }
                     mainHandler.post {
+                        if (realtimeConnectCancelled.get() !== cancelled && realtimeSessionRef.get() != null) {
+                            return@post
+                        }
                         realtimeAudio = null
                         realtimeSession = null
                         pendingRealtimeSession = null
