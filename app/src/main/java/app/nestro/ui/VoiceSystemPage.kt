@@ -66,6 +66,8 @@ fun VoiceSystemPage() {
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
     var realtimeSession by remember { mutableStateOf<RealtimeVoiceSession?>(null) }
+    var pendingRealtimeSession by remember { mutableStateOf<RealtimeVoiceSession?>(null) }
+    var realtimeConnecting by remember { mutableStateOf(false) }
     var realtimeAudio by remember { mutableStateOf<RealtimeVoiceAudioController?>(null) }
     var realtimeTranscript by remember { mutableStateOf("") }
     val voicePrefs = remember(context) {
@@ -121,6 +123,7 @@ fun VoiceSystemPage() {
         }
         try {
             status = "正在连接实时语音服务…"
+            realtimeConnecting = true
             val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
                 override fun onConnected(activeSession: RealtimeVoiceSession) {
                     try {
@@ -132,6 +135,8 @@ fun VoiceSystemPage() {
                         mainHandler.post {
                             realtimeAudio = audio
                             realtimeSession = activeSession
+                            pendingRealtimeSession = null
+                            realtimeConnecting = false
                             status = "实时双向语音已连接，可以直接说话"
                         }
                     } catch (error: Throwable) {
@@ -161,12 +166,15 @@ fun VoiceSystemPage() {
                     mainHandler.post {
                         realtimeAudio = null
                         realtimeSession = null
+                        pendingRealtimeSession = null
+                        realtimeConnecting = false
                         status = "实时语音连接已断开"
                     }
                 }
             })
-            realtimeSession = session
+            pendingRealtimeSession = session
         } catch (error: Throwable) {
+            realtimeConnecting = false
             status = error.message ?: "实时语音连接失败"
         }
     }
@@ -182,6 +190,7 @@ fun VoiceSystemPage() {
             controller.close()
             realtimeAudioRef.getAndSet(null)?.close()
             realtimeSession?.close()
+            pendingRealtimeSession?.close()
             runCatching { mediaPlayer?.stop() }
             runCatching { mediaPlayer?.release() }
             mediaPlayer = null
@@ -377,7 +386,7 @@ fun VoiceSystemPage() {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null,
+                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
                 onClick = {
                     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         connectRealtime()
@@ -387,12 +396,15 @@ fun VoiceSystemPage() {
                 }
             ) { Text("开启实时语音") }
             OutlinedButton(
-                enabled = realtimeSession != null,
+                enabled = realtimeSession != null || pendingRealtimeSession != null || realtimeConnecting,
                 onClick = {
                     realtimeAudioRef.getAndSet(null)?.close()
                     realtimeAudio = null
                     realtimeSession?.close()
+                    pendingRealtimeSession?.close()
                     realtimeSession = null
+                    pendingRealtimeSession = null
+                    realtimeConnecting = false
                     status = "已结束实时语音"
                 }
             ) { Text("结束连接") }
