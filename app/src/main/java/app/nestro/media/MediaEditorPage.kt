@@ -213,7 +213,7 @@ fun MediaEditorPage(
                                 val next = latestTimeline.copy(subtitles = merged)
                                 val savedTimeline = withContext(Dispatchers.IO) { MediaProjectStore.saveTimeline(context, next, latestTimeline.revision) }
                                 timeline = savedTimeline
-                                status = "AI 字幕已生成："+cues.size+" 条。"
+                                status = if (cues.size == 1 && cues.firstOrNull()?.startMs == 0L) "AI 全文转写完成：生成 1 条全片字幕；如需逐句时间戳，请选择支持 segment 时间戳的转写模型。" else "AI 字幕已生成："+cues.size+" 条。"
                             }
                             "scenes" -> {
                                 val rows = result.optJSONArray("scenes") ?: error("场景结果缺少 scenes")
