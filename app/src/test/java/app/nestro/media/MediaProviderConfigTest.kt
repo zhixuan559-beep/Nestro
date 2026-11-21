@@ -40,6 +40,8 @@ class MediaProviderConfigTest {
             videoGenerationModel = "video-model",
             videoSubmitPath = "v1/videos",
             videoStatusPath = "v1/videos/{job_id}",
+            videoModelField = "engine",
+            videoPromptField = "input.prompt",
             videoJobIdField = "data.id",
             videoStatusField = "data.status",
             videoResultUrlField = "data.output.url"
@@ -51,6 +53,7 @@ class MediaProviderConfigTest {
         assertFalse(runCatching { config().copy(videoStatusPath = "v1/videos").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoStatusPath = "v1/{job_id}/../admin").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoResultUrlField = "video-url?token").validate() }.isSuccess)
+        assertFalse(runCatching { config().copy(videoPromptField = "prompt.value?").validate() }.isSuccess)
     }
 
     @Test fun secretIsRedactedFromStringRepresentation() {
