@@ -121,4 +121,74 @@ class ExpertTeamExecutionCoordinator(
         taskContext.checkpoint("team:" + teamId + ":finished", result.members.size)
         result.copy(projectId = projectId)
     }
+    suspend fun executeProjectPlan(
+        teamId: String,
+        teamName: String,
+        teamDescription: String,
+        plan: ExpertProjectPlan,
+        members: Map<String, ExpertTeamMemberTask>,
+        projectId: String,
+        taskId: String = UUID.randomUUID().toString(),
+        shouldStop: () -> Boolean = { false },
+        eventSink: ExpertTeamEventSink? = null,
+        onPackage: suspend (String, String, String) -> Unit = { _, _, _ -> },
+        invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
+        toolCatalog: AgentToolCatalog? = null,
+        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
+    ): ExpertProjectExecutionResult = taskCoordinator.runInline(
+        taskId = taskId,
+        owner = "expert_team_project",
+        initialCheckpoint = "team:" + teamId + ":project_queued"
+    ) { taskContext ->
+        taskContext.checkpoint("team:" + teamId + ":project_running", 0)
+        var sequence = 0L
+        suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
+            eventSink?.append(
+                ExpertTeamCollaborationEvent(
+                    taskId = taskId, projectId = projectId, teamId = teamId,
+                    sequence = sequence++, type = type, memberName = member,
+                    status = status, message = message.take(8_000)
+                )
+            )
+        }
+        emit("team_started", status = "running", message = plan.projectGoal.take(2_000))
+        val result = ExpertProjectPlanExecutor.execute(
+            plan = plan,
+            availableMembers = members.keys,
+            shouldStop = shouldStop,
+            invoke = { memberName, instruction ->
+                val member = members[memberName] ?: error("专家不在当前团队中：$memberName")
+                val lease = AgentCapabilityRegistry.openLease(
+                    taskId = taskId, owner = "expert_team_project",
+                    operation = member.name, catalog = toolCatalog
+                )
+                try {
+                    if (lease != null && invokeMemberWithTools == null) {
+                        error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
+                    }
+                    invokeMemberWithTools?.invoke(member, instruction, lease?.access)
+                        ?: invokeMember(member, instruction)
+                } finally {
+                    lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                }
+            },
+            onPackage = { packageId, status, detail ->
+                onPackage(packageId, status, detail)
+                val packageInfo = plan.packages.firstOrNull { it.id == packageId }
+                val eventType = when (status) {
+                    "running" -> "member_started"
+                    "success" -> "artifact_submitted"
+                    "failed" -> "member_failed"
+                    else -> "member_message"
+                }
+                emit(eventType, member = packageInfo?.memberName.orEmpty(), status = status,
+                    message = "工作包 $packageId：$detail")
+            }
+        )
+        emit("team_completed", status = if (result.isSuccessful) "success" else "partial",
+            message = "工作包完成：${result.packageResults.count { it.status == "success" }}/${plan.packages.size}")
+        taskContext.checkpoint("team:" + teamId + ":project_finished", result.packageResults.size)
+        result
+    }
+
 }
