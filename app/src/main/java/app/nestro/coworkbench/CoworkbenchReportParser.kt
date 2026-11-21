@@ -155,6 +155,7 @@ object CoworkbenchReportParser {
             }
             val document = builder.parse(InputSource(StringReader(content)))
             val root = document.documentElement ?: return null
+            if (root.tagName !in setOf("testsuite", "testsuites")) return null
             fun count(attribute: String): Int = root.getAttribute(attribute).toIntOrNull()?.coerceAtLeast(0) ?: 0
             val hasRootCounts = root.hasAttribute("tests")
             val total: Int
@@ -173,7 +174,8 @@ object CoworkbenchReportParser {
                 errors = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("errors").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
                 skipped = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("skipped").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
             }
-            CoworkbenchTestReport(path, total, (total - failures - errors - skipped).coerceAtLeast(0),
+            require(total >= 0 && failures + errors + skipped <= total) { "JUnit 测试报告计数不一致" }
+            CoworkbenchTestReport(path, total, total - failures - errors - skipped,
                 failures, errors, skipped)
         }.getOrNull()
     }
