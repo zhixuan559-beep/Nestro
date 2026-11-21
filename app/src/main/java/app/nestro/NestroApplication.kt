@@ -160,7 +160,7 @@ class NestroApplication : Application() {
                 } else {
                     app.nestro.agent.AgentToolResult(
                         true,
-                        output = providers.joinToString("\\n") {
+                        output = providers.joinToString("\n") {
                             "provider_id=${it.providerId}; name=${it.displayName}; chat_model=${it.model}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
                         }
                     )
@@ -214,7 +214,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.video.status",
-                    description = "查询当前项目的视频生成任务。参数：task_id（必填）。返回任务状态、进度和生成素材 ID。",
+                    description = "查询当前项目的视频生成任务。参数：task_id（可选；省略时查询最近任务）。返回任务状态、进度和生成素材 ID。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) { arguments ->
@@ -222,7 +222,7 @@ class NestroApplication : Application() {
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围")
                 val taskId = arguments["task_id"]?.trim().orEmpty()
                 val task = if (taskId.isBlank()) {
-                    MediaAiTaskStore.list(this@NestroApplication, projectId).firstOrNull { it.action == "video-generate" }
+                    MediaAiTaskStore.list(this@NestroApplication, projectId).filter { it.action == "video-generate" }.maxByOrNull { it.createdAt }
                 } else {
                     runCatching { MediaAiTaskStore.read(this@NestroApplication, projectId, taskId) }.getOrNull()
                 } ?: return@register app.nestro.agent.AgentToolResult(false, error = "当前项目不存在该视频任务")
