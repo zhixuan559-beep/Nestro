@@ -354,6 +354,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     private val app = context.applicationContext
     val accounts = GitAccountStore(app)
     private val root = File(app.filesDir, "git-workspaces").apply { mkdirs() }
+    private val indexLock = Any()
 
     suspend fun verifyAccount(account: GitAccount, token: String) = api.verify(account, token)
     suspend fun listRemoteRepositories(account: GitAccount, query: String = ""): List<GitRemoteRepository> =
@@ -384,7 +385,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         }
     }
 
-    fun localRepositories(): List<GitLocalRepository> {
+    fun localRepositories(): List<GitLocalRepository> = synchronized(indexLock) {
         val prefs = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val raw = prefs.getString(LOCAL_KEY, "[]").orEmpty()
         val array = runCatching { JSONArray(raw).also { require(raw.length <= 1_000_000 && it.length() <= 100) } }.getOrElse {
@@ -639,10 +640,25 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     suspend fun removeLocal(id: String, deleteFiles: Boolean) = withContext(Dispatchers.IO) {
-        val local = requireLocal(id)
-        val next = localRepositories().filterNot { it.id == id }
-        if (deleteFiles) check(File(local.localPath).deleteRecursively()) { "本地仓库文件删除失败" }
-        saveLocals(next)
+        synchronized(indexLock) {
+            val local = requireLocal(id)
+            val next = localRepositories().filterNot { it.id == id }
+            val directory = File(local.localPath).canonicalFile
+            require(directory.toPath().startsWith(root.canonicalFile.toPath())) { "本地仓库路径越界，拒绝删除" }
+            val quarantine = if (deleteFiles) File(root, ".deleting-" + id + "-" + UUID.randomUUID()) else null
+            if (quarantine != null) check(directory.renameTo(quarantine)) { "无法安全隔离本地仓库目录，索引未修改" }
+            try {
+                saveLocals(next)
+            } catch (error: Exception) {
+                if (quarantine != null && quarantine.exists() && !quarantine.renameTo(directory)) {
+                    throw IllegalStateException("仓库索引保存失败，且目录恢复失败；原数据保留在隔离目录：" + quarantine.name, error)
+                }
+                throw error
+            }
+            if (quarantine != null && quarantine.exists() && !quarantine.deleteRecursively()) {
+                throw IllegalStateException("仓库已从列表移除，但隔离目录清理失败；数据仍保留在本地：" + quarantine.name)
+            }
+        }
     }
 
     private suspend fun <T> withRepo(id: String, block: (Git) -> T): T = withContext(Dispatchers.IO) {
@@ -683,7 +699,11 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     private suspend fun saveLocal(local: GitLocalRepository) {
-        saveLocals(localRepositories() + local)
+        synchronized(indexLock) {
+            val current = localRepositories()
+            require(current.none { it.id == local.id }) { "本地仓库索引已存在相同 ID" }
+            saveLocals(current + local)
+        }
     }
 
     private fun saveLocals(items: List<GitLocalRepository>) {
