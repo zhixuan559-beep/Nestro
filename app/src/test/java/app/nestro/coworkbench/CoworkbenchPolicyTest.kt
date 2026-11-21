@@ -53,4 +53,12 @@ class CoworkbenchPolicyTest {
         assertFalse(runCatching { CoworkbenchPolicy.selectStage(files, setOf("outside.txt")) }.isSuccess)
     }
 
+    @Test fun interruptedRecoveryNeverOverwritesExternalChanges() {
+        assertTrue(CoworkbenchPolicy.canRecoverInterruptedFile("before", "before", "after"))
+        assertTrue(CoworkbenchPolicy.canRecoverInterruptedFile("after", "before", "after"))
+        assertTrue(CoworkbenchPolicy.canRecoverInterruptedFile(null, null, "created"))
+        assertFalse(CoworkbenchPolicy.canRecoverInterruptedFile("external", "before", "after"))
+        assertFalse(CoworkbenchPolicy.canRecoverInterruptedFile("external", null, "created"))
+    }
+
 }
