@@ -43,6 +43,7 @@ internal data class NativeToolDefinition(
 )
 internal data class NativeToolCallResult(val output: String, val requiresUser: Boolean = false)
 internal data class NativeToolCompletion(val text: String, val requiresUser: Boolean = false, val toolCallsExecuted: Int = 0)
+internal class NativeToolCallingUnsupportedException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 
 internal object OpenAiClient {
     private const val MAX_NATIVE_TOOL_ROUNDS = 4
@@ -187,6 +188,7 @@ internal object OpenAiClient {
                     lastError = error
                 }
             }
+            if (lastError is NativeToolCallingUnsupportedException) throw lastError
             throw IllegalStateException("主模型与备用模型均无法完成原生工具调用：${lastError?.message ?: "未知错误"}", lastError)
         } finally {
             cancel(requestId)
@@ -299,6 +301,10 @@ internal object OpenAiClient {
                     val errorMessage = if (protocol == app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS) {
                         ChatEndpointPolicy.errorMessage(responseCode, responseText)
                     } else nativeError(config, responseText)
+                    if (responseCode in setOf(400, 404, 405, 422) &&
+                        (responseText.contains("tool", ignoreCase = true) || responseText.contains("function", ignoreCase = true))) {
+                        throw NativeToolCallingUnsupportedException("当前服务商不支持此原生工具调用协议：$errorMessage")
+                    }
                     throw IllegalStateException("HTTP $responseCode: $errorMessage")
                 }
                 val payload = JSONObject(responseText)
