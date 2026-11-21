@@ -28,7 +28,7 @@ class ExpertTeamExecutionCoordinator(
         teamDescription: String,
         task: String,
         members: List<ExpertTeamMemberTask>,
-        mode: ExpertTeamExecutionMode = ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION,
+        strategy: ExpertTeamSchedulingStrategy = ExpertTeamSchedulingStrategy.LEAD_HANDOFF,
         taskId: String = UUID.randomUUID().toString(),
         projectId: String = "default",
         shouldStop: () -> Boolean = { false },
@@ -94,7 +94,7 @@ class ExpertTeamExecutionCoordinator(
                 },
                 invoke = ::invokeWithLease
             )
-            ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION -> ExpertTeamEngine.runCollaborative(
+            ExpertTeamSchedulingStrategy.LEAD_HANDOFF -> ExpertTeamEngine.runCollaborative(
                 teamName = teamName,
                 teamDescription = teamDescription,
                 task = task,
