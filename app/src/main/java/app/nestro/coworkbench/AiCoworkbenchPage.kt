@@ -38,11 +38,13 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
     val context = LocalContext.current
     val git = remember { GitWorkbenchRepository(context) }
     val service = remember { AiCoworkbenchService(context, git) }
+    val validationRunner = remember { GitHubActionsCoworkbenchRunner(context) }
     val scope = rememberCoroutineScope()
     val repositories = remember { git.localRepositories() }
     var selectedRepoId by remember { mutableStateOf(repositories.firstOrNull()?.id.orEmpty()) }
     var repoMenu by remember { mutableStateOf(false) }
     var task by remember { mutableStateOf("") }
+    var workflowFile by remember { mutableStateOf("android.yml") }
     var patchJson by remember { mutableStateOf("") }
     var review by remember { mutableStateOf<CoworkbenchReview?>(null) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
@@ -185,6 +187,33 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                     }) { Text("回滚") }
                 }
             }
+        }
+        Divider()
+        Text("隔离构建与测试", style = MaterialTheme.typography.titleMedium)
+        Text("使用 GitHub-hosted 临时 Runner 执行仓库 Workflow；不会在 Android 进程中运行模型生成的 Shell 或构建脚本。请先将已审查变更提交并推送到 GitHub 分支。", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(value = workflowFile, onValueChange = { workflowFile = it }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Workflow 文件名") }, singleLine = true, enabled = !busy)
+        Button(onClick = {
+            val selected = repositories.firstOrNull { it.id == selectedRepoId }
+            if (selected == null) {
+                status = "请先选择本地 GitHub 仓库。"
+            } else {
+                busy = true
+                scope.launch {
+                    try {
+                        val branch = git.currentBranch(selected.id)
+                        val result = validationRunner.dispatchAndWait(selected, workflowFile, branch)
+                        status = if (result.successful) "隔离构建与测试通过：" + result.url
+                            else "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
+                    } catch (error: Exception) {
+                        status = error.message ?: "隔离构建未能启动"
+                    } finally { busy = false }
+                }
+            }
+        }, enabled = !busy && CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION && workflowFile.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()) { Text("启动隔离构建/测试") }
+        if (!CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION) {
+            Text("当前按既定流程锁定：十九个模块代码全部完成前，不开放统一编译、自动化、模拟器或真机验收。", style = MaterialTheme.typography.bodySmall)
         }
         if (busy) CircularProgressIndicator()
         if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
