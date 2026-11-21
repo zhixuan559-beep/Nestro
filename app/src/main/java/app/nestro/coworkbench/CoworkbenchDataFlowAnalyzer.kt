@@ -10,27 +10,27 @@ object CoworkbenchDataFlowAnalyzer {
     private const val MAX_TAINTED_VARIABLES = 200
 
     private val sources = listOf(
-        Regex("""\\b(?:getStringExtra|getCharSequenceExtra|getQueryParameter|getParameter|getHeader|readLine|nextLine)\\s*\\(""", RegexOption.IGNORE_CASE),
-        Regex("""\\b(?:TextFieldValue|Editable)\\b|\\.text\\s*(?:\\.toString\\s*\\(\\))?"""),
-        Regex("""\\b(?:Intent|Bundle|Uri|JSONObject|JSONArray)\\b[^;=]*\\.(?:getString|getStringExtra|getQueryParameter|optString)\\s*\\(""")
+        Regex("""\b(?:getStringExtra|getCharSequenceExtra|getQueryParameter|getParameter|getHeader|readLine|nextLine)\s*\(""", RegexOption.IGNORE_CASE),
+        Regex("""\b(?:TextFieldValue|Editable)\b|\.text\s*(?:\.toString\s*\(\))?"""),
+        Regex("""\b(?:Intent|Bundle|Uri|JSONObject|JSONArray)\b[^;=]*\.(?:getString|getStringExtra|getQueryParameter|optString)\s*\(""")
     )
 
     private val sinks = listOf(
-        Triple(Regex("""(?:Runtime\\.getRuntime\\(\\)\\.exec|ProcessBuilder)\\s*\\(""", RegexOption.IGNORE_CASE),
+        Triple(Regex("""(?:Runtime\.getRuntime\(\)\.exec|ProcessBuilder)\s*\(""", RegexOption.IGNORE_CASE),
             "命令执行", "外部输入可能流入命令执行入口；必须使用固定参数和严格白名单，禁止拼接 Shell 命令"),
-        Triple(Regex("""\\.(?:rawQuery|execSQL)\\s*\\(""", RegexOption.IGNORE_CASE),
+        Triple(Regex("""\.(?:rawQuery|execSQL)\s*\(""", RegexOption.IGNORE_CASE),
             "SQL 查询", "外部输入可能流入 SQL 执行入口；使用参数化查询，标识符必须独立白名单校验"),
-        Triple(Regex("""\\.(?:loadUrl|loadDataWithBaseURL)\\s*\\(""", RegexOption.IGNORE_CASE),
+        Triple(Regex("""\.(?:loadUrl|loadDataWithBaseURL)\s*\(""", RegexOption.IGNORE_CASE),
             "WebView 导航", "外部输入可能控制 WebView 导航或内容；校验协议、主机和可信来源"),
-        Triple(Regex("""\\b(?:File|Paths\\.get)\\s*\\(""", RegexOption.IGNORE_CASE),
+        Triple(Regex("""\b(?:File|Paths\.get)\s*\(""", RegexOption.IGNORE_CASE),
             "文件路径", "外部输入可能控制文件路径；执行 canonical path containment 检查并拒绝符号链接"),
-        Triple(Regex("""(?:Request\\.Builder|\\.url)\\s*\\(""", RegexOption.IGNORE_CASE),
+        Triple(Regex("""(?:Request\.Builder|\.url)\s*\(""", RegexOption.IGNORE_CASE),
             "网络请求地址", "外部输入可能控制请求 URL；限制 HTTPS、主机白名单、端口和重定向目标")
     )
 
-    private val assignment = Regex("""^\\s*(?:(?:val|var)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+)$""")
-    private val identifier = Regex("""\\b[A-Za-z_][A-Za-z0-9_]*\\b""")
-    private val commentLine = Regex("""^\\s*(?://|/\\*|\\*|#)""")
+    private val assignment = Regex("""^\s*(?:(?:val|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$""")
+    private val identifier = Regex("""\b[A-Za-z_][A-Za-z0-9_]*\b""")
+    private val commentLine = Regex("""^\s*(?://|/\*|\*|#)""")
 
     fun analyze(path: String, source: String): List<CoworkbenchFinding> {
         if (source.isBlank()) return emptyList()
