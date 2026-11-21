@@ -34,7 +34,8 @@ internal data class ChatRequestExecutionResult(
  */
 internal class ChatRequestExecutionCoordinator(
     private val contextAssembler: ChatRequestContextAssembler,
-    private val streamingCoordinator: ChatStreamingCoordinator
+    private val streamingCoordinator: ChatStreamingCoordinator,
+    private val modelToolDispatcher: ModelLedToolDispatcher? = null
 ) {
     suspend fun execute(
         request: ChatRequestExecutionRequest,
@@ -82,6 +83,24 @@ internal class ChatRequestExecutionCoordinator(
                 .take(24_000)
 
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
+            val coordinated = modelToolDispatcher?.dispatch(
+                requestId = request.requestId,
+                projectId = request.projectId,
+                prompt = request.prompt,
+                history = request.history,
+                systemContext = finalSystemContext,
+                configs = request.modelConfigs,
+                temperature = request.temperature,
+                maxTokens = request.maxTokens,
+                shouldStop = request.shouldStop,
+                onUsage = onUsage,
+                onProviderUsage = onProviderUsage
+            )
+            if (coordinated?.directReply != null) {
+                partialAnswer.append(coordinated.directReply)
+                onPartialAnswer(coordinated.directReply)
+                return@runCatchingCancellable coordinated.directReply
+            }
             val streamed = streamingCoordinator.execute(
                 configs = request.modelConfigs,
                 history = ChatRequestPolicy.boundedChatHistory(request.history, finalSystemContext),
