@@ -43,6 +43,13 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon --stacktrace testDebugUnitTest
 
+      - name: Export resolved Gradle dependency graphs
+        if: always() && steps.setup_gradle.outcome == 'success'
+        continue-on-error: true
+        run: |
+          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt 2>&1
+          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt 2>&1
+
       - name: Run Android lint
         if: always() && steps.setup_gradle.outcome == 'success'
         run: gradle --no-daemon --stacktrace lintDebug
@@ -57,6 +64,7 @@ jobs:
         with:
           name: Nestro-verification-reports
           path: |
+            gradle-dependencies.txt
             app/build/reports/tests/**
             app/build/test-results/**
             app/build/reports/lint-results-*.html
