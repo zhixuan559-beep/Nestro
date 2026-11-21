@@ -38,7 +38,8 @@ data class GeneratedPluginStepResult(
     val toolId: String,
     val success: Boolean,
     val output: String = "",
-    val error: String = ""
+    val error: String = "",
+    val requiresUser: Boolean = false
 )
 
 data class GeneratedPluginExecutionResult(
@@ -46,6 +47,7 @@ data class GeneratedPluginExecutionResult(
     val steps: List<GeneratedPluginStepResult>
 ) {
     val success: Boolean get() = steps.isNotEmpty() && steps.all { it.success }
+    val requiresUser: Boolean get() = steps.any { it.requiresUser }
     val output: String get() = steps.joinToString("\n\n") {
         "【${it.stepId}】\n${it.output.ifBlank { it.error }}"
     }.take(16_000)
@@ -72,6 +74,7 @@ object GeneratedPluginPackageValidator {
         plugin.steps.forEach { step ->
             require(step.id.matches(Regex("[A-Za-z0-9_-]{1,64}")))
             require(step.resultKey.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}")))
+            require(!step.toolId.startsWith("plugin.")) { "插件不能递归调用其他生成插件" }
             require(step.toolId.length in 1..100 && discovery.find(step.toolId) != null) {
                 "插件引用了未注册的工具：${step.toolId}"
             }
@@ -136,6 +139,19 @@ object GeneratedPluginPackageCodec {
                     }))
             }
         }.toString()
+
+    fun inputSchema(plugin: GeneratedPluginPackage): JSONObject {
+        val properties = JSONObject()
+        val required = JSONArray()
+        plugin.inputs.forEach { input ->
+            properties.put(input.name, JSONObject().put("type", "string").put("description", input.description.take(300)))
+            if (input.required) required.put(input.name)
+        }
+        return JSONObject().put("type", "object").put("properties", properties)
+            .put("additionalProperties", false).apply {
+                if (required.length() > 0) put("required", required)
+            }
+    }
 
     fun decode(raw: String): List<GeneratedPluginPackage> = runCatching {
         require(raw.length <= 2_000_000) { "插件包数据过大" }
@@ -362,6 +378,7 @@ object GeneratedPluginWorkflowExecutor {
         discovery: AgentToolDiscovery,
         invokeThroughRuntime: suspend (String, Map<String, String>) -> AgentToolResult
     ): GeneratedPluginExecutionResult {
+        require(plugin.enabled) { "插件尚未启用，不能执行" }
         GeneratedPluginPackageValidator.validate(plugin, discovery)
         val inputDefinitions = plugin.inputs.associateBy { it.name }
         require(inputs.keys.all { it in inputDefinitions }) { "调用包含插件未声明的输入" }
@@ -394,7 +411,8 @@ object GeneratedPluginWorkflowExecutor {
             if (!result.success || result.requiresUser) {
                 val failure = GeneratedPluginStepResult(
                     step.id, step.toolId, false,
-                    error = if (result.requiresUser) "该工具需要用户确认：${result.error}" else result.error.ifBlank { result.output }
+                    error = if (result.requiresUser) "该工具需要用户确认：${result.error}" else result.error.ifBlank { result.output },
+                    requiresUser = result.requiresUser
                 )
                 stepResults += failure
                 break
