@@ -126,9 +126,11 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         if(task.status !in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) return Result.success()
         val providerConfig=MediaProviderConfigStore(applicationContext).read(task.providerId)
             ?: return fail(projectId,taskId,"媒体服务商配置不存在或 API Key 无法读取")
-        val asset = if (task.action == "video-generate") null else
+        val asset: MediaAsset? = if (task.action == "video-generate") null else
             runCatching { MediaProjectStore.listAssets(applicationContext,projectId).firstOrNull { it.id==task.assetId } }.getOrNull()
-                ?: return fail(projectId,taskId,"原始素材不存在或已损坏")
+        if (task.action != "video-generate" && asset == null) {
+            return fail(projectId,taskId,"原始素材不存在或已损坏")
+        }
         val provider=OpenAiCompatibleMediaIntelligenceProvider(providerConfig)
         activeProvider=provider
         return try {
