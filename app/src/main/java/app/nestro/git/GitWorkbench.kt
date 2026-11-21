@@ -577,10 +577,12 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(git.status().call().isClean) { "工作区存在未提交变更，请先处理后再回滚" }
         val commit = git.repository.resolve(commitId + "^{commit}") ?: error("找不到指定提交")
         val result = git.revert().include(commit).call()
-        if (result.status == org.eclipse.jgit.api.RevertResult.Status.CONFLICTING) {
-            GitOperationResult(false, "回滚产生冲突，请人工处理。", result.unmergedPaths.orEmpty())
-        } else {
-            GitOperationResult(true, "已生成反向提交：" + (result.newHead?.name ?: "完成"))
+        when {
+            result.status == org.eclipse.jgit.api.RevertResult.Status.CONFLICTING ->
+                GitOperationResult(false, "回滚产生冲突，请人工处理。", result.unmergedPaths.orEmpty())
+            result.newHead != null ->
+                GitOperationResult(true, "已生成反向提交：" + result.newHead.name)
+            else -> GitOperationResult(false, "回滚未生成新提交：" + result.status.name)
         }
     }
 
