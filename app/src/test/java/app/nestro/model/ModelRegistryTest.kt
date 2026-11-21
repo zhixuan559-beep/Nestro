@@ -327,4 +327,37 @@ class ModelRegistryTest {
         val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
         assertFalse(oldDecoded.models.single().supportsReasoningEffort)
     }
+    @Test
+    fun providerPresetProtocolAndIdentityRoundTripWithLegacyDefaults() {
+        val provider = ModelProvider(
+            id = "preset-provider-anthropic",
+            name = "Anthropic Claude",
+            baseUrl = "https://api.anthropic.com",
+            presetId = "anthropic",
+            protocol = ModelApiProtocol.ANTHROPIC_MESSAGES
+        )
+        val registry = ModelRegistry(providers = listOf(provider))
+        val decoded = ModelRegistryCodec.decodeOrNull(ModelRegistryCodec.encode(registry))!!
+        assertEquals("anthropic", decoded.providers.single().presetId)
+        assertEquals(ModelApiProtocol.ANTHROPIC_MESSAGES, decoded.providers.single().protocol)
+
+        val legacyPayload = """{"version":1,"providers":[{"id":"legacy","name":"Legacy","baseUrl":"https://api.example.com","enabled":true}],"apiKeys":[],"models":[]}"""
+        val legacyDecoded = ModelRegistryCodec.decodeOrNull(legacyPayload)!!
+        assertEquals("", legacyDecoded.providers.single().presetId)
+        assertEquals(
+            ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
+            legacyDecoded.providers.single().protocol
+        )
+    }
+
+    @Test
+    fun builtInProviderCatalogContainsExpectedOfficialAndCommunityPresets() {
+        val ids = ModelProviderPresetCatalog.all.map { it.id }.toSet()
+        assertTrue(ids.containsAll(setOf("openai", "deepseek", "anthropic", "siliconflow", "modelscope", "gemini", "dashscope")))
+        assertEquals(
+            ModelApiProtocol.ANTHROPIC_MESSAGES,
+            ModelProviderPresetCatalog.byId("anthropic")!!.protocol
+        )
+    }
+
 }
