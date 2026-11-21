@@ -31,6 +31,13 @@ class CoworkbenchPolicyTest {
                 CoworkbenchProposal("config/child.json", "{}")
             ))
         }.isSuccess)
+        assertFalse(runCatching {
+            CoworkbenchPolicy.validate(listOf(
+                CoworkbenchProposal("a", "file"),
+                CoworkbenchProposal("a-foo", "sibling"),
+                CoworkbenchProposal("a/child.json", "{}")
+            ))
+        }.isSuccess)
         assertTrue(runCatching {
             CoworkbenchPolicy.validate(listOf(
                 CoworkbenchProposal("config-one", "file"),
