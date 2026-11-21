@@ -79,6 +79,7 @@ class OpenAiCompatibleSpeechInputProvider(
             connectTimeout = 15_000
             readTimeout = 120_000
             doOutput = true
+            setChunkedStreamingMode(64 * 1024)
             setRequestProperty("Authorization", "Bearer ${config.apiKey}")
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             setRequestProperty("Accept", "application/json")
