@@ -57,7 +57,11 @@ object SkillCommunityClient {
             require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "社区技能版本无效" }
             require(description.length <= 300) { "社区技能描述过长" }
             require(hash.matches(Regex("[a-f0-9]{64}"))) { "社区技能 SHA-256 无效" }
-            require(bundleUrl.startsWith("https://")) { "技能包必须使用 HTTPS" }
+            val bundleUri = runCatching { URI(bundleUrl) }.getOrNull()
+            require(bundleUri?.scheme.equals("https", ignoreCase = true) && !bundleUri?.host.isNullOrBlank() && bundleUri?.userInfo == null &&
+                bundleUri?.rawFragment == null && bundleUri?.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) {
+                "技能包必须使用不含凭据/片段/路径回退的 HTTPS 地址"
+            }
             require(seen.add("$name@$version")) { "社区目录存在重复版本" }
             SignedSkillRelease(name, version, description, bundleUrl, hash)
         }
