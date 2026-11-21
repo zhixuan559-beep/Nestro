@@ -280,11 +280,24 @@ object MediaProjectStore {
     }
 
     @Synchronized
-    fun importGeneratedFile(context: Context, projectId: String, source: File, kind: MediaAssetKind): MediaAsset {
+    fun importGeneratedFile(context: Context, projectId: String, source: File, kind: MediaAssetKind, stableAssetId: String? = null): MediaAsset {
         safeProjectId(projectId)
         require(source.isFile && source.length() in 1..MAX_ASSET_BYTES) { "处理后的媒体文件不存在或超过 1 GB" }
         require(kind == MediaAssetKind.AUDIO || kind == MediaAssetKind.VIDEO || kind == MediaAssetKind.IMAGE)
         ensureProject(context, projectId)
+        if (stableAssetId != null) {
+            require(stableAssetId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "处理结果素材 ID 无效" }
+            val existingRows = readManifest(context, projectId).optJSONArray("assets") ?: JSONArray()
+            for (index in 0 until existingRows.length()) {
+                val existing = MediaProjectCodec.decodeAsset(existingRows.getJSONObject(index))
+                if (existing.id == stableAssetId) {
+                    require(existing.projectId == projectId && existing.kind == kind) { "幂等素材 ID 已被其他素材占用" }
+                    val existingFile = assetFile(context, existing)
+                    require(existingFile.isFile && existingFile.length() == existing.byteSize) { "已存在的处理结果素材损坏" }
+                    return existing
+                }
+            }
+        }
         require((readManifest(context, projectId).optJSONArray("assets")?.length() ?: 0) < MAX_ASSETS) { "项目素材数量达到 500 项上限" }
         val extension = source.extension.lowercase().takeIf { it.matches(Regex("^[a-z0-9]{2,5}$")) }
             ?: error("处理结果缺少有效文件扩展名")
@@ -295,7 +308,7 @@ object MediaProjectStore {
         }
         require(extension in allowedExtensions) { "处理结果文件类型与素材类别不匹配" }
         val mime = mimeFor(extension, kind)
-        val id = UUID.randomUUID().toString()
+        val id = stableAssetId ?: UUID.randomUUID().toString()
         val directory = assetsDir(context, projectId)
         require(directory.mkdirs() || directory.isDirectory)
         require(StatFs(directory.absolutePath).availableBytes > source.length() + 32L * 1024 * 1024) {
