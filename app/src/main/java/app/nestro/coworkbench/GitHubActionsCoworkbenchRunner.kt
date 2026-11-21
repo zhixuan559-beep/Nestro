@@ -29,7 +29,7 @@ object CoworkbenchReleaseGate {
 }
 
 data class CoworkbenchJobStep(val name: String, val status: String, val conclusion: String?)
-data class CoworkbenchArtifactFile(val path: String, val content: String)
+data class CoworkbenchArtifactFile(val path: String, val content: String, val truncated: Boolean = false)
 data class CoworkbenchArtifactReport(val id: Long, val name: String, val sizeBytes: Long, val files: List<CoworkbenchArtifactFile>)
 data class CoworkbenchJobResult(
     val id: Long,
@@ -386,7 +386,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                             entryBytes += count
                             total += count
                         }
-                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"))
+                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"), truncated = entryBytes >= 256_000)
                     }
                     zip.closeEntry()
                 }
