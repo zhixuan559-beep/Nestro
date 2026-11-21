@@ -31,6 +31,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     var bearerToken by remember { mutableStateOf("") }
     var credentialDrafts by remember { mutableStateOf(emptyMap<String, String>()) }
     var status by remember { mutableStateOf("") }
+    var toolSearch by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var selectedTool by remember { mutableStateOf<McpToolDescriptor?>(null) }
     var argumentsJson by remember { mutableStateOf("{}") }
@@ -236,10 +237,21 @@ fun McpToolCenterPage(app: NestroApplication) {
 
         HorizontalDivider()
         Text("已发现工具（${tools.size}）", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = toolSearch,
+            onValueChange = { toolSearch = it },
+            label = { Text("搜索工具名称、说明或服务") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        val visibleTools = tools.filter {
+            toolSearch.isBlank() || it.name.contains(toolSearch, true) ||
+                it.description.contains(toolSearch, true) || it.serverName.contains(toolSearch, true)
+        }
         if (tools.isEmpty()) {
             Text("连接服务并刷新后，工具会显示在这里。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        tools.forEach { tool ->
+        visibleTools.forEach { tool ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
