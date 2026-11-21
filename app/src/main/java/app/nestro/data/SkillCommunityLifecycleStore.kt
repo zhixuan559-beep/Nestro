@@ -46,10 +46,19 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
         val currentMeta = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
         require(currentMeta.optString("source") == "已验证签名社区目录") { "仅可从社区管理器卸载社区技能" }
+        val history = historyJson()
+        val snapshots = history.optJSONArray(name) ?: JSONArray()
+        snapshots.put(JSONObject()
+            .put("hadSkill", true)
+            .put("prompt", skills.getString(name))
+            .put("metadata", metadata.getString(name))
+            .put("savedAt", System.currentTimeMillis()))
+        while (snapshots.length() > MAX_HISTORY) snapshots.remove(0)
+        history.put(name, snapshots)
         skills.remove(name)
         metadata.remove(name)
         val disabled = disabledSkills().apply { remove(name) }
-        commit(skills, metadata, historyJson(), disabled)
+        commit(skills, metadata, history, disabled)
     }
 
     fun rollback(name: String) {
