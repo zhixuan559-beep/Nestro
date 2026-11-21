@@ -44,7 +44,7 @@ class OpenAiRealtimeVoiceProvider(
                 require(mimeType.startsWith("audio/pcm", ignoreCase = true)) {
                     "实时语音输入仅接受 PCM 音频，请先将录音转换为 PCM16"
                 }
-                require(audio.isNotEmpty() && audio.size <= MAX_AUDIO_CHUNK_BYTES) {
+                require(audio.isNotEmpty() && audio.size <= MAX_AUDIO_CHUNK_BYTES && audio.size % 2 == 0) {
                     "音频分片为空或超过 1 MB"
                 }
                 val payload = JSONObject()
