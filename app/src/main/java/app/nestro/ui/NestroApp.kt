@@ -1045,16 +1045,21 @@ fun NestroApp(initialPage: String = "home") {
                     onUsage = recordModelUsage,
                     onProviderUsage = recordProviderModelUsage,
                     planPhoneAgent = {
-                        if (requestExecutionAuthorization.shouldPlanPhoneAgent()) {
+                        if (!requestExecutionAuthorization.shouldPlanPhoneAgent()) {
+                            "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。"
+                        } else {
                             val phonePlan = PhoneAgentPlanner.plan(prompt)
                             if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
-                                withContext(Dispatchers.IO) {
+                                val created = withContext(Dispatchers.IO) {
                                     appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
                                         requestProjectId,
                                         requestConversationId,
                                         phonePlan
                                     )
                                 }
+                                "已创建 Phone Agent 任务（${created.id}），当前状态：${created.status}。实际设备操作仍按任务权限与风险步骤执行。"
+                            } else {
+                                "当前目标不需要 Phone Agent 后台设备任务，未创建任务。"
                             }
                         }
                     },
