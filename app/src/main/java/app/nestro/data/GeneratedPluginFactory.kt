@@ -75,9 +75,13 @@ object GeneratedPluginPackageValidator {
             require(step.id.matches(Regex("[A-Za-z0-9_-]{1,64}")))
             require(step.resultKey.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}")))
             require(!step.toolId.startsWith("plugin.")) { "插件不能递归调用其他生成插件" }
-            require(step.toolId.length in 1..100 && discovery.find(step.toolId) != null) {
-                "插件引用了未注册的工具：${step.toolId}"
-            }
+            val toolSpec = discovery.find(step.toolId)
+                ?: error("插件引用了未注册的工具：${step.toolId}")
+            require(step.toolId.length in 1..100)
+            require(toolSpec.permission in setOf(
+                app.nestro.agent.AgentToolPermission.READ_ONLY,
+                app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
+            )) { "插件不能组合设备控制、身份验证或金融类高风险工具：${step.toolId}" }
             require(step.arguments.size <= 24 && step.arguments.all { (key, value) ->
                 key.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,63}")) && value.length <= 2_000
             })
