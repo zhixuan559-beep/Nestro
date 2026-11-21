@@ -106,7 +106,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         val provider=OpenAiCompatibleMediaIntelligenceProvider(providerConfig)
         activeProvider=provider
         return try {
-            MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.RUNNING,error="")
+            MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.RUNNING,errorMessage="")
             val file=MediaProjectStore.assetFile(applicationContext,asset)
             val progress:(Float)->Unit={ value ->
                 val p=(value.coerceIn(0f,1f)*100).toInt()
@@ -138,7 +138,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     else -> error("不支持的媒体 AI 操作")
                 }
             }
-            MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.COMPLETED,progress=100,resultJson=result,error="")
+            MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.COMPLETED,progress=100,resultJson=result,errorMessage="")
             Result.success()
         } catch(t:Throwable) {
             val latest=MediaAiTaskStore.read(applicationContext,projectId,taskId)
