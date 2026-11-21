@@ -346,6 +346,58 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         snapshot
     }
 
+    suspend fun rollbackReview(reviewId: String): List<CoworkbenchSnapshot> = lock.withLock {
+        recoverPendingApprovalsUnlocked()
+        require(reviewId.matches(Regex("[0-9a-fA-F-]{36}"))) { "审查 ID 无效" }
+        val matching = snapshots.listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "json" && it.length() in 1..5_000_000 }
+            .mapNotNull { file -> runCatching { decodeSnapshot(JSONObject(file.readText(Charsets.UTF_8))) }.getOrNull() }
+            .filter { it.reviewId == reviewId }
+            .sortedByDescending { it.createdAt }
+        require(matching.isNotEmpty()) { "该补丁没有可回滚的已应用批次" }
+        matching.forEach { snapshot ->
+            snapshot.files.forEach { item ->
+                require(readOrNull(snapshot.repositoryId, item.path) == item.applied) {
+                    "文件 ${item.path} 在补丁应用后又发生变化；整份补丁回滚已中止，未覆盖外部修改"
+                }
+            }
+        }
+        val events = matching.map { snapshot ->
+            val file = File(approvals, snapshot.id + ".json")
+            val old = if (file.isFile) runCatching {
+                decodeApproval(JSONObject(file.readText(Charsets.UTF_8)))
+            }.getOrNull() else null
+            val event = old ?: CoworkbenchApprovalRecord(snapshot.id, snapshot.repositoryId, snapshot.reviewId,
+                System.currentTimeMillis(), snapshot.files.map { it.path }, "ROLLING_BACK", "整份补丁回滚")
+            writeJson(file, encodeApproval(event.copy(status = "ROLLING_BACK", detail = "整份补丁回滚事务已持久化")))
+            snapshot to (file to event)
+        }
+        try {
+            withContext(NonCancellable) {
+                events.forEach { (snapshot, pair) ->
+                    restoreBefore(snapshot)
+                    val (file, event) = pair
+                    writeJson(file, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "整份补丁的该批次已回滚")))
+                }
+            }
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                events.forEach { (_, pair) ->
+                    val (file, event) = pair
+                    val current = runCatching { decodeApproval(JSONObject(file.readText(Charsets.UTF_8))) }.getOrNull()
+                    if (current?.status == "ROLLING_BACK") {
+                        runCatching {
+                            writeJson(file, encodeApproval(event.copy(status = "RECOVERY_REQUIRED",
+                                detail = "整份补丁回滚未完成；下次进入工作台将尝试恢复：" + (failure.message ?: "未知错误"))))
+                        }
+                    }
+                }
+            }
+            throw failure
+        }
+        matching
+    }
+
     suspend fun listApprovalHistory(repositoryId: String): List<CoworkbenchApprovalRecord> = lock.withLock {
         recoverPendingApprovalsUnlocked()
         require(repositoryId.isNotBlank()) { "仓库标识无效" }
