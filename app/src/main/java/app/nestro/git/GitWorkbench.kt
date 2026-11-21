@@ -262,8 +262,8 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
                 GitProvider.GITLAB -> "/projects?membership=true&per_page=100&order_by=last_activity_at" +
                     if (query.isBlank()) "" else "&search=" + enc(query)
-                GitProvider.GITEE -> "/user/repos?per_page=100&sort=updated" +
-                    if (query.isBlank()) "" else "&q=" + enc(query)
+                GitProvider.GITEE -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
+                    "/search/repositories?q=" + enc(query) + "&per_page=100"
             }
             val raw = request(account, token, path)
             val array = if (account.provider == GitProvider.GITHUB && query.isNotBlank()) {
@@ -400,7 +400,13 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(path.toFile().canonicalFile.toPath().startsWith(rootPath)) { "文件路径越界" }
         require(Files.isRegularFile(path) && !Files.isSymbolicLink(path)) { "只能读取普通文件" }
         require(Files.size(path) <= MAX_FILE_BYTES) { "文件超过 2 MB，暂不支持手机端编辑" }
-        String(Files.readAllBytes(path), Charsets.UTF_8)
+        val bytes = Files.readAllBytes(path)
+        require(bytes.none { it == 0.toByte() }) { "检测到二进制文件，手机编辑器仅支持 UTF-8 文本" }
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        runCatching { decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString() }
+            .getOrElse { throw IllegalArgumentException("文件不是有效的 UTF-8 文本，已阻止编辑", it) }
     }
 
     suspend fun writeFile(id: String, relativePath: String, content: String) = withContext(Dispatchers.IO) {
@@ -452,14 +458,13 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     suspend fun branches(id: String): List<String> = withRepo(id) { git ->
-        git.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.ALL).call()
-            .mapNotNull {
-                when {
-                    it.name.startsWith("refs/heads/") -> it.name.removePrefix("refs/heads/")
-                    it.name.startsWith("refs/remotes/origin/") -> "origin/" + it.name.removePrefix("refs/remotes/origin/")
-                    else -> null
-                }
-            }.filterNot { it == "origin/HEAD" }.distinct().sorted()
+        val refs = git.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.ALL).call().map { it.name }
+        val local = refs.filter { it.startsWith("refs/heads/") }.map { it.removePrefix("refs/heads/") }.toSet()
+        val remoteOnly = refs.filter { it.startsWith("refs/remotes/origin/") }
+            .map { it.removePrefix("refs/remotes/origin/") }
+            .filterNot { it == "HEAD" || it in local }
+            .map { "origin/" + it }
+        (local + remoteOnly).distinct().sorted()
     }
 
     suspend fun commit(id: String, message: String, authorName: String, authorEmail: String): String = withRepo(id) { git ->
