@@ -53,6 +53,20 @@ class CalendarRulesTest {
         assertEquals(expected, actual)
     }
 
+    @Test fun monthlyRecurrenceKeepsOriginalDayAfterShortMonth() {
+        val start = ZonedDateTime.of(2026, 1, 31, 9, 0, 0, 0, ZoneId.systemDefault())
+        val event = event(start, CalendarRules.MONTHLY, -1)
+        val occurrences = CalendarRules.occurrences(
+            listOf(event),
+            start.toInstant().toEpochMilli(),
+            start.plusMonths(3).toInstant().toEpochMilli()
+        )
+        assertEquals(
+            listOf(31, 28, 31),
+            occurrences.map { java.time.Instant.ofEpochMilli(it.startAt).atZone(ZoneId.systemDefault()).dayOfMonth }
+        )
+    }
+
     @Test fun weeklyOccurrencesExpandInsideRequestedRange() {
         val start = LocalDate.of(2026, 1, 5).atTime(9, 0).atZone(ZoneId.systemDefault())
         val event = event(start, CalendarRules.WEEKLY, -1)
