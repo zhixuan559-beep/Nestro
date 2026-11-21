@@ -196,6 +196,15 @@ fun GitWorkbenchPage(context: Context) {
                         OutlinedButton(enabled = !loading, onClick = {
                             scope.launch {
                                 loading = true
+                                runCatching { repo.fetch(selectedLocal.id) }
+                                    .onSuccess { status = it.message; refreshWorkspace(selectedLocal.id) }
+                                    .onFailure { status = it.message ?: "Fetch 失败" }
+                                loading = false
+                            }
+                        }) { Text("Fetch") }
+                        OutlinedButton(enabled = !loading, onClick = {
+                            scope.launch {
+                                loading = true
                                 runCatching { repo.pull(selectedLocal.id) }
                                     .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString() }
                                     .onFailure { status = it.message ?: "Pull 失败" }
