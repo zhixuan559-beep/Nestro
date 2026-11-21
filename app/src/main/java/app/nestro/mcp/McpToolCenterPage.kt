@@ -156,9 +156,19 @@ fun McpToolCenterPage(app: NestroApplication) {
                         Switch(
                             checked = server.enabled,
                             onCheckedChange = { enabled ->
-                                runCatching { service.setServerEnabled(server.id, enabled) }
-                                    .onFailure { status = "服务状态更新失败：" + (it.message ?: "未知错误") }
-                                reload()
+                                scope.launch {
+                                    loading = true
+                                    try {
+                                        withContext(Dispatchers.IO) { service.setServerEnabled(server.id, enabled) }
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        status = "服务状态更新失败：" + (error.message ?: "未知错误")
+                                    } finally {
+                                        loading = false
+                                        reload()
+                                    }
+                                }
                             }
                         )
                     }
@@ -199,10 +209,20 @@ fun McpToolCenterPage(app: NestroApplication) {
                         OutlinedButton(enabled = !loading, onClick = { discover(server.id) }) { Text("刷新工具") }
                         if (repository.hasCredential(server.id)) {
                             TextButton(onClick = {
-                                runCatching { repository.clearCredential(server.id) }
-                                    .onSuccess { status = "凭据已清除。" }
-                                    .onFailure { status = "凭据清除失败：" + (it.message ?: "未知错误") }
-                                reload()
+                                scope.launch {
+                                    loading = true
+                                    try {
+                                        withContext(Dispatchers.IO) { repository.clearCredential(server.id) }
+                                        status = "凭据已清除。"
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        status = "凭据清除失败：" + (error.message ?: "未知错误")
+                                    } finally {
+                                        loading = false
+                                        reload()
+                                    }
+                                }
                             }) { Text("清除凭据") }
                         }
                         TextButton(onClick = { deleteServer = server }) {
@@ -238,9 +258,19 @@ fun McpToolCenterPage(app: NestroApplication) {
                             checked = tool.granted,
                             enabled = !loading && (tool.granted || tool.serverId in enabledServerIds),
                             onCheckedChange = { enabled ->
-                                runCatching { service.setToolGranted(tool.id, enabled) }
-                                    .onFailure { status = "工具授权更新失败：" + (it.message ?: "未知错误") }
-                                reload()
+                                scope.launch {
+                                    loading = true
+                                    try {
+                                        withContext(Dispatchers.IO) { service.setToolGranted(tool.id, enabled) }
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        status = "工具授权更新失败：" + (error.message ?: "未知错误")
+                                    } finally {
+                                        loading = false
+                                        reload()
+                                    }
+                                }
                             }
                         )
                     }
@@ -343,11 +373,22 @@ fun McpToolCenterPage(app: NestroApplication) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    runCatching { service.deleteServer(server.id) }
-                        .onSuccess { status = "服务及关联凭据已删除。" }
-                        .onFailure { status = "删除失败：" + (it.message ?: "未知错误") }
+                    val id = server.id
                     deleteServer = null
-                    reload()
+                    scope.launch {
+                        loading = true
+                        try {
+                            withContext(Dispatchers.IO) { service.deleteServer(id) }
+                            status = "服务及关联凭据已删除。"
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            status = "删除失败：" + (error.message ?: "未知错误")
+                        } finally {
+                            loading = false
+                            reload()
+                        }
+                    }
                 }) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { deleteServer = null }) { Text("取消") } }
