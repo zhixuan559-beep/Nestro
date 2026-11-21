@@ -90,7 +90,7 @@ object CalendarProviderBridge {
                 put(CalendarContract.Events.DTEND, event.endAt)
                 put(CalendarContract.Events.EVENT_TIMEZONE, zone)
                 put(CalendarContract.Events.ALL_DAY, if (event.allDay) 1 else 0)
-                put(CalendarContract.Events.HAS_ALARM, if (event.reminderMinutes >= 0) 1 else 0)
+                put(CalendarContract.Events.HAS_ALARM, 0)
                 when (event.recurrence) {
                     CalendarRules.DAILY -> put(CalendarContract.Events.RRULE, "FREQ=DAILY")
                     CalendarRules.WEEKLY -> put(CalendarContract.Events.RRULE, "FREQ=WEEKLY")
@@ -117,14 +117,6 @@ object CalendarProviderBridge {
                 "${CalendarContract.Reminders.EVENT_ID}=?",
                 arrayOf(systemEventId.toString())
             )
-            if (event.reminderMinutes >= 0) {
-                val reminder = ContentValues().apply {
-                    put(CalendarContract.Reminders.EVENT_ID, systemEventId)
-                    put(CalendarContract.Reminders.MINUTES, event.reminderMinutes)
-                    put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-                }
-                context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, reminder)
-            }
             repository.save(event.copy(
                 sourceSystemEventId = systemEventId,
                 sourceSystemCalendarId = target.id,
@@ -133,6 +125,21 @@ object CalendarProviderBridge {
             written++
         }
         return written
+    }
+
+    fun deleteExportedEvent(context: Context, event: CalendarEvent) {
+        check(canWrite(context)) { "删除系统日历中的关联日程需要写入权限" }
+        val eventId = event.sourceSystemEventId ?: return
+        context.contentResolver.delete(
+            CalendarContract.Reminders.CONTENT_URI,
+            "${CalendarContract.Reminders.EVENT_ID}=?",
+            arrayOf(eventId.toString())
+        )
+        context.contentResolver.delete(
+            CalendarContract.Events.CONTENT_URI,
+            "${CalendarContract.Events._ID}=? AND ${CalendarContract.Events.CALENDAR_ID}=?",
+            arrayOf(eventId.toString(), event.sourceSystemCalendarId?.toString().orEmpty())
+        )
     }
 
     fun writableCalendars(context: Context): List<WritableCalendar> {
