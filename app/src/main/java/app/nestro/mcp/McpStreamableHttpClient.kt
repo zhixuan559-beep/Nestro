@@ -14,7 +14,7 @@ import kotlin.coroutines.resumeWithException
 import java.util.concurrent.atomic.AtomicLong
 
 data class McpRemoteTool(val name:String,val description:String,val inputSchema:JSONObject,val readOnlyHint:Boolean)
-private data class McpHttpReply(val code:Int,val body:String,val contentType:String,val sessionId:String?)
+private data class McpHttpReply(val code:Int,val body:String,val contentType:String)
 object McpHeaderValueEncoder {
  fun encode(value:String):String {
   val plainAscii=value.all{it.code in 0x21..0x7e}&&!value.startsWith("=?base64?")
@@ -73,7 +73,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   if(!legacyMode){
    val id=ids.incrementAndGet()
    val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params)
-   val reply=post(request,method,name,schemaJson,true,true)
+   val reply=post(request,method,name,schemaJson,true)
    val parsed=reply.body.takeIf{it.isNotBlank()}?.let{parseBody(it,reply.contentType)}
    if(reply.code !in 200..299){
     val rpcError=parsed?.optJSONObject("error");val message=rpcError?.optString("message").orEmpty()
@@ -91,7 +91,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   }
   initializeLegacy()
   val id=ids.incrementAndGet()
-  val reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false,true)
+  val reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false)
   require(reply.code in 200..299){"MCP HTTP "+reply.code+"："+reply.body.take(1000)}
   val json=parseBody(reply.body,reply.contentType)?:error("MCP 服务没有返回 JSON-RPC 响应")
   if(json.has("error")){val e=json.optJSONObject("error")?:JSONObject();error("MCP $method 失败（"+e.optInt("code")+"）："+e.optString("message","未知错误"))}
@@ -106,7 +106,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
    val id=ids.incrementAndGet()
    val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method","initialize")
     .put("params",JSONObject().put("protocolVersion",version).put("capabilities",JSONObject()).put("clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1")))
-   val reply=post(request,"initialize",null,"{}",false,true)
+   val reply=post(request,"initialize",null,"{}",false)
    val json=runCatching{parseBody(reply.body,reply.contentType)}.getOrNull()
    val result=json?.optJSONObject("result")
    if(reply.code in 200..299&&result!=null){
@@ -139,7 +139,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   .put("io.modelcontextprotocol/clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1"))
   .put("io.modelcontextprotocol/clientCapabilities",JSONObject())
 
- private suspend fun post(payload:JSONObject,method:String,name:String?,schemaJson:String,modern:Boolean,expectResponse:Boolean):McpHttpReply =
+ private suspend fun post(payload:JSONObject,method:String,name:String?,schemaJson:String,modern:Boolean):McpHttpReply =
   suspendCancellableCoroutine { continuation ->
    val builder=Request.Builder().url(url).post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).header("Accept","application/json, text/event-stream")
    if(modern||protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
@@ -161,7 +161,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
       val reply=response.use {
        if(!modern)it.header("Mcp-Session-Id")?.let{session->require(session.length<=512);sessionId=session}
        val body=readBounded(it.body?.byteStream(),1_000_000)
-       McpHttpReply(it.code,body,it.header("Content-Type").orEmpty(),it.header("Mcp-Session-Id"))
+       McpHttpReply(it.code,body,it.header("Content-Type").orEmpty())
       }
       if(continuation.isActive)continuation.resume(reply)
      } catch(error:Exception) {
