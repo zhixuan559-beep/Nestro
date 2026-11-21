@@ -378,6 +378,10 @@ fun AiCoworkbenchPage(
                             result.successful -> "隔离构建与已解析测试报告均通过：" + result.url
                             result.completed && result.conclusion == "success" && result.reportedTestFailures > 0 ->
                                 "Workflow 虽返回成功，但测试报告记录 ${result.reportedTestFailures} 项失败/错误；不得视为验收通过：" + result.url
+                            result.completed && result.conclusion == "success" && result.testReports.isEmpty() ->
+                                "Workflow 虽返回成功，但没有取得可解析的 JUnit 测试报告；验收状态未确认：" + result.url
+                            result.completed && result.conclusion == "success" && result.hasTruncatedReports ->
+                                "Workflow 虽返回成功，但部分构建产物下载失败或被截断；验收状态未确认：" + result.url
                             else -> "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
                         }
                     } catch (cancelled: CancellationException) {
@@ -420,6 +424,9 @@ fun AiCoworkbenchPage(
             result.artifacts.forEach { artifact ->
                 Text("构建产物：${artifact.name} · ${artifact.sizeBytes} bytes",
                     style = MaterialTheme.typography.titleSmall)
+                artifact.diagnostic?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
                 artifact.files.forEach { report ->
                     Text(report.path, style = MaterialTheme.typography.labelMedium)
                     if (report.truncated) Text("报告文件已达到 256 KB 读取上限，以下内容不完整。",
