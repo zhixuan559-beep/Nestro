@@ -138,6 +138,13 @@ fun VoiceSystemPage() {
         }
     }
 
+    fun cancelRemoteRecording() {
+        speechRecorder?.close()
+        speechRecorder = null
+        remoteRecording = false
+        status = "已取消远程语音录音，音频未发送"
+    }
+
     fun stopRemoteRecording() {
         val recorder = speechRecorder ?: return
         speechRecorder = null
@@ -404,6 +411,9 @@ fun VoiceSystemPage() {
                 }
             }
         ) { Text(if (remoteRecording) "结束录音并识别" else "开始远程录音") }
+        if (remoteRecording) {
+            OutlinedButton(onClick = { cancelRemoteRecording() }) { Text("取消录音") }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 enabled = !remoteBusy && !remoteRecording && mediaPlayer == null &&
