@@ -3,6 +3,9 @@ package app.nestro.model
 import app.nestro.data.ChatMessage
 import app.nestro.data.ModelConfig
 import app.nestro.data.OpenAiClient
+import app.nestro.data.NativeToolDefinition
+import app.nestro.data.NativeToolCallResult
+import app.nestro.data.NativeToolCompletion
 import java.util.UUID
 
 /** Application boundary for non-UI chat transport and request cancellation. */
@@ -20,6 +23,23 @@ class ChatExecutionService {
     ): String = OpenAiClient.completeWithFallback(
         configs, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis,
         temperature, maxTokens, onUsage, onProviderUsage
+    )
+
+    internal suspend fun completeWithNativeTools(
+        configs: List<ModelConfig>,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        tools: List<NativeToolDefinition>,
+        temperature: Double? = null,
+        maxTokens: Int? = null,
+        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+        requestId: String = UUID.randomUUID().toString(),
+        shouldStop: () -> Boolean = { false },
+        onToolCall: suspend (String, Map<String, String>) -> NativeToolCallResult
+    ): NativeToolCompletion = OpenAiClient.completeWithNativeTools(
+        configs, history, systemPrompt, tools, temperature, maxTokens,
+        onUsage, onProviderUsage, requestId, shouldStop, onToolCall
     )
 
     internal suspend fun streamWithFallback(
