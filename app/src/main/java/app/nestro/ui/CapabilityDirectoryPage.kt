@@ -136,7 +136,7 @@ fun CapabilityDirectoryPage() {
         if(releases.isNotEmpty()) {
             Text("已验签社区技能 · "+releases.size+" 个版本",style=MaterialTheme.typography.titleMedium)
             OutlinedTextField(value=communityQuery,onValueChange={communityQuery=it},label={Text("搜索社区技能名称或说明")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-            val visibleReleases = releases.filter { communityQuery.isBlank() || it.name.contains(communityQuery,true) || it.description.contains(communityQuery,true) }
+            val visibleReleases = releases.filter { !trustStore.isFingerprintRevoked(it.signerFingerprint) && (communityQuery.isBlank() || it.name.contains(communityQuery,true) || it.description.contains(communityQuery,true)) }
             if (visibleReleases.isEmpty()) Text("没有匹配的社区技能。",style=MaterialTheme.typography.bodySmall)
             visibleReleases.forEach { release ->
                 val installedSkills = runCatching { JSONObject(rawSkills) }.getOrDefault(JSONObject())
@@ -261,8 +261,8 @@ fun CapabilityDirectoryPage() {
                         meta.keys().associateWith { name -> runCatching { JSONObject(meta.optString(name,"{}")).optString("version") }.getOrDefault("") }
                     }.getOrDefault(emptyMap())
                     val result=withContext(Dispatchers.IO) { runCatching { app.nestro.data.SkillDependencyResolver.resolve(
-                        releases.firstOrNull { it.name==bundle.name && it.version==bundle.version } ?: error("原始签名目录版本已失效"),
-                        releases, installed, bundle
+                        releases.firstOrNull { it.name==bundle.name && it.version==bundle.version && !trustStore.isFingerprintRevoked(it.signerFingerprint) } ?: error("原始签名目录版本已失效或签名者已撤销"),
+                        releases.filterNot { trustStore.isFingerprintRevoked(it.signerFingerprint) }, installed, bundle
                     ) } }
                     result.onSuccess { pendingPlan=it; pendingBundle=null }
                         .onFailure { installStatus="依赖解析失败："+(it.message ?: "无法形成完整安装计划") }
