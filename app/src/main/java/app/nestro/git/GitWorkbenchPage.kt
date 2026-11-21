@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.security.MessageDigest
 
 @Composable
 fun GitWorkbenchPage(context: Context) {
@@ -102,7 +103,10 @@ fun GitWorkbenchPage(context: Context) {
                             val pending = GitAccount("pending-" + UUID.randomUUID().toString(), provider, username.trim())
                             val verified = repo.verifyAccount(pending, token.trim())
                             val existing = accounts.firstOrNull { it.provider == provider && it.username.equals(verified, ignoreCase = true) }
-                            val id = existing?.id ?: (provider.name.lowercase() + "-" + UUID.randomUUID().toString())
+                            val digest = MessageDigest.getInstance("SHA-256")
+                                .digest(verified.lowercase().toByteArray(Charsets.UTF_8))
+                                .joinToString("") { byte -> "%02x".format(byte) }.take(32)
+                            val id = existing?.id ?: (provider.name.lowercase() + "-" + digest)
                             val account = GitAccount(id, provider, verified, verified)
                             withContext(Dispatchers.IO) { repo.accounts.save(account, token.trim()) }
                             accounts = repo.accounts.list(); accountId = id; username = verified; token = ""
