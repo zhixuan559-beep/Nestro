@@ -46,7 +46,7 @@ class SpeechProvidersTest {
             "bad provider id", "https://speech.example.com", "key", "model"
         )
         val invalidModel = SpeechProviderConfig(
-            "provider", "https://speech.example.com", "key", ""
+            "provider", "https://speech.example.com", "key", "model" + 10.toChar()
         )
         val emptyKey = SpeechProviderConfig(
             "provider", "https://speech.example.com", " ", "model"
