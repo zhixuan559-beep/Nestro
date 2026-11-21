@@ -46,6 +46,7 @@ fun GitWorkbenchPage(context: Context) {
     var newFilePath by remember { mutableStateOf("") }
     var pendingDeleteFile by remember { mutableStateOf("") }
     var pendingDeleteRepo by remember { mutableStateOf("") }
+    var pendingDeleteAccount by remember { mutableStateOf<GitAccount?>(null) }
     var revertTarget by remember { mutableStateOf<GitCommitRecord?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -109,13 +110,7 @@ fun GitWorkbenchPage(context: Context) {
                 accounts.forEach { account ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(account.provider.name + " · " + account.displayName.ifBlank { account.username })
-                        TextButton(onClick = {
-                            scope.launch {
-                                runCatching { withContext(Dispatchers.IO) { repo.accounts.delete(account.id) } }
-                                    .onSuccess { accounts = repo.accounts.list(); if (accountId == account.id) accountId = accounts.firstOrNull()?.id.orEmpty(); status = "账号及令牌已删除。" }
-                                    .onFailure { status = it.message ?: "删除失败" }
-                            }
-                        }) { Text("删除") }
+                        TextButton(onClick = { pendingDeleteAccount = account }) { Text("删除") }
                     }
                 }
             }
@@ -333,6 +328,27 @@ fun GitWorkbenchPage(context: Context) {
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+    }
+
+    pendingDeleteAccount?.let { account ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteAccount = null },
+            title = { Text("删除代码托管账号？") },
+            text = { Text("将从本机删除该账号的加密访问令牌。关联的本地仓库文件会保留，但之后无法对远程仓库执行 Fetch、Pull 或 Push，除非重新授权。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteAccount = null
+                    scope.launch {
+                        loading = true
+                        runCatching { withContext(Dispatchers.IO) { repo.accounts.delete(account.id) } }
+                            .onSuccess { accounts = repo.accounts.list(); if (accountId == account.id) accountId = accounts.firstOrNull()?.id.orEmpty(); status = "账号及令牌已删除。" }
+                            .onFailure { status = it.message ?: "删除失败" }
+                        loading = false
+                    }
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteAccount = null }) { Text("取消") } }
+        )
     }
 
     if (pendingDeleteRepo.isNotBlank()) {
