@@ -130,9 +130,10 @@ import java.util.Locale
 
 
 internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
-    screenWidthDp < 360 -> 252
-    screenWidthDp >= 840 -> 320
-    else -> 286
+    screenWidthDp < 360 -> (screenWidthDp - 56).coerceIn(224, 248)
+    screenWidthDp < 600 -> (screenWidthDp - 64).coerceIn(256, 280)
+    screenWidthDp < 840 -> 320
+    else -> 360
 }
 
 @Composable
