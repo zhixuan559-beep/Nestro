@@ -79,7 +79,8 @@ internal class ModelLedToolDispatcher(
     private val catalog: AgentToolCatalog,
     private val database: NestroDatabase,
     private val permissionRouter: AgentPermissionRouter,
-    private val toolDefinitionProvider: (String) -> String? = { null }
+    private val toolDefinitionProvider: (String) -> String? = { null },
+    private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
 ) {
     suspend fun dispatch(
         requestId: String,
@@ -103,6 +104,7 @@ internal class ModelLedToolDispatcher(
         // those task-local controls must never leak into ordinary chat tool discovery.
         val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
+            .filter(visibleToolFilter)
             .filter { it.id != "phone_agent.plan" || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
