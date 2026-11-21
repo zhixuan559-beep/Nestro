@@ -61,6 +61,7 @@ object MediaAiTaskStore {
             val parent = read(context, projectId, parentTaskId)
                 ?: error("上一个视频任务不存在或不属于当前项目")
             require(parent.action == "video-generate") { "只能基于视频生成任务创建新版本" }
+            require(parent.status == MediaAiTaskStatus.COMPLETED) { "上一版视频尚未完成，暂时不能基于它返工" }
         }
         val now=System.currentTimeMillis()
         return MediaAiTask(UUID.randomUUID().toString(),projectId,assetId,providerId,action,prompt,MediaAiTaskStatus.QUEUED,0,
