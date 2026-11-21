@@ -33,9 +33,12 @@
 - [x] OpenAI 兼容、Anthropic、Gemini 三类模型目录自动发现入口；模型 ID 可快捷加入现有模型配置。
 - [x] 硅基流动与魔搭统一快捷接入：预置官方 API 地址/协议；服务商卡片直接打开硅基流动 API Key 页面或魔搭 Access Token 页面，添加密钥后可刷新实时模型目录；不收集账号密码。
 - [x] 增加服务商目录、协议持久化兼容及运行时协议传递回归测试源码（尚未执行）。
-- [ ] 魔搭 OAuth 正式登录：需先注册 Nestro OAuth 互联应用，并提供安全的服务端授权码换 Token 能力；当前仓库没有 OAuth 后端，不能把 client secret 嵌入 APK。
+- [x] 魔搭 OAuth 代码链路：新增独立 Node.js 服务端，使用官方 Authorization Code + OIDC userinfo，服务端保管 Client Secret；state 校验、短时一次性 handoff、App state 绑定、过期清理、限流、HTTPS/no-store 与客户端 Keystore 保存已落源码。
+- [x] Android 增加 OAuth 发起按钮、nestro://oauth/modelscope 回调、服务端 handoff 兑换和魔搭 Provider/API Key 自动登记；连接后用户可刷新模型目录。
+- [ ] OAuth 服务部署、魔搭互联应用注册、Redirect URI 配置及真实账号授权联调；需由项目运营方提供 Client ID/Secret 和 HTTPS 服务域名，不能由源码自动创建第三方应用。
+- [ ] 确认 OAuth access_token 对 API-Inference 的实际授权范围；若魔搭未授予推理权限，需在产品中将登录态与 API-Inference Access Token 分开，不可误当作同一种凭据。
 - [ ] 价格与账户余额/免费额度动态同步：硅基流动旧 /user/info 已公告停服，暂不伪造额度接口；魔搭免费额度/魔粒展示以账户官方页面为准。
-- [ ] 编译、JVM 测试、真实 API 联调和设备验收统一执行；完成前不锁定模块2。
+- [ ] OAuth 服务端自动化测试、Android 编译/JVM 测试、真实 API 联调和设备验收统一执行；完成前不锁定模块2。
 
 ## 第十一项：专家模板
 

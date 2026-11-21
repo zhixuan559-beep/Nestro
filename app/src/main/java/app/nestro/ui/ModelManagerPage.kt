@@ -1,5 +1,6 @@
 package app.nestro.ui
 
+import app.nestro.BuildConfig
 import app.nestro.data.ModelConfig
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -55,6 +57,7 @@ internal fun ModelManager(
 ) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
     var revealKey by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -163,6 +166,27 @@ internal fun ModelManager(
             ) { Text("查看魔搭当前免费额度与魔粒") }
             Text("魔搭免费额度、可用模型和并发限制由账户实时决定；部分 API-Inference 服务可能要求绑定阿里云账号并完成实名认证。Nestro 不承诺永久免费或固定调用次数。", color = Muted, style = MaterialTheme.typography.bodySmall)
             Text("魔搭官方 OAuth 仍需登记 Nestro 应用，并由安全服务端完成授权码换 Token；当前通过官方令牌页直达，不会收集账号密码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
+                onClick = {
+                    val backend = BuildConfig.MODELSCOPE_OAUTH_BACKEND_URL.trim().trimEnd('/')
+                    if (!backend.startsWith("https://")) {
+                        registryMessage = "魔搭一键授权服务尚未配置；部署 OAuth 服务后重新构建即可启用。"
+                    } else {
+                        val appState = UUID.randomUUID().toString().replace("-", "")
+                        context.getSharedPreferences("nestro_local", android.content.Context.MODE_PRIVATE)
+                            .edit().putString("modelscope_oauth_app_state", appState).apply()
+                        uriHandler.openUri("$backend/oauth/modelscope/start?app_state=$appState")
+                    }
+                },
+                enabled = BuildConfig.MODELSCOPE_OAUTH_BACKEND_URL.startsWith("https://"),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("连接魔搭账号（OAuth）") }
+            Text(
+                if (BuildConfig.MODELSCOPE_OAUTH_BACKEND_URL.startsWith("https://"))
+                    "登录并授权后自动返回 Nestro，完成账号绑定和密钥保存。"
+                else "待部署 OAuth 服务并通过 Gradle 属性 modelscopeOAuthBackendUrl 配置服务地址。",
+                color = Muted, style = MaterialTheme.typography.bodySmall
+            )
         }
         ModelProviderPresetCatalog.byId("siliconflow")?.let {
             Text("硅基流动使用 OpenAI 兼容协议；添加 API Key 后可直接刷新实时模型目录。模型价格、可用状态与速率限制以硅基流动平台为准。", color = Muted, style = MaterialTheme.typography.bodySmall)
