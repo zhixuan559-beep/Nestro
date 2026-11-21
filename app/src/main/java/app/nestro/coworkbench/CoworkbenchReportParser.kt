@@ -37,6 +37,32 @@ object CoworkbenchReportParser {
     private const val MAX_REPORT_CHARS = 1_000_000
     private const val MAX_COMPONENTS = 5_000
 
+    fun isCompleteCoworkbenchSbom(path: String, content: String): Boolean {
+        if (content.length > MAX_REPORT_CHARS || !path.lowercase().endsWith("bom.cdx.json")) return false
+        val json = runCatching { JSONObject(content) }.getOrNull() ?: return false
+        if (json.optString("bomFormat") != "CycloneDX" || json.optString("specVersion") != "1.5") return false
+        val metadata = json.optJSONObject("metadata") ?: return false
+        if (metadata.optJSONObject("component")?.optString("name") != "Nestro") return false
+        val properties = metadata.optJSONArray("properties") ?: return false
+        val source = (0 until properties.length()).mapNotNull { properties.optJSONObject(it) }
+            .firstOrNull { it.optString("name") == "nestro:sbom:source" }
+            ?.optString("value").orEmpty()
+        if (!source.contains("debugRuntimeClasspath") || !source.contains("releaseRuntimeClasspath")) return false
+        val components = json.optJSONArray("components") ?: return false
+        if (components.length() == 0 || components.length() > MAX_COMPONENTS) return false
+        val refs = mutableSetOf<String>()
+        for (index in 0 until components.length()) {
+            val item = components.optJSONObject(index) ?: return false
+            val purl = item.optString("purl")
+            if (item.optString("type") != "library" || purl.isBlank() ||
+                !purl.startsWith("pkg:maven/") || item.optString("bom-ref") != purl ||
+                item.optString("group").isBlank() || item.optString("name").isBlank() ||
+                item.optString("version").isBlank() || !refs.add(purl)
+            ) return false
+        }
+        return true
+    }
+
     fun parseSbom(path: String, content: String): List<CoworkbenchSbomComponent> {
         if (content.length > MAX_REPORT_CHARS || !path.lowercase().endsWith(".json")) return emptyList()
         val json = runCatching { JSONObject(content) }.getOrNull() ?: return emptyList()
