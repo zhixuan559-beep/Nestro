@@ -279,6 +279,7 @@ internal object OpenAiClient {
                     app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES -> JSONObject().apply {
                         put("model", config.model)
                         put("max_tokens", (maxTokens ?: 2048).coerceIn(1, 32768))
+                        if (temperature != null) put("temperature", temperature.coerceIn(0.0, 1.0))
                         if (systemPrompt.isNotBlank()) put("system", systemPrompt)
                         put("messages", anthropicMessages)
                         put("tools", anthropicTools)
@@ -288,7 +289,9 @@ internal object OpenAiClient {
                             JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
                         put("contents", geminiContents)
                         put("tools", geminiTools)
-                        put("generationConfig", JSONObject().put("maxOutputTokens", (maxTokens ?: 2048).coerceIn(1, 32768)))
+                        put("generationConfig", JSONObject().put("maxOutputTokens", (maxTokens ?: 2048).coerceIn(1, 32768)).apply {
+                            if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
+                        })
                     }
                     else -> error("当前模型协议不支持原生工具调用")
                 }
