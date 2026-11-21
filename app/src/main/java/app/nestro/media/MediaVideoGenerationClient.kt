@@ -80,7 +80,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 15_000
             connection.readTimeout = timeout
-            connection.setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+            connection.setRequestProperty(config.videoAuthHeader, config.videoAuthPrefix + config.apiKey)
             connection.setRequestProperty("Accept", "application/json")
             if (payload != null) {
                 connection.doOutput = true
