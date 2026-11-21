@@ -89,7 +89,9 @@ class McpToolCenterRepository(context:Context) {
   require(s.id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(s.name.isNotBlank()&&s.name.length<=80)
   val current=listServers()
   require(current.any{it.id==s.id}||current.size<50){"MCP 服务最多允许 50 个"}
-  val v=current.filterNot{it.id==s.id}+s.copy(name=s.name.trim(),endpoint=McpEndpointPolicy.requireValid(s.endpoint))
+  val normalizedEndpoint=McpEndpointPolicy.requireValid(s.endpoint)
+  require(current.none{it.id!=s.id&&it.endpoint==normalizedEndpoint}){"该 MCP 服务地址已添加"}
+  val v=current.filterNot{it.id==s.id}+s.copy(name=s.name.trim(),endpoint=normalizedEndpoint)
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(v)).commit()){"MCP 服务配置保存失败"}
  }
  fun setServerEnabled(id:String,on:Boolean){
