@@ -578,3 +578,11 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - AI 代码共建沙箱、补丁影响分析、隔离构建、用户批准、快照回滚仍未完成。
 - 模型费用预算、速率限制与完整社区目录分发仍需补强。
 - 本分支未执行编译、自动化测试、模拟器或真机验收；代码状态与验收状态分开记录。
+
+## 2026-11-22 — 专家团双模式与 AI 插件工厂需求补录
+
+- 新增 docs/EXPERT_TEAM_AUTONOMOUS_PROJECTS_AND_PLUGIN_FACTORY.md，明确专家团手动协作模式、自主项目模式、任务 DAG、成员消息事件、可视化工作区、主模型最终审查交付，以及模型自主创造可执行插件的完整生命周期。
+- 已回读源码确认：ExpertTeamExecutionCoordinator 当前调用 ExpertTeamEngine.runCollaborative()，聊天链路为单专家逐个委派；ExpertTeamEngine.run() 虽有并发执行能力，但未接入自主项目任务分解、持久化成员消息和可视化工作区。
+- 当前只有成员状态与运行历史，没有完整的协作过程查看/干预能力。
+- CapabilityDraftCoordinator 只生成专家/Skill 的 name+prompt 草案，不具备可执行插件生成、沙箱、审批安装、版本升级和回滚。
+- 以上均为已确认的待实现需求，不代表功能代码已完成；不运行测试，不合并，不锁定。
