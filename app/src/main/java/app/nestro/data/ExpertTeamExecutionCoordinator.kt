@@ -30,8 +30,10 @@ class ExpertTeamExecutionCoordinator(
         members: List<ExpertTeamMemberTask>,
         mode: ExpertTeamExecutionMode = ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION,
         taskId: String = UUID.randomUUID().toString(),
+        projectId: String = "default",
         shouldStop: () -> Boolean = { false },
         onMember: suspend (String, String) -> Unit = { _, _ -> },
+        eventSink: ExpertTeamEventSink? = null,
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
         invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
@@ -41,6 +43,23 @@ class ExpertTeamExecutionCoordinator(
         initialCheckpoint = "team:" + teamId + ":queued"
     ) { taskContext ->
         taskContext.checkpoint("team:" + teamId + ":running", 0)
+        var eventSequence = 0L
+        suspend fun emit(
+            type: String,
+            memberName: String = "",
+            relatedMemberName: String = "",
+            status: String = "",
+            message: String = ""
+        ) {
+            eventSink?.append(
+                ExpertTeamCollaborationEvent(
+                    taskId = taskId, projectId = projectId, teamId = teamId,
+                    sequence = eventSequence++, type = type, memberName = memberName,
+                    relatedMemberName = relatedMemberName, status = status, message = message.take(8_000)
+                )
+            )
+        }
+        emit("team_started", status = "running", message = task.take(2_000))
 
         suspend fun invokeWithLease(member: ExpertTeamMemberTask, prompt: String): String {
             val lease = AgentCapabilityRegistry.openLease(
@@ -68,7 +87,11 @@ class ExpertTeamExecutionCoordinator(
                 members = members,
                 maxParallel = 4,
                 shouldStop = shouldStop,
-                onMember = onMember,
+                onMember = { name, status ->
+                    onMember(name, status)
+                    emit(when (status) { "running" -> "member_started"; "retrying" -> "member_retrying"; "success" -> "member_completed"; else -> "member_failed" },
+                        memberName = name, status = status)
+                },
                 invoke = ::invokeWithLease
             )
             ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION -> ExpertTeamEngine.runCollaborative(
@@ -78,11 +101,24 @@ class ExpertTeamExecutionCoordinator(
                 members = members,
                 timeoutMillis = 45_000,
                 shouldStop = shouldStop,
-                onMember = onMember,
+                onMember = { name, status ->
+                    onMember(name, status)
+                    emit(when (status) { "running" -> "member_started"; "retrying" -> "member_retrying"; "success" -> "member_completed"; else -> "member_failed" },
+                        memberName = name, status = status)
+                },
+                onHandoff = { from, to, subtask, handoff ->
+                    emit("member_handoff", memberName = from, relatedMemberName = to,
+                        status = "requested", message = "子任务：" + subtask + "\n交接内容：" + handoff)
+                },
                 invoke = ::invokeWithLease
             )
         }
+        result.members.filter { it.status == "success" }.forEach { member ->
+            emit("artifact_submitted", memberName = member.name, status = "submitted", message = member.output)
+        }
+        emit("team_completed", status = if (result.failedMembers == 0) "success" else "partial",
+            message = "成功 " + result.successfulMembers + " 人，失败 " + result.failedMembers + " 人")
         taskContext.checkpoint("team:" + teamId + ":finished", result.members.size)
-        result
+        result.copy(projectId = projectId)
     }
 }
