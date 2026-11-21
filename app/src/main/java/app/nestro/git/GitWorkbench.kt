@@ -408,7 +408,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
                 check(prefs.edit().putString(LOCAL_CORRUPT_KEY, raw)
                     .putLong(LOCAL_CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的本地仓库索引" }
             }
-            return emptyList()
+            return@synchronized emptyList()
         }
         recoverInterruptedRemovals(decoded)
         decoded.filter { local ->
