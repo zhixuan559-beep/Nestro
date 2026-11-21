@@ -153,15 +153,14 @@ object ArtifactStore {
         val id = UUID.randomUUID().toString()
         val fileName = "$id.md"
         val target = File(root(context), fileName)
-        writeAtomically(target, bytes)
-
-        val all = readAll(context)
         val record = ArtifactRecord(id, projectId, cleanTitle, fileName, "text/markdown", System.currentTimeMillis(), bytes.size.toLong(), version)
-        all.put(JSONObject().put("id", record.id).put("projectId", record.projectId)
-            .put("title", record.title).put("fileName", record.fileName)
-            .put("mimeType", record.mimeType).put("createdAt", record.createdAt)
-            .put("sizeBytes", record.sizeBytes).put("version", record.version))
         try {
+            writeAtomically(target, bytes)
+            val all = readAll(context)
+            all.put(JSONObject().put("id", record.id).put("projectId", record.projectId)
+                .put("title", record.title).put("fileName", record.fileName)
+                .put("mimeType", record.mimeType).put("createdAt", record.createdAt)
+                .put("sizeBytes", record.sizeBytes).put("version", record.version))
             writeIndex(context, all)
         } catch (error: Throwable) {
             target.delete()
