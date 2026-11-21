@@ -154,13 +154,14 @@ class ChatRequestContextAssemblerParallelRetrievalTest {
         val started = java.util.concurrent.atomic.AtomicInteger(0)
         val allStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
         suspend fun markStarted(): String {
-            if (started.incrementAndGet() == 3) allStarted.complete(Unit)
+            if (started.incrementAndGet() == 2) allStarted.complete(Unit)
             kotlinx.coroutines.withTimeout(1_000) { allStarted.await() }
             return "并行来源"
         }
+        var knowledgeCalls = 0
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> markStarted().let { ConversationRecallResult(it, emptyList()) } },
-            retrieveKnowledge = { _, _ -> markStarted() },
+            retrieveKnowledge = { _, _ -> knowledgeCalls++; "不应预取" },
             retrieveUserMemory = { _, _ -> markStarted() }
         )
         val result = assembler.assemble(
@@ -170,7 +171,8 @@ class ChatRequestContextAssemblerParallelRetrievalTest {
             requestHistory = emptyList(),
             baseSystemContext = "base"
         )
-        assertEquals(3, started.get())
+        assertEquals(2, started.get())
+        assertEquals(0, knowledgeCalls)
         assertTrue(result.systemContext.contains("并行来源"))
     }
 }
