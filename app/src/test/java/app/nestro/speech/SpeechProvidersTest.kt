@@ -37,7 +37,7 @@ class SpeechProvidersTest {
     }
 
     @Test
-    fun rejectsInvalidProviderModelAndEmptyKey() {
+    fun rejectsInvalidProviderModelAndUnsafeKeys() {
         val invalidProvider = SpeechProviderConfig(
             "bad provider id", "https://speech.example.com", "key", "model"
         )
@@ -47,11 +47,12 @@ class SpeechProvidersTest {
         val emptyKey = SpeechProviderConfig(
             "provider", "https://speech.example.com", " ", "model"
         )
+        val lineBreak = 10.toChar()
         val controlKey = SpeechProviderConfig(
-            "provider", "https://speech.example.com", "key\\nInjected: true", "model"
+            "provider", "https://speech.example.com", "key" + lineBreak + "Injected: true", "model"
         )
         val controlModel = SpeechProviderConfig(
-            "provider", "https://speech.example.com", "key", "model\\nInjected"
+            "provider", "https://speech.example.com", "key", "model" + lineBreak + "Injected"
         )
 
         assertThrows(IllegalArgumentException::class.java) { invalidProvider.validateForRemoteProvider() }
