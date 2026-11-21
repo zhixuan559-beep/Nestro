@@ -1441,6 +1441,10 @@ fun NestroApp(initialPage: String = "home") {
                         pendingOpenMediaAssetId = assetId
                         page = "media-editor"
                     },
+                    onOpenMediaSetup = {
+                        pendingOpenMediaAssetId = ""
+                        page = "media-editor"
+                    },
                     onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
                                                 val lastUserIndex = messages.indexOfLast { it.role == "user" }
