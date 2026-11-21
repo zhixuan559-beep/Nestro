@@ -317,15 +317,6 @@ fun GitWorkbenchPage(context: Context) {
                             }
                         }
                     }
-                    OutlinedButton(enabled = !loading, onClick = {
-                        scope.launch {
-                            loading = true
-                            runCatching { repo.removeLocal(selectedLocal.id, false) }
-                                .onSuccess { refreshLocals(); status = "已移除工作台索引，本地文件保留。" }
-                                .onFailure { status = it.message ?: "移除失败" }
-                            loading = false
-                        }
-                    }) { Text("移除仓库（保留文件）") }
                     TextButton(enabled = !loading, onClick = { pendingDeleteRepo = selectedLocal.id }) { Text("彻底删除本地副本") }
                 }
             }
