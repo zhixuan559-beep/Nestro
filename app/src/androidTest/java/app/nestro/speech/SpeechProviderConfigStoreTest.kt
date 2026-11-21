@@ -31,8 +31,22 @@ class SpeechProviderConfigStoreTest {
         assertEquals(config, store.read())
         val metadata = context.getSharedPreferences("nestro_voice_provider_v1", Context.MODE_PRIVATE)
         assertFalse(metadata.all.values.any { it.toString().contains(secret) })
+        val firstKeyId = metadata.getString("provider_metadata", null)!!
+            .let { org.json.JSONObject(it).getString("keyId") }
         val vault = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         assertFalse(vault.all.values.any { it.toString().contains(secret) })
+
+        val updated = config.copy(
+            apiKey = "speech-store-test-secret-rotated",
+            inputModel = "new-transcription-model",
+            outputModel = "new-synthesis-model"
+        )
+        store.save(updated)
+        assertEquals(updated, store.read())
+        val secondKeyId = org.json.JSONObject(metadata.getString("provider_metadata")!!).getString("keyId")
+        assertFalse(firstKeyId == secondKeyId)
+        assertFalse(vault.contains("model_api_key_v1_" + firstKeyId))
+        assertFalse(vault.all.values.any { it.toString().contains(updated.apiKey) })
 
         store.delete()
         assertEquals(null, store.read())
