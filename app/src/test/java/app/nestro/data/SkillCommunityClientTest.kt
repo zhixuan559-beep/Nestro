@@ -80,6 +80,19 @@ class SkillCommunityClientTest {
         }
     }
     @Test
+    fun rejectsHttpsBundleUrlsWithEmbeddedCredentialsOrTraversal() {
+        val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val key = Base64.getEncoder().encodeToString(pair.public.encoded)
+        listOf("https://user:pass@example.org/skill.json", "https://example.org/a/../skill.json", "https://example.org/skill.json#fragment").forEach { url ->
+            val row = JSONObject()
+                .put("name", "技能").put("version", "1.0.0").put("description", "")
+                .put("bundle_url", url).put("sha256", "b".repeat(64))
+            val payload = JSONObject().put("schema", 1).put("releases", org.json.JSONArray().put(row)).toString().toByteArray()
+            check(runCatching { SkillCommunityClient.verifyCatalogEnvelope(signedEnvelope(payload, pair), key) }.isFailure)
+        }
+    }
+
+    @Test
     fun rejectsBundleWhenSignedSha256DoesNotMatch() {
         val bytes = """{"name":"研究助手","version":"1.0.0","prompt":"请核对来源。"}""".toByteArray()
         val release = SignedSkillRelease("研究助手", "1.0.0", "", "https://example.org/skill.json", "0".repeat(64))
