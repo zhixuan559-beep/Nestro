@@ -7,6 +7,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -255,17 +256,24 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
                 status = "APPLIED", detail = "本批文件已全部应用；回滚快照已持久化")))
         } catch (failure: Throwable) {
-            try {
-                restoreBefore(snapshot)
-                writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
-                    status = "ROLLED_BACK", detail = "应用失败，已自动恢复：" + (failure.message ?: "未知错误"))))
-            } catch (rollback: Throwable) {
-                runCatching {
+            val rollbackFailure = withContext(NonCancellable) {
+                try {
+                    restoreBefore(snapshot)
                     writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
-                        status = "RECOVERY_REQUIRED", detail = "自动恢复失败；快照保留。应用错误：" + failure.message + "；恢复错误：" + rollback.message)))
+                        status = "ROLLED_BACK", detail = "应用失败或被取消，已自动恢复：" + (failure.message ?: "未知错误"))))
+                    null
+                } catch (rollback: Throwable) {
+                    runCatching {
+                        writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
+                            status = "RECOVERY_REQUIRED", detail = "自动恢复失败；快照保留。应用错误：" + failure.message + "；恢复错误：" + rollback.message)))
+                    }
+                    rollback
                 }
-                throw IllegalStateException("补丁应用失败且自动恢复失败；快照已保留。应用错误：" + failure.message + "；恢复错误：" + rollback.message, failure)
             }
+            if (rollbackFailure != null) {
+                throw IllegalStateException("补丁应用失败且自动恢复失败；快照已保留。应用错误：" + failure.message + "；恢复错误：" + rollbackFailure.message, failure)
+            }
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
             throw IllegalStateException("补丁应用失败，已自动恢复：" + failure.message, failure)
         }
         snapshot
@@ -282,7 +290,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                 "文件 " + item.path + " 在补丁应用后又发生变化，已中止回滚以保护新内容"
             }
         }
-        restoreBefore(snapshot)
+        withContext(NonCancellable) { restoreBefore(snapshot) }
         approvals.listFiles().orEmpty().firstOrNull { it.name == snapshot.id + ".json" }?.let { eventFile ->
             val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull()
             if (event != null) writeJson(eventFile, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "用户通过回滚快照恢复原文件")))
