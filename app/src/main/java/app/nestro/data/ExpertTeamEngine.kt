@@ -11,8 +11,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class ExpertTeamMemberTask(
-    val name:String,
-    val rolePrompt:String
+    val name: String,
+    val rolePrompt: String,
+    /** Explicit user-assigned work package; blank means use the shared team goal. */
+    val assignedTask: String = ""
 )
 
 object ExpertTeamDefaults {
@@ -76,7 +78,7 @@ object ExpertTeamEngine {
         require(task.isNotBlank() && task.length<=12_000) { "团队任务为空或过长" }
         require(members.size in 2..4) { "专家团队必须有 2 到 4 名有效成员" }
         require(members.map { it.name }.distinct().size==members.size) { "专家团队成员不能重名" }
-        require(members.all { it.name.isNotBlank() && it.rolePrompt.isNotBlank() }) { "团队成员缺少角色指令" }
+        require(members.all { it.name.isNotBlank() && it.rolePrompt.isNotBlank() && it.assignedTask.length <= 8_000 }) { "团队成员缺少角色指令或任务超长" }
         require(maxRetries in 0..2 && timeoutMillis in 5_000..120_000 && maxParallel in 1..4) { "团队执行参数超出安全范围" }
         val started=System.currentTimeMillis()
         val semaphore=Semaphore(maxParallel)
@@ -96,7 +98,8 @@ object ExpertTeamEngine {
                                 append("你是专家团队“").append(teamName).append("”中的成员“").append(member.name).append("”。\n")
                                 append("你的专业角色：").append(member.rolePrompt.take(4000)).append("\n")
                                 append("团队共同目标：").append(teamDescription).append("\n\n")
-                                append("本次任务：\n").append(task.take(8000)).append("\n\n")
+                                append("分配给你的独立任务：\n")
+                                append(member.assignedTask.ifBlank { task }.take(8_000)).append("\n\n")
                                 append("请独立完成分析，给出结论、关键依据、风险、未知项和可执行建议。")
                                 append("不要假装拥有其他成员的意见，不要编造事实；证据不足时明确说明。")
                                 append("回答控制在 2200 字符以内。")
@@ -148,7 +151,7 @@ object ExpertTeamEngine {
         require(teamDescription.isNotBlank() && teamDescription.length <= 300)
         require(task.isNotBlank() && task.length <= 12_000)
         require(members.size in 2..4 && members.map { it.name }.distinct().size == members.size)
-        require(members.all { it.name.isNotBlank() && it.rolePrompt.isNotBlank() })
+        require(members.all { it.name.isNotBlank() && it.rolePrompt.isNotBlank() && it.assignedTask.length <= 8_000 })
         require(maxDelegations in 0..3 && timeoutMillis in 5_000..120_000)
         val started = System.currentTimeMillis()
         val byName = members.associateBy { it.name }
