@@ -82,7 +82,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     if(reply.code==400&&(message.contains("protocol",true)||message.contains("unsupported",true)||supported!=null)){
      legacyMode=true;return rpc(method,params,name,schemaJson)
     }
-    if((reply.code==400||reply.code==404)&&parsed==null){legacyMode=true;return rpc(method,params,name,schemaJson)}
+    if(reply.code==404 || (reply.code==400&&parsed==null)){legacyMode=true;return rpc(method,params,name,schemaJson)}
     error("MCP HTTP "+reply.code+"："+(message.ifBlank{reply.body.take(1000)}))
    }
    val response=parsed?:error("MCP 服务没有返回 JSON-RPC 响应")
