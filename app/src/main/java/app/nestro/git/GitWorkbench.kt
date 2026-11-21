@@ -438,10 +438,11 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun checkout(id: String, name: String) = withRepo(id) { git ->
         require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
         require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
-        val remoteRef = "refs/remotes/origin/$name"
+        val remoteName = name.removePrefix("origin/")
+        val remoteRef = "refs/remotes/origin/$remoteName"
         if (git.repository.findRef("refs/heads/$name") == null && git.repository.findRef(remoteRef) != null) {
-            git.checkout().setCreateBranch(true).setName(name)
-                .setStartPoint("origin/$name")
+            git.checkout().setCreateBranch(true).setName(remoteName)
+                .setStartPoint("origin/$remoteName")
                 .setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM).call()
         } else {
             git.checkout().setName(name).call()
@@ -450,8 +451,13 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     suspend fun branches(id: String): List<String> = withRepo(id) { git ->
         git.branchList().setListMode(org.eclipse.jgit.lib.ListBranchCommand.ListMode.ALL).call()
-            .map { it.name.removePrefix("refs/heads/").removePrefix("refs/remotes/") }
-            .filterNot { it == "origin/HEAD" }.distinct().sorted()
+            .mapNotNull {
+                when {
+                    it.name.startsWith("refs/heads/") -> it.name.removePrefix("refs/heads/")
+                    it.name.startsWith("refs/remotes/origin/") -> "origin/" + it.name.removePrefix("refs/remotes/origin/")
+                    else -> null
+                }
+            }.filterNot { it == "origin/HEAD" }.distinct().sorted()
     }
 
     suspend fun commit(id: String, message: String, authorName: String, authorEmail: String): String = withRepo(id) { git ->
