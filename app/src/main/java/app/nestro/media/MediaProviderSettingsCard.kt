@@ -40,6 +40,12 @@ fun MediaProviderSettingsCard() {
     var transcriptionPath by remember { mutableStateOf("audio/transcriptions") }
     var scenePath by remember { mutableStateOf("") }
     var audioPath by remember { mutableStateOf("") }
+    var videoModel by remember { mutableStateOf("") }
+    var videoSubmitPath by remember { mutableStateOf("video/generations") }
+    var videoStatusPath by remember { mutableStateOf("video/generations/{job_id}") }
+    var videoJobIdField by remember { mutableStateOf("id") }
+    var videoStatusField by remember { mutableStateOf("status") }
+    var videoResultUrlField by remember { mutableStateOf("video_url") }
     var configured by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("服务配置保存在本机；API Key 使用 Android Keystore 加密。") }
     var busy by remember { mutableStateOf(false) }
@@ -56,6 +62,12 @@ fun MediaProviderSettingsCard() {
             transcriptionPath = existing.transcriptionPath
             scenePath = existing.scenePath
             audioPath = existing.audioProcessPath
+            videoModel = existing.videoGenerationModel
+            videoSubmitPath = existing.videoSubmitPath
+            videoStatusPath = existing.videoStatusPath
+            videoJobIdField = existing.videoJobIdField
+            videoStatusField = existing.videoStatusField
+            videoResultUrlField = existing.videoResultUrlField
             configured = true
             MediaIntelligenceRegistry.register(OpenAiCompatibleMediaIntelligenceProvider(existing))
             MediaIntelligenceRegistry.activate(existing.providerId)
@@ -78,6 +90,13 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("异步视频生成（可选）：提交任务后轮询状态，再下载成品。不同服务商的任务协议和字段名可能不同，请按服务商文档填写。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(videoModel, { videoModel = it }, label = { Text("视频生成模型 ID（留空表示不支持）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoSubmitPath, { videoSubmitPath = it }, label = { Text("视频任务提交路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoStatusPath, { videoStatusPath = it }, label = { Text("任务状态路径（必须包含 {job_id}）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoJobIdField, { videoJobIdField = it }, label = { Text("任务 ID 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoStatusField, { videoStatusField = it }, label = { Text("任务状态响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoResultUrlField, { videoResultUrlField = it }, label = { Text("视频成品 URL 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedButton(
                 enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank(),
                 onClick = {
@@ -95,7 +114,13 @@ fun MediaProviderSettingsCard() {
                                         transcriptionModel = transcriptionModel,
                                         transcriptionPath = transcriptionPath,
                                         scenePath = scenePath,
-                                        audioProcessPath = audioPath
+                                        audioProcessPath = audioPath,
+                                        videoGenerationModel = videoModel,
+                                        videoSubmitPath = videoSubmitPath,
+                                        videoStatusPath = videoStatusPath,
+                                        videoJobIdField = videoJobIdField,
+                                        videoStatusField = videoStatusField,
+                                        videoResultUrlField = videoResultUrlField
                                     )
                                 )
                             }
@@ -122,7 +147,13 @@ fun MediaProviderSettingsCard() {
                                     transcriptionModel = transcriptionModel,
                                     transcriptionPath = transcriptionPath,
                                     scenePath = scenePath,
-                                    audioProcessPath = audioPath
+                                    audioProcessPath = audioPath,
+                                        videoGenerationModel = videoModel,
+                                        videoSubmitPath = videoSubmitPath,
+                                        videoStatusPath = videoStatusPath,
+                                        videoJobIdField = videoJobIdField,
+                                        videoStatusField = videoStatusField,
+                                        videoResultUrlField = videoResultUrlField
                                 )
                                 config.validate()
                                 store.save(config)
@@ -172,6 +203,12 @@ fun MediaProviderSettingsCard() {
                                     transcriptionPath = config.transcriptionPath
                                     scenePath = config.scenePath
                                     audioPath = config.audioProcessPath
+                                    videoModel = config.videoGenerationModel
+                                    videoSubmitPath = config.videoSubmitPath
+                                    videoStatusPath = config.videoStatusPath
+                                    videoJobIdField = config.videoJobIdField
+                                    videoStatusField = config.videoStatusField
+                                    videoResultUrlField = config.videoResultUrlField
                                     apiKey = ""
                                     configured = true
                                     status = "已切换到 "+config.displayName
