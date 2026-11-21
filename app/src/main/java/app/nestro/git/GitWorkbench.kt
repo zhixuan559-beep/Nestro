@@ -513,7 +513,10 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(authorEmail.matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))) { "提交邮箱格式无效" }
         require(git.status().call().conflicting.isEmpty()) { "存在未解决合并冲突，请编辑冲突文件并逐个标记已解决" }
         git.add().addFilepattern(".").call()
-        require(!git.status().call().isClean) { "没有可提交的变更" }
+        git.add().addFilepattern(".").setUpdate(true).call()
+        val staged = git.status().call()
+        require(staged.added.isNotEmpty() || staged.changed.isNotEmpty() || staged.removed.isNotEmpty()) { "没有可提交的变更" }
+        require(staged.untracked.isEmpty() && staged.modified.isEmpty() && staged.missing.isEmpty()) { "仍有未暂存变更，请重新检查工作区" }
         git.commit().setMessage(message.trim()).setAuthor(PersonIdent(authorName.trim(), authorEmail.trim())).call().name
     }
 
