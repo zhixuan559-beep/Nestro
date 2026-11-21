@@ -43,6 +43,12 @@ class CoworkbenchReportParserTest {
         assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
             "app/build/reports/coworkbench/bom.cdx.json", report.replace("releaseRuntimeClasspath", "testRuntimeClasspath")
         ))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
+            "app/build/reports/coworkbench/bom.cdx.json", report.replace("pkg:maven/org.example/core@1.2.3", "pkg:maven/org.example/other@9.9")
+        ))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
+            "app/build/reports/coworkbench/bom.cdx.json", report.replace("\"version\":\"0.3.1\"", "\"version\":\"\"")
+        ))
     }
 
     @Test
