@@ -49,7 +49,7 @@
 - ExpertTeamExecutionCoordinator.execute() 现支持 MANUAL_PARALLEL 与 SEQUENTIAL_DELEGATION 两种执行策略；但现有聊天入口尚未提供逐成员派单 UI，且默认仍走链式协作。自主项目模式的主模型任务拆解与 DAG 并行调度尚未接入。
 - NestroApp.kt 当前将专家状态回调写入临时 UI 状态，并保存 ExpertTeamRunHistoryCodec 结果；完整持久化消息事件、任务 DAG、交接线程和可交互项目工作区尚未接通。本轮新增事件模型/codec 与可注入 sink，但还没有 Room 持久化实现或 UI 订阅入口。
 - 本轮已将当前项目中至少有 2 名启用专家作为 expert_team.run 的可用条件；主聊天上下文会附带项目可见专家目录，主模型可在不要求用户预选团队的情况下提交成员名单和项目 DAG 计划。显式选中的团队仍优先作为成员范围。
-- CapabilityDraftCoordinator 当前只生成 expert/skill 的 name+prompt 文本草案；未发现可执行 Plugin manifest、插件运行沙箱、安装/升级/撤销生命周期。因此 AI 自主插件创造尚未实现。
+- CapabilityDraftCoordinator 仍只生成 expert/skill 的 name+prompt 文本草案。本轮新增 GeneratedPluginFactory：模型可基于当前 AgentToolCatalog 生成声明式插件包，包含 SemVer、输入字段、步骤和工具参数；验证器会拒绝未注册工具、非法模板和非前序步骤引用；执行器只允许通过注入的统一 Runtime 回调调用工具，并新增有界包 codec 与测试源码。当前尚未接入产品 UI、插件包安装/启用注册、持久化版本仓库、签名、升级、撤销和回滚，因此还不能称为完整的自主插件商店/生命周期。
 
 
 ## 七、本轮新增代码（部分已接入执行协调器，产品入口仍未完成）
