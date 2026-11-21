@@ -309,7 +309,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
             GitProvider.GITHUB -> builder.header("Authorization", "Bearer $token")
                 .header("X-GitHub-Api-Version", "2022-11-28")
             GitProvider.GITLAB -> builder.header("PRIVATE-TOKEN", token)
-            GitProvider.GITEE -> builder.header("Authorization", "token $token")
+            GitProvider.GITEE -> builder.header("Authorization", "Bearer $token")
         }
         return client.newCall(builder.build()).execute().use { response ->
             val responseBody = response.body
