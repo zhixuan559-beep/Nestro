@@ -274,7 +274,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 while (entries < 40 && total < 2_000_000) {
                     val entry = zip.nextEntry ?: break
                     entries++
-                    val name = entry.name.replace('\\\\', '/')
+                    val name = entry.name.replace('\\', '/')
                     val safeName = name.split('/').none { it == ".." || it.isBlank() } &&
                         !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)
                     val reportFile = listOf(".xml", ".html", ".htm", ".txt", ".json", ".log")
