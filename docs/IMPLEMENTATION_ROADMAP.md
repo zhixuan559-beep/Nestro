@@ -1,5 +1,7 @@
 # Nestro 实现状态与开发路线图
 
+> **2026-11-21 模块13代码阶段记录：** MCP 工具中心已实现远程 Streamable HTTP（2026-07-28 stateless 优先，并兼容旧版 initialize/session）、服务与工具发现、逐工具授权、参数预览/调用、Keystore 凭据加密、审计和撤销。代码已静态复核并阶段性合并锁定；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段。Android 端仅连接 HTTPS 远程 MCP，不启动任意本地 stdio Server。
+
 > 状态口径：只有代码已落地且对应构建通过，才标记为「已实现」。UI 占位、设计说明、接口草稿不计入完成。实体设备相关行为在真机验收前仍标记为「待真机验证」。
 
 > **2026-11-20 模块7锁定记录：** PR #7 已合并至 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`。对应 CI Run #72 的 `verify` 与 `instrumentation` 均通过；编译、JVM 单元测试、Lint、APK/测试包构建及 Android 模拟器测试全部成功。模块7代码与云端验证锁定完成。
@@ -245,10 +247,10 @@
 ### 阶段 2：外部工具与开发能力
 
 #### 2A. MCP 与工具权限
-- [ ] 本地/远程 MCP 传输适配、服务发现、协议握手和工具 schema。
-- [ ] 每个服务、每个工具单独授权；调用前预览参数，调用后审计。
-- [ ] 凭据加密、权限撤销、超时、断连恢复和不可信工具输出隔离。
-- [ ] Android 不默认承诺可运行任意本地 MCP Server；按实际运行环境提供连接方式。
+- [x] 远程 Streamable HTTP MCP 传输、协议版本协商、tools/list 服务工具发现与 schema 缓存。
+- [x] 每个服务/工具单独授权；调用前参数预览、调用后本地审计、权限即时撤销。
+- [x] Bearer 凭据 Android Keystore 加密；请求超时/取消、断连错误收口、不可信工具输出隔离。
+- [x] Android 端仅连接用户配置的 HTTPS 远程服务，不承诺启动任意本地 MCP Server；stdio 与模型原生 tool-call schema 适配不在本模块范围内。
 
 #### 2B. Git 工作台
 - [ ] GitHub/GitLab/Gitee 授权与凭据安全存储。
