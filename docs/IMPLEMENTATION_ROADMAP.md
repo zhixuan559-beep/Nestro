@@ -338,7 +338,7 @@ All request-affecting UI state—including active expert IDs, project instructio
 
 ## Task-scoped capability dispatch — implementation status
 
-The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation; it does not yet constitute full MCP/plugin discovery or per-provider credential leasing. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
+The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation. Module 13 now adds remote Streamable HTTP MCP discovery and encrypted Bearer-token storage; OAuth-based provider credential leasing and model-native tool invocation remain separate integration work. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
 
 
 Phone Agent's action-history compactor now retains the most recent 12 distinct action results within a fixed 1,000-character budget, rather than preserving only the oldest entries. This keeps the latest execution evidence available to the next planning call without growing the prompt.
@@ -361,7 +361,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Implemented revocable task-owned capability leases and short-lived task credential lease primitives.
 - Task pause/cancel and handler exit now revoke leases; Phone Agent action execution uses the shared lease registry and releases each action lease in `finally`.
 - Added JVM tests for lease revocation and credential access expiry/revocation.
-- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. MCP discovery and remote provider adapters remain dependent on that shared contract and are not marked complete.
+- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. Module 13 now implements remote MCP discovery and encrypted Bearer-token credentials; remaining Phase 2 work is expert-team/workflow routing, OAuth provider credential leasing, model-native tool invocation, and final unified CI after all 19 modules are complete.
 - APK construction, installation, and device acceptance remain deferred until all feature code across the 19 modules is written and the final unified acceptance stage begins.
 
 
@@ -371,7 +371,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Added a process-wide tool catalog shared by Phone Agent, expert-team and workflow execution.
 - Added operation-scoped capability declarations, with expert-member and workflow-step resolution. Only the declared minimum tool set is leased for that operation; missing tools or missing tool-aware adapters fail closed.
 - Added tests for member/step tool isolation and lease release.
-- The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation, MCP/plugin discovery and remote credential adapters remain follow-up integration work; do not mark them complete based on the registry foundation alone.
+- The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation and OAuth-based remote credential adapters remain follow-up integration work; MCP remote discovery and encrypted Bearer-token storage are implemented in module 13 and must not be described as outstanding.
 - APK generation, installation and real-device acceptance remain deferred until all feature code for all 19 modules is complete, followed by one unified final acceptance.
 
 
