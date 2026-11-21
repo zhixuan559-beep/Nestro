@@ -45,7 +45,7 @@ internal fun artifactReferenceMatchesIndex(
     indexed: ArtifactRecord
 ): Boolean =
     requested.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
-        requested.fileName == "\${requested.id}.md" &&
+        requested.fileName == "${requested.id}.md" &&
         requested.id == indexed.id &&
         requested.projectId == indexed.projectId &&
         requested.fileName == indexed.fileName
@@ -130,7 +130,7 @@ object ArtifactStore {
 
     private fun resolveIndexedRecord(context: Context, requested: ArtifactRecord): ArtifactRecord {
         require(requested.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
-            requested.fileName == "\${requested.id}.md") { "产物文件引用无效" }
+            requested.fileName == "${requested.id}.md") { "产物文件引用无效" }
         val rows = readAll(context)
         val matches = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
             .filter { it.optString("id") == requested.id }
@@ -149,7 +149,7 @@ object ArtifactStore {
         require(artifactReferenceMatchesIndex(requested, indexed)) {
             "产物不属于当前项目，或引用已失效"
         }
-        require(indexed.fileName == "\${indexed.id}.md" &&
+        require(indexed.fileName == "${indexed.id}.md" &&
             indexed.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() &&
             indexed.version in 1..10_000) { "产物索引元数据无效" }
         return indexed
