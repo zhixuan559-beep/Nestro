@@ -111,17 +111,17 @@ fun VoiceSystemPage() {
             return
         }
         try {
-            lateinit var session: RealtimeVoiceSession
-            session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
-                override fun onConnected() {
+            status = "正在连接实时语音服务…"
+            val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
+                override fun onConnected(activeSession: RealtimeVoiceSession) {
                     try {
-                        val audio = RealtimeVoiceAudioController(session) { message -> status = message }
+                        val audio = RealtimeVoiceAudioController(activeSession) { message -> status = message }
                         audio.start()
                         realtimeAudio = audio
-                        realtimeSession = session
+                        realtimeSession = activeSession
                         status = "实时双向语音已连接，可以直接说话"
                     } catch (error: Throwable) {
-                        session.close()
+                        activeSession.close()
                         status = error.message ?: "实时音频设备启动失败"
                     }
                 }
@@ -148,7 +148,6 @@ fun VoiceSystemPage() {
                 }
             })
             realtimeSession = session
-            status = "正在连接实时语音服务…"
         } catch (error: Throwable) {
             status = error.message ?: "实时语音连接失败"
         }
