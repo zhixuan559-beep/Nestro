@@ -27,6 +27,7 @@ fun CapabilityDirectoryPage() {
     val context=LocalContext.current
     val prefs=remember { context.getSharedPreferences("nestro_local",Context.MODE_PRIVATE) }
     val scope=rememberCoroutineScope()
+    val lifecycle=remember(prefs) { app.nestro.data.SkillCommunityLifecycleStore(prefs) }
     var query by remember { mutableStateOf("") }
     var catalogUrl by remember { mutableStateOf(prefs.getString("skill_catalog_url_v1","") ?: "") }
     var trustedKey by remember { mutableStateOf(prefs.getString("skill_catalog_key_v1","") ?: "") }
@@ -42,14 +43,14 @@ fun CapabilityDirectoryPage() {
         val builtIns=listOf(
             CapabilityEntry("模型连接","连接用户自行配置的 OpenAI 兼容模型服务。","Nestro 内置","网络访问；API Key 由 Android Keystore 保护","已内置"),
             CapabilityEntry("语音输入","调用 Android 系统语音识别。","Android 系统服务","麦克风运行时权限","已内置"),
-            CapabilityEntry("语音输出（预留）","当前版本不内置语音合成；未来可由用户自行配置第三方服务。","扩展接口预留","不申请额外权限","未接入"),
+            CapabilityEntry("语音输出","Android 本机 TTS，并支持用户主动配置远程语音合成服务。","Android TTS / 用户配置服务","本机 TTS 不外发；远程服务需用户配置并主动调用","已接入"),
             CapabilityEntry("本地知识库","导入文档并进行项目内检索。","Nestro 本地模块","用户主动选择文件","已内置"),
             CapabilityEntry("专家与团队","使用本地专家配置和并行分析。","Nestro 本地模块","按模型配置发送请求","已内置"),
             CapabilityEntry("Skills","管理本地技能包；只解析提示词和元数据。","本地技能包","导入前预览；声明不自动授权","已内置"),
             CapabilityEntry("工作流","按顺序执行提示词、专家和技能节点。","Nestro 本地模块","按节点实际调用能力","已内置"),
             CapabilityEntry("Phone Agent","用户授权下读取可见界面并执行受限动作。","Android Accessibility","无障碍授权；高风险动作交还用户","已内置"),
             CapabilityEntry("产物库","按项目保存 Markdown 成果、版本、分享和导出。","Nestro 本地存储","应用私有目录","已内置"),
-            CapabilityEntry("MCP 工具","当前版本尚未接入 MCP 服务发现与工具调用。","未接入","未授予权限","未接入")
+            CapabilityEntry("MCP 工具","支持远程 HTTPS Streamable HTTP 服务发现、逐工具授权、调用预览、审计与撤销。","第13模块 MCP 工具中心","逐工具授权；每次调用需确认","已接入")
         )
         runCatching {
             val skills=JSONObject(rawSkills); val metadata=JSONObject(rawMetadata); val disabled=JSONArray(rawDisabled)
@@ -137,6 +138,20 @@ fun CapabilityDirectoryPage() {
                         Text(item.description,style=MaterialTheme.typography.bodySmall)
                         Text("来源："+item.source,style=MaterialTheme.typography.labelSmall)
                         Text(item.permission,style=MaterialTheme.typography.labelSmall)
+                        if (item.source.contains("已验证签名社区目录")) {
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick={
+                                    val result=runCatching { lifecycle.uninstall(item.name) }
+                                    installStatus=result.fold({ "已卸载社区技能："+item.name },{ "卸载失败："+(it.message ?: "未知错误") })
+                                }) { Text("卸载") }
+                                if (lifecycle.canRollback(item.name)) {
+                                    OutlinedButton(onClick={
+                                        val result=runCatching { lifecycle.rollback(item.name) }
+                                        installStatus=result.fold({ "已回退社区技能："+item.name },{ "回退失败："+(it.message ?: "未知错误") })
+                                    }) { Text("回退上一版本") }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -158,10 +173,13 @@ fun CapabilityDirectoryPage() {
             confirmButton={TextButton(onClick={
                 val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
                 val metadata=runCatching { JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}") }.getOrDefault(JSONObject())
-                skills.put(bundle.name,bundle.prompt); metadata.put(bundle.name,SkillBundleParser.metadataJson(bundle))
-                prefs.edit().putString("skills",skills.toString()).putString("skill_metadata_v1",metadata.toString()).apply()
-                installStatus="已安装 "+bundle.name+"。请在本地技能库中手动选择启用。"
-                pendingBundle=null
+                val installResult=runCatching { lifecycle.install(bundle) }
+                installResult.onSuccess {
+                    installStatus="已安装 "+bundle.name+" v"+bundle.version+"。旧版本已保留，可在本地能力列表回退；技能默认不自动启用。"
+                    pendingBundle=null
+                }.onFailure {
+                    installStatus="安装失败："+(it.message ?: "本地数据提交失败")
+                }
             }) { Text("确认安装") }},
             dismissButton={TextButton(onClick={pendingBundle=null}) { Text("取消") }}
         )
