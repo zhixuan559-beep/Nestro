@@ -58,7 +58,7 @@ class ChatRequestExecutionCoordinatorTest {
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
             planPhoneAgent = { order += "plan"; "planned" },
-            runExpertTeam = { context ->
+            runExpertTeam = { context, _ ->
                 assertEquals("base-context", context)
                 order += "team"
                 "team-context"
