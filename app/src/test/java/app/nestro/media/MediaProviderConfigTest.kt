@@ -19,6 +19,10 @@ class MediaProviderConfigTest {
         config().validate()
     }
 
+    @Test fun acceptsVideoOnlyProviderWithoutChatModel() {
+        config().copy(model = "", transcriptionModel = "", videoGenerationModel = "video-model").validate()
+    }
+
     @Test fun rejectsHttpAndEmbeddedCredentials() {
         assertFalse(runCatching { config("http://api.example.com").validate() }.isSuccess)
         assertFalse(runCatching { config("https://user:pass@api.example.com").validate() }.isSuccess)
