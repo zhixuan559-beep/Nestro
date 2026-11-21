@@ -17,7 +17,7 @@
 | 11 | 专家模板 | 代码已静态核查并合并锁定至 refactor/phase-2-architecture（commit 544b3be）：内置/自定义模板、从专家保存、编辑、复制内置、删除二次确认、搜索/分类、套用、JSON 批量导入预览/导出；导入限制文件体积/数量/名称与 ID 唯一性/技能项目范围，持久化失败不覆盖界面状态，并兼容修复旧模板重复 ID；专家 CRUD/版本/启停/导入导出已有闭环；回归测试代码已补充但尚未执行，自动化、模拟器与真机验收留待统一阶段 |
 | 12 | 双模型对比 | 功能代码已补齐并静态复核，已快进合并锁定至 refactor/phase-2-architecture（commit 5868d6d）；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段 |
 | 13 | MCP 工具中心 | 远程 Streamable HTTP MCP 连接、协议握手/版本兼容、工具发现与调用、逐工具授权、调用预览/审计/撤销及损坏审计隔离已完成；已合并并完成代码阶段锁定（初始 commit `5d805a9`，审计修复 `f2dd742`）；构建与 JVM 测试留待十九模块统一验收 |
-| 14 | GitHub 工作台 | 开发中：已建立独立分支 `feature/module-14-github-workbench`；GitHub/GitLab/Gitee PAT 授权与 Keystore 加密、仓库列表/搜索/克隆、JGit 本地分支与 Pull/Push/Commit、文件浏览编辑/新建删除、Diff/历史/反向回滚及冲突标记处理主体代码已落地；静态复核与异常恢复继续，编译/JVM/设备测试未执行 |
+| 14 | GitHub 工作台 | 开发中：已建立独立分支 `feature/module-14-github-workbench`；GitHub/GitLab/Gitee PAT 授权与 Keystore 加密、仓库列表/搜索/克隆（大仓库确认、可用空间预检）、JGit 本地分支/Fetch/Pull/Push/Commit、文件浏览编辑/新建删除、Diff/历史/反向回滚及冲突标记处理主体代码已落地；API 请求超时/连接失败重试、Git 传输超时与损坏索引隔离已补；静态复核继续，编译/JVM/设备测试未执行 |
 | 15 | AI 共建工作台 | 待开发 |
 | 16 | 统一能力中心 | 已完成（此前已完成并锁定，不因顺序推进而重做） |
 | 17 | 智能剪辑 | 待开发 |
