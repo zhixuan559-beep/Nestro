@@ -290,7 +290,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         } catch (failure: Throwable) {
             val rollbackFailure = withContext(NonCancellable) {
                 try {
-                    restoreBefore(snapshot)
+                    restoreBeforeIfUnchanged(snapshot)
                     writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
                         status = "ROLLED_BACK", detail = "应用失败或被取消，已自动恢复：" + (failure.message ?: "未知错误"))))
                     null
@@ -382,7 +382,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         try {
             withContext(NonCancellable) {
                 events.forEach { (snapshot, pair) ->
-                    restoreBefore(snapshot)
+                    restoreBeforeIfUnchanged(snapshot)
                     val (file, event) = pair
                     writeJson(file, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "整份补丁的该批次已回滚")))
                 }
@@ -428,13 +428,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                         val snapshot = decodeSnapshot(JSONObject(snapshotFile.readText(Charsets.UTF_8)))
                         require(snapshot.id == event.id && snapshot.repositoryId == event.repositoryId) { "事务快照与审批记录不匹配" }
                         withContext(NonCancellable) {
-                            snapshot.files.forEach { item ->
-                                val current = readOrNull(snapshot.repositoryId, item.path)
-                                require(CoworkbenchPolicy.canRecoverInterruptedFile(current, item.before, item.applied)) {
-                                    "文件 ${item.path} 在进程中断后被外部修改；为保护新内容，停止自动覆盖"
-                                }
-                            }
-                            restoreBefore(snapshot)
+                            restoreBeforeIfUnchanged(snapshot)
                             writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERED", detail = "检测到未完成事务，已按快照恢复；未覆盖外部修改")))
                         }
                     } catch (failure: Throwable) {
@@ -457,6 +451,16 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                 if (readOrNull(snapshot.repositoryId, item.path) != null) git.deleteFile(snapshot.repositoryId, item.path)
             } else git.writeFile(snapshot.repositoryId, item.path, item.before)
         }
+    }
+
+    private suspend fun restoreBeforeIfUnchanged(snapshot: CoworkbenchSnapshot) {
+        snapshot.files.forEach { item ->
+            val current = readOrNull(snapshot.repositoryId, item.path)
+            require(CoworkbenchPolicy.canRecoverInterruptedFile(current, item.before, item.applied)) {
+                "文件 ${item.path} 已被外部修改；为保护新内容，停止自动覆盖"
+            }
+        }
+        restoreBefore(snapshot)
     }
 
     private fun loadReviewUnlocked(id: String): CoworkbenchReview {
