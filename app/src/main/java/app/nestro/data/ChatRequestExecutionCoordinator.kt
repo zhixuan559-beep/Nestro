@@ -65,6 +65,8 @@ internal class ChatRequestExecutionCoordinator(
             val finalSystemContext = assembled.systemContext.take(24_000)
 
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
+            var directPersistedLength = 0
+            var lastDirectPersistAt = System.currentTimeMillis()
             val coordinated = modelToolDispatcher?.let { dispatcher ->
                 runCatchingCancellable {
                     dispatcher.dispatch(
@@ -94,20 +96,35 @@ internal class ChatRequestExecutionCoordinator(
                         onDirectAnswer = { partial ->
                             partialAnswer.setLength(0)
                             partialAnswer.append(partial)
-                            streamingCoordinator.persistPartial(
-                                requestId = request.requestId,
-                                conversationId = request.conversationId,
-                                projectId = request.projectId,
-                                prompt = request.prompt,
-                                partialAnswer = partial,
-                                startedAt = request.startedAt
-                            )
+                            val now = System.currentTimeMillis()
+                            if (partial.length - directPersistedLength >= 256 || now - lastDirectPersistAt >= 1_500L) {
+                                streamingCoordinator.persistPartial(
+                                    requestId = request.requestId,
+                                    conversationId = request.conversationId,
+                                    projectId = request.projectId,
+                                    prompt = request.prompt,
+                                    partialAnswer = partial,
+                                    startedAt = request.startedAt
+                                )
+                                directPersistedLength = partial.length
+                                lastDirectPersistAt = now
+                            }
                             onPartialAnswer(partial)
                         }
                     )
                 }.getOrNull()
             }
             if (coordinated?.directReply != null) {
+                if (coordinated.streamedToUi && coordinated.directReply.length > directPersistedLength) {
+                    streamingCoordinator.persistPartial(
+                        requestId = request.requestId,
+                        conversationId = request.conversationId,
+                        projectId = request.projectId,
+                        prompt = request.prompt,
+                        partialAnswer = coordinated.directReply,
+                        startedAt = request.startedAt
+                    )
+                }
                 if (!coordinated.streamedToUi) {
                     partialAnswer.setLength(0)
                     partialAnswer.append(coordinated.directReply)
