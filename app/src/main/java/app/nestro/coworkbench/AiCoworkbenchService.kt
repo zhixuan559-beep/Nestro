@@ -335,7 +335,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         writeJson(eventFile, encodeApproval(event.copy(status = "ROLLING_BACK", detail = "用户请求回滚；恢复事务已持久化")))
         try {
             withContext(NonCancellable) {
-                restoreBefore(snapshot)
+                restoreBeforeIfUnchanged(snapshot)
                 writeJson(eventFile, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "已按快照恢复原文件")))
             }
         } catch (failure: Throwable) {
