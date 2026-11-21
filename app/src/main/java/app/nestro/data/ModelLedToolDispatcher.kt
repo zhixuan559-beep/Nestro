@@ -227,7 +227,7 @@ ${prompt.take(8_000)}
                 markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
                 return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
             }
-            val spec = catalog.find(decision.toolId) ?: run {
+            val spec = available.firstOrNull { it.id == decision.toolId } ?: run {
                 markTerminal(AgentTaskStatus.FAILED, "模型选择了未注册的工具：${decision.toolId}")
                 return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
             }
