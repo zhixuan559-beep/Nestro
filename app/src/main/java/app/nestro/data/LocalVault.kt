@@ -8,8 +8,15 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import app.nestro.model.ModelApiProtocol
 
-internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String, val reasoningEffort: String? = null)
+internal data class ModelConfig(
+    val baseUrl: String,
+    val model: String,
+    val apiKey: String,
+    val reasoningEffort: String? = null,
+    val protocol: ModelApiProtocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
+)
 
 internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
@@ -22,7 +29,7 @@ internal object LocalVault {
         val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
             Base64.encodeToString(encrypted, Base64.NO_WRAP)
         prefs.edit().putString("base_url", config.baseUrl).putString("model", config.model)
-            .putString("api_key_enc", packed).apply()
+            .putString("api_key_enc", packed).putString("active_model_protocol", config.protocol.name).apply()
     }
     fun read(context: Context): ModelConfig {
         val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
@@ -36,7 +43,14 @@ internal object LocalVault {
                 String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
             }
         }.getOrDefault("")
-        return ModelConfig(prefs.getString("base_url", "") ?: "", prefs.getString("model", "") ?: "", key)
+        return ModelConfig(
+            prefs.getString("base_url", "") ?: "",
+            prefs.getString("model", "") ?: "",
+            key,
+            protocol = runCatching {
+                ModelApiProtocol.valueOf(prefs.getString("active_model_protocol", "") ?: "")
+            }.getOrDefault(ModelApiProtocol.OPENAI_CHAT_COMPLETIONS)
+        )
     }
     fun writeApiKey(context: Context, keyId: String, apiKey: String) {
         require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
@@ -134,6 +148,7 @@ internal object LocalVault {
             .remove("active_model_profile_id")
             .remove("base_url")
             .remove("model")
+            .remove("active_model_protocol")
             .remove("api_key_enc")
             .apply()
     }
