@@ -11,7 +11,7 @@ enum class ExpertTeamExecutionMode {
     /** User assigns each member a work package; independent work runs concurrently. */
     MANUAL_PARALLEL,
     /** The lead expert may hand off bounded subtasks to other members. */
-    AUTONOMOUS_COLLABORATIVE
+    SEQUENTIAL_DELEGATION
 }
 
 /**
@@ -28,7 +28,7 @@ class ExpertTeamExecutionCoordinator(
         teamDescription: String,
         task: String,
         members: List<ExpertTeamMemberTask>,
-        mode: ExpertTeamExecutionMode = ExpertTeamExecutionMode.AUTONOMOUS_COLLABORATIVE,
+        mode: ExpertTeamExecutionMode = ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION,
         taskId: String = UUID.randomUUID().toString(),
         shouldStop: () -> Boolean = { false },
         onMember: suspend (String, String) -> Unit = { _, _ -> },
@@ -71,7 +71,7 @@ class ExpertTeamExecutionCoordinator(
                 onMember = onMember,
                 invoke = ::invokeWithLease
             )
-            ExpertTeamExecutionMode.AUTONOMOUS_COLLABORATIVE -> ExpertTeamEngine.runCollaborative(
+            ExpertTeamExecutionMode.SEQUENTIAL_DELEGATION -> ExpertTeamEngine.runCollaborative(
                 teamName = teamName,
                 teamDescription = teamDescription,
                 task = task,
