@@ -19,6 +19,7 @@ class GitWorkbenchPolicyTest {
         assertTrue(GitWorkbenchPolicy.validBranchName("release/v1.2"))
         assertFalse(GitWorkbenchPolicy.validBranchName(""))
         assertFalse(GitWorkbenchPolicy.validBranchName("-option"))
+        assertFalse(GitWorkbenchPolicy.validBranchName("origin/feature"))
         assertFalse(GitWorkbenchPolicy.validBranchName("bad branch"))
         assertFalse(GitWorkbenchPolicy.validBranchName("branch..name"))
         assertFalse(GitWorkbenchPolicy.validBranchName("branch.lock"))
