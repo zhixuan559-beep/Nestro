@@ -58,7 +58,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
                     ?: "视频生成任务失败（状态：$state）"
                 break
             }
-            if (state in SUCCESS_STATES && resultUrl != null) break
+            if (resultUrl != null && (state.isBlank() || state in SUCCESS_STATES)) break
             onProgress((8 + ((attempt + 1).toFloat() / MAX_STATUS_POLLS * 78f)).toInt())
             if (attempt < MAX_STATUS_POLLS - 1) delay(POLL_INTERVAL_MS)
         }
