@@ -43,7 +43,13 @@ class SkillTrustStore(private val preferences: SharedPreferences) {
             }
             out.toByteArray()
         } finally { connection.disconnect() }
-        val envelope = JSONObject(bytes.toString(Charsets.UTF_8))
+        return applySignedRevocationEnvelope(bytes.toString(Charsets.UTF_8))
+    }
+
+    fun applySignedRevocationEnvelope(rawEnvelope: String): Int {
+        require(rawEnvelope.toByteArray(Charsets.UTF_8).size in 1..256*1024) { "撤销清单为空或超过 256 KB" }
+        val authority = preferences.getString(KEY_AUTHORITY, null) ?: error("尚未固定独立的社区信任根公钥")
+        val envelope = JSONObject(rawEnvelope)
         val payload = Base64.getDecoder().decode(envelope.getString("payload"))
         val signature = Base64.getDecoder().decode(envelope.getString("signature"))
         val publicKey = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(authority)))
@@ -52,6 +58,10 @@ class SkillTrustStore(private val preferences: SharedPreferences) {
         val root = JSONObject(payload.toString(Charsets.UTF_8))
         require(root.optInt("schema") == 1) { "不支持的撤销清单格式" }
         val issuedAt = root.getLong("issued_at")
+        val now = System.currentTimeMillis() / 1000
+        require(issuedAt <= now + 300) { "撤销清单签发时间超前，拒绝更新" }
+        val expiresAt = root.getLong("expires_at")
+        require(expiresAt > now && expiresAt <= issuedAt + 90L * 24 * 60 * 60) { "撤销清单已过期或有效期超过 90 天" }
         val previousIssuedAt = preferences.getLong(KEY_ISSUED_AT, 0L)
         require(issuedAt > previousIssuedAt) { "撤销清单版本过旧或重复，拒绝回滚信任状态" }
         val rows = root.optJSONArray("revoked_signers") ?: JSONArray()
