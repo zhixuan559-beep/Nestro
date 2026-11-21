@@ -1,6 +1,7 @@
 package app.nestro.speech
 
 import android.content.Context
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
@@ -97,7 +98,7 @@ class AndroidTextToSpeechController(
         tts.stop()
         val id = UUID.randomUUID().toString()
         currentUtteranceId = id
-        val result = tts.speak(normalized, TextToSpeech.QUEUE_FLUSH, null, id)
+        val result = tts.speak(normalized, TextToSpeech.QUEUE_FLUSH, Bundle(), id)
         if (result == TextToSpeech.ERROR) {
             currentUtteranceId = null
             listener.onError(id, "系统拒绝了本次语音合成请求")
