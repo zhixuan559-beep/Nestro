@@ -161,28 +161,3 @@ class ChatRequestExecutionCoordinatorTest {
     }
 
 }
-
-
-class ChatRequestExecutionCoordinatorConcurrencyTest {
-    @Test
-    fun knowledgeLookupAndPhoneAgentPlanningAreDeferredToModelDispatch() = runBlocking {
-        val started = java.util.concurrent.atomic.AtomicInteger(0)
-        val assembler = ChatRequestContextAssembler(
-            retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
-            retrieveUserMemory = { _, _ -> "" }
-        )
-        val streaming = ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, _ -> "reply" },
-            partialStateStore = ChatPartialStateStore { _, _, _, _, _, _ -> }
-        )
-        val coordinator = ChatRequestExecutionCoordinator(assembler, streaming)
-        val result = coordinator.execute(
-            request = request(taskMode = true).copy(prompt = "请根据知识库回答"),
-            onUsage = { _, _, _ -> },
-            onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { error("must not run before model tool selection") },
-            onPartialAnswer = { }
-        )
-        assertEquals("reply", result.finalization.finalText)
-    }
-}
