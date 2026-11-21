@@ -343,6 +343,16 @@ object CoworkbenchStaticAnalyzer {
                 Triple(Regex("""addJavascriptInterface|setJavaScriptEnabled\(true\)"""), "WebView", CoworkbenchFindingLevel.WARNING to "发现 WebView JavaScript/桥接入口；核验可信来源与桥接方法暴露"),
                 Triple(Regex("""SmsManager|TelephonyManager|READ_SMS|SEND_SMS|CALL_PHONE"""), "敏感设备 API", CoworkbenchFindingLevel.HIGH to "发现短信/电话相关 API 或权限引用；核验用途与最小权限"),
                 Triple(Regex("""AccessibilityService|performGlobalAction"""), "无障碍能力", CoworkbenchFindingLevel.WARNING to "发现无障碍服务或全局动作；核验用户主动启用、用途披露与动作边界"),
+                Triple(Regex("""DexClassLoader|PathClassLoader|InMemoryDexClassLoader|System\.load(?:Library)?\s*\(""", RegexOption.IGNORE_CASE),
+                    "动态代码加载", CoworkbenchFindingLevel.HIGH to "发现动态加载 DEX/本地库入口；核验来源签名、完整性校验与加载路径"),
+                Triple(Regex("""ObjectInputStream|readObject\s*\(""", RegexOption.IGNORE_CASE),
+                    "不安全反序列化", CoworkbenchFindingLevel.HIGH to "发现 Java 原生对象反序列化入口；禁止反序列化不可信数据，优先使用有类型约束的格式"),
+                Triple(Regex("""Cipher\.getInstance\s*\(\s*["'](?:DES|DESede|AES/ECB)|MessageDigest\.getInstance\s*\(\s*["'](?:MD5|SHA-?1)""", RegexOption.IGNORE_CASE),
+                    "弱加密配置", CoworkbenchFindingLevel.WARNING to "发现过时或不安全的加密算法/模式；改用经过审查的现代算法与认证加密模式"),
+                Triple(Regex("""setAllowUniversalAccessFromFileURLs\s*\(\s*true|setAllowFileAccessFromFileURLs\s*\(\s*true|MIXED_CONTENT_ALWAYS_ALLOW""", RegexOption.IGNORE_CASE),
+                    "WebView 文件/混合内容访问", CoworkbenchFindingLevel.HIGH to "WebView 允许高风险文件或混合内容访问；限制本地文件、跨源和明文内容"),
+                Triple(Regex("""PendingIntent\.FLAG_MUTABLE""", RegexOption.IGNORE_CASE),
+                    "可变 PendingIntent", CoworkbenchFindingLevel.WARNING to "发现可变 PendingIntent；确认确有必要，并限制创建者、接收方和可变字段"),
             )
             checks.forEach { (regex, category, pair) ->
                 if (regex.containsMatchIn(line)) findings += finding(category, pair.first, path, number, line, pair.second)
