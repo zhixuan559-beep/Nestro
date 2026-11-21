@@ -28,7 +28,9 @@ data class CalendarEvent(
     val reminderMinutes: Int,
     val completed: Boolean,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val sourceSystemEventId: Long? = null,
+    val sourceSystemCalendarId: Long? = null
 )
 
 @Dao
