@@ -54,7 +54,8 @@ object SkillBundleParser {
             val dependencyName = item.optString("name").trim()
             val dependencyVersion = item.optString("version", "*").trim()
             require(dependencyName.isNotBlank() && dependencyName.length <= 80 && dependencyVersion.length <= 40) { "技能依赖格式无效" }
-            require(dependencyVersion == "*" || dependencyVersion.split("||").all { alternative -> alternative.trim().split(Regex("[ ,]+")).filter { it.isNotBlank() }.all { term -> term.matches(Regex("(?:>=|<=|>|<|\\\\^|~)?(0|[1-9][0-9]*)\\\\.(0|[1-9][0-9]*)\\\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\\\+[0-9A-Za-z.-]+)?")) } }) { "技能依赖版本必须使用语义版本范围或 *" }
+            val alternatives = dependencyVersion.split("||")
+            require(dependencyVersion == "*" || (alternatives.isNotEmpty() && alternatives.all { alternative -> alternative.isNotBlank() && alternative.trim().split(Regex("[ ,]+")).filter { it.isNotBlank() }.all { term -> runCatching { SkillSemVer.matches("1.0.0", term) }.isSuccess } })) { "技能依赖版本必须使用有效 SemVer 2.0 范围或 *" }
             SkillDependency(dependencyName, dependencyVersion)
         }
         require(dependencies.map { it.name }.distinct().size == dependencies.size) { "技能依赖不能重复" }
