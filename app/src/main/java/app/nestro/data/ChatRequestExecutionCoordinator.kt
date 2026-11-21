@@ -115,16 +115,14 @@ internal class ChatRequestExecutionCoordinator(
                 }.getOrNull()
             }
             if (coordinated?.directReply != null) {
-                if (coordinated.streamedToUi && coordinated.directReply.length > directPersistedLength) {
-                    streamingCoordinator.persistPartial(
-                        requestId = request.requestId,
-                        conversationId = request.conversationId,
-                        projectId = request.projectId,
-                        prompt = request.prompt,
-                        partialAnswer = coordinated.directReply,
-                        startedAt = request.startedAt
-                    )
-                }
+                streamingCoordinator.persistPartial(
+                    requestId = request.requestId,
+                    conversationId = request.conversationId,
+                    projectId = request.projectId,
+                    prompt = request.prompt,
+                    partialAnswer = coordinated.directReply,
+                    startedAt = request.startedAt
+                )
                 if (!coordinated.streamedToUi) {
                     partialAnswer.setLength(0)
                     partialAnswer.append(coordinated.directReply)
