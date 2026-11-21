@@ -768,7 +768,7 @@ private suspend fun applyLocalBackup(
             updatedAt = item.longOrDefault("updatedAt", 0L),
             sourceSystemEventId = null,
             sourceSystemCalendarId = null,
-            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", id.startsWith("system-"))
+            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", item.requiredString("id").startsWith("system-"))
         )
         require(CalendarRules.validate(event) == null && event.createdAt >= 0L && event.updatedAt >= 0L) {
             "日历日程字段无效，拒绝恢复"
