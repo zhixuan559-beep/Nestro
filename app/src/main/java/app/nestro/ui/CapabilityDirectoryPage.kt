@@ -107,7 +107,21 @@ fun CapabilityDirectoryPage() {
         OutlinedTextField(authorityKey,{authorityKey=it},label={Text("独立信任根公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
         OutlinedButton(enabled=authorityKey.isNotBlank(),onClick={ val result=runCatching { trustStore.pinAuthorityKey(authorityKey.trim()) }; status=result.fold({ "独立信任根已固定：SHA-256 "+trustStore.authorityFingerprint() },{ "信任根固定失败："+(it.message ?: "无效公钥") }) },modifier=Modifier.fillMaxWidth()) { Text("固定独立信任根") }
         OutlinedTextField(revocationUrl,{revocationUrl=it},label={Text("签名密钥撤销清单 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-        OutlinedButton(enabled=revocationUrl.startsWith("https://") && trustStore.authorityFingerprint().isNotBlank() && !loading,onClick={ loading=true; scope.launch { val result=withContext(Dispatchers.IO) { runCatching { trustStore.refreshRevocations(revocationUrl.trim()) } }; status=result.fold({ count -> prefs.edit().putString("skill_trust_revocation_url_v1",revocationUrl.trim()).commit(); "撤销清单已验签并更新，累计撤销 $count 个签名者。" },{ "撤销清单更新失败："+(it.message ?: "验证失败") }); loading=false } },modifier=Modifier.fillMaxWidth()) { Text("验证并更新撤销清单") }
+        OutlinedButton(enabled=revocationUrl.startsWith("https://") && trustStore.authorityFingerprint().isNotBlank() && !loading,onClick={ loading=true; scope.launch { val result=withContext(Dispatchers.IO) { runCatching { trustStore.refreshRevocations(revocationUrl.trim()) } }; status=result.fold({ count ->
+                val metadata=JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}")
+                val skills=JSONObject(prefs.getString("skills","{}") ?: "{}")
+                val disabled=JSONArray(prefs.getString("disabled_skills_v1","[]") ?: "[]")
+                val disabledNames=(0 until disabled.length()).map { disabled.optString(it) }.toMutableSet()
+                var disabledCount=0
+                metadata.keys().forEach { name ->
+                    val signer=runCatching { JSONObject(metadata.optString(name,"{}")).optString("signerFingerprint") }.getOrDefault("")
+                    if(skills.has(name) && signer.isNotBlank() && trustStore.isFingerprintRevoked(signer) && disabledNames.add(name)) {
+                        disabled.put(name); disabledCount++
+                    }
+                }
+                check(prefs.edit().putString("skill_trust_revocation_url_v1",revocationUrl.trim()).putString("disabled_skills_v1",disabled.toString()).commit())
+                "撤销清单已验签并更新，累计撤销 $count 个签名者；自动停用受影响技能 $disabledCount 个。"
+            },{ "撤销清单更新失败："+(it.message ?: "验证失败") }); loading=false } },modifier=Modifier.fillMaxWidth()) { Text("验证并更新撤销清单") }
         Button(enabled=!loading && catalogUrl.startsWith("https://") && trustedKey.isNotBlank(),onClick={
             val candidateKey=trustedKey.trim()
             val pinned=pinnedTrustedKey.trim()
