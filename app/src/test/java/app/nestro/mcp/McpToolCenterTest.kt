@@ -22,6 +22,11 @@ class McpToolCenterTest {
   assertEquals("不允许未声明的参数：extra",McpToolArgumentValidator.validate(schema,"""{"query":"hello","extra":1}"""))
   assertNotNull(McpToolArgumentValidator.validate(schema,"x".repeat(32_001)))
  }
+ @Test fun modernHeaderValuesEncodeUnsafeCharactersAndSentinel(){
+  assertEquals("plain-ascii",McpHeaderValueEncoder.encode("plain-ascii"))
+  assertTrue(McpHeaderValueEncoder.encode("hello 世界").startsWith("=?base64?"))
+  assertTrue(McpHeaderValueEncoder.encode("=?base64?literal?=").startsWith("=?base64?"))
+ }
  @Test fun serverAndToolCodecsRoundTripAndKeepGrants(){
   val server=McpServerRecord("srv-1","Docs","https://example.com/mcp")
   assertEquals(listOf(server),McpToolCenterCodec.decodeServers(McpToolCenterCodec.encodeServers(listOf(server))))
