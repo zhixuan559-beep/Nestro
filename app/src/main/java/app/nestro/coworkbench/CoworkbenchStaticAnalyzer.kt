@@ -291,8 +291,13 @@ object CoworkbenchStaticAnalyzer {
             }
         }
         lines.forEachIndexed { index, raw ->
-            val line = raw.take(500)
+            val rawLine = raw.take(500)
+            val line = redactSensitiveEvidence(rawLine)
             val number = index + 1
+            if (containsCredential(rawLine)) {
+                findings += finding("疑似硬编码凭据", CoworkbenchFindingLevel.HIGH, path, number, line,
+                    "发现疑似 API Key、访问令牌、密码、云凭据或私钥材料；不要将真实凭据提交到仓库，立即轮换已暴露的有效凭据")
+            }
 
             if (lowerPath.endsWith(".gradle") || lowerPath.endsWith(".gradle.kts")) {
                 Regex("""\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation)\s*\(?\s*["']([^"']+)["']""")
@@ -334,7 +339,6 @@ object CoworkbenchStaticAnalyzer {
                 Triple(Regex("""addJavascriptInterface|setJavaScriptEnabled\(true\)"""), "WebView", CoworkbenchFindingLevel.WARNING to "发现 WebView JavaScript/桥接入口；核验可信来源与桥接方法暴露"),
                 Triple(Regex("""SmsManager|TelephonyManager|READ_SMS|SEND_SMS|CALL_PHONE"""), "敏感设备 API", CoworkbenchFindingLevel.HIGH to "发现短信/电话相关 API 或权限引用；核验用途与最小权限"),
                 Triple(Regex("""AccessibilityService|performGlobalAction"""), "无障碍能力", CoworkbenchFindingLevel.WARNING to "发现无障碍服务或全局动作；核验用户主动启用、用途披露与动作边界"),
-                Triple(Regex("""apiKey\s*[:=]\s*["'][A-Za-z0-9_\-]{20,}["']|BEGIN (?:RSA |EC )?PRIVATE KEY"""), "疑似硬编码凭据", CoworkbenchFindingLevel.HIGH to "发现疑似硬编码密钥或私钥材料；立即确认是否为真实凭据")
             )
             checks.forEach { (regex, category, pair) ->
                 if (regex.containsMatchIn(line)) findings += finding(category, pair.first, path, number, line, pair.second)
@@ -371,6 +375,28 @@ object CoworkbenchStaticAnalyzer {
                     "构建脚本可能启用 debuggable；确认仅限 debug variant，release 必须关闭")
             }
         }
+    }
+
+    private val credentialPatterns = listOf(
+        Regex("""-----BEGIN [A-Z ]*PRIVATE KEY-----""", RegexOption.IGNORE_CASE),
+        Regex("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\b"""),
+        Regex("""(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\s*[:=]\s*["']?[^"'\s,;]{8,}""")
+    )
+
+    private fun containsCredential(line: String): Boolean =
+        credentialPatterns.any { it.containsMatchIn(line) }
+
+    private fun redactSensitiveEvidence(line: String): String {
+        var safe = line
+        credentialPatterns.forEach { pattern ->
+            safe = pattern.replace(safe) { match ->
+                val prefix = match.value.substringBefore(Regex("[:=]")).takeIf { it != match.value }
+                    ?.plus(match.value.substring(match.value.indexOfFirst { it == ':' || it == '=' }, match.value.indexOfFirst { it == ':' || it == '=' } + 1))
+                    .orEmpty()
+                prefix + "[REDACTED]"
+            }
+        }
+        return safe
     }
 
     private fun finding(
