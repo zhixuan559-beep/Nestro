@@ -54,7 +54,12 @@ def main():
     destination = Path(sys.argv[2])
     if not source.is_file() or source.stat().st_size > MAX_INPUT_BYTES:
         raise SystemExit("Gradle 依赖报告不存在或超过 8 MB")
-    components = parse_components(source.read_text(encoding="utf-8", errors="replace"))
+    report = source.read_text(encoding="utf-8", errors="replace")
+    required_configurations = ("debugRuntimeClasspath -", "releaseRuntimeClasspath -")
+    missing = [name for name in required_configurations if name not in report]
+    if missing:
+        raise SystemExit("Gradle 依赖报告缺少配置结果：" + ", ".join(missing))
+    components = parse_components(report)
     if not components:
         raise SystemExit("未解析到已解析的 Maven 依赖，拒绝输出空 SBOM")
     document = {
