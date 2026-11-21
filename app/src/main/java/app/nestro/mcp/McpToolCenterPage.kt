@@ -234,7 +234,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                         }
                         Switch(
                             checked = tool.granted,
-                            enabled = repository.findServer(tool.serverId)?.enabled == true,
+                            enabled = !loading && (tool.granted || repository.findServer(tool.serverId)?.enabled == true),
                             onCheckedChange = { enabled ->
                                 runCatching { service.setToolGranted(tool.id, enabled) }
                                     .onFailure { status = "工具授权更新失败：" + (it.message ?: "未知错误") }
