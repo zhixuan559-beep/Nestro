@@ -63,6 +63,8 @@ fun ArtifactLibraryPage(projectId: String) {
     }
 
     LaunchedEffect(projectId, refresh) {
+        records = emptyList()
+        preview = null
         val result = withContext(Dispatchers.IO) { runCatching { ArtifactStore.list(context, projectId) } }
         result.onSuccess { records = it }
             .onFailure { status = "加载产物失败：${it.message ?: "本机数据读取异常"}" }
