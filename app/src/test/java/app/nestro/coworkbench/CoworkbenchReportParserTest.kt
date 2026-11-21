@@ -109,9 +109,13 @@ class CoworkbenchReportParserTest {
         )
         assertFalse(emptySuite.successful)
         val withTests = base.copy(
-            testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 2, 2, 0, 0, 0))
+            testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 2, 2, 0, 0, 0)),
+            sbomComponents = listOf(CoworkbenchSbomComponent(
+                "org.example:core", "1.2.3", "pkg:maven/org.example/core@1.2.3", null
+            ))
         )
         assertTrue(withTests.successful)
+        assertFalse(withTests.copy(sbomComponents = emptyList()).successful)
         val truncated = withTests.copy(
             artifacts = listOf(CoworkbenchArtifactReport(
                 1L, "reports", 300_000L,
