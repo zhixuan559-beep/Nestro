@@ -68,12 +68,12 @@ object MediaAiTaskStore {
             .mapNotNull { read(context,projectId,it.nameWithoutExtension) }.sortedByDescending { it.createdAt }
 
     @Synchronized fun update(context: Context, projectId: String, taskId: String, status: MediaAiTaskStatus?=null,
-        progress: Int?=null, resultJson: String?=null, error: String?=null): MediaAiTask {
+        progress: Int?=null, resultJson: String?=null, errorMessage: String?=null): MediaAiTask {
         val old=read(context,projectId,taskId) ?: error("媒体 AI 任务不存在")
         require(old.status !in setOf(MediaAiTaskStatus.COMPLETED,MediaAiTaskStatus.CANCELLED) || status==old.status) { "终态 AI 任务不可覆盖" }
         require(resultJson==null || resultJson.length<=2_000_000) { "AI 任务结果超过 2 MB" }
         val next=old.copy(status=status ?: old.status,progress=progress?.coerceIn(0,100) ?: old.progress,
-            resultJson=resultJson ?: old.resultJson,error=error?.take(1000) ?: old.error,updatedAt=System.currentTimeMillis())
+            resultJson=resultJson ?: old.resultJson,error=errorMessage?.take(1000) ?: old.error,updatedAt=System.currentTimeMillis())
         write(context,next); return next
     }
     @Synchronized fun recoverable(context: Context, projectId: String): List<MediaAiTask> =
