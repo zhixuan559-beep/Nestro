@@ -43,8 +43,9 @@ class ChatRequestContextAssemblerTest {
         assertFalse(observedQuery.lines().contains("历史消息1"))
         assertEquals(1, result.recalledCount)
         assertEquals(listOf(source), result.recallSources)
+        assertEquals(0, knowledgeCalls)
         assertTrue(result.systemContext.indexOf("基础上下文") < result.systemContext.indexOf("历史召回上下文"))
-        assertTrue(result.systemContext.contains("知识库上下文"))
+        assertFalse(result.systemContext.contains("知识库上下文"))
         assertTrue(result.systemContext.contains("用户记忆上下文"))
         assertTrue(result.systemContext.length <= 16_000)
     }
