@@ -145,6 +145,7 @@ object ExpertTeamEngine {
         timeoutMillis: Long = 45_000,
         shouldStop: () -> Boolean = { false },
         onMember: (suspend (String, String) -> Unit)? = null,
+        onHandoff: (suspend (fromMember: String, toMember: String, subtask: String, handoff: String) -> Unit)? = null,
         invoke: suspend (ExpertTeamMemberTask, String) -> String
     ): ExpertTeamRunResult {
         require(teamName.isNotBlank() && teamName.length <= 40)
@@ -222,6 +223,7 @@ object ExpertTeamEngine {
             if (target == null || target.name in visited || subtask.isNullOrBlank() || delegationCount >= maxDelegations) break
 
             handoff = "【" + activeMember.name + "交接】" + cleanOutput.take(1200)
+            onHandoff?.invoke(activeMember.name, target.name, subtask.take(2_000), handoff.take(2_000))
             currentTask = subtask.take(2000)
             current = target
             delegationCount++
