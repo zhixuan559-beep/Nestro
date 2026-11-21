@@ -162,6 +162,93 @@ ${prompt.take(8_000)}
 - 只能使用本轮明确提供的上下文与已授权工具；不得猜测其他项目的数据或访问权限。
 """.trimIndent()
 
+        var nativeToolCallsExecuted = 0
+        try {
+            val nativeResult = chat.completeWithNativeTools(
+                configs = configs,
+                history = requestHistory,
+                systemPrompt = decisionSystem,
+                tools = visibleRows.map { (spec, definition) ->
+                    NativeToolDefinition(spec.id, definition)
+                },
+                temperature = temperature ?: 0.0,
+                maxTokens = maxTokens,
+                onUsage = onUsage,
+                onProviderUsage = onProviderUsage,
+                requestId = "${requestId}-native-tools",
+                shouldStop = shouldStop
+            ) { toolId, arguments ->
+                val spec = available.firstOrNull { it.id == toolId }
+                    ?: return@completeWithNativeTools NativeToolCallResult("工具未注册，已阻止执行：$toolId")
+                nativeToolCallsExecuted++
+                val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+                val scopedAccess = object : AgentToolAccess {
+                    override fun find(id: String) = lease.access.find(id)
+                    override fun list() = lease.access.list()
+                    override suspend fun invoke(id: String, args: Map<String, String>) =
+                        when (id) {
+                            "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
+                            "expert_team.run" -> {
+                                val output = runExpertTeam(systemContext, args).take(8_000)
+                                if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
+                                else AgentToolResult(true, output = output)
+                            }
+                            else -> lease.access.invoke(
+                                id,
+                                if (id.startsWith("mcp_")) args
+                                else args + ("__nestro_project_id" to projectId)
+                            )
+                        }
+                }
+                val requestPermissionRouter = AgentPermissionRouter { task, tool ->
+                    if (tool.id == "phone_agent.plan" && taskModeEnabled) AgentAuthorization.Allow
+                    else permissionRouter.authorize(task, tool)
+                }
+                val runtime: AgentRuntime = DefaultAgentRuntime(
+                    catalog = scopedAccess,
+                    permissions = requestPermissionRouter,
+                    states = stateStore,
+                    traces = RoomAgentTaskTraceStore(database.dao())
+                )
+                val result = try {
+                    runtime.execute(AgentToolRequest(taskId, spec.id, arguments))
+                } finally {
+                    AgentToolLeaseRegistry.release(lease.id)
+                }
+                if (result.requiresUser) {
+                    NativeToolCallResult(
+                        "这项操作尚未执行，需要用户先确认：${result.error}",
+                        requiresUser = true
+                    )
+                } else if (!result.success) {
+                    val detail = result.error.ifBlank { result.output }.take(3_000)
+                    toolContext.append("[工具 ${spec.id} 执行失败] ").append(detail).append("\n")
+                    NativeToolCallResult("工具执行失败：$detail")
+                } else {
+                    val output = result.output.take(8_000)
+                    toolContext.append("[工具 ${spec.id} 执行成功] ").append(output.take(3_000)).append("\n")
+                    NativeToolCallResult(output)
+                }
+            }
+            markTerminal(
+                if (nativeResult.requiresUser) AgentTaskStatus.WAITING_FOR_USER else AgentTaskStatus.COMPLETED
+            )
+            onDirectAnswer(nativeResult.text)
+            return ModelToolDispatchResult(
+                directReply = nativeResult.text,
+                toolContext = toolContext.toString(),
+                requiresUser = nativeResult.requiresUser,
+                streamedToUi = true
+            )
+        } catch (nativeError: Throwable) {
+            if (nativeError is kotlinx.coroutines.CancellationException) throw nativeError
+            if (nativeToolCallsExecuted > 0) {
+                markTerminal(AgentTaskStatus.FAILED, nativeError.message ?: "原生工具执行中断")
+                throw nativeError
+            }
+            // Compatibility fallback for providers that reject native function-calling schemas.
+        }
+
         try {
         repeat(MAX_TOOL_ROUNDS) { round ->
             if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
