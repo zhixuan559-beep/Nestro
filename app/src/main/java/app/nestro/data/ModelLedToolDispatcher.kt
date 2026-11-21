@@ -130,6 +130,11 @@ internal class ModelLedToolDispatcher(
         }
         val toolList = visibleRows.joinToString("\n") { it.second }
         val toolContext = StringBuilder()
+        var generatedVideoAssetId = ""
+        fun attachGeneratedVideo(text: String): String =
+            if (generatedVideoAssetId.isNotBlank() && !text.contains("[NESTRO_VIDEO_ASSET:")) {
+                text.trimEnd() + "\\n\\n[NESTRO_VIDEO_ASSET:$generatedVideoAssetId]"
+            } else text
         val requestHistory = if (history.lastOrNull()?.let { it.role == "user" && it.content == prompt } == true) {
             history
         } else {
@@ -234,9 +239,10 @@ ${prompt.take(8_000)}
             markTerminal(
                 if (nativeResult.requiresUser) AgentTaskStatus.WAITING_FOR_USER else AgentTaskStatus.COMPLETED
             )
-            onDirectAnswer(nativeResult.text)
+            val finalNativeText = attachGeneratedVideo(nativeResult.text)
+            onDirectAnswer(finalNativeText)
             return ModelToolDispatchResult(
-                directReply = nativeResult.text,
+                directReply = finalNativeText,
                 toolContext = toolContext.toString(),
                 requiresUser = nativeResult.requiresUser,
                 streamedToUi = true
@@ -316,13 +322,17 @@ ${prompt.take(8_000)}
             val raw = decisionText.toString()
             val decision = ModelToolDecisionParser.parse(raw) ?: run {
                 markTerminal(AgentTaskStatus.COMPLETED)
-                return ModelToolDispatchResult(directReply = raw)
+                val finalRaw = attachGeneratedVideo(raw)
+                onDirectAnswer(finalRaw)
+                return ModelToolDispatchResult(directReply = finalRaw)
             }
             if (decision.action == "reply") {
                 val answer = decision.text.ifBlank { if (directMode) "模型没有返回正文。" else raw }.take(24_000)
                 markTerminal(AgentTaskStatus.COMPLETED)
+                val finalAnswer = attachGeneratedVideo(answer)
+                onDirectAnswer(finalAnswer)
                 return ModelToolDispatchResult(
-                    directReply = answer,
+                    directReply = finalAnswer,
                     toolContext = toolContext.toString(),
                     streamedToUi = directMode
                 )
