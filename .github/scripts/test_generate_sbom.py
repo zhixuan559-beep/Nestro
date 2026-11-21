@@ -31,7 +31,7 @@ class GenerateSbomTests(unittest.TestCase):
         self.assertEqual([], MODULE.parse_components("No dependencies"))
         with self.assertRaises(ValueError):
             MODULE.parse_components(
-                "\\n".join(
+                "\n".join(
                     f"+--- org.example:lib-{index}:1.0"
                     for index in range(MODULE.MAX_COMPONENTS + 1)
                 )
