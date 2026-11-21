@@ -9,7 +9,6 @@ class ChatRequestContextAssemblerTest {
     @Test
     fun assemblesBoundedContextFromRecentHistoryAndProjectScopedSources() = kotlinx.coroutines.runBlocking {
         var observedQuery = ""
-        var knowledgeCalls = 0
         val source = ConversationRecallSource("old-conversation", "message-1", "旧会话", "user", "历史片段", 1L)
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { projectId, conversationId, query ->
@@ -17,10 +16,6 @@ class ChatRequestContextAssemblerTest {
                 assertEquals("current-conversation", conversationId)
                 observedQuery = query
                 ConversationRecallResult("历史召回上下文", listOf(source))
-            },
-            retrieveKnowledge = { _, _ ->
-                knowledgeCalls++
-                "知识库上下文"
             },
             retrieveUserMemory = { projectId, query ->
                 assertEquals("project-1", projectId)
@@ -43,9 +38,7 @@ class ChatRequestContextAssemblerTest {
         assertFalse(observedQuery.lines().contains("历史消息1"))
         assertEquals(1, result.recalledCount)
         assertEquals(listOf(source), result.recallSources)
-        assertEquals(0, knowledgeCalls)
         assertTrue(result.systemContext.indexOf("基础上下文") < result.systemContext.indexOf("历史召回上下文"))
-        assertFalse(result.systemContext.contains("知识库上下文"))
         assertTrue(result.systemContext.contains("用户记忆上下文"))
         assertTrue(result.systemContext.length <= 16_000)
     }
@@ -58,12 +51,11 @@ class ChatRequestContextAssemblerLightweightTest {
         var retrievalCalls = 0
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> retrievalCalls++; ConversationRecallResult("旧对话", emptyList()) },
-            retrieveKnowledge = { _, _ -> retrievalCalls++; "知识库" },
             retrieveUserMemory = { _, _ -> retrievalCalls++; "个人记忆" }
         )
         val result = assembler.assemble(
             projectId = "p", conversationId = "c", prompt = "帮我搜索咖啡价格",
-            requestHistory = emptyList(), baseSystemContext = "轻量基础上下文", taskModeEnabled = false
+            requestHistory = emptyList(), baseSystemContext = "轻量基础上下文"
         )
         assertEquals(0, retrievalCalls)
         assertEquals(0, result.recalledCount)
@@ -72,17 +64,14 @@ class ChatRequestContextAssemblerLightweightTest {
     }
 
     @Test
-    fun explicitTaskModeAddsPhoneAgentInstructionsButOrdinaryChatDoesNot() = kotlinx.coroutines.runBlocking {
+    fun taskModeDoesNotInjectPhoneAgentInstructionsBeforeModelSelectsTheTool() = kotlinx.coroutines.runBlocking {
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
-            retrieveKnowledge = { _, _ -> "" },
             retrieveUserMemory = { _, _ -> "" }
         )
         val prompt = "帮我预约明天的餐厅"
-        val ordinary = assembler.assemble("p", "c", prompt, emptyList(), "", taskModeEnabled = false)
-        val task = assembler.assemble("p", "c", prompt, emptyList(), "", taskModeEnabled = true)
+        val ordinary = assembler.assemble("p", "c", prompt, emptyList(), "")
         assertFalse(ordinary.systemContext.contains("Phone Agent 目标执行约束"))
-        assertTrue(task.systemContext.contains("Phone Agent 目标执行约束"))
     }
 }
 
@@ -158,10 +147,8 @@ class ChatRequestContextAssemblerParallelRetrievalTest {
             kotlinx.coroutines.withTimeout(1_000) { allStarted.await() }
             return "并行来源"
         }
-        var knowledgeCalls = 0
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> markStarted().let { ConversationRecallResult(it, emptyList()) } },
-            retrieveKnowledge = { _, _ -> knowledgeCalls++; "不应预取" },
             retrieveUserMemory = { _, _ -> markStarted() }
         )
         val result = assembler.assemble(
@@ -172,7 +159,6 @@ class ChatRequestContextAssemblerParallelRetrievalTest {
             baseSystemContext = "base"
         )
         assertEquals(2, started.get())
-        assertEquals(0, knowledgeCalls)
         assertTrue(result.systemContext.contains("并行来源"))
     }
 }
