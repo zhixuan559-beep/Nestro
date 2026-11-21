@@ -369,6 +369,7 @@ internal class GeneratedPluginFactory(
         request: String,
         existingPluginIds: Set<String>,
         discovery: AgentToolDiscovery,
+        allowExistingPluginId: String? = null,
         configs: List<ModelConfig>,
         onUsage: (ModelConfig, Int, Int) -> Unit
     ): GeneratedPluginPackage {
@@ -400,7 +401,7 @@ $toolDirectory
             onUsage
         )
         val plugin = parseGeneratedPluginPackage(raw)
-        require(plugin.id !in existingPluginIds) { "插件 ID 已存在，请生成新的唯一 ID" }
+        require(plugin.id !in existingPluginIds || plugin.id == allowExistingPluginId) { "插件 ID 已存在，请生成新的唯一 ID" }
         GeneratedPluginPackageValidator.validate(plugin, discovery)
         return plugin
     }
