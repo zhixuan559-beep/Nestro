@@ -229,9 +229,9 @@ class NestroApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        mcpToolCenterService.restoreEnabledTools()
         applicationScope.launch {
             ensureBackupRestoreRecovered()
+            mcpToolCenterService.restoreEnabledTools()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
             val activePhoneTaskIds = database.dao().allPhoneAgentTasks()
                 .filter { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }
