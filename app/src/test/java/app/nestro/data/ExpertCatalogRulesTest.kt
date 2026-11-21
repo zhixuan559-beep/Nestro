@@ -17,6 +17,16 @@ class ExpertCatalogRulesTest {
         assertNull(ExpertCatalogRules.validateDefinition("文案官", "更新后的角色要求", "文案官", listOf("文案官")))
     }
 
+    @Test fun rejectsCaseInsensitiveDuplicateExpertNames() {
+        assertEquals(
+            "已存在同名专家，请更换名称",
+            ExpertCatalogRules.validateDefinition("analyst", "分析任务", "", listOf("Analyst"))
+        )
+        assertNull(
+            ExpertCatalogRules.validateDefinition("ANALYST", "更新角色要求", "Analyst", listOf("Analyst"))
+        )
+    }
+
     @Test fun selectedExpertRestoresOnlyWhenItStillExistsAndIsEnabled() {
         val profiles = mapOf("研究员" to ExpertProfile(enabled = true), "停用专家" to ExpertProfile(enabled = false))
         assertEquals("研究员", ExpertCatalogRules.resolveSelection("研究员", listOf("研究员", "停用专家"), profiles))

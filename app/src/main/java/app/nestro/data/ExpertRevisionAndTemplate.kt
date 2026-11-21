@@ -80,35 +80,52 @@ data class ExpertTemplate(
 object ExpertTemplateCodec {
     fun decode(raw: String): List<ExpertTemplate> = runCatching {
         val rows = JSONArray(raw)
-        (0 until rows.length()).mapNotNull { index ->
-            val item = rows.optJSONObject(index) ?: return@mapNotNull null
+        require(rows.length() <= 100) { "自定义模板不能超过 100 个" }
+        val decoded = (0 until rows.length()).map { index ->
+            val item = rows.optJSONObject(index) ?: error("模板列表第 ${index + 1} 项格式无效")
             val name = item.optString("name").trim()
             val prompt = item.optString("prompt")
-            if (name.isBlank() || name.length > 40 || prompt.isBlank() || prompt.length > 8000) null
-            else {
-                val profileJson = item.optJSONObject("profile") ?: JSONObject()
-                val profile = ExpertProfileCodec.decode(JSONObject().put("profile", profileJson).toString())["profile"] ?: ExpertProfile()
-                ExpertTemplate(
-                    item.optString("id").ifBlank { UUID.randomUUID().toString() },
-                    name,
-                    item.optString("description").take(300),
-                    prompt,
-                    profile,
-                    item.optString("category").take(30).ifBlank { profile.group.ifBlank { "自定义" } },
-                    false
-                )
+            require(name.isNotBlank() && name.length <= 40 && prompt.isNotBlank() && prompt.length <= 8000) {
+                "模板名称或角色指令无效"
             }
-        }.take(100)
+            val profileJson = item.optJSONObject("profile") ?: JSONObject()
+            val profile = ExpertProfileCodec.decode(JSONObject().put("profile", profileJson).toString())["profile"] ?: ExpertProfile()
+            ExpertTemplate(
+                item.optString("id").ifBlank { UUID.randomUUID().toString() },
+                name,
+                item.optString("description").take(300),
+                prompt,
+                profile,
+                item.optString("category").take(30).ifBlank { profile.group.ifBlank { "自定义" } },
+                false
+            )
+        }
+        val seenIds = mutableSetOf<String>()
+        decoded.map { template ->
+            if (template.id.isBlank() || template.id.length > 120 || !seenIds.add(template.id)) {
+                val repaired = template.copy(id = UUID.randomUUID().toString())
+                seenIds += repaired.id
+                repaired
+            } else template
+        }
     }.getOrDefault(emptyList())
 
-    fun encode(templates: List<ExpertTemplate>): String = JSONArray().apply {
-        templates.take(100).forEach { template ->
-            val p = template.profile
-            put(JSONObject().put("id", template.id).put("name", template.name).put("description", template.description).put("prompt", template.prompt)
-                .put("category", template.category).put("builtIn", false)
-                .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
-                    .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
-                    .put("description", p.description).put("version", p.version).put("source", p.source)))
+    fun encode(templates: List<ExpertTemplate>): String {
+        require(templates.size <= 100) { "自定义模板不能超过 100 个" }
+        require(templates.map { it.id }.distinct().size == templates.size && templates.all { it.id.isNotBlank() && it.id.length <= 120 }) {
+            "模板 ID 无效或重复"
         }
-    }.toString()
+        val encoded = JSONArray().apply {
+            templates.forEach { template ->
+                val p = template.profile
+                put(JSONObject().put("id", template.id).put("name", template.name).put("description", template.description).put("prompt", template.prompt)
+                    .put("category", template.category).put("builtIn", false)
+                    .put("profile", JSONObject().put("group", p.group).put("avatar", p.avatar).put("enabled", p.enabled)
+                        .put("skills", JSONArray(p.skillNames)).put("temperature", p.temperature).put("maxTokens", p.maxTokens)
+                        .put("description", p.description).put("version", p.version).put("source", p.source)))
+            }
+        }.toString()
+        require(encoded.toByteArray(Charsets.UTF_8).size <= 300_000) { "自定义模板总数据不能超过 300 KB" }
+        return encoded
+    }
 }

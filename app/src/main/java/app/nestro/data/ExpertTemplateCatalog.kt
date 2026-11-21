@@ -32,38 +32,56 @@ object ExpertTemplateBundleCodec {
     fun encode(templates: List<ExpertTemplate>): String {
         require(templates.isNotEmpty() && templates.size <= 100) { "模板数量必须为 1 到 100 个" }
         val clean = templates.map { validate(it) }
-        require(clean.map { it.name }.distinct().size == clean.size) { "模板名称不能重复" }
+        require(clean.map { it.name.lowercase() }.distinct().size == clean.size) { "模板名称不能重复（不区分大小写）" }
+        require(clean.map { it.id }.distinct().size == clean.size) { "模板 ID 不能重复" }
         return JSONObject()
             .put("format", "nestro-expert-templates")
             .put("version", 1)
             .put("templates", JSONArray(ExpertTemplateCodec.encode(clean)))
             .toString(2)
-            .also { require(it.length <= 300_000) { "模板文件超过 300 KB" } }
+            .also { require(it.toByteArray(Charsets.UTF_8).size <= 300_000) { "模板文件超过 300 KB" } }
     }
 
     fun decode(raw: String): List<ExpertTemplate> {
-        require(raw.isNotBlank() && raw.length <= 300_000) { "模板文件为空或超过 300 KB" }
+        require(raw.isNotBlank() && raw.toByteArray(Charsets.UTF_8).size <= 300_000) { "模板文件为空或超过 300 KB" }
         val root = JSONObject(raw)
         require(root.optString("format") == "nestro-expert-templates") { "不是 Nestro 专家模板文件" }
         require(root.optInt("version") == 1) { "不支持的专家模板文件版本" }
         val array = root.optJSONArray("templates") ?: error("模板列表缺失")
         require(array.length() in 1..100) { "模板数量必须为 1 到 100 个" }
+        val rawNames = (0 until array.length()).map { index ->
+            val item = array.optJSONObject(index) ?: error("模板列表第 ${index + 1} 项格式无效")
+            (item.opt("name") as? String)?.trim()?.takeIf { it.isNotBlank() }
+                ?: error("模板名称无效")
+        }
+        require(rawNames.map { it.lowercase() }.distinct().size == rawNames.size) {
+            "模板名称不能重复（不区分大小写）"
+        }
+        val explicitIds = (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.optString("id")?.takeIf { it.isNotBlank() }
+        }
+        require(explicitIds.distinct().size == explicitIds.size) { "模板 ID 不能重复" }
         val decoded = ExpertTemplateCodec.decode(array.toString())
         require(decoded.size == array.length()) { "模板数据包含无效项目" }
         val clean = decoded.map { validate(it) }
-        require(clean.map { it.name }.distinct().size == clean.size) { "模板名称不能重复" }
+        require(clean.map { it.name.lowercase() }.distinct().size == clean.size) { "模板名称不能重复（不区分大小写）" }
+        require(clean.map { it.id }.distinct().size == clean.size) { "模板 ID 不能重复" }
         return clean
     }
 
     private fun validate(template: ExpertTemplate): ExpertTemplate {
+        val id = template.id.trim()
         val name = template.name.trim()
+        val description = template.description.trim()
+        val category = template.category.trim()
         val prompt = template.prompt.trim()
+        require(id.isNotBlank() && id.length <= 120) { "模板 ID 无效" }
         require(name.isNotBlank() && name.length <= 40) { "模板名称必须为 1 到 40 个字符" }
         require(prompt.isNotBlank() && prompt.length <= 8_000) { "模板指令必须为 1 到 8000 个字符" }
-        require(template.description.length <= 300) { "模板描述不能超过 300 个字符" }
-        require(template.category.isNotBlank() && template.category.length <= 30) { "模板分类无效" }
+        require(description.length <= 300) { "模板描述不能超过 300 个字符" }
+        require(category.isNotBlank() && category.length <= 30) { "模板分类无效" }
         val profileError = ExpertProfileCodec.validate(template.profile, template.profile.skillNames.toSet())
         require(profileError == null) { "模板专家配置无效：" + profileError }
-        return template.copy(name = name, prompt = prompt, builtIn = false)
+        return template.copy(id = id, name = name, description = description, category = category, prompt = prompt, builtIn = false)
     }
 }
