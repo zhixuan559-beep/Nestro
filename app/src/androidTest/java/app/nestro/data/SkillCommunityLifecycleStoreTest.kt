@@ -31,6 +31,8 @@ class SkillCommunityLifecycleStoreTest {
 
     @Test fun installUpdateAndRollbackRestoresPreviousVersion() {
         store.install(bundle("1.0.0", "old prompt"))
+        assertTrue((0 until org.json.JSONArray(preferences.getString("disabled_skills_v1", "[]")!!).length())
+            .any { org.json.JSONArray(preferences.getString("disabled_skills_v1", "[]")!!).optString(it) == "CommunitySkill" })
         store.install(bundle("1.1.0", "new prompt"))
         assertEquals("new prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
         assertTrue(store.canRollback("CommunitySkill"))
@@ -47,6 +49,8 @@ class SkillCommunityLifecycleStoreTest {
         assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
         store.rollback("CommunitySkill")
         assertEquals("community prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
+        assertTrue((0 until org.json.JSONArray(preferences.getString("disabled_skills_v1", "[]")!!).length())
+            .any { org.json.JSONArray(preferences.getString("disabled_skills_v1", "[]")!!).optString(it) == "CommunitySkill" })
     }
 
     @Test fun refusesToOverwriteSameNamedLocalSkill() {
