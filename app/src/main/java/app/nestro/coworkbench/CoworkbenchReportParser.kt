@@ -147,8 +147,12 @@ object CoworkbenchReportParser {
                 setFeature("http://xml.org/sax/features/external-parameter-entities", false)
                 isXIncludeAware = false
                 isExpandEntityReferences = false
+                runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "") }
+                runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "") }
             }
-            val builder = factory.newDocumentBuilder()
+            val builder = factory.newDocumentBuilder().apply {
+                setEntityResolver { _, _ -> InputSource(StringReader("")) }
+            }
             val document = builder.parse(InputSource(StringReader(content)))
             val root = document.documentElement ?: return null
             fun count(attribute: String): Int = root.getAttribute(attribute).toIntOrNull()?.coerceAtLeast(0) ?: 0
