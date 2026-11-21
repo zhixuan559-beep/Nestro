@@ -529,7 +529,8 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val staged = git.status().call()
         require(staged.added.isNotEmpty() || staged.changed.isNotEmpty() || staged.removed.isNotEmpty()) { "没有可提交的变更" }
         require(staged.untracked.isEmpty() && staged.modified.isEmpty() && staged.missing.isEmpty()) { "仍有未暂存变更，请重新检查工作区" }
-        git.commit().setMessage(message.trim()).setAuthor(PersonIdent(authorName.trim(), authorEmail.trim())).call().name
+        val identity = PersonIdent(authorName.trim(), authorEmail.trim())
+        git.commit().setMessage(message.trim()).setAuthor(identity).setCommitter(identity).call().name
     }
 
     suspend fun pull(id: String): GitOperationResult = withRepo(id) { git ->
