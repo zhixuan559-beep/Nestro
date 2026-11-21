@@ -54,11 +54,19 @@ class SpeechProvidersTest {
         val controlModel = SpeechProviderConfig(
             "provider", "https://speech.example.com", "key", "model" + lineBreak + "Injected"
         )
+        val invalidInputModel = SpeechProviderConfig(
+            "provider", "https://speech.example.com", "key", "realtime", inputModel = ""
+        )
+        val invalidOutputModel = SpeechProviderConfig(
+            "provider", "https://speech.example.com", "key", "realtime", outputModel = "bad" + lineBreak
+        )
 
         assertThrows(IllegalArgumentException::class.java) { invalidProvider.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { invalidModel.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { emptyKey.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { controlKey.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { controlModel.validateForRemoteProvider() }
+        assertThrows(IllegalArgumentException::class.java) { invalidInputModel.validateForRemoteProvider() }
+        assertThrows(IllegalArgumentException::class.java) { invalidOutputModel.validateForRemoteProvider() }
     }
 }
