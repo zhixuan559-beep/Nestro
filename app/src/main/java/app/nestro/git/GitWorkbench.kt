@@ -530,6 +530,12 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         git.commit().setMessage(message.trim()).setAuthor(identity).setCommitter(identity).call().name
     }
 
+    suspend fun fetch(id: String): GitOperationResult = withRepo(id) { git ->
+        val account = requireAccount(requireLocal(id).accountId)
+        git.fetch().setRemote("origin").setCredentialsProvider(credentials(account)).setTimeout(45).call()
+        GitOperationResult(true, "远程引用已刷新。")
+    }
+
     suspend fun pull(id: String): GitOperationResult = withRepo(id) { git ->
         require(git.status().call().isClean) { "工作区存在未提交变更，请先提交或暂存后再拉取" }
         val result = git.pull().setCredentialsProvider(credentials(requireAccount(requireLocal(id).accountId)))
