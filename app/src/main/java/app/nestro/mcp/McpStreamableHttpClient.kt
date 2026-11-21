@@ -81,7 +81,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val errorData=rpcError?.optJSONObject("data")
     val supported=errorData?.optJSONArray("supported")?:errorData?.optJSONArray("supportedVersions")
     if(reply.code==400&&(message.contains("protocol",true)||message.contains("unsupported",true)||supported!=null)){
-     legacyMode=true;return rpc(method,params,name,schemaJson)
+     legacyMode=true;return rpc(method,JSONObject(params.toString()).apply{remove("_meta")},name,schemaJson)
     }
     if(reply.code==404 || (reply.code==400&&parsed==null)){legacyMode=true;return rpc(method,params,name,schemaJson)}
     error("MCP HTTP "+reply.code+"："+(message.ifBlank{reply.body.take(1000)}))
