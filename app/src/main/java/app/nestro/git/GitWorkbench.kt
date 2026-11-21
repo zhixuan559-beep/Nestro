@@ -580,9 +580,16 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         String(output.toByteArray(), Charsets.UTF_8).take(200_000)
     }
 
-    suspend fun revert(id: String, commitId: String): GitOperationResult = withRepo(id) { git ->
+    suspend fun revert(id: String, commitId: String, authorName: String, authorEmail: String): GitOperationResult = withRepo(id) { git ->
         require(commitId.matches(Regex("[0-9a-fA-F]{7,40}"))) { "提交 ID 格式无效" }
+        require(authorName.isNotBlank() && authorName.length <= 120)
+        require(authorEmail.matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))) { "提交邮箱格式无效" }
         require(git.status().call().isClean) { "工作区存在未提交变更，请先处理后再回滚" }
+        git.repository.config.apply {
+            setString("user", null, "name", authorName.trim())
+            setString("user", null, "email", authorEmail.trim())
+            save()
+        }
         val commit = git.repository.resolve(commitId + "^{commit}") ?: error("找不到指定提交")
         val result = git.revert().include(commit).call()
         when {
