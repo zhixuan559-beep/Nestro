@@ -53,7 +53,8 @@ data class CoworkbenchValidationResult(
     val testReports: List<CoworkbenchTestReport> = emptyList()
 ) {
     val completed: Boolean get() = status == "completed"
-    val successful: Boolean get() = completed && conclusion == "success"
+    val reportedTestFailures: Int get() = testReports.sumOf { it.failures + it.errors }
+    val successful: Boolean get() = completed && conclusion == "success" && reportedTestFailures == 0
 }
 
 /**
