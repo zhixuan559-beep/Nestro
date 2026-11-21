@@ -9,16 +9,17 @@ object SkillDependencyResolver {
     private data class State(
         val constraints: Map<String, List<String>>,
         val selected: Map<String, SignedSkillRelease>,
+        val bundles: Map<String, SkillBundle>,
         val satisfied: Map<String, String>
     )
 
-    fun resolve(rootRelease: SignedSkillRelease, catalog: List<SignedSkillRelease>, installedVersions: Map<String, String>): InstallPlan {
+    fun resolve(rootRelease: SignedSkillRelease, catalog: List<SignedSkillRelease>, installedVersions: Map<String, String>, verifiedRootBundle: SkillBundle? = null): InstallPlan {
         val byName = catalog.groupBy { it.name }
         var attempts = 0
-        val rootBundle = SkillCommunityClient.downloadVerifiedBundle(rootRelease)
+        val rootBundle = verifiedRootBundle ?: SkillCommunityClient.downloadVerifiedBundle(rootRelease)
         require(rootBundle.name == rootRelease.name && rootBundle.version == rootRelease.version) { "根技能与签名目录不一致" }
         val initialConstraints = rootBundle.dependencies.groupBy { it.name }.mapValues { (_, rows) -> rows.map { it.version }.distinct() }
-        val initial = State(initialConstraints, mapOf(rootRelease.name to rootRelease), emptyMap())
+        val initial = State(initialConstraints, mapOf(rootRelease.name to rootRelease), mapOf(rootRelease.name to rootBundle), emptyMap())
 
         fun search(state: State, depth: Int): State? {
             if (depth > 50) return null
@@ -46,7 +47,7 @@ object SkillDependencyResolver {
                     current.add(dep.version)
                     nextConstraints[dep.name] = current.distinct()
                 }
-                val next = State(nextConstraints, state.selected + (unresolved to candidate), state.satisfied)
+                val next = State(nextConstraints, state.selected + (unresolved to candidate), state.bundles + (unresolved to bundle), state.satisfied)
                 val solved = search(next, depth + 1)
                 if (solved != null) return solved
             }
@@ -54,9 +55,7 @@ object SkillDependencyResolver {
         }
 
         val solved = search(initial, 0) ?: error("社区目录无法同时满足全部依赖版本约束；未修改本地技能")
-        val selectedBundles = solved.selected.mapValues { (name, release) ->
-            if (name == rootRelease.name) rootBundle else SkillCommunityClient.downloadVerifiedBundle(release)
-        }
+        val selectedBundles = solved.bundles
         val graph = selectedBundles.mapValues { (_, bundle) -> bundle.dependencies.map { it.name }.filter { it in selectedBundles } }
         val ordered = mutableListOf<SkillBundle>()
         val visiting = mutableSetOf<String>()
