@@ -43,7 +43,7 @@ class SpeechProviderConfigStoreTest {
         )
         store.save(updated)
         assertEquals(updated, store.read())
-        val secondKeyId = org.json.JSONObject(metadata.getString("provider_metadata")!!).getString("keyId")
+        val secondKeyId = org.json.JSONObject(metadata.getString("provider_metadata", null)!!).getString("keyId")
         assertFalse(firstKeyId == secondKeyId)
         assertFalse(vault.contains("model_api_key_v1_" + firstKeyId))
         assertFalse(vault.all.values.any { it.toString().contains(updated.apiKey) })
