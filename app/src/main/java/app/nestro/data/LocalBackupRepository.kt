@@ -255,8 +255,8 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             .put("allDay", event.allDay).put("recurrence", event.recurrence)
             .put("reminderMinutes", event.reminderMinutes).put("completed", event.completed)
             .put("createdAt", event.createdAt).put("updatedAt", event.updatedAt)
-            .put("sourceSystemEventId", event.sourceSystemEventId ?: JSONObject.NULL)
-            .put("sourceSystemCalendarId", event.sourceSystemCalendarId ?: JSONObject.NULL)
+            .put("sourceSystemEventId", JSONObject.NULL)
+            .put("sourceSystemCalendarId", JSONObject.NULL)
             .put("sourceSystemImported", event.sourceSystemImported))
     }
     root.put("calendar_events_v1", calendarArray)
@@ -766,9 +766,9 @@ private suspend fun applyLocalBackup(
             completed = item.booleanOrDefault("completed", false),
             createdAt = item.longOrDefault("createdAt", 0L),
             updatedAt = item.longOrDefault("updatedAt", 0L),
-            sourceSystemEventId = if (item.isNull("sourceSystemEventId")) null else item.longOrDefault("sourceSystemEventId", 0L),
-            sourceSystemCalendarId = if (item.isNull("sourceSystemCalendarId")) null else item.longOrDefault("sourceSystemCalendarId", 0L),
-            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", false)
+            sourceSystemEventId = null,
+            sourceSystemCalendarId = null,
+            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", id.startsWith("system-"))
         )
         require(CalendarRules.validate(event) == null && event.createdAt >= 0L && event.updatedAt >= 0L) {
             "日历日程字段无效，拒绝恢复"
