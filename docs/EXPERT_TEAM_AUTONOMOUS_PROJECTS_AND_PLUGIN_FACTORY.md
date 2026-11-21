@@ -45,15 +45,15 @@
 - 支持不同模型服务商；专家可配置模型策略，但预算、速率限制、并发上限、超时、重试和取消由统一策略控制。
 
 ## 五、当前源码核查结果（2026-11-22）
-- ExpertTeamEngine.run() 已有 2–4 名专家的受限并行执行能力。
+- ExpertTeamEngine.run() 已有 2–4 名专家的受限并行执行能力；本轮新增每位成员独立 assignedTask，并在 MANUAL_PARALLEL 模式下使用各自任务提示词。
 - ExpertTeamEngine.runCollaborative() 是一个专家开始、按 [[DELEGATE: ...]] 逐个交接的链式模式。
-- ExpertTeamExecutionCoordinator.execute() 当前实际调用 runCollaborative()，所以聊天触发的专家团不是自主并行项目分工。
+- ExpertTeamExecutionCoordinator.execute() 现支持 MANUAL_PARALLEL 与 AUTONOMOUS_COLLABORATIVE 两种执行策略；但现有聊天入口尚未提供逐成员派单 UI，且默认仍走链式协作。自主项目模式的主模型任务拆解与 DAG 并行调度尚未接入。
 - NestroApp.kt 当前将专家状态回调写入临时 UI 状态，并保存 ExpertTeamRunHistoryCodec 结果；尚未发现完整持久化成员间消息事件、任务 DAG、交接线程和可交互项目工作区。
 - 当前聊天只在用户已启用任务模式且已明确选中团队时，才把 expert_team.run 暴露给模型；主模型还不能自行选择/组建合适团队并自动启动项目。
 - CapabilityDraftCoordinator 当前只生成 expert/skill 的 name+prompt 文本草案；未发现可执行 Plugin manifest、插件运行沙箱、安装/升级/撤销生命周期。因此 AI 自主插件创造尚未实现。
 
 ## 六、实施验收清单
-- [ ] 手动模式支持用户逐成员派单、依赖设置、消息沟通、介入与控制。
+- [x] 手动模式底层支持逐成员 assignedTask，并可并行执行；[ ] 用户逐成员派单 UI、依赖设置、消息沟通、介入与控制。
 - [ ] 自主项目模式由主模型规划、选人/组队、拆分工作包、设置验收标准。
 - [ ] 专家无依赖任务并行执行，有依赖任务按 DAG 调度。
 - [ ] 成员之间有可追踪消息、请求、交接与答复。
