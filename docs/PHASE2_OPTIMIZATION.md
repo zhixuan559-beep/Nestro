@@ -77,7 +77,7 @@ Finish all feature code and architecture integration first. Only then run the ag
 
 详细约束见 docs/EXPERT_TEAM_AUTONOMOUS_PROJECTS_AND_PLUGIN_FACTORY.md。
 
-已落地的第一步代码：ExpertTeamMemberTask 增加独立 assignedTask，ExpertTeamEngine.run() 会按成员各自任务执行；ExpertTeamExecutionCoordinator 增加 MANUAL_PARALLEL / AUTONOMOUS_COLLABORATIVE 两种执行策略，测试源码覆盖成员任务隔离。当前 UI 尚未接入逐成员派单，聊天入口默认仍走原有链式协作，不能视为双模式产品功能完成。\n\n源码核查纠正：
+已落地的第一步代码：ExpertTeamMemberTask 增加独立 assignedTask，ExpertTeamEngine.run() 会按成员各自任务执行；ExpertTeamExecutionCoordinator 增加 MANUAL_PARALLEL / SEQUENTIAL_DELEGATION 两种执行策略，测试源码覆盖成员任务隔离。当前 UI 尚未接入逐成员派单，聊天入口默认仍走原有链式协作，不能视为双模式产品功能完成。\n\n源码核查纠正：
 - 当前聊天专家团入口调用 ExpertTeamExecutionCoordinator.execute()，其内部实际使用 ExpertTeamEngine.runCollaborative()，是单专家逐个委派的链式协作，不是项目级多专家并行任务 DAG。
 - ExpertTeamEngine.run() 虽有受限并行执行能力，但尚未与主模型项目规划、依赖调度、持久化消息事件、用户可查看的协作工作区和最终主模型审查交付连成闭环。
 - 当前仅有临时成员状态与运行历史，不等于用户可进入的实时协作工作区。
