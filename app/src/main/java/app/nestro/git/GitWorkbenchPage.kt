@@ -60,6 +60,13 @@ fun GitWorkbenchPage(context: Context) {
         locals = withContext(Dispatchers.IO) { repo.localRepositories() }
         if (locals.none { it.id == localId }) localId = locals.firstOrNull()?.id.orEmpty()
     }
+    suspend fun refreshOpenFile(id: String) {
+        val openPath = file
+        if (openPath.isBlank()) return
+        runCatching { repo.readFile(id, openPath) }
+            .onSuccess { editor = it; originalEditor = it }
+            .onFailure { file = ""; editor = ""; originalEditor = "" }
+    }
     suspend fun refreshWorkspace(id: String) {
         changes = runCatching { repo.status(id) }.getOrElse { status = it.message ?: "状态读取失败"; emptyList() }
         branches = runCatching { repo.branches(id) }.getOrElse { status = it.message ?: "分支读取失败"; emptyList() }
@@ -191,7 +198,7 @@ fun GitWorkbenchPage(context: Context) {
                                     scope.launch {
                                         loading = true
                                         runCatching { repo.checkout(selectedLocal.id, branch) }
-                                            .onSuccess { status = "已切换：" + branch; refreshWorkspace(selectedLocal.id) }
+                                            .onSuccess { status = "已切换：" + branch; refreshOpenFile(selectedLocal.id); refreshWorkspace(selectedLocal.id) }
                                             .onFailure { status = it.message ?: "切换失败" }
                                         loading = false
                                     }
@@ -218,7 +225,7 @@ fun GitWorkbenchPage(context: Context) {
                             scope.launch {
                                 loading = true
                                 runCatching { repo.pull(selectedLocal.id) }
-                                    .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString() }
+                                     .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString(); refreshOpenFile(selectedLocal.id) }
                                     .onFailure { status = it.message ?: "Pull 失败" }
                                 refreshWorkspace(selectedLocal.id); loading = false
                             }
@@ -427,7 +434,7 @@ fun GitWorkbenchPage(context: Context) {
                     if (current != null) scope.launch {
                         loading = true
                         runCatching { repo.revert(current.id, target.id, author, email) }
-                            .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString(); refreshWorkspace(current.id) }
+                            .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString(); refreshOpenFile(current.id); refreshWorkspace(current.id) }
                             .onFailure { status = it.message ?: "回滚失败" }
                         loading = false
                     }
