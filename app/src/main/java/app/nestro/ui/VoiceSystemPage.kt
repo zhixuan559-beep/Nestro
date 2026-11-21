@@ -171,6 +171,7 @@ fun VoiceSystemPage() {
                 override fun onConnected(activeSession: RealtimeVoiceSession) {
                     try {
                         val audio = RealtimeVoiceAudioController(activeSession) { message ->
+                            activeSession.close()
                             mainHandler.post { status = message }
                         }
                         audio.start()
@@ -363,7 +364,9 @@ fun VoiceSystemPage() {
             }
         ) { Text(if (remoteRecording) "结束录音并识别" else "开始远程录音") }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
+            Button(
+                enabled = !remoteBusy && !remoteRecording && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
+                onClick = {
                 val existingKey = if (providerApiKey.isBlank()) providerStore.read()?.apiKey.orEmpty() else providerApiKey
                 runCatching {
                     providerStore.save(
@@ -386,7 +389,8 @@ fun VoiceSystemPage() {
                 }
             }) { Text("保存配置") }
             OutlinedButton(
-                enabled = providerConfigured,
+                enabled = providerConfigured && !remoteBusy && !remoteRecording &&
+                    realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting && mediaPlayer == null,
                 onClick = {
                     runCatching { providerStore.delete() }
                         .onSuccess {
