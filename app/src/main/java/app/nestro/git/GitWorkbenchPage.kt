@@ -94,6 +94,7 @@ fun GitWorkbenchPage(context: Context) {
                     OutlinedTextField(username, { username = it }, label = { Text("用户名") }, modifier = Modifier.weight(1f), singleLine = true)
                 }
                 OutlinedTextField(token, { token = it }, label = { Text("Personal Access Token") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
+                Text("令牌需要具备仓库读取与写入权限；令牌不会写入仓库 URL，也不会以明文保存在本地。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(enabled = !loading && username.isNotBlank() && token.isNotBlank(), onClick = {
                     scope.launch {
                         loading = true
