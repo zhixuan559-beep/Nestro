@@ -96,15 +96,24 @@ internal class ChatRequestExecutionCoordinator(
                         maxTokens = request.maxTokens,
                         shouldStop = request.shouldStop,
                         onUsage = onUsage,
-                        onProviderUsage = onProviderUsage
+                        onProviderUsage = onProviderUsage,
+                        onDirectAnswer = { partial ->
+                            partialAnswer.setLength(0)
+                            partialAnswer.append(partial)
+                            onPartialAnswer(partial)
+                        }
                     )
                 }.getOrNull()
             }
             if (coordinated?.directReply != null) {
-                partialAnswer.append(coordinated.directReply)
-                onPartialAnswer(coordinated.directReply)
+                if (!coordinated.streamedToUi) {
+                    partialAnswer.setLength(0)
+                    partialAnswer.append(coordinated.directReply)
+                    onPartialAnswer(coordinated.directReply)
+                }
                 coordinated.directReply
             } else {
+            partialAnswer.setLength(0)
             val streamed = streamingCoordinator.execute(
                 configs = request.modelConfigs,
                 history = ChatRequestPolicy.boundedChatHistory(request.history, finalSystemContext),
