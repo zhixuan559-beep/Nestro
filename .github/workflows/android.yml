@@ -74,9 +74,6 @@ jobs:
     # including SDK setup and both APK builds; 35 minutes killed run #1094 at
     # test 68/70 even though the suite itself was still making progress.
     timeout-minutes: 120
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
