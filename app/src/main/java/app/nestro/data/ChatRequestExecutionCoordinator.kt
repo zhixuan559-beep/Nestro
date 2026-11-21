@@ -83,24 +83,28 @@ internal class ChatRequestExecutionCoordinator(
                 .take(24_000)
 
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
-            val coordinated = modelToolDispatcher?.dispatch(
-                requestId = request.requestId,
-                projectId = request.projectId,
-                prompt = request.prompt,
-                history = request.history,
-                systemContext = finalSystemContext,
-                configs = request.modelConfigs,
-                temperature = request.temperature,
-                maxTokens = request.maxTokens,
-                shouldStop = request.shouldStop,
-                onUsage = onUsage,
-                onProviderUsage = onProviderUsage
-            )
+            val coordinated = modelToolDispatcher?.let { dispatcher ->
+                runCatchingCancellable {
+                    dispatcher.dispatch(
+                        requestId = request.requestId,
+                        projectId = request.projectId,
+                        prompt = request.prompt,
+                        history = request.history,
+                        systemContext = finalSystemContext,
+                        configs = request.modelConfigs,
+                        temperature = request.temperature,
+                        maxTokens = request.maxTokens,
+                        shouldStop = request.shouldStop,
+                        onUsage = onUsage,
+                        onProviderUsage = onProviderUsage
+                    )
+                }.getOrNull()
+            }
             if (coordinated?.directReply != null) {
                 partialAnswer.append(coordinated.directReply)
                 onPartialAnswer(coordinated.directReply)
-                return@runCatchingCancellable coordinated.directReply
-            }
+                coordinated.directReply
+            } else {
             val streamed = streamingCoordinator.execute(
                 configs = request.modelConfigs,
                 history = ChatRequestPolicy.boundedChatHistory(request.history, finalSystemContext),
@@ -125,6 +129,7 @@ internal class ChatRequestExecutionCoordinator(
             partialAnswer.append(streamed.partialAnswer)
             streamed.failure?.let { throw it }
             streamed.response.orEmpty()
+            }
         }
 
         return ChatRequestExecutionResult(
