@@ -42,7 +42,7 @@ internal class ChatRequestExecutionCoordinator(
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         planPhoneAgent: suspend () -> String = { "" },
         onTaskPlanningFailure: (Throwable) -> Unit = {},
-        runExpertTeam: suspend (String) -> String = { "" },
+        runExpertTeam: suspend (String, Map<String, String>) -> String = { _, _ -> "" },
         onPartialAnswer: suspend (String) -> Unit
     ): ChatRequestExecutionResult {
         var recalledCount = 0
