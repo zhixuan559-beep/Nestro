@@ -107,7 +107,7 @@ class OpenAiCompatibleSpeechInputProvider(
             }
             val status = connection.responseCode
             if (status !in 200..299) {
-                throw IllegalStateException(SpeechHttpPolicy.readError(connection, status))
+                throw IllegalStateException(SpeechHttpPolicy.readError(status))
             }
             val body = connection.inputStream.use { SpeechHttpPolicy.readBounded(it, SpeechHttpPolicy.MAX_RESPONSE_BYTES) }
             val transcript = JSONObject(String(body, Charsets.UTF_8)).optString("text").trim()
