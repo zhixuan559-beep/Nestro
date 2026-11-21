@@ -380,7 +380,10 @@ internal object OpenAiClient {
         requestConnections[requestId] = connection
         val answer = StringBuilder()
         try {
-            val body = nativeBody(config, history, systemPrompt, maxTokens).put("stream", true)
+            val body = nativeBody(config, history, systemPrompt, maxTokens)
+            if (config.protocol == app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES) {
+                body.put("stream", true)
+            }
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
             if (code !in 200..299) {
