@@ -133,7 +133,7 @@ internal class ModelLedToolDispatcher(
         var generatedVideoAssetId = ""
         fun attachGeneratedVideo(text: String): String =
             if (generatedVideoAssetId.isNotBlank() && !text.contains("[NESTRO_VIDEO_ASSET:")) {
-                text.trimEnd() + "\\n\\n[NESTRO_VIDEO_ASSET:$generatedVideoAssetId]"
+                text.trimEnd() + "\n\n[NESTRO_VIDEO_ASSET:$generatedVideoAssetId]"
             } else text
         val requestHistory = if (history.lastOrNull()?.let { it.role == "user" && it.content == prompt } == true) {
             history
@@ -232,6 +232,10 @@ ${prompt.take(8_000)}
                     NativeToolCallResult("工具执行失败：$detail")
                 } else {
                     val output = result.output.take(8_000)
+                    if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
+                        generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
+                            .find(output)?.groupValues?.getOrNull(1).orEmpty().ifBlank { generatedVideoAssetId }
+                    }
                     toolContext.append("[工具 ${spec.id} 执行成功] ").append(output.take(3_000)).append("\n")
                     NativeToolCallResult(output)
                 }
@@ -393,6 +397,10 @@ ${prompt.take(8_000)}
             if (!result.success) {
                 toolContext.append("[工具 ${spec.id} 执行失败] ").append(result.error.ifBlank { result.output }.take(3_000)).append("\n")
             } else {
+                if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
+                    generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
+                        .find(result.output)?.groupValues?.getOrNull(1).orEmpty().ifBlank { generatedVideoAssetId }
+                }
                 toolContext.append("[工具 ${spec.id} 执行成功] ").append(result.output.take(3_000)).append("\n")
             }
             workingHistory = (workingHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", "已请求工具：${spec.id}")).takeLast(40)
