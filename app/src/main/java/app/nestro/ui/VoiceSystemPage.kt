@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -59,6 +60,7 @@ fun VoiceSystemPage() {
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val realtimeAudioRef = remember { AtomicReference<RealtimeVoiceAudioController?>(null) }
+    val realtimeConnectCancelled = remember { AtomicReference<AtomicBoolean?>(null) }
     var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
     var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
     var providerInputModel by remember { mutableStateOf(savedProvider?.inputModel ?: "whisper-1") }
@@ -167,14 +169,25 @@ fun VoiceSystemPage() {
             controller.stop()
             status = "正在连接实时语音服务…"
             realtimeConnecting = true
+            val cancelled = AtomicBoolean(false)
+            realtimeConnectCancelled.set(cancelled)
             val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
                 override fun onConnected(activeSession: RealtimeVoiceSession) {
+                    if (cancelled.get()) {
+                        activeSession.close()
+                        return
+                    }
                     try {
                         val audio = RealtimeVoiceAudioController(activeSession) { message ->
                             activeSession.close()
                             mainHandler.post { status = message }
                         }
                         audio.start()
+                        if (cancelled.get()) {
+                            audio.close()
+                            activeSession.close()
+                            return
+                        }
                         realtimeAudioRef.set(audio)
                         mainHandler.post {
                             realtimeAudio = audio
@@ -206,6 +219,7 @@ fun VoiceSystemPage() {
                 }
 
                 override fun onClosed() {
+                    realtimeConnectCancelled.compareAndSet(cancelled, null)
                     realtimeAudioRef.getAndSet(null)?.close()
                     mainHandler.post {
                         realtimeAudio = null
@@ -218,6 +232,7 @@ fun VoiceSystemPage() {
             })
             pendingRealtimeSession = session
         } catch (error: Throwable) {
+            realtimeConnectCancelled.getAndSet(null)?.set(true)
             realtimeConnecting = false
             status = error.message ?: "实时语音连接失败"
         }
@@ -239,6 +254,7 @@ fun VoiceSystemPage() {
         onDispose {
             controller.close()
             speechRecorder?.close()
+            realtimeConnectCancelled.getAndSet(null)?.set(true)
             realtimeAudioRef.getAndSet(null)?.close()
             realtimeSession?.close()
             pendingRealtimeSession?.close()
@@ -365,7 +381,8 @@ fun VoiceSystemPage() {
         ) { Text(if (remoteRecording) "结束录音并识别" else "开始远程录音") }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                enabled = !remoteBusy && !remoteRecording && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
+                enabled = !remoteBusy && !remoteRecording && mediaPlayer == null &&
+                    realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
                 onClick = {
                 val existingKey = if (providerApiKey.isBlank()) providerStore.read()?.apiKey.orEmpty() else providerApiKey
                 runCatching {
@@ -473,6 +490,7 @@ fun VoiceSystemPage() {
             OutlinedButton(
                 enabled = realtimeSession != null || pendingRealtimeSession != null || realtimeConnecting,
                 onClick = {
+                    realtimeConnectCancelled.getAndSet(null)?.set(true)
                     realtimeAudioRef.getAndSet(null)?.close()
                     realtimeAudio = null
                     realtimeSession?.close()
