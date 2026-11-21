@@ -48,14 +48,14 @@
 - ExpertTeamEngine.runCollaborative() 是一个专家开始、按 [[DELEGATE: ...]] 逐个交接的链式模式。
 - ExpertTeamExecutionCoordinator.execute() 现支持 MANUAL_PARALLEL 与 SEQUENTIAL_DELEGATION 两种执行策略；但现有聊天入口尚未提供逐成员派单 UI，且默认仍走链式协作。自主项目模式的主模型任务拆解与 DAG 并行调度尚未接入。
 - NestroApp.kt 当前将专家状态回调写入临时 UI 状态，并保存 ExpertTeamRunHistoryCodec 结果；完整持久化消息事件、任务 DAG、交接线程和可交互项目工作区尚未接通。本轮新增事件模型/codec 与可注入 sink，但还没有 Room 持久化实现或 UI 订阅入口。
-- 当前聊天只在用户已启用任务模式且已明确选中团队时，才把 expert_team.run 暴露给模型；主模型还不能自行选择/组建合适团队并自动启动项目。
+- 本轮已将当前项目中至少有 2 名启用专家作为 expert_team.run 的可用条件；主聊天上下文会附带项目可见专家目录，主模型可在不要求用户预选团队的情况下提交成员名单和项目 DAG 计划。显式选中的团队仍优先作为成员范围。
 - CapabilityDraftCoordinator 当前只生成 expert/skill 的 name+prompt 文本草案；未发现可执行 Plugin manifest、插件运行沙箱、安装/升级/撤销生命周期。因此 AI 自主插件创造尚未实现。
 
 
 ## 七、本轮新增代码（部分已接入执行协调器，产品入口仍未完成）
 - `ExpertProjectPlanExecutor` 已新增：模型生成的 2–12 个工作包计划可进行成员、依赖、字段长度和循环依赖校验；按拓扑层级分波执行，无依赖任务可并发，有依赖任务等待前置成果成功后再执行；输出结构化工作包结果，并支持停止检查与并发上限。
 - 新增 `ExpertProjectPlanExecutorTest`，覆盖拓扑分波、循环依赖拒绝和结构化执行结果。测试源码已提交，但尚未运行。
-- `ExpertTeamCollaborationEvent` / `ExpertTeamCollaborationEventCodec` 已定义项目级事件结构、类型白名单、长度限制和有界编码；`ExpertTeamExecutionCoordinator` 已可通过 `ExpertTeamEventSink` 输出团队开始、成员状态、专家交接、成果提交和团队完成事件。该 sink 仍由上层注入，当前尚未接 Room 持久化、事件恢复和 UI 实时订阅。\n- `ExpertTeamEngine.runCollaborative()` 已暴露真实 handoff callback，协调器可把来源专家、目标专家、子任务和交接内容写成事件。\n- 主模型项目规划、自动选择/创建团队、项目 DAG 接入、用户工作区、最终主模型审查仍未完成。
+- `ExpertTeamCollaborationEvent` / `ExpertTeamCollaborationEventCodec` 已定义项目级事件结构、类型白名单、长度限制和有界编码；聊天入口通过 SharedPreferences 保存最近 500 条事件，并在专家团队页显示最近协作时间线。当前尚未迁移到 Room，也没有独立可交互的项目工作区和完整历史分页。\n- `ExpertTeamEngine.runCollaborative()` 已暴露真实 handoff callback；DAG 执行器也会把前置工作包成果交接给依赖专家，并由协调器记录来源成员、目标成员、工作包和交付内容。\n- 主聊天自动发现专家、按模型提交的计划创建临时团队、DAG 拆解和执行、事件落盘与团队页时间线已接入代码；仍缺专家中心的临时自由组队/逐人派单 UI、可交互项目工作区、双向自由消息、持久化历史分页、阶段返工控制和明确的最终验收回路。主模型可在工具结果返回后继续综合，但尚未建立独立的结构化审查/返工协议。
 
 ## 六、实施验收清单
 - [x] 手动模式底层支持逐成员 assignedTask，并可并行执行；[ ] 用户逐成员派单 UI、依赖设置、消息沟通、介入与控制。
@@ -73,6 +73,6 @@
 ## 八、Android 系统助手入口
 
 - Android 允许符合条件的应用申请 `ROLE_ASSISTANT`。应用可以实现 `VoiceInteractionService`，也可以处理 `Intent.ACTION_ASSIST` 以满足助手角色入口要求；是否可申请必须运行时检查，最终由系统角色选择界面和设备厂商实现决定。
-- 本轮在 Manifest 声明 `ACTION_ASSIST`，并让 MainActivity 从系统助手入口回到 Nestro 主聊天页。这只是系统调用入口的第一步，不等于已实现常驻热词监听、锁屏语音交互、屏幕上下文理解或所有 OEM 的助手替换。
+- 本轮在 Manifest 声明 `ACTION_ASSIST`，MainActivity 从系统助手入口回到 Nestro 主聊天页，设置页增加运行时检查和系统确认式角色申请。这只是系统调用入口的第一步，不等于已实现常驻热词监听、锁屏语音交互、屏幕上下文理解或所有 OEM 的助手替换。
 - 完整系统助手体验仍需评估 `VoiceInteractionService` / `VoiceInteractionSessionService`、系统触发方式、前台服务限制、隐私提示和不同厂商 ROM 兼容。常驻 VoiceInteractionService 必须保持轻量，重任务放在会话服务/实际交互阶段。
 - 系统助手接入不应强制用户授权无关权限；读取屏幕、通知、无障碍操作等能力仍需单独说明、由用户自行启用，并经统一权限路由控制。
