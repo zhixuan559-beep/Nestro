@@ -3,6 +3,8 @@ package app.nestro.ui
 import android.content.Context
 import app.nestro.speech.AndroidTextToSpeechController
 import app.nestro.speech.OpenAiCompatibleSpeechOutputProvider
+import app.nestro.speech.OpenAiCompatibleSpeechInputProvider
+import app.nestro.speech.SpeechRecordingController
 import app.nestro.speech.SpeechProviderConfig
 import app.nestro.speech.SpeechProviderConfigStore
 import app.nestro.speech.OpenAiRealtimeVoiceProvider
@@ -20,6 +22,8 @@ import android.media.MediaPlayer
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +67,8 @@ fun VoiceSystemPage() {
     var providerApiKey by remember { mutableStateOf("") }
     var providerConfigured by remember { mutableStateOf(savedProvider != null) }
     var remoteBusy by remember { mutableStateOf(false) }
+    var remoteRecording by remember { mutableStateOf(false) }
+    var speechRecorder by remember { mutableStateOf<SpeechRecordingController?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
     var realtimeSession by remember { mutableStateOf<RealtimeVoiceSession?>(null) }
@@ -115,6 +121,41 @@ fun VoiceSystemPage() {
             }
         })
     }
+    fun startRemoteRecording() {
+        try {
+            val recorder = SpeechRecordingController()
+            recorder.start()
+            speechRecorder = recorder
+            remoteRecording = true
+            status = "正在录音，点击结束后会将音频发送到已配置的识别服务"
+        } catch (error: Throwable) {
+            remoteRecording = false
+            status = error.message ?: "无法启动远程语音录音"
+        }
+    }
+
+    fun stopRemoteRecording() {
+        val recorder = speechRecorder ?: return
+        speechRecorder = null
+        remoteRecording = false
+        remoteBusy = true
+        status = "正在整理录音并请求远程识别…"
+        scope.launch {
+            try {
+                val wav = withContext(Dispatchers.IO) { recorder.stopAndGetWav() }
+                val config = providerStore.read() ?: error("请先保存远程语音服务配置")
+                val transcript = OpenAiCompatibleSpeechInputProvider().transcribe(wav, "audio/wav", config)
+                speechText = transcript.text
+                status = "远程语音识别完成，文本已回填"
+            } catch (error: Throwable) {
+                status = error.message ?: "远程语音识别失败"
+            } finally {
+                recorder.close()
+                remoteBusy = false
+            }
+        }
+    }
+
     fun connectRealtime() {
         val config = providerStore.read()
         if (config == null) {
@@ -179,6 +220,12 @@ fun VoiceSystemPage() {
         }
     }
 
+    val remoteRecordPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startRemoteRecording() else status = "需要麦克风权限才能使用远程语音识别"
+    }
+
     val realtimePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -188,6 +235,7 @@ fun VoiceSystemPage() {
     DisposableEffect(controller) {
         onDispose {
             controller.close()
+            speechRecorder?.close()
             realtimeAudioRef.getAndSet(null)?.close()
             realtimeSession?.close()
             pendingRealtimeSession?.close()
@@ -297,6 +345,20 @@ fun VoiceSystemPage() {
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true
         )
+        Text("远程语音识别")
+        OutlinedButton(
+            enabled = providerConfigured && providerInputModel.isNotBlank() &&
+                (!remoteBusy || remoteRecording) && realtimeSession == null && pendingRealtimeSession == null,
+            onClick = {
+                if (remoteRecording) {
+                    stopRemoteRecording()
+                } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    startRemoteRecording()
+                } else {
+                    remoteRecordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        ) { Text(if (remoteRecording) "结束录音并识别" else "开始远程录音") }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
                 val existingKey = if (providerApiKey.isBlank()) providerStore.read()?.apiKey.orEmpty() else providerApiKey
@@ -389,7 +451,7 @@ fun VoiceSystemPage() {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
+                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting && !remoteRecording,
                 onClick = {
                     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         connectRealtime()
