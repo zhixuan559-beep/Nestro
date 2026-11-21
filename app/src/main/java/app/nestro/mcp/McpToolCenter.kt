@@ -94,13 +94,13 @@ class McpToolCenterRepository(context:Context) {
 }
 object McpToolCenterCodec {
  fun encodeServers(items:List<McpServerRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("name",it.name).put("endpoint",it.endpoint).put("enabled",it.enabled))}}.toString()
- fun decodeServers(raw:String):List<McpServerRecord>=runCatching{
+ fun decodeServers(raw:String):List<McpServerRecord> = runCatching{
   val a=JSONArray(raw);require(a.length()<=50)
   (0 until a.length()).map{i->val o=a.getJSONObject(i);McpServerRecord(o.getString("id"),o.getString("name"),McpEndpointPolicy.requireValid(o.getString("endpoint")),o.optBoolean("enabled",true))}
    .also{require(it.map(McpServerRecord::id).distinct().size==it.size)}
  }.getOrDefault(emptyList())
  fun encodeTools(items:List<McpToolDescriptor>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("serverId",it.serverId).put("serverName",it.serverName).put("name",it.name).put("description",it.description).put("inputSchema",it.inputSchemaJson).put("readOnlyHint",it.readOnlyHint).put("granted",it.granted))}}.toString()
- fun decodeTools(raw:String):List<McpToolDescriptor>=runCatching{
+ fun decodeTools(raw:String):List<McpToolDescriptor> = runCatching{
   val a=JSONArray(raw);require(a.length()<=10_000)
   (0 until a.length()).map{i->val o=a.getJSONObject(i);val schema=o.optString("inputSchema","{}");require(schema.length<=64_000&&JSONObject(schema).optString("type","object")=="object")
    McpToolDescriptor(o.getString("id"),o.getString("serverId"),o.getString("serverName"),o.getString("name"),o.optString("description").take(500),schema,o.optBoolean("readOnlyHint",false),o.optBoolean("granted",false))}
@@ -144,6 +144,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   require(remote.size<=200){"单个 MCP 服务最多允许 200 个工具"}
   val previous=repository.listTools().filter{it.serverId==serverId}.associateBy{it.name}
   val found=remote.map{t->McpToolDescriptor(McpToolCenterCodec.toolId(serverId,t.name),serverId,server.name,t.name,t.description.take(500),t.inputSchema.toString(),t.readOnlyHint,previous[t.name]?.granted==true)}
+  previous.values.filterNot{old->found.any{it.name==old.name}}.forEach{catalog.remove(it.id)}
   repository.replaceServerTools(serverId,found);found.forEach{if(it.granted)registerTool(it)else catalog.remove(it.id)}
   return found
  }
@@ -165,7 +166,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
    val current=repository.findServer(d.serverId)?:return@register AgentToolResult(false,error="MCP 服务已删除")
    val raw=arguments["json"]?:"{}"
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
-   try{val output=McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).callTool(d.name,JSONObject(raw));AgentToolResult(true,output.take(32_000))}
+   try{val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).callTool(d.name,JSONObject(raw),d.inputSchemaJson)};AgentToolResult(true,output.take(32_000))}
    catch(cancelled:CancellationException){throw cancelled}
    catch(e:Exception){AgentToolResult(false,error=(e.message?:"MCP 工具调用失败").take(2_000))}
   }
