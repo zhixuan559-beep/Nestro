@@ -10,6 +10,7 @@ import java.util.zip.ZipInputStream
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -140,6 +141,8 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
 
         val deadline = startedAt + TimeUnit.MINUTES.toMillis(timeoutMinutes.toLong())
         var visibleSince: Long? = null
+        var activeRunId: Long? = null
+        try {
         while (System.currentTimeMillis() < deadline) {
             val request = Request.Builder().url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
                 .header("Accept", "application/vnd.github+json")
@@ -164,6 +167,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 }.maxByOrNull { it.createdAt }
             }
             if (found != null) {
+                activeRunId = found.runId
                 visibleSince = visibleSince ?: System.currentTimeMillis()
                 if (found.completed) {
                     val diagnostics = mutableListOf<String>()
@@ -198,6 +202,34 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             delay(5_000L)
         }
         error("远程隔离构建等待超时；任务可能仍在 GitHub Actions 运行，请到仓库 Actions 页面核对，不能据此判断失败")
+        } catch (cancelled: CancellationException) {
+            val runId = activeRunId
+            val remoteCancelled = if (runId == null) false else withContext(NonCancellable) {
+                runCatching { cancelRemoteRun(fullName, token, runId) }.getOrDefault(false)
+            }
+            val message = if (remoteCancelled) {
+                "已向 GitHub Actions 发送远程取消请求；请到 Actions 页面确认任务最终状态。"
+            } else if (runId != null) {
+                "本地等待已取消，但 GitHub 未确认远程取消；Run #$runId 可能仍在运行，请到 Actions 页面核对。"
+            } else {
+                "本地等待已取消；尚未取得远程 Run ID，无法确认远程任务是否已启动或取消。"
+            }
+            throw CancellationException(message).also { it.initCause(cancelled) }
+        }
+    }
+
+    private suspend fun cancelRemoteRun(repository: String, token: String, runId: Long): Boolean {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/runs/" + runId + "/cancel")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .build()
+        return executeCancellable(request).use { response ->
+            response.code == 202 || response.code == 409
+        }
     }
 
     private suspend fun executeCancellable(request: Request): okhttp3.Response =
