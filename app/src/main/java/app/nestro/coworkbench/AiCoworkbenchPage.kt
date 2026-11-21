@@ -102,6 +102,7 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                 status = ""
                 scope.launch {
                     try {
+                        require(patchJson.toByteArray(Charsets.UTF_8).size <= CoworkbenchPolicy.MAX_TOTAL_BYTES + 1_000_000) { "模型补丁 JSON 过大，已拒绝解析" }
                         val raw = patchJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
                         val rows = JSONObject(raw).getJSONArray("files")
                         val proposals = (0 until rows.length()).map { index ->
