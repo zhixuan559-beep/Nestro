@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistry
+import app.nestro.mcp.McpToolCenterPage
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
