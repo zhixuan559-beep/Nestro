@@ -24,6 +24,28 @@ class CoworkbenchReportParserTest {
     }
 
     @Test
+    fun requiresCompleteDualVariantNestroCycloneDxEvidence() {
+        val report = """{
+            "bomFormat":"CycloneDX",
+            "specVersion":"1.5",
+            "metadata":{
+                "component":{"type":"application","name":"Nestro","version":"0.3.1"},
+                "properties":[{"name":"nestro:sbom:source","value":"Gradle debugRuntimeClasspath and releaseRuntimeClasspath dependency reports"}]
+            },
+            "components":[{
+                "type":"library","bom-ref":"pkg:maven/org.example/core@1.2.3",
+                "group":"org.example","name":"core","version":"1.2.3",
+                "purl":"pkg:maven/org.example/core@1.2.3"
+            }]
+        }"""
+        assertTrue(CoworkbenchReportParser.isCompleteCoworkbenchSbom("app/build/reports/coworkbench/bom.cdx.json", report))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom("other.json", report))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
+            "app/build/reports/coworkbench/bom.cdx.json", report.replace("releaseRuntimeClasspath", "testRuntimeClasspath")
+        ))
+    }
+
+    @Test
     fun parsesSpdxPackagesAndPurls() {
         val report = """{
             "spdxVersion":"SPDX-2.3",
@@ -112,10 +134,12 @@ class CoworkbenchReportParserTest {
             testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 2, 2, 0, 0, 0)),
             sbomComponents = listOf(CoworkbenchSbomComponent(
                 "org.example:core", "1.2.3", "pkg:maven/org.example/core@1.2.3", null
-            ))
+            )),
+            sbomComplete = true
         )
         assertTrue(withTests.successful)
         assertFalse(withTests.copy(sbomComponents = emptyList()).successful)
+        assertFalse(withTests.copy(sbomComplete = false).successful)
         val truncated = withTests.copy(
             artifacts = listOf(CoworkbenchArtifactReport(
                 1L, "reports", 300_000L,
