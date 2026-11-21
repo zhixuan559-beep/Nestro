@@ -1,10 +1,6 @@
-package app.nestro.ui
+package app.nestro.mcp
 
 import app.nestro.NestroApplication
-import app.nestro.mcp.McpEndpointPolicy
-import app.nestro.mcp.McpServerRecord
-import app.nestro.mcp.McpToolArgumentValidator
-import app.nestro.mcp.McpToolDescriptor
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
