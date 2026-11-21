@@ -73,7 +73,7 @@ class ChatRequestExecutionCoordinatorTest {
     }
 
     @Test
-    fun taskPlanningRunsOnlyForExplicitTaskMode() = runBlocking {
+    fun taskModeDoesNotPreemptivelyPlanBeforeModelDecision() = runBlocking {
         var planCalls = 0
         val coordinator = coordinator { _, _ -> "reply" }
         coordinator.execute(
@@ -92,7 +92,7 @@ class ChatRequestExecutionCoordinatorTest {
             planPhoneAgent = { planCalls++ },
             onPartialAnswer = { }
         )
-        assertEquals(1, planCalls)
+        assertEquals(0, planCalls)
     }
 
     @Test
@@ -125,7 +125,7 @@ class ChatRequestExecutionCoordinatorTest {
         assertTrue(result.exceptionOrNull() is CancellationException)
     }
     @Test
-    fun taskPlanningFailureIsReportedButDoesNotAbortChat() = runBlocking {
+    fun phoneAgentPlanningCallbackIsDeferredUntilModelSelectsItsTool() = runBlocking {
         var planningError = ""
         val coordinator = coordinator { _, _ -> "reply" }
         val result = coordinator.execute(
@@ -136,8 +136,8 @@ class ChatRequestExecutionCoordinatorTest {
             onTaskPlanningFailure = { planningError = it.message.orEmpty() },
             onPartialAnswer = { }
         )
-        assertEquals("scheduler unavailable", planningError)
-        assertEquals("scheduler unavailable", result.taskPlanningFailure?.message)
+        assertEquals("", planningError)
+        assertEquals(null, result.taskPlanningFailure)
         assertEquals("reply", result.finalization.finalText)
         assertEquals(ChatResponseStatus.SUCCESS, result.finalization.status)
     }
@@ -165,16 +165,11 @@ class ChatRequestExecutionCoordinatorTest {
 
 class ChatRequestExecutionCoordinatorConcurrencyTest {
     @Test
-    fun optionalTaskPlanningOverlapsKnowledgeRetrieval() = runBlocking {
+    fun knowledgeRetrievalDoesNotPreemptivelyStartPhoneAgentPlanning() = runBlocking {
         val started = java.util.concurrent.atomic.AtomicInteger(0)
-        val bothStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
-        suspend fun rendezvous() {
-            if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
-            kotlinx.coroutines.withTimeout(1_000) { bothStarted.await() }
-        }
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
-            retrieveKnowledge = { _, _ -> rendezvous(); "knowledge-context" },
+            retrieveKnowledge = { _, _ -> started.incrementAndGet(); "knowledge-context" },
             retrieveUserMemory = { _, _ -> "" }
         )
         val streaming = ChatStreamingCoordinator(
@@ -186,10 +181,10 @@ class ChatRequestExecutionCoordinatorConcurrencyTest {
             request = request(taskMode = true).copy(prompt = "请根据知识库回答"),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { rendezvous(); "planned" },
+            planPhoneAgent = { error("must not run before model tool selection") },
             onPartialAnswer = { }
         )
-        assertEquals(2, started.get())
+        assertEquals(1, started.get())
         assertEquals("reply", result.finalization.finalText)
     }
 }
