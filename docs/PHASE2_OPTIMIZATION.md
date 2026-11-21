@@ -72,3 +72,14 @@ Finish all feature code and architecture integration first. Only then run the ag
 - `knowledge.search` is available to the model and can only query the project ID injected by the dispatcher, not an ID supplied by the model.
 - `phone_agent.plan` is exposed only when the user explicitly enabled task mode; its planning/scheduling callback is no longer run before the model decision. The model must select this capability before a Phone Agent task can be created.
 - `expert_team.run` is exposed only when the user explicitly selected an enabled team in task mode. Expert-team execution is deferred until the model selects that capability; it no longer runs automatically before the model decision.
+
+## 专家团双模式与 AI 插件工厂（需求已确认，代码未完成）
+
+详细约束见 docs/EXPERT_TEAM_AUTONOMOUS_PROJECTS_AND_PLUGIN_FACTORY.md。
+
+源码核查纠正：
+- 当前聊天专家团入口调用 ExpertTeamExecutionCoordinator.execute()，其内部实际使用 ExpertTeamEngine.runCollaborative()，是单专家逐个委派的链式协作，不是项目级多专家并行任务 DAG。
+- ExpertTeamEngine.run() 虽有受限并行执行能力，但尚未与主模型项目规划、依赖调度、持久化消息事件、用户可查看的协作工作区和最终主模型审查交付连成闭环。
+- 当前仅有临时成员状态与运行历史，不等于用户可进入的实时协作工作区。
+- CapabilityDraftCoordinator 只生成专家/Skill 的文字定义，不是可执行插件工厂；插件 manifest、受限运行时、沙箱测试、审批安装、版本生命周期和回滚均待实现。
+- 上述内容加入本轮优化范围；不能标记为已完成。
