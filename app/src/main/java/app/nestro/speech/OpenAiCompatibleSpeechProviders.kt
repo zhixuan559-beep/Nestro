@@ -47,7 +47,7 @@ class OpenAiCompatibleSpeechOutputProvider(
                 val mime = connection.contentType?.substringBefore(';')?.takeIf { it.startsWith("audio/") }
                     ?: "audio/mpeg"
                 val bytes = BufferedInputStream(connection.inputStream).use {
-                    SpeechHttpPolicy.readBounded(it, MAX_AUDIO_BYTES)
+                    SpeechHttpPolicy.readBounded(it, SpeechHttpPolicy.MAX_AUDIO_BYTES)
                 }
                 require(bytes.isNotEmpty()) { "语音服务返回了空音频" }
                 SpeechAudio(bytes, mime)
@@ -68,7 +68,7 @@ class OpenAiCompatibleSpeechInputProvider(
     ): SpeechTranscript = withContext(Dispatchers.IO) {
         config.validateForRemoteProvider()
         require(config.providerId == providerId) { "语音服务商标识不匹配" }
-        require(audio.isNotEmpty() && audio.size <= MAX_INPUT_AUDIO_BYTES) { "录音为空或超过 25 MB" }
+        require(audio.isNotEmpty() && audio.size <= SpeechHttpPolicy.MAX_INPUT_AUDIO_BYTES) { "录音为空或超过 25 MB" }
         require(mimeType.matches(Regex("audio/[a-zA-Z0-9.+-]{1,40}"))) { "录音格式无效" }
         val endpoint = SpeechHttpPolicy.endpoint(config.baseUrl, "audio/transcriptions")
         val boundary = "NestroSpeech-${UUID.randomUUID()}"
@@ -107,7 +107,7 @@ class OpenAiCompatibleSpeechInputProvider(
             if (status !in 200..299) {
                 throw IllegalStateException(SpeechHttpPolicy.readError(connection, status))
             }
-            val body = connection.inputStream.use { SpeechHttpPolicy.readBounded(it, MAX_RESPONSE_BYTES) }
+            val body = connection.inputStream.use { SpeechHttpPolicy.readBounded(it, SpeechHttpPolicy.MAX_RESPONSE_BYTES) }
             val transcript = JSONObject(String(body, Charsets.UTF_8)).optString("text").trim()
             require(transcript.isNotBlank()) { "语音服务未返回识别文本" }
             SpeechTranscript(transcript, true)
