@@ -89,13 +89,18 @@ internal class ModelLedToolDispatcher(
         temperature: Double?,
         maxTokens: Int?,
         shouldStop: () -> Boolean,
+        taskModeEnabled: Boolean,
+        planPhoneAgent: suspend () -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         onDirectAnswer: suspend (String) -> Unit = {}
     ): ModelToolDispatchResult? {
         // Phone Agent registers short-lived device-action handlers while executing a task;
         // those task-local controls must never leak into ordinary chat tool discovery.
-        val available = catalog.list().filterNot { it.id.startsWith("phone.") }.take(40)
+        val available = catalog.list()
+            .filterNot { it.id.startsWith("phone.") }
+            .filter { it.id != "phone_agent.plan" || taskModeEnabled }
+            .take(40)
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
@@ -227,11 +232,15 @@ ${prompt.take(8_000)}
                 override fun find(toolId: String) = lease.access.find(toolId)
                 override fun list() = lease.access.list()
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
-                    lease.access.invoke(
-                        toolId,
-                        if (toolId.startsWith("mcp_")) arguments
-                        else arguments + ("__nestro_project_id" to projectId)
-                    )
+                    if (toolId == "phone_agent.plan") {
+                        AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
+                    } else {
+                        lease.access.invoke(
+                            toolId,
+                            if (toolId.startsWith("mcp_")) arguments
+                            else arguments + ("__nestro_project_id" to projectId)
+                        )
+                    }
             }
             val runtime: AgentRuntime = DefaultAgentRuntime(
                 catalog = scopedAccess,
