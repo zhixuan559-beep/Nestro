@@ -120,3 +120,42 @@ Finish all feature code and architecture integration first. Only then run the ag
 - Video generation tasks run through WorkManager, persist progress and revision lineage, download HTTPS outputs under size/host constraints, and import assets into the current project.
 - Chat responses expose actions to open generated assets in the media editor or open the secure provider setup screen.
 - Remaining validation and broader optimization work are still pending; no acceptance tests were run in this implementation phase.
+
+## 2026-11-22 — Authoritative task-routing requirements and source-audit corrections
+
+This section supersedes earlier stale statements in this document wherever they conflict with the current branch source or the user-confirmed product requirements below. Implementation status and acceptance status remain separate.
+
+### One-sentence execution: choose a task path, do not force a fixed pipeline
+
+The main model is the single user-facing decision and orchestration entry. It must classify the actual goal and choose the minimum sufficient execution path. The following paths are alternatives/composable branches, not mandatory sequential stages:
+
+1. **Direct conversation / direct creation:** answer, explain, write or create directly when the configured model can do so. For substantial creative work, use the expert collaboration path when it materially improves the deliverable; do not start phone automation or unrelated tools.
+2. **Phone task / commerce task:** invoke the phone execution path only when the goal requires an app or device action. Example: “order me a cup of milk tea” → open an isolated/virtual phone environment, inspect available merchants and prices, compare eligible options, prepare the selected order, and stop at the appropriate user-confirmation boundary for payment or irreversible submission. Do not invoke the expert team by default.
+3. **Navigation / real-world handoff:** use the map/navigation app through the isolated phone environment to plan the route and prepare navigation. When the task needs to open or continue navigation on the user's foreground/main screen, explicitly request the required handoff/authorization, then hand the route to the real app. Do not silently take over the foreground screen.
+4. **Research / multi-stage project:** use tools and/or expert work packages only when the goal needs external evidence, multiple specialties, dependent deliverables or cross-review.
+5. **Multimodal task:** route to the configured specialist capability (image/audio/video) only when the input/output requires it; keep the main text model as the orchestrator.
+
+Core efficiency rule: direct-answer requests must not pay for an unnecessary decision round, expert run, retrieval, or tool call. When a decision is needed, provider-native tool calling should be preferred; compatibility text protocol is fallback only for providers that do not support native calling. Measure actual token/network savings during unified acceptance; do not claim savings based only on design.
+
+### Source-audit corrections on this branch
+
+- Provider-native tool-call support for OpenAI-compatible Chat Completions, Anthropic Messages and Gemini is present in the current branch source (OpenAiClient.kt and ModelLedToolDispatcher.kt); older text in this document claiming these adapters are still wholly missing is stale. The complete round-trip, streaming, cancellation, permission and error behavior still requires unified verification.
+- The expert project DAG executor, automatic expert selection/plan handoff, manual expert-center selection, collaboration event timeline and final main-model review instructions have code落点. The richer interactive workspace, bidirectional member chat, pause/resume/rework controls, durable event pagination and structured acceptance protocol remain gap candidates; do not describe the entire expert system as absent.
+- The declarative generated-plugin factory, local store/lifecycle, plugin center UI and catalog registration have code落点. Signature/provenance, dependency lifecycle, sandbox/resource isolation, complete approval/audit semantics and distribution remain separate gap candidates; do not describe the plugin factory as only a prompt draft.
+- Video generation has provider configuration, asynchronous WorkManager tasks, progress/cancellation/recovery, revision linkage and project asset import paths. Real provider interoperability and user-visible playback/revision flows require unified verification.
+- Phone Agent currently exposes an AccessibilityService-backed execution environment. The source defines an interface seam for a future isolated VirtualDisplay adapter, but the current implementation is still the real active accessibility window. Therefore **isolated virtual-screen execution and controlled handoff to the foreground/main screen are not yet implemented by that interface alone**. This is a concrete feature gap for the milk-tea and navigation scenarios, not a reason to downgrade already implemented Phone Agent planning, task persistence, action verification or risk controls.
+- The current task dispatcher exposes selected registered capabilities and gates Phone Agent/expert tools by task-mode/team state. The complete scenario router must not hard-code “expert first” or “phone first”; it must select the correct route based on intent and actual capability availability.
+
+### Work order — do not start acceptance early
+
+A. Complete the post-module-19 additions and close feature gaps, prioritizing the scenario router and isolated virtual-screen/handoff path above, plus any missing lifecycle/UI integration found by source audit.
+
+B. Perform source-level engineering cleanup and optimization after feature completion: remove dead/duplicate paths, reconcile stale documentation/status, reduce duplicated orchestration/state ownership, inspect large root files and error/cancellation paths, and improve responsiveness without changing established behavior.
+
+C. Only after A and B are complete, begin unified acceptance: compile, JVM tests, lint, Android test sources/instrumentation and emulator flows.
+
+D. After unified acceptance, perform phone/tablet/foldable/landscape/IME/safe-area adaptation and representative performance profiling; then real-device installation, permissions, background recovery, audio/phone automation and battery checks.
+
+E. Build the distributable APP only after the preceding gates pass.
+
+No build, test, lint, emulator or real-device acceptance is authorized during A/B. Do not merge, lock or publish a release until the agreed completion gate.
