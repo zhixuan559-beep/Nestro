@@ -129,6 +129,10 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
             connection.connectTimeout = 15_000
             connection.readTimeout = 120_000
             connection.setRequestProperty("Accept", "video/mp4,video/*,application/octet-stream")
+            val apiHost = URI(config.baseUrl).host
+            if (apiHost.equals(uri.host, ignoreCase = true)) {
+                connection.setRequestProperty(config.videoAuthHeader, config.videoAuthPrefix + config.apiKey)
+            }
             val status = connection.responseCode
             require(status in 200..299) { "视频成品下载失败（HTTP $status）" }
             val mime = connection.contentType.orEmpty().substringBefore(';').lowercase()
