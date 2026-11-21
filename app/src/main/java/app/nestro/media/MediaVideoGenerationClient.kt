@@ -50,21 +50,19 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
 
         var resultUrl: String? = null
         var terminalError: String? = null
-        repeat(MAX_STATUS_POLLS) { attempt ->
+        for (attempt in 0 until MAX_STATUS_POLLS) {
             val statusPath = config.videoStatusPath.replace("{job_id}", encodePathSegment(jobId))
             val statusJson = requestJson("GET", statusPath, null, 25_000)
             val state = readPath(statusJson, config.videoStatusField)?.toString()?.lowercase().orEmpty()
             resultUrl = readPath(statusJson, config.videoResultUrlField)?.toString()?.takeIf { it.isNotBlank() }
-            when {
-                state in SUCCESS_STATES && resultUrl != null -> return@repeat
-                state in FAILURE_STATES -> {
-                    terminalError = readPath(statusJson, "error")?.toString()?.take(800)
-                        ?: "视频生成任务失败（状态：$state）"
-                    return@repeat
-                }
+            if (state in FAILURE_STATES) {
+                terminalError = readPath(statusJson, "error")?.toString()?.take(800)
+                    ?: "视频生成任务失败（状态：$state）"
+                break
             }
+            if (state in SUCCESS_STATES && resultUrl != null) break
             onProgress((8 + ((attempt + 1).toFloat() / MAX_STATUS_POLLS * 78f)).toInt())
-            if (attempt < MAX_STATUS_POLLS - 1 && terminalError == null && resultUrl == null) delay(POLL_INTERVAL_MS)
+            if (attempt < MAX_STATUS_POLLS - 1) delay(POLL_INTERVAL_MS)
         }
         terminalError?.let { error(it) }
         val finalUrl = resultUrl ?: error("视频任务在等待时限内未返回成品地址")
@@ -74,7 +72,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
     }
 
     private fun requestJson(method: String, path: String, payload: String?, timeout: Int): JSONObject {
-        require(path.matches(Regex("[A-Za-z0-9._~/{}/-]{1,240}")) &&
+        require(path.matches(Regex("[A-Za-z0-9._~/%{}-]{1,240}")) &&
             path.replace("{job_id}", "job-id").split('/').none { it == "." || it == ".." }) { "视频接口路径无效" }
         val url = URL(config.baseUrl.trimEnd('/') + "/" + path.trimStart('/'))
         val connection = (url.openConnection() as? HttpURLConnection) ?: error("无法建立视频服务连接")
