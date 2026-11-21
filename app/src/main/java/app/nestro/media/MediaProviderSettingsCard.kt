@@ -45,6 +45,8 @@ fun MediaProviderSettingsCard() {
     var videoStatusPath by remember { mutableStateOf("video/generations/{job_id}") }
     var videoModelField by remember { mutableStateOf("model") }
     var videoPromptField by remember { mutableStateOf("prompt") }
+    var videoAuthHeader by remember { mutableStateOf("Authorization") }
+    var videoAuthPrefix by remember { mutableStateOf("Bearer ") }
     var videoJobIdField by remember { mutableStateOf("id") }
     var videoStatusField by remember { mutableStateOf("status") }
     var videoResultUrlField by remember { mutableStateOf("video_url") }
@@ -69,6 +71,8 @@ fun MediaProviderSettingsCard() {
             videoStatusPath = existing.videoStatusPath
             videoModelField = existing.videoModelField
             videoPromptField = existing.videoPromptField
+            videoAuthHeader = existing.videoAuthHeader
+            videoAuthPrefix = existing.videoAuthPrefix
             videoJobIdField = existing.videoJobIdField
             videoStatusField = existing.videoStatusField
             videoResultUrlField = existing.videoResultUrlField
@@ -83,7 +87,7 @@ fun MediaProviderSettingsCard() {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
             Text("支持 OpenAI 官方音频转写与 OpenAI-compatible 图像理解。场景识别、音频处理只有填写真实服务商端点后才会启用；空路径表示不支持。", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
+            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoAuthHeader="Authorization"; videoAuthPrefix="Bearer "; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
             OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -100,6 +104,8 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(videoStatusPath, { videoStatusPath = it }, label = { Text("任务状态路径（必须包含 {job_id}）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoModelField, { videoModelField = it }, label = { Text("请求体中的模型字段名") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoPromptField, { videoPromptField = it }, label = { Text("请求体中的提示词字段名") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoAuthHeader, { videoAuthHeader = it }, label = { Text("视频 API 认证请求头") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoAuthPrefix, { videoAuthPrefix = it }, label = { Text("视频 API Key 前缀（Bearer 后留空格）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoJobIdField, { videoJobIdField = it }, label = { Text("任务 ID 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoStatusField, { videoStatusField = it }, label = { Text("任务状态响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoResultUrlField, { videoResultUrlField = it }, label = { Text("视频成品 URL 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -126,6 +132,8 @@ fun MediaProviderSettingsCard() {
                                         videoStatusPath = videoStatusPath,
                                         videoModelField = videoModelField,
                                         videoPromptField = videoPromptField,
+                                        videoAuthHeader = videoAuthHeader,
+                                        videoAuthPrefix = videoAuthPrefix,
                                         videoJobIdField = videoJobIdField,
                                         videoStatusField = videoStatusField,
                                         videoResultUrlField = videoResultUrlField
@@ -161,6 +169,8 @@ fun MediaProviderSettingsCard() {
                                         videoStatusPath = videoStatusPath,
                                         videoModelField = videoModelField,
                                         videoPromptField = videoPromptField,
+                                        videoAuthHeader = videoAuthHeader,
+                                        videoAuthPrefix = videoAuthPrefix,
                                         videoJobIdField = videoJobIdField,
                                         videoStatusField = videoStatusField,
                                         videoResultUrlField = videoResultUrlField
@@ -222,6 +232,8 @@ fun MediaProviderSettingsCard() {
                                     videoStatusPath = config.videoStatusPath
                                     videoModelField = config.videoModelField
                                     videoPromptField = config.videoPromptField
+                                    videoAuthHeader = config.videoAuthHeader
+                                    videoAuthPrefix = config.videoAuthPrefix
                                     videoJobIdField = config.videoJobIdField
                                     videoStatusField = config.videoStatusField
                                     videoResultUrlField = config.videoResultUrlField
@@ -259,6 +271,8 @@ fun MediaProviderSettingsCard() {
                                         videoStatusPath = fallback.videoStatusPath
                                         videoModelField = fallback.videoModelField
                                         videoPromptField = fallback.videoPromptField
+                                        videoAuthHeader = fallback.videoAuthHeader
+                                        videoAuthPrefix = fallback.videoAuthPrefix
                                         videoJobIdField = fallback.videoJobIdField
                                         videoStatusField = fallback.videoStatusField
                                         videoResultUrlField = fallback.videoResultUrlField
