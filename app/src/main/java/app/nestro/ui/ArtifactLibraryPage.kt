@@ -39,6 +39,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 @Composable
 fun ArtifactLibraryPage(projectId: String) {
@@ -54,6 +55,7 @@ fun ArtifactLibraryPage(projectId: String) {
     var previewRecord by remember { mutableStateOf<ArtifactRecord?>(null) }
     var status by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
+    var activeSaveRequestId by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         val record = selectedForExport
@@ -71,6 +73,7 @@ fun ArtifactLibraryPage(projectId: String) {
         content = ""
         status = ""
         saving = false
+        activeSaveRequestId = null
         selectedForExport = null
         selectedForDelete = null
         preview = null
@@ -97,12 +100,15 @@ fun ArtifactLibraryPage(projectId: String) {
                 val draftTitle = title
                 val draftContent = content
                 val targetProjectId = projectId
+                val requestId = UUID.randomUUID().toString()
+                activeSaveRequestId = requestId
                 saving = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching { ArtifactStore.save(context, targetProjectId, draftTitle, draftContent) }
                     }
-                    if (projectId == targetProjectId) {
+                    if (activeSaveRequestId == requestId) {
+                        activeSaveRequestId = null
                         saving = false
                         result.fold(
                             { saved ->
