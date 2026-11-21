@@ -8,6 +8,7 @@ import app.nestro.agent.AgentToolLeaseRegistry
 import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentToolResult
 import app.nestro.agent.AgentRuntime
 import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.RoomAgentTaskTraceStore
