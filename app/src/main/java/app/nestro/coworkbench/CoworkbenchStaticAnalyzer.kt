@@ -85,7 +85,7 @@ object CoworkbenchStaticAnalyzer {
             skippedFiles = skipped,
             dependencyDeclarations = dependencies.toList().sorted(),
             findings = findings.distinctBy { listOf(it.category, it.path, it.line, it.evidence) }
-                .sortedWith(compareBy<CoworkbenchFinding>({ it.level.ordinal }, { it.path }, { it.line ?: 0 })),
+                .sortedWith(compareByDescending<CoworkbenchFinding> { it.level.ordinal }.thenBy { it.path }.thenBy { it.line ?: 0 }),
             truncated = truncated
         )
     }
