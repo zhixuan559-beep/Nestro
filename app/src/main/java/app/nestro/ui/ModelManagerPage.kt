@@ -8,6 +8,7 @@ import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelProvider
 import app.nestro.model.ModelApiKey
 import app.nestro.model.ModelDefinition
+import app.nestro.model.ModelProviderPresetCatalog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -111,6 +112,37 @@ internal fun ModelManager(
         Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
         if (registryMessage.isNotBlank()) Text(registryMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
 
+        Text("官方服务商快捷预置", color = Ink, style = MaterialTheme.typography.titleSmall)
+        Text("选择后自动填入官方 API 地址和协议类型；你只需添加自己的 API Key。模型目录仍以服务商实际返回为准。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        ModelProviderPresetCatalog.all.forEach { preset ->
+            val existingPreset = registry.providers.firstOrNull { it.presetId == preset.id }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(preset.displayName, color = Ink)
+                    Text(preset.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedButton(onClick = {
+                    val provider = existingPreset ?: ModelProvider(
+                        id = "preset-provider-${preset.id}",
+                        name = preset.displayName,
+                        baseUrl = preset.baseUrl,
+                        presetId = preset.id,
+                        protocol = preset.protocol
+                    )
+                    if (existingPreset == null) onSaveProvider(provider)
+                    selectedProviderId = provider.id
+                    replacingApiKeyId = ""
+                    apiKeyLabelDraft = ""
+                    apiKeyDraft = ""
+                    registryMessage = if (existingPreset == null) {
+                        "${preset.displayName} 已添加预置；下一步添加 API Key。"
+                    } else {
+                        "已选中 ${preset.displayName}。"
+                    }
+                }) { Text(if (existingPreset == null) "添加" else "选择") }
+            }
+        }
+
         Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
         registry.providers.forEach { provider ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -130,7 +162,15 @@ internal fun ModelManager(
                 })
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, color = Ink)
-                    Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        provider.baseUrl + " · " + when (provider.protocol) {
+                            app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS -> "OpenAI 兼容"
+                            app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES -> "Anthropic Messages"
+                            app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT -> "Gemini 原生"
+                            app.nestro.model.ModelApiProtocol.CUSTOM -> "自定义协议"
+                        },
+                        color = Muted, style = MaterialTheme.typography.bodySmall
+                    )
                 }
                 if (!provider.id.startsWith("legacy-provider-")) {
                     TextButton(onClick = {
