@@ -8,6 +8,10 @@ import androidx.room.withTransaction
 import app.nestro.model.ModelConfigurationRepository
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.phone.PhoneAgentPlanner
+import app.nestro.calendar.CalendarDatabase
+import app.nestro.calendar.CalendarEvent
+import app.nestro.calendar.CalendarRules
+import app.nestro.calendar.CalendarReminderScheduler
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -234,10 +238,28 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             agentTaskTraces = dao.allAgentTaskTraces()
         )
     }
+    val calendarEvents = CalendarDatabase.get(context).calendarDao().allEvents()
+    require(calendarEvents.size <= 2_000) { "日历日程数量超过备份上限" }
+    calendarEvents.forEach { event ->
+        require(CalendarRules.validate(event) == null) { "日历包含无效日程，已中止备份" }
+    }
     val root = JSONObject()
     root.put("format", "nestro-local-backup")
     root.put("version", LocalBackupCompatibility.CURRENT_VERSION)
     root.put("created_at", System.currentTimeMillis())
+    val calendarArray = JSONArray()
+    calendarEvents.forEach { event ->
+        calendarArray.put(JSONObject()
+            .put("id", event.id).put("title", event.title).put("description", event.description)
+            .put("location", event.location).put("startAt", event.startAt).put("endAt", event.endAt)
+            .put("allDay", event.allDay).put("recurrence", event.recurrence)
+            .put("reminderMinutes", event.reminderMinutes).put("completed", event.completed)
+            .put("createdAt", event.createdAt).put("updatedAt", event.updatedAt)
+            .put("sourceSystemEventId", JSONObject.NULL)
+            .put("sourceSystemCalendarId", JSONObject.NULL)
+            .put("sourceSystemImported", event.sourceSystemImported))
+    }
+    root.put("calendar_events_v1", calendarArray)
     root.put("base_url", prefs.getString("base_url", "") ?: "")
     root.put("model", prefs.getString("model", "") ?: "")
     root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
@@ -727,6 +749,33 @@ private suspend fun applyLocalBackup(
     }
     val hasArtifactBackup = root.has("artifacts_v1")
     val restoredArtifactRows = if (hasArtifactBackup) app.nestro.data.ArtifactStore.validateBackup(root.arrayOrEmpty("artifacts_v1"), restoredProjectIds) else JSONArray()
+    val calendarRows = root.arrayOrEmpty("calendar_events_v1")
+    require(calendarRows.length() <= 2_000) { "日历日程数量超过恢复上限" }
+    val restoredCalendarEvents = (0 until calendarRows.length()).map { index ->
+        val item = calendarRows.getJSONObject(index)
+        val event = CalendarEvent(
+            id = item.requiredString("id"),
+            title = item.requiredString("title"),
+            description = item.stringOrDefault("description", ""),
+            location = item.stringOrDefault("location", ""),
+            startAt = item.longOrDefault("startAt", 0L),
+            endAt = item.longOrDefault("endAt", 0L),
+            allDay = item.booleanOrDefault("allDay", false),
+            recurrence = item.stringOrDefault("recurrence", CalendarRules.NONE),
+            reminderMinutes = item.intOrDefault("reminderMinutes", -1),
+            completed = item.booleanOrDefault("completed", false),
+            createdAt = item.longOrDefault("createdAt", 0L),
+            updatedAt = item.longOrDefault("updatedAt", 0L),
+            sourceSystemEventId = null,
+            sourceSystemCalendarId = null,
+            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", item.requiredString("id").startsWith("system-"))
+        )
+        require(CalendarRules.validate(event) == null && event.createdAt >= 0L && event.updatedAt >= 0L) {
+            "日历日程字段无效，拒绝恢复"
+        }
+        event
+    }
+    LocalBackupCompatibility.requireUniqueIds(restoredCalendarEvents.map { it.id }, "日历日程")
     // The legacy format stored this field as a JSON string; current backups store an array.
     // Reuse the already parsed value so both supported representations remain readable.
     val conversationRows = conversations
@@ -1188,6 +1237,17 @@ private suspend fun applyLocalBackup(
         restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
         check(editor.commit()) { "本机设置写入失败，恢复未完成" }
     }
+    // Calendar data is stored in its own Room database; restore it after the main database
+    // transaction. The restore journal contains the previous calendar snapshot as well.
+    CalendarReminderScheduler.cancelAll(context)
+    val calendarDatabase = CalendarDatabase.get(context)
+    calendarDatabase.withTransaction {
+        val calendarDao = calendarDatabase.calendarDao()
+        calendarDao.deleteAll()
+        if (restoredCalendarEvents.isNotEmpty()) calendarDao.putAll(restoredCalendarEvents)
+    }
+    restoredCalendarEvents.forEach { CalendarReminderScheduler.schedule(context, it) }
+
     // Credentials are intentionally excluded from backups. Never retain secrets from the
     // pre-restore installation, even when a restored model happens to reuse the same ID.
     ModelConfigurationRepository(context).clearAllApiKeys()

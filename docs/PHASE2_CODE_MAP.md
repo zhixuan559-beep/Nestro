@@ -47,7 +47,7 @@
 | 15 | AI 共建工作台 | WorkflowEngine、专家、产物、Agent 底座可复用；未见独立共建工作台 | 只有可复用基础，不算模块完成 |
 | 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
 | 17 | 智能剪辑 | 本轮已形成 MediaProjectStore、MediaTimeline/Policy/Codec、MediaEditorPage、MediaRenderEngine/Worker/TaskStore、SRT Codec、MediaIntelligenceProvider 等源码对象；含 SAF 素材库、项目隔离、单视频/音频轨、编辑历史、CompositionPlayer 预览、Transformer/WorkManager 导出和 SRT 编辑。依赖 Media3 1.9.0。已提交至 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；源码已回读核验，尚未编译/测试/设备验收 | 功能代码补齐中；未编译/未测试 |
-| 18 | 日历 | 当前主源码树未发现日历数据/页面/调度实现 | 未发现实现，后续再核验 |
+| 18 | 日历 | `calendar/CalendarDatabase`、`CalendarRepository`、`CalendarRules`、`CalendarReminderScheduler/Worker`、`CalendarProviderBridge`、`CalendarPage`；独立 Room DB、WorkManager 提醒、Android Calendar Provider 读写与权限控制，纳入 LocalBackupRepository | 功能代码已落地；统一构建/测试/模拟器/真机验收待全部模块完成 |
 | 19 | 多模态服务与社区生态 | SpeechProviders、SkillCommunityClient、ArtifactStore | 局部基础已有；不能等同完整多模态服务生态 |
 
 > “未发现”是对当前源码树的初步检索结论，不代表产品设计中不存在需求；后续仍需对资源、配置和隐藏入口做补充核验。
