@@ -15,6 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.text.DateFormat
 import java.util.Date
@@ -45,13 +48,17 @@ fun McpToolCenterPage(app: NestroApplication) {
         scope.launch {
             loading = true
             status = "正在连接 MCP 服务并读取工具目录…"
-            val result = runCatching { service.discover(serverId) }
-            result.fold(
-                { status = "发现完成，共 ${it.size} 个工具。已有授权状态已保留。" },
-                { status = "连接或发现失败：" + (it.message ?: "未知错误") }
-            )
-            reload()
-            loading = false
+            try {
+                val found = service.discover(serverId)
+                status = "发现完成，共 ${found.size} 个工具。已有授权状态已保留。"
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                status = "连接或发现失败：" + (error.message ?: "未知错误")
+            } finally {
+                reload()
+                loading = false
+            }
         }
     }
 
@@ -91,14 +98,28 @@ fun McpToolCenterPage(app: NestroApplication) {
                 McpEndpointPolicy.validate(endpoint) == null,
             onClick = {
                 val id = UUID.randomUUID().toString()
-                try {
-                    repository.saveServer(McpServerRecord(id, serverName.trim(), endpoint.trim()))
-                    if (bearerToken.isNotBlank()) repository.saveCredential(id, bearerToken.trim())
-                    serverName = ""; endpoint = ""; bearerToken = ""
-                    reload()
-                    discover(id)
-                } catch (error: Exception) {
-                    status = "保存失败：" + (error.message ?: "未知错误")
+                val name = serverName.trim()
+                val url = endpoint.trim()
+                val token = bearerToken.trim()
+                scope.launch {
+                    loading = true
+                    try {
+                        withContext(Dispatchers.IO) {
+                            repository.saveServer(McpServerRecord(id, name, url))
+                            if (token.isNotBlank()) repository.saveCredential(id, token)
+                        }
+                        serverName = ""; endpoint = ""; bearerToken = ""
+                        status = "正在连接 MCP 服务并读取工具目录…"
+                        val found = service.discover(id)
+                        status = "发现完成，共 ${found.size} 个工具。"
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        status = "保存或连接失败：" + (error.message ?: "未知错误")
+                    } finally {
+                        reload()
+                        loading = false
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -266,13 +287,17 @@ fun McpToolCenterPage(app: NestroApplication) {
                         scope.launch {
                             loading = true
                             status = "正在调用 " + tool.name + "…"
-                            val result = runCatching { service.invoke(id, args) }
-                            result.fold(
-                                { value -> status = if (value.success) "调用成功：\n" + value.output else "调用失败：" + value.error },
-                                { error -> status = "调用失败：" + (error.message ?: "未知错误") }
-                            )
-                            loading = false
-                            reload()
+                            try {
+                                val value = service.invoke(id, args)
+                                status = if (value.success) "调用成功：\n" + value.output else "调用失败：" + value.error
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                status = "调用失败：" + (error.message ?: "未知错误")
+                            } finally {
+                                loading = false
+                                reload()
+                            }
                         }
                     }
                 ) { Text("确认并调用") }
