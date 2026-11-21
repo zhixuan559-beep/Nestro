@@ -239,7 +239,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                 mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
             }
             val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields, onProgress = onProgress)
-            onProgress(0.9f)
+            onProgress(0.97f)
             val root = JSONObject(response.toString(Charsets.UTF_8))
             val segments = root.optJSONArray("segments")
             val cues = if (segments != null && segments.length() > 0) {
@@ -264,7 +264,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(config.scenePath.isNotBlank() && config.scenePath != "media/scenes") { "当前服务商没有配置真实场景识别接口" }
             onProgress(0.05f)
             val response = multipart(config.scenePath, sourceFile, asset.mimeType, mapOf("model" to config.model), onProgress = onProgress)
-            onProgress(0.9f)
+            onProgress(0.97f)
             val rows = JSONObject(response.toString(Charsets.UTF_8)).optJSONArray("scenes") ?: error("服务商响应缺少 scenes 数组")
             require(rows.length() <= 500) { "场景数量超过限制" }
             val result = (0 until rows.length()).map { index ->
@@ -284,7 +284,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(operation.matches(Regex("[A-Za-z0-9_-]{1,40}"))) { "音频处理操作名称无效" }
             onProgress(0.05f)
             val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation), expectedContentTypePrefix = "audio/", onProgress = onProgress)
-            onProgress(0.9f)
+            onProgress(0.97f)
             require(bytes.isNotEmpty() && bytes.size <= MAX_RESPONSE_BYTES) { "服务商返回的音频为空或超过 100 MB" }
             val output = File.createTempFile("nestro-media-ai-", ".audio")
             output.outputStream().use { it.write(bytes) }
