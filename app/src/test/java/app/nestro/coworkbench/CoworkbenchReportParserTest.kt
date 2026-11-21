@@ -104,6 +104,10 @@ class CoworkbenchReportParserTest {
             createdAt = "2026-11-22T00:00:00Z"
         )
         assertFalse(base.successful)
+        val emptySuite = base.copy(
+            testReports = listOf(CoworkbenchTestReport("TEST-empty.xml", 0, 0, 0, 0, 0))
+        )
+        assertFalse(emptySuite.successful)
         val withTests = base.copy(
             testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 2, 2, 0, 0, 0))
         )
