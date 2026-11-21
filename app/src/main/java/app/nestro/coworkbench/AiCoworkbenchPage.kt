@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.nestro.git.GitWorkbenchRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -58,6 +60,8 @@ fun AiCoworkbenchPage(
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
     var snapshotHistory by remember { mutableStateOf<List<CoworkbenchSnapshot>>(emptyList()) }
     var analysisReport by remember { mutableStateOf<CoworkbenchAnalysisReport?>(null) }
+    var validationJob by remember { mutableStateOf<Job?>(null) }
+    var validationResult by remember { mutableStateOf<CoworkbenchValidationResult?>(null) }
     var contextFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedContextFiles by remember { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(selectedRepoId) {
@@ -105,6 +109,7 @@ fun AiCoworkbenchPage(
                         snapshot = null
                         patchJson = ""
                         analysisReport = null
+                        validationResult = null
                         selectedContextFiles = emptySet()
                         repoMenu = false
                     })
@@ -311,21 +316,46 @@ fun AiCoworkbenchPage(
                 status = "请先选择本地 GitHub 仓库。"
             } else {
                 busy = true
-                scope.launch {
+                validationJob = scope.launch {
                     try {
                         val branch = git.currentBranch(selected.id)
                         val result = validationRunner.dispatchAndWait(selected, workflowFile, branch)
+                        validationResult = result
                         status = if (result.successful) "隔离构建与测试通过：" + result.url
                             else "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
+                    } catch (cancelled: CancellationException) {
+                        status = "已取消本次隔离构建等待；远端任务可能仍在运行，请到 Actions 页面确认。"
                     } catch (error: Exception) {
                         status = error.message ?: "隔离构建未能启动"
-                    } finally { busy = false }
+                    } finally { busy = false; validationJob = null }
                 }
             }
         }, enabled = !busy && CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION && workflowFile.isNotBlank(),
             modifier = Modifier.fillMaxWidth()) { Text("启动隔离构建/测试") }
         if (!CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION) {
             Text("当前按既定流程锁定：十九个模块代码全部完成前，不开放统一编译、自动化、模拟器或真机验收。", style = MaterialTheme.typography.bodySmall)
+        }
+        validationJob?.let { job ->
+            OutlinedButton(onClick = { job.cancel() }, modifier = Modifier.fillMaxWidth()) {
+                Text("取消隔离构建等待")
+            }
+        }
+        validationResult?.let { result ->
+            Divider()
+            Text("Run #${result.runId} · ${result.status} · ${result.conclusion ?: "无结论"}",
+                style = MaterialTheme.typography.titleSmall)
+            Text(result.url, style = MaterialTheme.typography.bodySmall)
+            result.jobs.forEach { job ->
+                Text("${job.name} · ${job.status} · ${job.conclusion ?: "无结论"}",
+                    style = MaterialTheme.typography.titleSmall)
+                job.steps.forEach { step ->
+                    Text("  ${step.name} · ${step.status} · ${step.conclusion ?: "无结论"}",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (job.logExcerpt.isNotBlank()) {
+                    Text(job.logExcerpt.take(12_000), style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         if (busy) CircularProgressIndicator()
         if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
