@@ -21,7 +21,7 @@ class GitWorkbenchPolicyTest {
         assertFalse(GitWorkbenchPolicy.validBranchName("-option"))
         assertFalse(GitWorkbenchPolicy.validBranchName("bad branch"))
         assertFalse(GitWorkbenchPolicy.validBranchName("branch..name"))
-        assertFalse(GitWorkbenchPolicy.validBranchName("refs/heads/main"))
+        assertFalse(GitWorkbenchPolicy.validBranchName("branch.lock"))
     }
 
     @Test fun filePathsCannotEscapeRepositoryOrTouchGitMetadata() {
