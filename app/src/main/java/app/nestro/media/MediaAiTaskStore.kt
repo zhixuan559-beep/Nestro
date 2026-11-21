@@ -28,6 +28,7 @@ data class MediaAiTask(
     val status: MediaAiTaskStatus,
     val progress: Int,
     val resultJson: String = "",
+    val resultConsumed: Boolean = false,
     val error: String = "",
     val createdAt: Long,
     val updatedAt: Long
@@ -61,7 +62,7 @@ object MediaAiTaskStore {
             val j=JSONObject(target.readText(Charsets.UTF_8))
             MediaAiTask(j.getString("id"),j.getString("projectId"),j.getString("assetId"),j.getString("providerId"),
                 j.getString("action"),j.optString("prompt"),MediaAiTaskStatus.valueOf(j.getString("status")),
-                j.optInt("progress").coerceIn(0,100),j.optString("resultJson"),j.optString("error").take(1000),
+                j.optInt("progress").coerceIn(0,100),j.optString("resultJson"),j.optBoolean("resultConsumed",false),j.optString("error").take(1000),
                 j.getLong("createdAt"),j.getLong("updatedAt")).also { require(it.id==taskId && it.projectId==projectId) }
         }.getOrNull()
     }
@@ -70,22 +71,26 @@ object MediaAiTaskStore {
             .mapNotNull { read(context,projectId,it.nameWithoutExtension) }.sortedByDescending { it.createdAt }
 
     @Synchronized fun update(context: Context, projectId: String, taskId: String, status: MediaAiTaskStatus?=null,
-        progress: Int?=null, resultJson: String?=null, errorMessage: String?=null): MediaAiTask {
+        progress: Int?=null, resultJson: String?=null, resultConsumed: Boolean?=null, errorMessage: String?=null): MediaAiTask {
         val old=read(context,projectId,taskId) ?: error("媒体 AI 任务不存在")
         require(old.status !in setOf(MediaAiTaskStatus.COMPLETED,MediaAiTaskStatus.CANCELLED) || status==old.status) { "终态 AI 任务不可覆盖" }
         require(resultJson==null || resultJson.length<=2_000_000) { "AI 任务结果超过 2 MB" }
         val next=old.copy(status=status ?: old.status,progress=progress?.coerceIn(0,100) ?: old.progress,
-            resultJson=resultJson ?: old.resultJson,error=errorMessage?.take(1000) ?: old.error,updatedAt=System.currentTimeMillis())
+            resultJson=resultJson ?: old.resultJson,resultConsumed=resultConsumed ?: old.resultConsumed,
+            error=errorMessage?.take(1000) ?: old.error,updatedAt=System.currentTimeMillis())
         write(context,next); return next
     }
     @Synchronized fun recoverable(context: Context, projectId: String): List<MediaAiTask> =
         list(context,projectId).filter { it.status==MediaAiTaskStatus.QUEUED || it.status==MediaAiTaskStatus.RUNNING }
 
+    @Synchronized fun pendingResults(context: Context, projectId: String): List<MediaAiTask> =
+        list(context,projectId).filter { it.status==MediaAiTaskStatus.COMPLETED && !it.resultConsumed }
+
     private fun write(context: Context, task: MediaAiTask) {
         val json=JSONObject().put("id",task.id).put("projectId",task.projectId).put("assetId",task.assetId)
             .put("providerId",task.providerId).put("action",task.action).put("prompt",task.prompt)
             .put("status",task.status.name).put("progress",task.progress).put("resultJson",task.resultJson)
-            .put("error",task.error.take(1000)).put("createdAt",task.createdAt).put("updatedAt",task.updatedAt)
+            .put("resultConsumed",task.resultConsumed).put("error",task.error.take(1000)).put("createdAt",task.createdAt).put("updatedAt",task.updatedAt)
         val atomic=android.util.AtomicFile(file(context,task.projectId,task.id))
         val stream=atomic.startWrite()
         try { stream.write(json.toString().toByteArray(Charsets.UTF_8)); stream.fd.sync(); atomic.finishWrite(stream) }
