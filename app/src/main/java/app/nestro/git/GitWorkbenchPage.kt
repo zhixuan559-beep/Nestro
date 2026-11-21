@@ -36,6 +36,7 @@ fun GitWorkbenchPage(context: Context) {
     var changes by remember { mutableStateOf(emptyList<GitChangeRecord>()) }
     var patch by remember { mutableStateOf("") }
     var branches by remember { mutableStateOf(emptyList<String>()) }
+    var currentBranch by remember { mutableStateOf("") }
     var branchMenu by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(emptyList<GitCommitRecord>()) }
     var author by remember { mutableStateOf("") }
@@ -57,6 +58,7 @@ fun GitWorkbenchPage(context: Context) {
     suspend fun refreshWorkspace(id: String) {
         changes = repo.status(id)
         branches = repo.branches(id)
+        currentBranch = repo.currentBranch(id)
         history = repo.history(id, 50)
         patch = repo.diffPatch(id)
         files = repo.files(id, folder)
@@ -167,6 +169,7 @@ fun GitWorkbenchPage(context: Context) {
                     ) { Column(Modifier.padding(10.dp)) { Text(item.fullName); Text(item.localPath, style = MaterialTheme.typography.labelSmall) } }
                 }
                 if (selectedLocal != null) {
+                    Text("当前分支：" + currentBranch, style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { branchMenu = true }) { Text("分支") }
                         DropdownMenu(branchMenu, { branchMenu = false }) {
@@ -291,7 +294,11 @@ fun GitWorkbenchPage(context: Context) {
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Text(item.shortMessage, style = MaterialTheme.typography.bodySmall)
                             Text(item.id.take(10) + " · " + item.author, style = MaterialTheme.typography.labelSmall)
-                            TextButton(onClick = { revertTarget = item }) { Text("反向回滚") }
+                            if (item.parentCount == 1) {
+                                TextButton(onClick = { revertTarget = item }) { Text("反向回滚") }
+                            } else {
+                                Text("根提交或合并提交暂不支持自动回滚", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                     OutlinedButton(enabled = !loading, onClick = {
