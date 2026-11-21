@@ -1,13 +1,6 @@
 name: Module 8 Phone Agent CI
 
 on:
-  push:
-    branches:
-      - feature/module-8-phone-agent
-  pull_request:
-    branches:
-      - feature/module-7-memory
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       jvm_test_filter:
