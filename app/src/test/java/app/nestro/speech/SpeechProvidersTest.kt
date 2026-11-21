@@ -47,9 +47,17 @@ class SpeechProvidersTest {
         val emptyKey = SpeechProviderConfig(
             "provider", "https://speech.example.com", " ", "model"
         )
+        val controlKey = SpeechProviderConfig(
+            "provider", "https://speech.example.com", "key\\nInjected: true", "model"
+        )
+        val controlModel = SpeechProviderConfig(
+            "provider", "https://speech.example.com", "key", "model\\nInjected"
+        )
 
         assertThrows(IllegalArgumentException::class.java) { invalidProvider.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { invalidModel.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { emptyKey.validateForRemoteProvider() }
+        assertThrows(IllegalArgumentException::class.java) { controlKey.validateForRemoteProvider() }
+        assertThrows(IllegalArgumentException::class.java) { controlModel.validateForRemoteProvider() }
     }
 }
