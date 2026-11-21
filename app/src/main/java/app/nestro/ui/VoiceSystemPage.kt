@@ -324,9 +324,12 @@ fun VoiceSystemPage() {
                 enabled = providerConfigured,
                 onClick = {
                     runCatching { providerStore.delete() }
-                    providerConfigured = false
-                    providerApiKey = ""
-                    status = "远程语音服务配置已删除"
+                        .onSuccess {
+                            providerConfigured = false
+                            providerApiKey = ""
+                            status = "远程语音服务配置已删除"
+                        }
+                        .onFailure { status = it.message ?: "删除远程语音服务配置失败" }
                 }
             ) { Text("删除配置") }
         }
