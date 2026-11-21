@@ -356,7 +356,14 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     fun localRepositories(): List<GitLocalRepository> {
         val prefs = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val array = runCatching { JSONArray(prefs.getString(LOCAL_KEY, "[]").orEmpty()) }.getOrDefault(JSONArray())
+        val raw = prefs.getString(LOCAL_KEY, "[]").orEmpty()
+        val array = runCatching { JSONArray(raw).also { require(it.length() <= 100) } }.getOrElse {
+            if (!prefs.contains(LOCAL_CORRUPT_KEY)) {
+                check(prefs.edit().putString(LOCAL_CORRUPT_KEY, raw)
+                    .putLong(LOCAL_CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的本地仓库索引" }
+            }
+            return emptyList()
+        }
         return (0 until array.length()).mapNotNull { i ->
             val row = array.optJSONObject(i) ?: return@mapNotNull null
             val local = runCatching { decodeLocal(row) }.getOrNull() ?: return@mapNotNull null
@@ -437,8 +444,12 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(git.repository.findRef("refs/heads/$name") == null) { "本地分支已存在" }
         if (checkout) require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
         val defaultBranch = requireLocal(id).defaultBranch
-        git.branchCreate().setName(name).setStartPoint("origin/$defaultBranch")
-            .setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM).call()
+        git.branchCreate().setName(name).setStartPoint("HEAD").call()
+        git.repository.config.apply {
+            setString("branch", name, "remote", "origin")
+            setString("branch", name, "merge", "refs/heads/" + name)
+            save()
+        }
         if (checkout) git.checkout().setName(name).call()
     }
 
@@ -466,10 +477,18 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         (local + remoteOnly).distinct().sorted()
     }
 
+    suspend fun stageResolvedFile(id: String, relativePath: String) = withRepo(id) { git ->
+        val safe = GitWorkbenchPolicy.safeRelativePath(relativePath)
+        require(File(requireLocal(id).localPath, safe).isFile) { "冲突文件不存在或尚未保存" }
+        git.add().addFilepattern(safe).call()
+        require(safe !in git.status().call().conflicting) { "文件仍处于冲突状态" }
+    }
+
     suspend fun commit(id: String, message: String, authorName: String, authorEmail: String): String = withRepo(id) { git ->
         require(message.isNotBlank() && message.length <= 500) { "提交说明不能为空且不能超过 500 个字符" }
         require(authorName.isNotBlank() && authorName.length <= 120)
         require(authorEmail.matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"))) { "提交邮箱格式无效" }
+        require(git.status().call().conflicting.isEmpty()) { "存在未解决合并冲突，请编辑冲突文件并逐个标记已解决" }
         git.add().addFilepattern(".").call()
         require(!git.status().call().isClean) { "没有可提交的变更" }
         git.commit().setMessage(message.trim()).setAuthor(PersonIdent(authorName.trim(), authorEmail.trim())).call().name
@@ -592,6 +611,8 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     companion object {
         private const val LOCAL_KEY = "git_local_repositories_v1"
+        private const val LOCAL_CORRUPT_KEY = "git_local_repositories_v1_unreadable_backup"
+        private const val LOCAL_CORRUPT_AT = "git_local_repositories_v1_unreadable_backup_at"
         private const val MAX_FILE_BYTES = 2 * 1024 * 1024
     }
 }
