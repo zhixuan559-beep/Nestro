@@ -66,7 +66,7 @@ object ArtifactStore {
         val stagedPattern = Regex("^\\.([0-9a-fA-F-]{36}\\.md)\\.[0-9a-fA-F-]{36}\\.deleting$")
         val index = File(directory, "index.json")
         val indexedNames = try {
-            if (!index.isFile) emptySet()
+            if (!index.isFile) null
             else {
                 val rows = JSONArray(index.readText(Charsets.UTF_8))
                 (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optString("fileName") }.toSet()
@@ -329,12 +329,20 @@ object ArtifactStore {
             }
         }
         require(removed == 1) { "产物索引状态已变化，请刷新后重试" }
-        writeIndex(context, kept)
         val file = File(root(context), indexed.fileName)
-        if (file.exists() && !file.delete()) {
-            runCatching { writeIndex(context, all) }
-            error("产物文件清理失败，已尝试恢复索引；请刷新后重试")
+        val staged = if (file.isFile) {
+            File(file.parentFile, ".${file.name}.${UUID.randomUUID()}.deleting").also { temporary ->
+                check(file.renameTo(temporary)) { "作品文件暂存失败，已取消删除" }
+            }
+        } else null
+        try {
+            writeIndex(context, kept)
+        } catch (error: Throwable) {
+            if (staged != null && staged.exists()) staged.renameTo(file)
+            throw error
         }
+        // A crash before cleanup is reconciled against the committed index on the next read.
+        if (staged != null && staged.exists()) staged.delete()
     }
 
     fun export(context: Context, record: ArtifactRecord, destination: Uri) {
@@ -477,7 +485,14 @@ object ArtifactStore {
     private fun readAll(context: Context): JSONArray {
         recoverStagedProjectDeletes(context)
         val file = indexFile(context)
-        return if (!file.exists()) JSONArray() else JSONArray(file.readText(Charsets.UTF_8))
+        if (!file.exists()) {
+            val unindexedFiles = root(context).listFiles().orEmpty().any { candidate ->
+                candidate.isFile && candidate.name.endsWith(".md")
+            }
+            require(!unindexedFiles) { "产物索引缺失，但检测到未登记作品文件；已停止继续操作以保护数据" }
+            return JSONArray()
+        }
+        return JSONArray(file.readText(Charsets.UTF_8))
     }
 
     private fun writeIndex(context: Context, rows: JSONArray) {
