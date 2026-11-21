@@ -7,6 +7,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.util.concurrent.atomic.AtomicLong
 
 data class McpRemoteTool(val name:String,val description:String,val inputSchema:JSONObject,val readOnlyHint:Boolean)
@@ -26,7 +30,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
  private var initialized=false
  private var sessionId:String?=null
 
- fun listTools():List<McpRemoteTool> {
+ suspend fun listTools():List<McpRemoteTool> {
   val all=mutableListOf<McpRemoteTool>();var cursor:String?=null
   repeat(10){
    val params=JSONObject()
@@ -48,7 +52,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   require(cursor==null){"MCP 工具目录分页超过 10 页"};return all
  }
 
- fun callTool(name:String,arguments:JSONObject,inputSchemaJson:String):String {
+ suspend fun callTool(name:String,arguments:JSONObject,inputSchemaJson:String):String {
   val params=JSONObject().put("name",name).put("arguments",arguments)
   if(!legacyMode)params.put("_meta",clientMeta())
   val result=rpc("tools/call",params,name,inputSchemaJson).optJSONObject("result")?:error("MCP tools/call 缺少 result")
@@ -57,7 +61,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   return (structured?.toString()?:extractContent(result.optJSONArray("content"))).ifBlank{"工具执行完成（服务未返回文本内容）"}.take(32_000)
  }
 
- private fun rpc(method:String,params:JSONObject,name:String?=null,schemaJson:String="{}"):JSONObject {
+ private suspend fun rpc(method:String,params:JSONObject,name:String?=null,schemaJson:String="{}"):JSONObject {
   if(!legacyMode){
    val id=ids.incrementAndGet()
    val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params)
@@ -85,7 +89,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   require(json.opt("id")?.toString()==id.toString()){"MCP JSON-RPC 响应 ID 不匹配"};return json
  }
 
- private fun initializeLegacy(){
+ private suspend fun initializeLegacy(){
   if(initialized)return
   var lastError="MCP 初始化失败"
   for(version in listOf("2025-11-25","2025-06-18","2025-03-26")){
@@ -126,22 +130,37 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
   .put("io.modelcontextprotocol/clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1"))
   .put("io.modelcontextprotocol/clientCapabilities",JSONObject())
 
- private fun post(payload:JSONObject,method:String,name:String?,schemaJson:String,modern:Boolean,expectResponse:Boolean):McpHttpReply {
-  val builder=Request.Builder().url(url).post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).header("Accept","application/json, text/event-stream")
-  if(modern||protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
-  if(modern){
-   builder.header("Mcp-Method",method)
-   name?.let{builder.header("Mcp-Name",McpHeaderValueEncoder.encode(it))}
-   if(method=="tools/call"&&name!=null)addSchemaHeaders(builder,schemaJson,payload.optJSONObject("params")?.optJSONObject("arguments")?:JSONObject())
+ private suspend fun post(payload:JSONObject,method:String,name:String?,schemaJson:String,modern:Boolean,expectResponse:Boolean):McpHttpReply =
+  suspendCancellableCoroutine { continuation ->
+   val builder=Request.Builder().url(url).post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).header("Accept","application/json, text/event-stream")
+   if(modern||protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
+   if(modern){
+    builder.header("Mcp-Method",method)
+    name?.let{builder.header("Mcp-Name",McpHeaderValueEncoder.encode(it))}
+    if(method=="tools/call"&&name!=null)addSchemaHeaders(builder,schemaJson,payload.optJSONObject("params")?.optJSONObject("arguments")?:JSONObject())
+   }
+   if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
+   if(!modern)sessionId?.let{builder.header("Mcp-Session-Id",it)}
+   val call=client.newCall(builder.build())
+   continuation.invokeOnCancellation { call.cancel() }
+   call.enqueue(object:okhttp3.Callback {
+    override fun onFailure(call:okhttp3.Call,error:java.io.IOException) {
+     if(continuation.isActive)continuation.resumeWithException(error)
+    }
+    override fun onResponse(call:okhttp3.Call,response:okhttp3.Response) {
+     try {
+      val reply=response.use {
+       if(!modern)it.header("Mcp-Session-Id")?.let{session->require(session.length<=512);sessionId=session}
+       val body=readBounded(it.body?.byteStream(),1_000_000)
+       McpHttpReply(it.code,body,it.header("Content-Type").orEmpty(),it.header("Mcp-Session-Id"))
+      }
+      if(continuation.isActive)continuation.resume(reply)
+     } catch(error:Exception) {
+      if(continuation.isActive)continuation.resumeWithException(error)
+     }
+    }
+   })
   }
-  if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
-  if(!modern)sessionId?.let{builder.header("Mcp-Session-Id",it)}
-  client.newCall(builder.build()).execute().use{response->
-   if(!modern)response.header("Mcp-Session-Id")?.let{require(it.length<=512);sessionId=it}
-   val body=readBounded(response.body?.byteStream(),1_000_000)
-   McpHttpReply(response.code,body,response.header("Content-Type").orEmpty(),response.header("Mcp-Session-Id"))
-  }
- }
 
  private fun addSchemaHeaders(builder:Request.Builder,schemaJson:String,args:JSONObject){
   val schema=runCatching{JSONObject(schemaJson)}.getOrNull()?:return
