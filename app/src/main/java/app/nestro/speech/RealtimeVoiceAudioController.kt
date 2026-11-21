@@ -148,8 +148,8 @@ class RealtimeVoiceAudioController(
         runCatching { recorder?.stop() }
         playbackQueue.clear()
         runCatching { playbackThread?.interrupt() }
-        runCatching { captureThread?.join(1_000) }
-        runCatching { playbackThread?.join(1_000) }
+        if (Thread.currentThread() !== captureThread) runCatching { captureThread?.join(1_000) }
+        if (Thread.currentThread() !== playbackThread) runCatching { playbackThread?.join(1_000) }
         runCatching { player?.pause() }
         runCatching { player?.flush() }
         runCatching { player?.stop() }
