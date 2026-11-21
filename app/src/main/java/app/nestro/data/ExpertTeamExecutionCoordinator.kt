@@ -7,6 +7,13 @@ import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
 
+enum class ExpertTeamExecutionMode {
+    /** User assigns each member a work package; independent work runs concurrently. */
+    MANUAL_PARALLEL,
+    /** The lead expert may hand off bounded subtasks to other members. */
+    AUTONOMOUS_COLLABORATIVE
+}
+
 /**
  * Owns expert-team execution and its shared AgentTaskCoordinator lifecycle.
  * Compose callers provide model invocation and UI progress callbacks; the
@@ -21,6 +28,7 @@ class ExpertTeamExecutionCoordinator(
         teamDescription: String,
         task: String,
         members: List<ExpertTeamMemberTask>,
+        mode: ExpertTeamExecutionMode = ExpertTeamExecutionMode.AUTONOMOUS_COLLABORATIVE,
         taskId: String = UUID.randomUUID().toString(),
         shouldStop: () -> Boolean = { false },
         onMember: suspend (String, String) -> Unit = { _, _ -> },
@@ -33,32 +41,47 @@ class ExpertTeamExecutionCoordinator(
         initialCheckpoint = "team:" + teamId + ":queued"
     ) { taskContext ->
         taskContext.checkpoint("team:" + teamId + ":running", 0)
-        val result = ExpertTeamEngine.runCollaborative(
-            teamName = teamName,
-            teamDescription = teamDescription,
-            task = task,
-            members = members,
-            timeoutMillis = 45_000,
-            shouldStop = shouldStop,
-            onMember = onMember,
-            invoke = { member, prompt ->
-                val lease = AgentCapabilityRegistry.openLease(
-                    taskId = taskId,
-                    owner = "expert_team",
-                    operation = member.name,
-                    catalog = toolCatalog
-                )
-                try {
-                    if (lease != null && invokeMemberWithTools == null) {
-                        error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
-                    }
-                    invokeMemberWithTools?.invoke(member, prompt, lease?.access)
-                        ?: invokeMember(member, prompt)
-                } finally {
-                    lease?.let { AgentToolLeaseRegistry.release(it.id) }
+
+        suspend fun invokeWithLease(member: ExpertTeamMemberTask, prompt: String): String {
+            val lease = AgentCapabilityRegistry.openLease(
+                taskId = taskId,
+                owner = "expert_team",
+                operation = member.name,
+                catalog = toolCatalog
+            )
+            return try {
+                if (lease != null && invokeMemberWithTools == null) {
+                    error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
                 }
+                invokeMemberWithTools?.invoke(member, prompt, lease?.access)
+                    ?: invokeMember(member, prompt)
+            } finally {
+                lease?.let { AgentToolLeaseRegistry.release(it.id) }
             }
-        )
+        }
+
+        val result = when (mode) {
+            ExpertTeamExecutionMode.MANUAL_PARALLEL -> ExpertTeamEngine.run(
+                teamName = teamName,
+                teamDescription = teamDescription,
+                task = task,
+                members = members,
+                maxParallel = 4,
+                shouldStop = shouldStop,
+                onMember = onMember,
+                invoke = ::invokeWithLease
+            )
+            ExpertTeamExecutionMode.AUTONOMOUS_COLLABORATIVE -> ExpertTeamEngine.runCollaborative(
+                teamName = teamName,
+                teamDescription = teamDescription,
+                task = task,
+                members = members,
+                timeoutMillis = 45_000,
+                shouldStop = shouldStop,
+                onMember = onMember,
+                invoke = ::invokeWithLease
+            )
+        }
         taskContext.checkpoint("team:" + teamId + ":finished", result.members.size)
         result
     }
