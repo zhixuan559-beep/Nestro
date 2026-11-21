@@ -205,10 +205,17 @@ object CoworkbenchReportParser {
                 skipped = count("skipped")
             } else {
                 val suites = root.getElementsByTagName("testsuite")
-                total = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("tests").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
-                failures = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("failures").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
-                errors = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("errors").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
-                skipped = (0 until suites.length()).sumOf { (suites.item(it) as org.w3c.dom.Element).getAttribute("skipped").toIntOrNull()?.coerceAtLeast(0) ?: 0 }
+                fun suiteCount(element: org.w3c.dom.Element, attribute: String): Int {
+                    if (!element.hasAttribute(attribute)) return 0
+                    val parsed = element.getAttribute(attribute).toIntOrNull()
+                        ?: error("JUnit 子测试套件计数不是整数：$attribute")
+                    require(parsed >= 0) { "JUnit 子测试套件计数不能为负数：$attribute" }
+                    return parsed
+                }
+                total = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "tests") }
+                failures = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "failures") }
+                errors = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "errors") }
+                skipped = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "skipped") }
             }
             require(total >= 0 && failures + errors + skipped <= total) { "JUnit 测试报告计数不一致" }
             CoworkbenchTestReport(path, total, total - failures - errors - skipped,
