@@ -68,7 +68,7 @@ data class GitLocalRepository(
 )
 
 data class GitFileEntry(val path: String, val directory: Boolean, val size: Long)
-data class GitCommitRecord(val id: String, val shortMessage: String, val author: String, val timestamp: Long)
+data class GitCommitRecord(val id: String, val shortMessage: String, val author: String, val timestamp: Long, val parentCount: Int)
 data class GitChangeRecord(val path: String, val changeType: String)
 data class GitOperationResult(val success: Boolean, val message: String, val conflicts: List<String> = emptyList())
 
@@ -488,6 +488,8 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         }
     }
 
+    suspend fun currentBranch(id: String): String = withRepo(id) { git -> git.repository.branch }
+
     suspend fun branches(id: String): List<String> = withRepo(id) { git ->
         val refs = git.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.ALL).call().map { it.name }
         val local = refs.filter { it.startsWith("refs/heads/") }.map { it.removePrefix("refs/heads/") }.toSet()
@@ -542,7 +544,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(limit in 1..200)
         git.log().setMaxCount(limit).call().map { commit ->
             GitCommitRecord(commit.name, commit.shortMessage.take(300),
-                commit.authorIdent?.name.orEmpty(), commit.commitTime.toLong() * 1000L)
+                commit.authorIdent?.name.orEmpty(), commit.commitTime.toLong() * 1000L, commit.parentCount)
         }
     }
 
