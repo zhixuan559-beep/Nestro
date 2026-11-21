@@ -42,7 +42,7 @@ data class SpeechAudio(
     val mimeType: String
 )
 
-/** Optional speech-to-text provider contract for future user-configured services. */
+/** Speech-to-text provider contract for user-configured remote services. */
 interface SpeechInputProvider {
     val providerId: String
 
@@ -53,7 +53,7 @@ interface SpeechInputProvider {
     ): SpeechTranscript
 }
 
-/** Optional text-to-speech provider contract; no provider is bundled by default. */
+/** Text-to-speech provider contract; remote services are opt-in. */
 interface SpeechOutputProvider {
     val providerId: String
 
@@ -63,7 +63,7 @@ interface SpeechOutputProvider {
     ): SpeechAudio
 }
 
-/** Future full-duplex voice conversation provider contract. */
+/** Full-duplex voice conversation provider contract. */
 interface RealtimeVoiceProvider {
     val providerId: String
 
