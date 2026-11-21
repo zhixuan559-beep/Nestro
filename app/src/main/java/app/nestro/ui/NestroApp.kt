@@ -345,6 +345,7 @@ fun NestroApp(initialPage: String = "home") {
     var expertDialogError by expertWorkspaceUiState.expertDialogError
     var expertTeams by expertWorkspaceUiState.expertTeams
     var selectedTeamId by expertWorkspaceUiState.selectedTeamId
+    var manualExpertSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showTeamDialog by expertWorkspaceUiState.showTeamDialog
     var editingTeamId by expertWorkspaceUiState.editingTeamId
     var teamDraftName by expertWorkspaceUiState.teamDraftName
@@ -1026,6 +1027,9 @@ fun NestroApp(initialPage: String = "home") {
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[requestSelectedExpert]?.enabled != false) requestExpertPrompts[requestSelectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills) else "",
                 requestProjectInstructions,
+                if (manualExpertSelection.size in 2..4) {
+                    "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.joinToString("、")
+                } else "",
                 if (requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2) {
                     "当前项目可用专家目录（主模型可按任务需要自动组队）：\\n" + requestExperts
                         .filter { requestExpertProfiles[it]?.enabled != false }
@@ -1106,7 +1110,9 @@ fun NestroApp(initialPage: String = "home") {
                         ?.map { it.trim() }
                         ?.filter { it.isNotBlank() }
                         .orEmpty()
-                    val chosenNames = (selectedTeam?.members ?: requestedMembers)
+                    val chosenNames = (selectedTeam?.members
+                        ?: manualExpertSelection.takeIf { it.size in 2..4 }?.toList()
+                        ?: requestedMembers)
                         .distinct()
                         .filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }
                         .take(4)
@@ -1985,12 +1991,34 @@ fun NestroApp(initialPage: String = "home") {
                                         showExpertTemplatesDialog = true
                                     }) { Text("模板库") }
                                 }
+                                Text("已选专家：${manualExpertSelection.size}/4。可直接临时组队，不必先创建固定团队。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    enabled = manualExpertSelection.size in 2..4,
+                                    onClick = {
+                                        selectedTeamId = ""
+                                        prefs.edit().remove("selected_team_id").apply()
+                                        page = "home"
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("用所选专家开始协作（${manualExpertSelection.size}）") }
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
 
                                 experts.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId, readableProjectIds) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = name in manualExpertSelection,
+                                                enabled = expertProfiles[name]?.enabled != false,
+                                                onCheckedChange = { checked ->
+                                                    manualExpertSelection = if (checked) {
+                                                        (manualExpertSelection + name).take(4).toSet()
+                                                    } else {
+                                                        manualExpertSelection - name
+                                                    }
+                                                }
+                                            )
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
                                                 selectedExpert = name
                                                 prefs.edit().putString("selected_expert", name).apply()
