@@ -33,6 +33,14 @@ object CoworkbenchPolicy {
         return path
     }
 
+    fun selectStage(files: List<CoworkbenchFileReview>, selectedPaths: Set<String>): List<CoworkbenchFileReview> {
+        require(selectedPaths.isNotEmpty()) { "至少选择一个文件阶段应用" }
+        require(selectedPaths.all { path -> files.any { it.path == path } }) { "阶段补丁包含审查范围外的文件" }
+        return files.filter { it.path in selectedPaths }.also {
+            require(it.isNotEmpty()) { "所选阶段没有可应用的文件" }
+        }
+    }
+
     fun validate(proposals: List<CoworkbenchProposal>) {
         require(proposals.isNotEmpty() && proposals.size <= MAX_FILES) { "一次补丁必须包含 1 到 40 个文件" }
         val paths = proposals.map { safePath(it.path) }
@@ -194,11 +202,8 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         require(review.createdAt + 86_400_000L > System.currentTimeMillis()) { "审查已过期，请重新生成" }
         require(review.contentHash == expectedHash && hash(review.repositoryId, review.files) == expectedHash) { "审查摘要不匹配，请重新审查" }
         require(git.localRepositories().any { it.id == review.repositoryId }) { "目标仓库不存在" }
-        val selected = if (selectedPaths == null) review.files else {
-            require(selectedPaths.isNotEmpty()) { "至少选择一个文件阶段应用" }
-            require(selectedPaths.all { path -> review.files.any { it.path == path } }) { "阶段补丁包含审查范围外的文件" }
-            review.files.filter { it.path in selectedPaths }
-        }
+        val selected = if (selectedPaths == null) review.files
+            else CoworkbenchPolicy.selectStage(review.files, selectedPaths)
         selected.forEach { item ->
             require(readOrNull(review.repositoryId, item.path) == item.before) {
                 "文件 " + item.path + " 在审查后已变化，已中止以防止覆盖"
