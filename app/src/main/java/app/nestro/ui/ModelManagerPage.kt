@@ -113,7 +113,7 @@ internal fun ModelManager(
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text("支持官方服务商预置、自定义服务商、多 Key、多模型与 OpenAI 兼容模型目录发现。原生 Claude / Gemini 请求适配仍在开发中。", color = Muted)
+        Text("支持官方服务商预置、自定义服务商、多 Key、多模型，以及 OpenAI 兼容、Claude 原生和 Gemini 原生模型目录发现与请求。", color = Muted)
         Text("新版模型目录 · 服务商 / API Key / 模型独立管理", color = Ink, style = MaterialTheme.typography.titleMedium)
         Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
         if (registryMessage.isNotBlank()) Text(registryMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
@@ -127,39 +127,45 @@ internal fun ModelManager(
                     Text(preset.displayName, color = Ink)
                     Text(preset.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
-                OutlinedButton(onClick = {
-                    val provider = existingPreset ?: ModelProvider(
-                        id = "preset-provider-${preset.id}",
-                        name = preset.displayName,
-                        baseUrl = preset.baseUrl,
-                        presetId = preset.id,
-                        protocol = preset.protocol
-                    )
-                    if (existingPreset == null) onSaveProvider(provider)
-                    selectedProviderId = provider.id
-                    replacingApiKeyId = ""
-                    apiKeyLabelDraft = ""
-                    apiKeyDraft = ""
-                    registryMessage = if (existingPreset == null) {
-                        "${preset.displayName} 已添加预置；下一步添加 API Key。"
-                    } else {
-                        "已选中 ${preset.displayName}。"
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = {
+                        val provider = existingPreset ?: ModelProvider(
+                            id = "preset-provider-${preset.id}",
+                            name = preset.displayName,
+                            baseUrl = preset.baseUrl,
+                            presetId = preset.id,
+                            protocol = preset.protocol
+                        )
+                        if (existingPreset == null) onSaveProvider(provider)
+                        selectedProviderId = provider.id
+                        replacingApiKeyId = ""
+                        apiKeyLabelDraft = ""
+                        apiKeyDraft = ""
+                        registryMessage = if (existingPreset == null) {
+                            "${preset.displayName} 已添加预置；在下方粘贴 API Key 后即可获取模型列表。"
+                        } else {
+                            "已选中 ${preset.displayName}；在下方管理密钥和模型。"
+                        }
+                    }) { Text(if (existingPreset == null) "添加" else "选择") }
+                    if (preset.accountUrl != null) {
+                        TextButton(onClick = { uriHandler.openUri(preset.accountUrl) }) {
+                            Text(if (preset.id == "modelscope") "获取令牌" else "获取 API Key", color = Mint)
+                        }
                     }
-                }) { Text(if (existingPreset == null) "添加" else "选择") }
+                }
             }
         }
 
-        ModelProviderPresetCatalog.byId("modelscope")?.let { preset ->
-            OutlinedButton(
-                onClick = { preset.accountUrl?.let(uriHandler::openUri) },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("打开魔搭账号 · 获取访问令牌") }
+        ModelProviderPresetCatalog.byId("modelscope")?.let {
             OutlinedButton(
                 onClick = { uriHandler.openUri("https://modelscope.cn/magicube/usage") },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("查看魔搭当前免费额度与魔粒") }
-            Text("免费额度、可用模型和并发限制由魔搭账户实时决定；Nestro 不承诺永久免费或固定调用次数。", color = Muted, style = MaterialTheme.typography.bodySmall)
-            Text("魔搭官方 OAuth 需要登记 Nestro 应用，并通过安全服务端完成授权码换 Token；当前先提供官方令牌页直达，不会把账号密码交给 Nestro。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("魔搭免费额度、可用模型和并发限制由账户实时决定；部分 API-Inference 服务可能要求绑定阿里云账号并完成实名认证。Nestro 不承诺永久免费或固定调用次数。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("魔搭官方 OAuth 仍需登记 Nestro 应用，并由安全服务端完成授权码换 Token；当前通过官方令牌页直达，不会收集账号密码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        ModelProviderPresetCatalog.byId("siliconflow")?.let {
+            Text("硅基流动使用 OpenAI 兼容协议；添加 API Key 后可直接刷新实时模型目录。模型价格、可用状态与速率限制以硅基流动平台为准。", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
 
         Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
