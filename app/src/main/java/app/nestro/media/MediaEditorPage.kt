@@ -206,8 +206,8 @@ fun MediaEditorPage(
                                 val existingIds = latestTimeline.subtitles.map { it.id }.toSet()
                                 val merged = (latestTimeline.subtitles + cues.filterNot { it.id in existingIds }).sortedBy { it.startMs }
                                 val next = latestTimeline.copy(subtitles = merged)
-                                withContext(Dispatchers.IO) { MediaProjectStore.saveTimeline(context, projectId, next) }
-                                timeline = next
+                                val savedTimeline = withContext(Dispatchers.IO) { MediaProjectStore.saveTimeline(context, next, latestTimeline.revision) }
+                                timeline = savedTimeline
                                 status = "AI 字幕已生成："+cues.size+" 条。"
                             }
                             "scenes" -> {
