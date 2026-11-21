@@ -161,15 +161,16 @@ ${prompt.take(8_000)}
             }
             val decisionText = StringBuilder()
             val directAnswer = StringBuilder()
+            val decisionTokenBudget = maxTokens?.coerceIn(256, 4_096) ?: 1_200
             var headerResolved = false
             var directMode = false
             var lastDirectUiLength = 0
             chat.streamWithFallback(
                 configs = configs,
-                history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = maxTokens ?: 2048),
+                history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = decisionTokenBudget),
                 systemPrompt = roundSystem,
                 temperature = 0.0,
-                maxTokens = 1_200,
+                maxTokens = decisionTokenBudget,
                 onUsage = onUsage,
                 onProviderUsage = onProviderUsage,
                 requestId = "${requestId}-tool-decision-${round}".take(120),
