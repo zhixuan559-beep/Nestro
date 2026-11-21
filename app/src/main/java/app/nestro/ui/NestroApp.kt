@@ -152,13 +152,6 @@ fun NestroApp(initialPage: String = "home") {
     val scope = rememberCoroutineScope()
     val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
-            "Nestro 已成为系统默认助手入口。"
-        } else {
-            "系统助手设置未更改。"
-        }
-    }
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember(initialPage) { mutableStateOf(initialPage) }
@@ -252,6 +245,13 @@ fun NestroApp(initialPage: String = "home") {
     var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
     var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
     var status by chatExecutionUiState.status
+    val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
+            "Nestro 已成为系统默认助手入口。"
+        } else {
+            "系统助手设置未更改。"
+        }
+    }
     fun canWriteProjectResource(kind: ProjectResourceKind, resourceId: String): Boolean {
         if (projectResourceScopesReadOnly) {
             status = "项目资源范围数据校验失败，已阻止修改。"
