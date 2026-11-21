@@ -180,7 +180,7 @@ ${prompt.take(8_000)}
                 configs = configs,
                 history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = decisionTokenBudget),
                 systemPrompt = roundSystem,
-                temperature = 0.0,
+                temperature = temperature ?: 0.0,
                 maxTokens = decisionTokenBudget,
                 onUsage = onUsage,
                 onProviderUsage = onProviderUsage,
