@@ -25,6 +25,7 @@ class OpenAiCompatibleSpeechOutputProvider(
             val endpoint = SpeechHttpPolicy.endpoint(config.baseUrl, "audio/speech")
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
+                instanceFollowRedirects = false
                 connectTimeout = 15_000
                 readTimeout = 90_000
                 doOutput = true
@@ -44,7 +45,7 @@ class OpenAiCompatibleSpeechOutputProvider(
                 if (status !in 200..299) {
                     throw IllegalStateException(SpeechHttpPolicy.readError(connection, status))
                 }
-                val mime = connection.contentType?.substringBefore(';')?.takeIf { it.startsWith("audio/") }
+                val mime = connection.contentType?.substringBefore(';')?.takeIf { it.startsWith("audio/", ignoreCase = true) }
                     ?: throw IllegalStateException("语音服务返回的不是音频数据")
                 val bytes = BufferedInputStream(connection.inputStream).use {
                     SpeechHttpPolicy.readBounded(it, SpeechHttpPolicy.MAX_AUDIO_BYTES)
@@ -74,6 +75,7 @@ class OpenAiCompatibleSpeechInputProvider(
         val boundary = "NestroSpeech-${UUID.randomUUID()}"
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
+            instanceFollowRedirects = false
             connectTimeout = 15_000
             readTimeout = 120_000
             doOutput = true
@@ -130,6 +132,7 @@ internal object SpeechHttpPolicy {
     }
 
     fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
+        require(maxBytes > 0) { "响应大小限制必须大于零" }
         val output = ByteArrayOutputStream(minOf(maxBytes, 64 * 1024))
         val buffer = ByteArray(8 * 1024)
         var total = 0
