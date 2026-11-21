@@ -15,6 +15,7 @@ interface MediaIntelligenceProvider {
     suspend fun processAudio(asset: MediaAsset, sourceFile: File, operation: String, onProgress: (Float) -> Unit = {}): File
     suspend fun analyzeImage(asset: MediaAsset, sourceFile: File, prompt: String, onProgress: (Float) -> Unit = {}): String =
         error("当前媒体 AI Provider 不支持图片理解")
+    fun cancelActiveRequests() = Unit
 }
 
 object MediaIntelligenceRegistry {
