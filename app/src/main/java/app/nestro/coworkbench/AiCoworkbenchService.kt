@@ -445,22 +445,18 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         if (error.message?.contains("不存在") == true || error.message?.contains("只能读取普通文件") == true) null else throw error
     }
 
-    private suspend fun restoreBefore(snapshot: CoworkbenchSnapshot) {
-        snapshot.files.forEach { item ->
-            if (item.before == null) {
-                if (readOrNull(snapshot.repositoryId, item.path) != null) git.deleteFile(snapshot.repositoryId, item.path)
-            } else git.writeFile(snapshot.repositoryId, item.path, item.before)
-        }
-    }
-
     private suspend fun restoreBeforeIfUnchanged(snapshot: CoworkbenchSnapshot) {
         snapshot.files.forEach { item ->
             val current = readOrNull(snapshot.repositoryId, item.path)
             require(CoworkbenchPolicy.canRecoverInterruptedFile(current, item.before, item.applied)) {
                 "文件 ${item.path} 已被外部修改；为保护新内容，停止自动覆盖"
             }
+            if (item.before == null) {
+                if (current != null) git.deleteFile(snapshot.repositoryId, item.path)
+            } else if (current != item.before) {
+                git.writeFile(snapshot.repositoryId, item.path, item.before)
+            }
         }
-        restoreBefore(snapshot)
     }
 
     private fun loadReviewUnlocked(id: String): CoworkbenchReview {
