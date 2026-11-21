@@ -96,9 +96,10 @@ object CoworkbenchPolicy {
         require(proposals.isNotEmpty() && proposals.size <= MAX_FILES) { "一次补丁必须包含 1 到 40 个文件" }
         val paths = proposals.map { safePath(it.path) }
         require(paths.distinct().size == paths.size) { "补丁包含重复文件路径" }
-        val ordered = paths.sorted()
-        ordered.zipWithNext().forEach { (left, right) ->
-            require(!right.startsWith("$left/")) { "补丁同时将文件和其子目录作为目标，存在路径冲突：$left" }
+        paths.forEach { path ->
+            require(paths.none { other -> other != path && other.startsWith("$path/") }) {
+                "补丁同时将文件和其子目录作为目标，存在路径冲突：$path"
+            }
         }
         var total = 0L
         proposals.forEach { item ->
