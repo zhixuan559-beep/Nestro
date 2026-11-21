@@ -1,5 +1,6 @@
 package app.nestro.ui
 
+import android.content.Context
 import app.nestro.speech.AndroidTextToSpeechController
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,10 +28,22 @@ import java.util.Locale
 @Composable
 fun VoiceSystemPage() {
     val context = LocalContext.current
+    val voicePrefs = remember(context) {
+        context.getSharedPreferences("nestro_voice_settings", Context.MODE_PRIVATE)
+    }
     var speechText by remember { mutableStateOf("你好，欢迎使用 Nestro 语音系统。") }
-    var speechRate by remember { mutableStateOf(1f) }
-    var pitch by remember { mutableStateOf(1f) }
-    var selectedLanguage by remember { mutableStateOf(Locale.SIMPLIFIED_CHINESE) }
+    var speechRate by remember { mutableStateOf(voicePrefs.getFloat("speech_rate", 1f).coerceIn(0.5f, 2f)) }
+    var pitch by remember { mutableStateOf(voicePrefs.getFloat("speech_pitch", 1f).coerceIn(0.5f, 2f)) }
+    var selectedLanguage by remember {
+        mutableStateOf(Locale.forLanguageTag(voicePrefs.getString("speech_language", "zh-CN") ?: "zh-CN"))
+    }
+    LaunchedEffect(speechRate, pitch, selectedLanguage) {
+        voicePrefs.edit()
+            .putFloat("speech_rate", speechRate)
+            .putFloat("speech_pitch", pitch)
+            .putString("speech_language", selectedLanguage.toLanguageTag())
+            .apply()
+    }
     var detectedLanguageCount by remember { mutableStateOf(0) }
     var ready by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("正在初始化本机语音合成…") }
@@ -72,12 +86,13 @@ fun VoiceSystemPage() {
         Text("语音输出：使用设备已安装的 Android 语音合成引擎在本机朗读，不会通过本功能上传文本。")
         OutlinedTextField(
             value = speechText,
-            onValueChange = { speechText = it },
+            onValueChange = { speechText = it.take(4_000) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("朗读内容（最多 4000 字符）"),
             },
             minLines = 3
         )
+        Text("文本长度：${speechText.length}/4000")
         Text("朗读语言")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { selectedLanguage = Locale.SIMPLIFIED_CHINESE }) {
