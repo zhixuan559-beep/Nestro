@@ -43,6 +43,9 @@ object CoworkbenchPolicy {
         return path
     }
 
+    fun canRecoverInterruptedFile(current: String?, before: String?, applied: String?): Boolean =
+        current == before || current == applied
+
     fun selectStage(files: List<CoworkbenchFileReview>, selectedPaths: Set<String>): List<CoworkbenchFileReview> {
         require(selectedPaths.isNotEmpty()) { "至少选择一个文件阶段应用" }
         require(selectedPaths.all { path -> files.any { it.path == path } }) { "阶段补丁包含审查范围外的文件" }
@@ -350,7 +353,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                         withContext(NonCancellable) {
                             snapshot.files.forEach { item ->
                                 val current = readOrNull(snapshot.repositoryId, item.path)
-                                require(current == item.before || current == item.applied) {
+                                require(CoworkbenchPolicy.canRecoverInterruptedFile(current, item.before, item.applied)) {
                                     "文件 ${item.path} 在进程中断后被外部修改；为保护新内容，停止自动覆盖"
                                 }
                             }
