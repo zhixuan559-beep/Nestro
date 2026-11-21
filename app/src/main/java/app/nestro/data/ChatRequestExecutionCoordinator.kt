@@ -94,6 +94,14 @@ internal class ChatRequestExecutionCoordinator(
                         onDirectAnswer = { partial ->
                             partialAnswer.setLength(0)
                             partialAnswer.append(partial)
+                            streamingCoordinator.persistPartial(
+                                requestId = request.requestId,
+                                conversationId = request.conversationId,
+                                projectId = request.projectId,
+                                prompt = request.prompt,
+                                partialAnswer = partial,
+                                startedAt = request.startedAt
+                            )
                             onPartialAnswer(partial)
                         }
                     )
