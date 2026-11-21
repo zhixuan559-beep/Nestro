@@ -348,7 +348,7 @@ fun VoiceSystemPage() {
         Text("远程语音识别")
         OutlinedButton(
             enabled = providerConfigured && providerInputModel.isNotBlank() &&
-                (!remoteBusy || remoteRecording) && realtimeSession == null && pendingRealtimeSession == null,
+                (!remoteBusy || remoteRecording) && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
             onClick = {
                 if (remoteRecording) {
                     stopRemoteRecording()
@@ -396,7 +396,7 @@ fun VoiceSystemPage() {
             ) { Text("删除配置") }
         }
         OutlinedButton(
-            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy && mediaPlayer == null,
+            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy && !remoteRecording && mediaPlayer == null,
             onClick = {
                 scope.launch {
                     remoteBusy = true
