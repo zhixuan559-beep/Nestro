@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches: [ "main", "feature/voice-system" ]
+    branches: [ "main", "feature/voice-system", "refactor/phase-2-architecture" ]
   workflow_dispatch:
 
 permissions:

@@ -93,7 +93,7 @@ object PhoneAgentExecutor {
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
-                    service.isTaskStopped() -> AgentAuthorization.Deny("用户已请求停止")
+                    service.isTaskStopped(taskId) -> AgentAuthorization.Deny("用户已请求停止")
                     !service.hasValidGrant() -> AgentAuthorization.Deny("操作授权已失效")
                     else -> AgentAuthorization.Allow
                 }
@@ -104,7 +104,7 @@ object PhoneAgentExecutor {
             if (latestTask.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
                 return ExecutionResult(Outcome.CANCELLED, results.size, results, "任务已取消")
             }
-            if (service.isTaskStopped()) {
+            if (service.isTaskStopped(taskId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "用户已请求停止"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
@@ -113,6 +113,14 @@ object PhoneAgentExecutor {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "操作授权已失效"))
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
+            }
+            val screenBeforeAction = service.captureVisibleText()
+            if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screenBeforeAction)) {
+                val message = "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。"
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "需要用户接手", false, message)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), message))
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, message)
             }
             action = actions[index]
             if (action is Action.ConfirmSensitive) {
@@ -193,7 +201,7 @@ object PhoneAgentExecutor {
             val success = toolResult.success
             val detail = if (success) toolResult.output.ifBlank { "动作已执行并核验" }
                 else toolResult.error.ifBlank { "目标未匹配或动作未成功" }
-            val result = ActionResult(index, action.javaClass.simpleName, success, detail)
+            val result = ActionResult(index, actionLabel(action), success, detail)
             results += result
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
@@ -217,6 +225,27 @@ object PhoneAgentExecutor {
         )
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
+    private fun actionLabel(action: Action): String = when (action) {
+        is Action.OpenUrl -> {
+            val uri = runCatching { java.net.URI(action.url) }.getOrNull()
+            if (uri?.host in setOf("html.duckduckgo.com", "www.google.com", "www.bing.com")) {
+                val encodedQuery = uri?.rawQuery.orEmpty().substringAfter("q=", "")
+                val query = runCatching { java.net.URLDecoder.decode(encodedQuery, "UTF-8") }.getOrDefault("")
+                "网页搜索：" + PhoneAgentRiskPolicy.redactSensitiveText(query).take(80)
+            } else {
+                "打开网页：" + (uri?.host ?: "网页")
+            }
+        }
+        is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
+        is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
+        is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
+        is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"
+        is Action.Wait -> "等待 ${action.millis.coerceIn(0, 10_000)} ms"
+        is Action.VerifyText -> "核验页面文字：" + PhoneAgentRiskPolicy.redactSensitiveText(action.expected).take(80)
+        Action.Back -> "返回上一页"
+        is Action.ConfirmSensitive -> "等待用户处理：" + PhoneAgentRiskPolicy.redactSensitiveText(action.description).take(100)
+    }
+
     private fun toolIdFor(action: Action): String = when (action) {
         is Action.OpenUrl -> "phone.open_url"
         is Action.LaunchApp -> "phone.launch_app"

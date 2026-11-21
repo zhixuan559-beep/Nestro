@@ -1,0 +1,88 @@
+package app.nestro.phone
+
+/**
+ * One conservative risk policy shared by model-plan parsing and the Android
+ * execution adapter. A model cannot downgrade a risky action by changing its
+ * description or action type.
+ */
+object PhoneAgentRiskPolicy {
+    private val commitActions = listOf(
+        "支付", "付款", "转账", "下单", "提交订单", "立即下单", "立即购买",
+        "确认购买", "确认支付", "确认提交", "最终提交", "预约提交",
+        "确认预约", "立即预约", "确认预订", "立即预订", "删除账号",
+        "删除账户", "删除", "发布", "发送", "分享", "上传", "申请退款", "确认退款", "提交退款",
+        "提现", "充值", "允许访问", "允许通知", "允许位置", "授予权限",
+        "同意并继续", "同意条款", "同意用户协议", "接受并继续", "接受条款", "接受协议", "接受全部cookie",
+        "允许一次", "始终允许", "仅在使用应用时允许", "授予访问权限", "允许访问照片", "允许访问相机",
+        "允许麦克风", "开启通知", "允许通知", "允许定位",
+        "pay now", "place order", "buy now", "confirm purchase",
+        "submit order", "checkout", "confirm payment", "proceed to payment", "continue to payment",
+        "submit payment", "finalize purchase", "confirm transfer", "send money", "withdraw now",
+        "top up", "book now", "confirm booking", "reserve now", "delete account",
+        "send message", "publish", "upload", "accept all", "accept cookies", "accept terms", "accept and continue",
+        "agree to terms", "agree and continue", "grant permission", "allow access",
+        "allow location", "allow notifications", "share data"
+    )
+
+    private val sensitiveLabels = listOf(
+        "密码", "验证码", "短信码", "动态码", "支付码", "银行卡", "身份证",
+        "安全码", "cvv", "pin", "手机号", "手机号码", "电话号码", "电话", "邮箱", "出生日期", "生日",
+        "电子邮件", "地址", "联系人", "收货人", "姓名", "账号", "账户",
+        "password", "passcode", "verification code", "one-time code", "otp",
+        "credit card", "card number", "security code", "phone number",
+        "email address", "shipping address", "street address", "home address",
+        "postal address", "zip code", "postal code", "recipient", "full name", "account number",
+        "bank account", "routing number", "passport number", "passport", "social security", "ssn", "tax id", "iban", "swift code", "security answer", "date of birth", "birth date", "phone number", "mobile number", "telephone"
+    )
+
+    private val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
+    private val phone = Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)")
+    private val internationalPhone = Regex("(?<!\\w)\\+\\d{1,3}[\\s().-]?(?:\\d[\\s().-]?){7,14}(?!\\w)")
+    private val card = Regex("(?<!\\d)\\d{16,19}(?!\\d)")
+    private val verificationCode = Regex("(?<!\\d)\\d{6}(?!\\d)")
+    private val nationalId = Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])")
+    private val socialSecurityNumber = Regex("\\b[0-9]{3}-[0-9]{2}-[0-9]{4}\\b")
+
+    fun requiresUserHandoffForClick(label: String): Boolean {
+        val normalized = normalize(label)
+        if (normalized.isBlank()) return false
+        if (normalized in setOf("购买", "预约", "预订", "确认", "提交", "同意", "接受", "允许", "授权", "agree", "accept", "allow", "confirm", "submit", "pay", "buy", "book", "reserve", "delete", "remove", "send", "share", "publish", "upload")) return true
+        return commitActions.any { phrase -> normalized.contains(normalize(phrase)) }
+    }
+
+    fun isSensitiveField(label: String): Boolean {
+        val normalized = normalize(label)
+        return normalized.isNotBlank() && sensitiveLabels.any { normalized.contains(normalize(it)) }
+    }
+
+    fun containsSensitiveValue(value: String): Boolean {
+        val decoded = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
+        return listOf(value, decoded).any { candidate ->
+            email.containsMatchIn(candidate) ||
+                phone.containsMatchIn(candidate) ||
+                internationalPhone.containsMatchIn(candidate) ||
+                card.containsMatchIn(candidate) ||
+                nationalId.containsMatchIn(candidate) ||
+                socialSecurityNumber.containsMatchIn(candidate)
+        }
+    }
+
+    fun redactSensitiveText(value: String): String = value
+        .replace(email, "[邮箱已隐藏]")
+        .replace(phone, "[手机号已隐藏]")
+        .replace(internationalPhone, "[国际电话已隐藏]")
+        .replace(card, "[疑似卡号已隐藏]")
+        .replace(verificationCode, "[六位数字已隐藏]")
+        .replace(nationalId, "[身份证号已隐藏]")
+        .replace(socialSecurityNumber, "[身份号码已隐藏]")
+        .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址)[:：]\\s*[^，,；;。]+"), "$1：[地址已隐藏]")
+        .replace(Regex("(收货人|联系人|姓名)[:：]\\s*[^，,；;。]+"), "$1：[姓名已隐藏]")
+        .replace(Regex("(手机号|手机号码|电话号码|电话|phone number|mobile number|telephone)[:：]\\s*(?!\\[)[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[电话已隐藏]")
+        .replace(Regex("(出生日期|生日|date of birth|birth date)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1：[日期已隐藏]")
+        .replace(Regex("(shipping address|home address|street address|address)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[地址已隐藏]")
+        .replace(Regex("(recipient|contact|full name|name)[:：]\\s*[^,;。]+", RegexOption.IGNORE_CASE), "$1:[姓名已隐藏]")
+        .replace(Regex("(护照号|护照号码|社保号|税号|银行卡号|卡号|银行账号|账号|passport number|passport|social security|ssn|tax id|iban|swift code|bank account|routing number|card number|security code|account number)[:：]\\s*[^，,；;。]+", RegexOption.IGNORE_CASE), "$1:[敏感信息已隐藏]")
+
+    private fun normalize(value: String): String =
+        value.trim().lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
+}

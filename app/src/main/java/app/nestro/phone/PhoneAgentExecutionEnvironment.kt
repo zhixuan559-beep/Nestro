@@ -9,8 +9,8 @@ package app.nestro.phone
  */
 interface PhoneAgentExecutionEnvironment {
     fun hasValidGrant(): Boolean
-    fun isTaskStopped(): Boolean
-    fun requestTaskStop()
+    fun isTaskStopped(taskId: String): Boolean
+    fun requestTaskStop(taskId: String)
     fun captureVisibleText(): String
     fun clickVisibleText(exactText: String): Boolean
     fun setTextOnVisibleField(label: String, value: String): Boolean

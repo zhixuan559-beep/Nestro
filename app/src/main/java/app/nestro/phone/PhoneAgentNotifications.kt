@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.NestroApplication
 import app.nestro.MainActivity
 import app.nestro.data.NestroDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -81,18 +82,26 @@ class PhoneAgentNotificationReceiver : BroadcastReceiver() {
         val taskId = intent.getStringExtra(PhoneAgentNotifications.taskIdExtra()).orEmpty()
         if (taskId.isBlank()) return
         context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().putBoolean("phone_task_stop_requested", true)
-            .putBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), true).apply()
-        PhoneAgentService.activeService?.requestTaskStop()
+            .edit().putBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), true).apply()
+        PhoneAgentService.activeService?.requestTaskStop(taskId)
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val dao = NestroDatabase.get(context.applicationContext).dao()
+                val app = context.applicationContext as NestroApplication
+                val dao = NestroDatabase.get(app).dao()
                 val task = dao.phoneAgentTask(taskId)
                 if (task != null && task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
-                    PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
+                    app.phoneAgentTaskService.cancel(taskId, stopCurrent = true)
                 }
-                PhoneAgentNotifications.show(context, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
+                val latest = dao.phoneAgentTask(taskId)
+                val cancelled = latest?.status == PhoneAgentTaskStore.STATUS_CANCELLED
+                PhoneAgentNotifications.show(
+                    context,
+                    taskId,
+                    if (cancelled) "Phone Agent 已取消" else "Phone Agent 任务状态已更新",
+                    if (cancelled) "任务已停止，不会自动重新执行。" else "任务已进入终态或已不再运行，请刷新任务记录核对状态。",
+                    false
+                )
             } finally {
                 pending.finish()
             }

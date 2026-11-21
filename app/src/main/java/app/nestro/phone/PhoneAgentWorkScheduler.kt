@@ -22,6 +22,7 @@ object PhoneAgentWorkScheduler {
         val preferences = context.applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val pendingKey = pendingKey(taskId)
         if (preferences.getBoolean(pendingKey, false) && !allowExistingMarker) return
+        if (!allowExistingMarker) preferences.edit().remove(stopKey(taskId)).apply()
         val markerSaved = preferences.edit()
             .putBoolean(pendingKey, true)
             .putLong(pendingAtKey(taskId), System.currentTimeMillis())
@@ -46,12 +47,16 @@ object PhoneAgentWorkScheduler {
         // Keep the durable marker if WorkManager rejects enqueueing. Startup reconciliation
         // can retry after the grace window instead of orphaning a planned/running task.
         val manager = WorkManager.getInstance(context.applicationContext)
-        val current = runCatching { manager.getWorkInfosForUniqueWork(QUEUE_NAME).get() }
-            .getOrDefault(emptyList())
-            .count { !it.state.isFinished }
+        val pendingCount = preferences.all.keys.count {
+            it.startsWith("phone_agent_work_pending_") &&
+                !it.startsWith("phone_agent_work_pending_at_")
+        }
+        val current = pendingCount - if (allowExistingMarker && preferences.getBoolean(pendingKey, false)) 1 else 0
         if (current >= MAX_QUEUE_DEPTH) {
-            preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
-                .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            if (!allowExistingMarker) {
+                preferences.edit().remove(pendingKey).remove(pendingAtKey(taskId))
+                    .remove(afterHandoffKey(taskId)).remove(allowRetryKey(taskId)).apply()
+            }
             error("Phone Agent 调度队列已满，请等待当前任务完成后再提交。")
         }
         manager.beginUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request).enqueue()
@@ -120,11 +125,15 @@ object PhoneAgentWorkScheduler {
         // Do not cancel the tagged WorkRequest: WorkManager may cancel dependent requests in the
         // same unique-work chain as well. The Room terminal state + coordinator cancellation stop
         // this task; its worker returns success so later queued tasks can continue.
-        preferences.edit().putBoolean(cancelKey(taskId), true).apply()
-        if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop()
+        preferences.edit().apply {
+            putBoolean(cancelKey(taskId), true)
+            if (stopCurrent) putBoolean(stopKey(taskId), true)
+        }.apply()
+        if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop(taskId)
     }
 
     internal fun cancelKey(taskId: String) = "phone_agent_cancel_requested_$taskId"
+    internal fun stopKey(taskId: String) = "phone_agent_stop_requested_$taskId"
     internal fun afterHandoffKey(taskId: String) = "phone_agent_after_handoff_$taskId"
     internal fun allowRetryKey(taskId: String) = "phone_agent_allow_retry_$taskId"
     internal fun pendingKey(taskId: String) = "phone_agent_work_pending_$taskId"

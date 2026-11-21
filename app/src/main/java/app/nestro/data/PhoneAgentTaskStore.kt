@@ -4,8 +4,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
+import app.nestro.phone.PhoneAgentRiskPolicy
+import app.nestro.phone.PhoneAgentUrlPolicy
 import java.util.UUID
-import java.net.URI
 
 object PhoneAgentTaskStore {
     const val STATUS_PLANNED = "planned"
@@ -17,10 +18,11 @@ object PhoneAgentTaskStore {
     const val STATUS_CANCELLED = "cancelled"
 
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
+        require(plan.goal.isNotBlank() && plan.goal.length <= 2_000) { "任务目标为空或超出长度限制" }
         val now = System.currentTimeMillis()
         val task = PhoneAgentTaskEntity(
             id = UUID.randomUUID().toString(), projectId = projectId, conversationId = conversationId,
-            goal = plan.goal, category = plan.category.name, status = STATUS_PLANNED,
+            goal = PhoneAgentRiskPolicy.redactSensitiveText(plan.goal), category = plan.category.name, status = STATUS_PLANNED,
             planJson = encodePlan(plan), currentStep = 0, createdAt = now, updatedAt = now
         )
         dao.putPhoneAgentTask(task)
@@ -33,15 +35,48 @@ object PhoneAgentTaskStore {
         actions.forEach { action ->
             val row = JSONObject()
             when (action) {
-                is PhoneAgentExecutor.Action.OpenUrl -> row.put("type", "open_url").put("url", action.url)
-                is PhoneAgentExecutor.Action.LaunchApp -> row.put("type", "launch_app").put("package", action.packageName)
-                is PhoneAgentExecutor.Action.ClickText -> row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
-                is PhoneAgentExecutor.Action.EnterText -> row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
-                is PhoneAgentExecutor.Action.Scroll -> row.put("type", "scroll").put("direction", action.direction)
-                is PhoneAgentExecutor.Action.Wait -> row.put("type", "wait").put("millis", action.millis)
-                is PhoneAgentExecutor.Action.VerifyText -> row.put("type", "verify").put("text", action.expected)
+                is PhoneAgentExecutor.Action.OpenUrl -> {
+                    require(action.url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
+                    row.put("type", "open_url").put("url", action.url)
+                }
+                is PhoneAgentExecutor.Action.LaunchApp -> {
+                    require(action.packageName.length <= 255 && action.packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
+                    row.put("type", "launch_app").put("package", action.packageName)
+                }
+                is PhoneAgentExecutor.Action.ClickText -> {
+                    require(
+                        action.exactText.isNotBlank() && action.exactText.length <= 80 &&
+                            (action.expectedAfter == null || (
+                                action.expectedAfter.length <= 120 &&
+                                    !PhoneAgentRiskPolicy.containsSensitiveValue(action.expectedAfter)
+                            )) &&
+                            !PhoneAgentRiskPolicy.requiresUserHandoffForClick(action.exactText) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)
+                    ) { "高风险、敏感或无效点击必须由用户处理" }
+                    row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
+                }
+                is PhoneAgentExecutor.Action.EnterText -> {
+                    require(action.fieldLabel.isNotBlank() && action.fieldLabel.length <= 80 && action.value.length <= 1000 && !PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感或无效输入必须由用户本人处理" }
+                    row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
+                }
+                is PhoneAgentExecutor.Action.Scroll -> {
+                    require(action.direction == "forward" || action.direction == "backward") { "滚动方向无效" }
+                    row.put("type", "scroll").put("direction", action.direction)
+                }
+                is PhoneAgentExecutor.Action.Wait -> {
+                    require(action.millis in 0..10_000) { "等待时间无效" }
+                    row.put("type", "wait").put("millis", action.millis)
+                }
+                is PhoneAgentExecutor.Action.VerifyText -> {
+                    require(action.expected.isNotBlank() && action.expected.length <= 100 && !PhoneAgentRiskPolicy.containsSensitiveValue(action.expected)) { "敏感或无效页面文字不能持久化为核验条件" }
+                    row.put("type", "verify").put("text", action.expected)
+                }
                 PhoneAgentExecutor.Action.Back -> row.put("type", "back")
-                is PhoneAgentExecutor.Action.ConfirmSensitive -> row.put("type", "confirm_sensitive").put("description", action.description)
+                is PhoneAgentExecutor.Action.ConfirmSensitive -> {
+                    val description = PhoneAgentRiskPolicy.redactSensitiveText(action.description).take(240)
+                    require(description.isNotBlank()) { "用户接手说明无效" }
+                    row.put("type", "confirm_sensitive").put("description", description)
+                }
             }
             rows.put(row)
         }
@@ -81,32 +116,34 @@ object PhoneAgentTaskStore {
             when (row.getString("type")) {
                 "open_url" -> {
                     val url = row.getString("url").trim()
-                    val uri = runCatching { URI(url) }.getOrElse { error("已保存的网址格式无效") }
-                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "已保存的网址不安全" }
+                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
                     val packageName = row.getString("package").trim()
-                    require(packageName.matches(Regex("[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+"))) { "已保存的应用包名无效" }
+                    require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+"))) { "已保存的应用包名无效" }
                     PhoneAgentExecutor.Action.LaunchApp(packageName)
                 }
                 "click" -> {
                     val label = row.getString("text").trim()
                     val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
-                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 120)) { "已保存的点击目标无效" }
-                    require(listOf("付款", "支付", "转账", "购买", "预约", "提交", "下单", "删除账号", "清空数据", "永久删除").none { label.contains(it, true) }) { "已保存的高风险点击必须由用户重新确认" }
+                    require(
+                        label.isNotBlank() && label.length <= 80 &&
+                            (expectedAfter == null || (expectedAfter.length <= 120 && !PhoneAgentRiskPolicy.containsSensitiveValue(expectedAfter))) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(label)
+                    ) { "已保存的点击目标无效或包含个人敏感信息" }
+                    require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "已保存的高风险点击必须由用户重新确认" }
                     PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                 }
                 "enter_text" -> {
                     val label = row.getString("label").trim()
                     val value = row.getString("value")
-                    require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "已保存的输入动作无效" }
-                    require(listOf("密码", "验证码", "银行卡", "身份证", "安全码", "手机号", "电话", "邮箱", "地址", "姓名", "账号").none { label.contains(it, true) }) { "已保存的敏感输入必须由用户本人处理" }
-                    require(!Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}").containsMatchIn(value) &&
-                        !Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""").containsMatchIn(value) &&
-                        !Regex("""(?<!\d)\d{17}[0-9Xx](?!\d)""").containsMatchIn(value)) {
-                        "已保存的敏感输入必须由用户本人处理"
-                    }
+                    require(
+                        label.isNotBlank() && label.length <= 80 && value.length <= 1000 &&
+                            !PhoneAgentRiskPolicy.isSensitiveField(label) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(label) &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(value)
+                    ) { "已保存的敏感输入必须由用户本人处理" }
                     PhoneAgentExecutor.Action.EnterText(label, value)
                 }
                 "scroll" -> {
@@ -121,13 +158,17 @@ object PhoneAgentTaskStore {
                 }
                 "verify" -> {
                     val expected = row.getString("text").trim()
-                    require(expected.isNotBlank() && expected.length <= 100) { "已保存的验证目标无效" }
+                    require(expected.isNotBlank() && expected.length <= 100 && !PhoneAgentRiskPolicy.containsSensitiveValue(expected)) { "已保存的验证目标无效或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.VerifyText(expected)
                 }
                 "back" -> PhoneAgentExecutor.Action.Back
                 "confirm_sensitive" -> {
                     val description = row.getString("description").trim()
-                    require(description.isNotBlank() && description.length <= 240) { "已保存的用户确认说明无效" }
+                    require(
+                        description.isNotBlank() && description.length <= 240 &&
+                            !PhoneAgentRiskPolicy.containsSensitiveValue(description) &&
+                            PhoneAgentRiskPolicy.redactSensitiveText(description) == description
+                    ) { "已保存的用户确认说明无效或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.ConfirmSensitive(description)
                 }
                 else -> error("任务包含未知动作类型")
@@ -148,9 +189,9 @@ object PhoneAgentTaskStore {
                 id = UUID.randomUUID().toString(),
                 taskId = taskId,
                 actionIndex = index,
-                action = action.take(60),
+                action = PhoneAgentRiskPolicy.redactSensitiveText(action).take(60),
                 success = success,
-                detail = detail.take(240),
+                detail = PhoneAgentRiskPolicy.redactSensitiveText(detail).take(240),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -161,7 +202,7 @@ object PhoneAgentTaskStore {
         dao.phoneAgentTaskLogs(taskId, limit).reversed()
 
     suspend fun appendClarification(dao: NestroDao, taskId: String, clarification: String) {
-        val clean = clarification.trim().take(500)
+        val clean = PhoneAgentRiskPolicy.redactSensitiveText(clarification).trim().take(500)
         require(clean.length >= 2) { "补充内容太短" }
         require(!containsSensitiveClarification(clean)) { "请勿在这里填写地址、电话、验证码或其他敏感信息，请在目标应用中自行处理。" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
@@ -200,9 +241,8 @@ object PhoneAgentTaskStore {
         dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED) }
 
     private fun containsSensitiveClarification(value: String): Boolean =
-        Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
-            Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""").containsMatchIn(value) ||
-            listOf("地址", "住址", "电话", "手机号", "验证码", "密码", "银行卡", "身份证").any { value.contains(it, true) }
+        PhoneAgentRiskPolicy.containsSensitiveValue(value) ||
+            PhoneAgentRiskPolicy.isSensitiveField(value)
 
     private fun encodePlan(plan: PhoneAgentPlanner.Plan): String {
         val steps = JSONArray()
