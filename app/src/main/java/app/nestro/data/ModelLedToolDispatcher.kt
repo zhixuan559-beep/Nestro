@@ -90,7 +90,8 @@ internal class ModelLedToolDispatcher(
         maxTokens: Int?,
         shouldStop: () -> Boolean,
         onUsage: (ModelConfig, Int, Int) -> Unit,
-        onProviderUsage: (ModelConfig, Int, Int) -> Unit
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit,
+        onDirectAnswer: suspend (String) -> Unit = {}
     ): ModelToolDispatchResult? {
         val available = catalog.list().take(40)
         if (available.isEmpty()) return null
@@ -148,6 +149,9 @@ ${prompt.take(8_000)}
                 if (round == MAX_TOOL_ROUNDS - 1) append("\n这是最后一轮；必须直接回复，不得再调用工具。")
             }
             val decisionText = StringBuilder()
+            val directAnswer = StringBuilder()
+            var headerResolved = false
+            var directMode = false
             chat.streamWithFallback(
                 configs = configs,
                 history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = maxTokens ?: 2048),
@@ -160,6 +164,24 @@ ${prompt.take(8_000)}
                 shouldStop = shouldStop
             ) { chunk ->
                 decisionText.append(chunk)
+                if (!headerResolved) {
+                    val newline = decisionText.indexOf("\\n")
+                    if (newline >= 0) {
+                        val header = decisionText.substring(0, newline).trim()
+                        headerResolved = true
+                        directMode = header == "DIRECT"
+                        if (directMode) {
+                            val firstBody = decisionText.substring(newline + 1)
+                            if (firstBody.isNotEmpty()) {
+                                directAnswer.append(firstBody)
+                                onDirectAnswer(directAnswer.toString())
+                            }
+                        }
+                    }
+                } else if (directMode) {
+                    directAnswer.append(chunk)
+                    onDirectAnswer(directAnswer.toString())
+                }
             }
             val raw = decisionText.toString()
             val decision = ModelToolDecisionParser.parse(raw) ?: run {
@@ -171,7 +193,8 @@ ${prompt.take(8_000)}
                 markTerminal(AgentTaskStatus.COMPLETED)
                 return ModelToolDispatchResult(
                     directReply = answer,
-                    toolContext = toolContext.toString()
+                    toolContext = toolContext.toString(),
+                    streamedToUi = directMode
                 )
             }
             if (decision.action != "tool") {
