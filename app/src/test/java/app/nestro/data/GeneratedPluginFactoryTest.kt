@@ -27,8 +27,8 @@ class GeneratedPluginFactoryTest {
         description = "先分析素材，再生成剪辑成品。",
         inputs = listOf(GeneratedPluginInput("source", true, "原始视频素材引用")),
         steps = listOf(
-            GeneratedPluginStep("inspect", "media.inspect", mapOf("source" to "${input.source}"), "metadata"),
-            GeneratedPluginStep("render", "media.render", mapOf("source" to "${input.source}", "metadata" to "${steps.metadata.output}"), "video")
+            GeneratedPluginStep("inspect", "media.inspect", mapOf("source" to "\${input.source}"), "metadata"),
+            GeneratedPluginStep("render", "media.render", mapOf("source" to "\${input.source}", "metadata" to "\${steps.metadata.output}"), "video")
         ),
         outputDescription = "剪辑后的视频文件引用"
     )
@@ -38,7 +38,7 @@ class GeneratedPluginFactoryTest {
         GeneratedPluginPackageValidator.validate(plugin(), discovery)
         val invalid = plugin().copy(steps = listOf(
             GeneratedPluginStep("first", "media.inspect", emptyMap(), "first"),
-            GeneratedPluginStep("second", "media.render", mapOf("x" to "${steps.future.output}"), "second")
+            GeneratedPluginStep("second", "media.render", mapOf("x" to "\${steps.future.output}"), "second")
         ))
         assertFalse(runCatching { GeneratedPluginPackageValidator.validate(invalid, discovery) }.isSuccess)
     }
