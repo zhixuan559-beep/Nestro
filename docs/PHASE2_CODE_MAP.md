@@ -44,7 +44,7 @@
 | 12 | 双模型对比 | ModelComparisonPage、ModelComparisonCoordinator、ModelComparisonPolicy；复用 ModelRegistry、加密 Key 仓库与 ChatExecutionService | 功能代码已补齐并快进合并锁定（commit 5868d6d）；静态源码/结构复核完成，Kotlin 编译与 JVM 测试尚未执行，模拟器/真机留待统一验收 |
 | 13 | MCP 工具中心 | McpStreamableHttpClient（2026-07-28 stateless + 2025 legacy fallback）、McpToolCenterRepository/Service、McpToolCenterPage；复用 AgentToolCatalog/AgentRuntime/RoomAgentTaskTraceStore；Keystore Bearer vault | 远程服务/工具发现、逐工具授权、参数预览调用、审计撤销及损坏审计隔离已实现并静态复核；编译/JVM/设备验收待十九模块统一阶段 |
 | 14 | GitHub 工作台 | `git/GitWorkbench.kt`（GitHub/GitLab/Gitee API、Android Keystore 凭据、JGit 本地仓库操作）、`git/GitWorkbenchPage.kt`、NestroApp 路由与抽屉入口；JGit 6.10.1 | 主体功能已完成并合并锁定（PR #10，commit `2e7ca199`）；PAT/凭据安全、仓库搜索克隆、分支与同步、文件编辑、Diff/冲突/历史/回滚及安全边界均已实现；编译/JVM/设备验收待十九模块统一阶段 |
-| 15 | AI 共建工作台 | `coworkbench/AiCoworkbenchService.kt`、`CoworkbenchStaticAnalyzer.kt`、`CoworkbenchDataFlowAnalyzer.kt`、`CoworkbenchReportParser.kt`、`AiCoworkbenchPage.kt`、`GitHubActionsCoworkbenchRunner.kt`；`.github/scripts/generate-sbom.py`；Android CI Workflow | 严格补丁 JSON 校验、凭据文件排除/上下文脱敏、逐文件分批审批、持久化审批历史与冲突安全的进程中断恢复、整份补丁跨批回滚、Manifest/Gradle 声明差异、仓库静态规则与受限同文件数据流扫描（覆盖 Kotlin/Java 局部赋值传播）；Runner 远程分支/Workflow 预检、取消、Job/Step 日志、依赖树、debug/release 双 RuntimeClasspath CycloneDX SBOM 自动生成/解析和 JUnit XML 解析；Token 权限诊断读取 GitHub 接口的 accepted-permissions/scopes 响应头，并明确 Actions: write 仅在用户主动触发时核验。SBOM 已纳入验证成功门槛；模块未验收、未合并、未锁定 |
+| 15 | AI 共建工作台 | `coworkbench/AiCoworkbenchService.kt`、`CoworkbenchStaticAnalyzer.kt`、`CoworkbenchDataFlowAnalyzer.kt`、`CoworkbenchReportParser.kt`、`AiCoworkbenchPage.kt`、`GitHubActionsCoworkbenchRunner.kt`；`.github/scripts/generate-sbom.py`、`test_generate_sbom.py`；Android CI Workflow | 严格补丁 JSON/路径/体积校验；凭据、签名材料及私有元数据路径硬拦截；上下文文件筛选、Token/私钥脱敏；SHA-256 审查、逐文件分批审批、持久化快照/事务恢复/冲突安全整份回滚；Manifest/Gradle/TOML 差异；仓库安全规则、凭据识别及证据脱敏；Kotlin/Java 有界同文件污点传播；动态代码加载、反序列化、弱加密、WebView 与 PendingIntent 风险规则；GitHub Actions 分支/Workflow/Run 只读预检、权限响应头诊断、远程取消、Job/Step/日志/有界 ZIP 产物解析；Debug/Release 依赖树与 CycloneDX 1.5 自动生成、完整性验收门槛；SPDX/JUnit 安全解析。代码已补齐，未执行测试、未合并、未锁定 |
 | 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
 | 17 | 智能剪辑 | 当前主源码树未发现媒体编辑服务、页面或任务实现 | 未发现实现，后续再核验 |
 | 18 | 日历 | 当前主源码树未发现日历数据/页面/调度实现 | 未发现实现，后续再核验 |
@@ -552,3 +552,15 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 
 - Follow-up: added endpoint-specific GitHub token permission diagnostics using `X-Accepted-GitHub-Permissions` and classic-token `X-OAuth-Scopes`; the UI documents the required `contents:read`, `actions:read`, and `actions:write` permissions. No dummy dispatch is used to probe write access because it would start a real workflow.
 - SBOM exporter now refuses to emit a report unless both `debugRuntimeClasspath` and `releaseRuntimeClasspath` dependency graph sections are present; data-flow assignment tracking also covers common typed Java declarations as well as Kotlin `val`/`var`.
+
+
+## 2026-11-22 — Module 15 source completion pass
+
+- Hardened patch policy to reject local credentials, environment files, signing material, private-key/certificate containers and app-private metadata; reject file/directory prefix collisions even when lexicographic siblings interleave.
+- Extracted context filtering/redaction into a testable policy and added GitHub/AWS/API-key/Bearer/Basic/private-key redaction coverage.
+- Expanded repository risk analysis to detect and redact hardcoded credentials, plus dynamic code loading, native object deserialization, weak crypto, WebView file/mixed-content exposure and mutable PendingIntent use.
+- Expanded bounded Kotlin/Java intra-file taint heuristics for common external inputs, typed local assignments and command/SQL/WebView/file/network sinks. Findings remain explicitly heuristic, not compiler-grade or inter-procedural proof.
+- Added strict CycloneDX 1.5 Nestro SBOM completeness validation: expected artifact name, application identity, both Debug/Release dependency configurations, non-empty unique Maven PURLs and versions. Successful validation now requires this complete evidence as well as non-empty passing JUnit reports and intact artifacts.
+- Wired SBOM generation and upload into the actual manual Android CI workflow; the exporter derives app version from Gradle and refuses missing Debug/Release dependency sections or empty/oversized reports.
+- Extended Runner permission diagnostics across branch, Workflow, Run, Job, artifact and log reads. Actions: write cannot be safely proven by a read-only probe; it is only confirmed by GitHub when the user explicitly starts the real workflow.
+- Added policy, context redaction, data-flow, dangerous API, dual-variant SBOM and malformed JUnit counter test sources. No compilation, unit test, emulator, device or remote workflow has been run, preserving the 19-module sequencing gate. Module 15 remains unmerged and unlocked pending unified validation.
