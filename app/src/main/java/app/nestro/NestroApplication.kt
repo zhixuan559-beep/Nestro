@@ -272,7 +272,11 @@ class NestroApplication : Application() {
                             if (tool.id.startsWith("mcp_")) {
                                 if (mcpToolCenterRepository.isToolGranted(tool.id)) app.nestro.agent.AgentAuthorization.Allow
                                 else app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
-                            } else app.nestro.agent.DefaultAgentPermissionRouter().authorize(task, tool)
+                            } else if (tool.permission in setOf(
+                                app.nestro.agent.AgentToolPermission.READ_ONLY,
+                                app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
+                            )) app.nestro.agent.AgentAuthorization.Allow
+                            else app.nestro.agent.AgentAuthorization.Deny("该高风险能力不能由生成插件执行")
                         }
                         val runtime = DefaultAgentRuntime(
                             catalog = lease.access,
