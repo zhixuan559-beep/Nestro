@@ -1571,6 +1571,9 @@ fun NestroApp(initialPage: String = "home") {
                                 } else status = "该模型没有可用的 API Key，无法启用"
                             },
                             onTestConnection = { candidate -> appRuntime.modelConnectionService.test(candidate) },
+                            onDiscoverModels = { provider, apiKey ->
+                                app.nestro.model.ModelDiscoveryService().discover(provider, apiKey)
+                            },
                             onDeleteKey = { id ->
                                 modelRepository.deleteProfileKey(id)
                                 modelRegistry = modelRegistry.deleteApiKey("legacy-key-$id")
