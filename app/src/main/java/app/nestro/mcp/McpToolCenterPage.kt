@@ -64,6 +64,8 @@ fun McpToolCenterPage(app: NestroApplication) {
         reload()
     }
 
+    val enabledServerIds = remember(servers) { servers.filter { it.enabled }.map { it.id }.toSet() }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -234,7 +236,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                         }
                         Switch(
                             checked = tool.granted,
-                            enabled = !loading && (tool.granted || repository.findServer(tool.serverId)?.enabled == true),
+                            enabled = !loading && (tool.granted || tool.serverId in enabledServerIds),
                             onCheckedChange = { enabled ->
                                 runCatching { service.setToolGranted(tool.id, enabled) }
                                     .onFailure { status = "工具授权更新失败：" + (it.message ?: "未知错误") }
