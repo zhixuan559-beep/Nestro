@@ -115,7 +115,6 @@ class SpeechRecordingController : AutoCloseable {
         const val SAMPLE_RATE = 16_000
         const val READ_BUFFER_BYTES = 4_096
         const val MAX_PCM_BYTES = SAMPLE_RATE * 2 * 120
-        const val WAV_HEADER_BYTES = 44
     }
 }
 
