@@ -31,7 +31,7 @@ class SkillTrustStore(private val preferences: SharedPreferences) {
     fun refreshRevocations(url: String): Int {
         val authority = preferences.getString(KEY_AUTHORITY, null) ?: error("尚未固定独立的社区信任根公钥")
         val uri = runCatching { URI(url) }.getOrNull() ?: error("撤销清单地址无效")
-        require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.rawFragment == null) { "撤销清单必须使用无凭据 HTTPS 地址" }
+        require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "撤销清单必须使用无凭据 HTTPS 地址且不能包含路径回退" }
         val connection = URL(uri.toASCIIString()).openConnection() as? HttpURLConnection ?: error("无法连接撤销清单")
         val bytes = try {
             connection.instanceFollowRedirects = false; connection.connectTimeout = 8_000; connection.readTimeout = 12_000
