@@ -13,7 +13,8 @@ Status: implementation in progress. This document records the agreed target; a c
 ## Second optimization: device adaptation and responsiveness
 
 - [x] Drawer width now adapts across compact phones, regular phones, tablets and expanded windows.
-- [x] Independent optional context retrievals (conversation recall, knowledge retrieval and user memory) run concurrently; unused retrieval sources are not started.
+- [x] Independent optional context retrievals (conversation recall and user memory) run concurrently; unused retrieval sources are not started.
+- [x] Knowledge lookup is no longer prefetched by keyword; the model selects the project-scoped `knowledge.search` capability when needed.
 - [x] Optional phone-task planning overlaps context assembly instead of serially extending the pre-stream critical path.
 - [ ] Complete responsive layouts for compact phones, landscape, tablets and foldables; verify keyboard/IME insets, safe areas, font scaling, navigation and split-screen.
 - [ ] Profile cold start, first-frame time, recomposition, memory, CPU, storage, network wakeups and battery on representative low/mid/high-tier devices.
