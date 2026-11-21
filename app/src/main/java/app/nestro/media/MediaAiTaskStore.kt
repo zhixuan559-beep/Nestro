@@ -2,6 +2,8 @@ package app.nestro.media
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -172,6 +174,7 @@ object MediaAiTaskScheduler {
     private fun unique(projectId:String,taskId:String)="media-ai-$projectId-$taskId"
     fun enqueue(context:Context,projectId:String,taskId:String) {
         val request=OneTimeWorkRequestBuilder<MediaAiTaskWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(MediaAiTaskWorker.KEY_PROJECT to projectId,MediaAiTaskWorker.KEY_TASK to taskId)).build()
         WorkManager.getInstance(context).enqueueUniqueWork(unique(projectId,taskId),ExistingWorkPolicy.KEEP,request)
     }
