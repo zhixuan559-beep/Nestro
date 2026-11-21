@@ -170,7 +170,23 @@ class NestroApplication : Application() {
             modelToolDispatcher = ModelLedToolDispatcher(
                 chat = chatExecutionService,
                 catalog = agentToolCatalog,
-                database = database
+                database = database,
+                permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
+                    if (tool.id.startsWith("mcp_")) {
+                        if (mcpToolCenterRepository.isToolGranted(tool.id)) {
+                            app.nestro.agent.AgentAuthorization.Allow
+                        } else {
+                            app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
+                        }
+                    } else {
+                        app.nestro.agent.DefaultAgentPermissionRouter().authorize(task, tool)
+                    }
+                },
+                toolDefinitionProvider = { toolId ->
+                    mcpToolCenterRepository.findTool(toolId)?.let { descriptor ->
+                        "name=${descriptor.name}; description=${descriptor.description}; input_schema=${descriptor.inputSchemaJson}"
+                    }
+                }
             )
         )
     }
