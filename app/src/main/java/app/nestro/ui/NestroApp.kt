@@ -1096,9 +1096,9 @@ fun NestroApp(initialPage: String = "home") {
                     },
                     onTaskPlanningFailure = { status = "任务计划保存失败：${it.message ?: "未知错误"}" },
                     runExpertTeam = { requestSystemContext, toolArguments ->
-                    val selectedTeam = if (requestExecutionAuthorization.shouldRunExpertTeam()) {
-                        requestExpertTeams.firstOrNull { it.id == requestExecutionAuthorization.selectedTeamId }
-                    } else null
+                    val selectedTeam = requestExpertTeams.firstOrNull {
+                        it.id == requestExecutionAuthorization.selectedTeamId
+                    }
                     val requestedMembers = toolArguments["member_names"]
                         ?.split(Regex("[,，、;；]"))
                         ?.map { it.trim() }
