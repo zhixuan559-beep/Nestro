@@ -83,7 +83,7 @@ fun MediaProviderSettingsCard() {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
             Text("支持 OpenAI 官方音频转写与 OpenAI-compatible 图像理解。场景识别、音频处理只有填写真实服务商端点后才会启用；空路径表示不支持。", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
+            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
             OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -253,6 +253,16 @@ fun MediaProviderSettingsCard() {
                                         transcriptionPath = fallback.transcriptionPath
                                         scenePath = fallback.scenePath
                                         audioPath = fallback.audioProcessPath
+                                        transcriptionModel = fallback.transcriptionModel
+                                        videoModel = fallback.videoGenerationModel
+                                        videoSubmitPath = fallback.videoSubmitPath
+                                        videoStatusPath = fallback.videoStatusPath
+                                        videoModelField = fallback.videoModelField
+                                        videoPromptField = fallback.videoPromptField
+                                        videoJobIdField = fallback.videoJobIdField
+                                        videoStatusField = fallback.videoStatusField
+                                        videoResultUrlField = fallback.videoResultUrlField
+                                        apiKey = ""
                                         configured = true
                                     } else configured = false
                                     providerSummaries = withContext(Dispatchers.IO) { store.list() }
