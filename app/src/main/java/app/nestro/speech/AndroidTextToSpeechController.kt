@@ -41,23 +41,29 @@ class AndroidTextToSpeechController(
             initialized = true
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String) {
-                    if (!closed) listener.onStarted(utteranceId)
+                    if (!closed && currentUtteranceId == utteranceId) listener.onStarted(utteranceId)
                 }
 
                 override fun onDone(utteranceId: String) {
-                    if (currentUtteranceId == utteranceId) currentUtteranceId = null
-                    if (!closed) listener.onCompleted(utteranceId)
+                    if (!closed && currentUtteranceId == utteranceId) {
+                        currentUtteranceId = null
+                        listener.onCompleted(utteranceId)
+                    }
                 }
 
                 @Deprecated("Deprecated by Android")
                 override fun onError(utteranceId: String) {
-                    if (currentUtteranceId == utteranceId) currentUtteranceId = null
-                    if (!closed) listener.onError(utteranceId, "语音合成失败")
+                    if (!closed && currentUtteranceId == utteranceId) {
+                        currentUtteranceId = null
+                        listener.onError(utteranceId, "语音合成失败")
+                    }
                 }
 
                 override fun onError(utteranceId: String, errorCode: Int) {
-                    if (currentUtteranceId == utteranceId) currentUtteranceId = null
-                    if (!closed) listener.onError(utteranceId, "语音合成失败（$errorCode）")
+                    if (!closed && currentUtteranceId == utteranceId) {
+                        currentUtteranceId = null
+                        listener.onError(utteranceId, "语音合成失败（$errorCode）")
+                    }
                 }
             })
             listener.onReady(
