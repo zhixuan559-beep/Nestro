@@ -87,6 +87,6 @@ object ExpertTeamCollaborationEventCodec {
                 createdAt = item.optLong("createdAt", -1)
             )
             runCatching { event.validate() }.getOrNull()?.let { event }
-        }.sortedWith(compareBy<ExpertTeamCollaborationEvent> { it.taskId }.thenBy { it.sequence })
+        }.sortedWith(compareBy<ExpertTeamCollaborationEvent> { it.createdAt }.thenBy { it.sequence })
     }.getOrDefault(emptyList())
 }
