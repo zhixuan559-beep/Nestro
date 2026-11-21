@@ -43,6 +43,8 @@ fun MediaProviderSettingsCard() {
     var videoModel by remember { mutableStateOf("") }
     var videoSubmitPath by remember { mutableStateOf("video/generations") }
     var videoStatusPath by remember { mutableStateOf("video/generations/{job_id}") }
+    var videoModelField by remember { mutableStateOf("model") }
+    var videoPromptField by remember { mutableStateOf("prompt") }
     var videoJobIdField by remember { mutableStateOf("id") }
     var videoStatusField by remember { mutableStateOf("status") }
     var videoResultUrlField by remember { mutableStateOf("video_url") }
@@ -65,6 +67,8 @@ fun MediaProviderSettingsCard() {
             videoModel = existing.videoGenerationModel
             videoSubmitPath = existing.videoSubmitPath
             videoStatusPath = existing.videoStatusPath
+            videoModelField = existing.videoModelField
+            videoPromptField = existing.videoPromptField
             videoJobIdField = existing.videoJobIdField
             videoStatusField = existing.videoStatusField
             videoResultUrlField = existing.videoResultUrlField
@@ -94,6 +98,8 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(videoModel, { videoModel = it }, label = { Text("视频生成模型 ID（留空表示不支持）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoSubmitPath, { videoSubmitPath = it }, label = { Text("视频任务提交路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoStatusPath, { videoStatusPath = it }, label = { Text("任务状态路径（必须包含 {job_id}）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoModelField, { videoModelField = it }, label = { Text("请求体中的模型字段名") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(videoPromptField, { videoPromptField = it }, label = { Text("请求体中的提示词字段名") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoJobIdField, { videoJobIdField = it }, label = { Text("任务 ID 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoStatusField, { videoStatusField = it }, label = { Text("任务状态响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoResultUrlField, { videoResultUrlField = it }, label = { Text("视频成品 URL 响应字段（支持 a.b）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -118,6 +124,8 @@ fun MediaProviderSettingsCard() {
                                         videoGenerationModel = videoModel,
                                         videoSubmitPath = videoSubmitPath,
                                         videoStatusPath = videoStatusPath,
+                                        videoModelField = videoModelField,
+                                        videoPromptField = videoPromptField,
                                         videoJobIdField = videoJobIdField,
                                         videoStatusField = videoStatusField,
                                         videoResultUrlField = videoResultUrlField
@@ -151,6 +159,8 @@ fun MediaProviderSettingsCard() {
                                         videoGenerationModel = videoModel,
                                         videoSubmitPath = videoSubmitPath,
                                         videoStatusPath = videoStatusPath,
+                                        videoModelField = videoModelField,
+                                        videoPromptField = videoPromptField,
                                         videoJobIdField = videoJobIdField,
                                         videoStatusField = videoStatusField,
                                         videoResultUrlField = videoResultUrlField
@@ -210,6 +220,8 @@ fun MediaProviderSettingsCard() {
                                     videoModel = config.videoGenerationModel
                                     videoSubmitPath = config.videoSubmitPath
                                     videoStatusPath = config.videoStatusPath
+                                    videoModelField = config.videoModelField
+                                    videoPromptField = config.videoPromptField
                                     videoJobIdField = config.videoJobIdField
                                     videoStatusField = config.videoStatusField
                                     videoResultUrlField = config.videoResultUrlField
