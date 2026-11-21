@@ -1,5 +1,7 @@
 # Nestro 实现状态与开发路线图
 
+> **2026-11-21 模块13代码阶段记录：** MCP 工具中心已实现远程 Streamable HTTP（2026-07-28 stateless 优先，并兼容旧版 initialize/session）、服务与工具发现、逐工具授权、参数预览/调用、Keystore 凭据加密、审计和撤销。代码已实现，正在功能分支进行合并前静态复核；尚未合并到集成分支。Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段。Android 端仅连接 HTTPS 远程 MCP，不启动任意本地 stdio Server。
+
 > 状态口径：只有代码已落地且对应构建通过，才标记为「已实现」。UI 占位、设计说明、接口草稿不计入完成。实体设备相关行为在真机验收前仍标记为「待真机验证」。
 
 > **2026-11-20 模块7锁定记录：** PR #7 已合并至 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`。对应 CI Run #72 的 `verify` 与 `instrumentation` 均通过；编译、JVM 单元测试、Lint、APK/测试包构建及 Android 模拟器测试全部成功。模块7代码与云端验证锁定完成。
@@ -245,10 +247,10 @@
 ### 阶段 2：外部工具与开发能力
 
 #### 2A. MCP 与工具权限
-- [ ] 本地/远程 MCP 传输适配、服务发现、协议握手和工具 schema。
-- [ ] 每个服务、每个工具单独授权；调用前预览参数，调用后审计。
-- [ ] 凭据加密、权限撤销、超时、断连恢复和不可信工具输出隔离。
-- [ ] Android 不默认承诺可运行任意本地 MCP Server；按实际运行环境提供连接方式。
+- [x] 远程 Streamable HTTP MCP 传输、协议版本协商、tools/list 服务工具发现与 schema 缓存。
+- [x] 每个服务/工具单独授权；调用前参数预览、调用后本地审计、权限即时撤销。
+- [x] Bearer 凭据 Android Keystore 加密；请求超时/取消、断连错误收口、不可信工具输出隔离。
+- [x] Android 端仅连接用户配置的 HTTPS 远程服务，不承诺启动任意本地 MCP Server；stdio 与模型原生 tool-call schema 适配不在本模块范围内。
 
 #### 2B. Git 工作台
 - [ ] GitHub/GitLab/Gitee 授权与凭据安全存储。
@@ -336,7 +338,7 @@ All request-affecting UI state—including active expert IDs, project instructio
 
 ## Task-scoped capability dispatch — implementation status
 
-The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation; it does not yet constitute full MCP/plugin discovery or per-provider credential leasing. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
+The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation. Module 13 now adds remote Streamable HTTP MCP discovery and encrypted Bearer-token storage; OAuth-based provider credential leasing and model-native tool invocation remain separate integration work. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
 
 
 Phone Agent's action-history compactor now retains the most recent 12 distinct action results within a fixed 1,000-character budget, rather than preserving only the oldest entries. This keeps the latest execution evidence available to the next planning call without growing the prompt.
@@ -359,7 +361,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Implemented revocable task-owned capability leases and short-lived task credential lease primitives.
 - Task pause/cancel and handler exit now revoke leases; Phone Agent action execution uses the shared lease registry and releases each action lease in `finally`.
 - Added JVM tests for lease revocation and credential access expiry/revocation.
-- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. MCP discovery and remote provider adapters remain dependent on that shared contract and are not marked complete.
+- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. Module 13 now implements remote MCP discovery and encrypted Bearer-token credentials; remaining Phase 2 work is expert-team/workflow routing, OAuth provider credential leasing, model-native tool invocation, and final unified CI after all 19 modules are complete.
 - APK construction, installation, and device acceptance remain deferred until all feature code across the 19 modules is written and the final unified acceptance stage begins.
 
 
@@ -369,7 +371,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Added a process-wide tool catalog shared by Phone Agent, expert-team and workflow execution.
 - Added operation-scoped capability declarations, with expert-member and workflow-step resolution. Only the declared minimum tool set is leased for that operation; missing tools or missing tool-aware adapters fail closed.
 - Added tests for member/step tool isolation and lease release.
-- The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation, MCP/plugin discovery and remote credential adapters remain follow-up integration work; do not mark them complete based on the registry foundation alone.
+- The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation and OAuth-based remote credential adapters remain follow-up integration work; MCP remote discovery and encrypted Bearer-token storage are implemented in module 13 and must not be described as outstanding.
 - APK generation, installation and real-device acceptance remain deferred until all feature code for all 19 modules is complete, followed by one unified final acceptance.
 
 

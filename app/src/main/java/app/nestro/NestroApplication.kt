@@ -1,6 +1,8 @@
 package app.nestro
 
 import android.app.Application
+import app.nestro.mcp.McpToolCenterRepository
+import app.nestro.mcp.McpToolCenterService
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.InMemoryAgentToolCatalog
@@ -97,6 +99,8 @@ class NestroApplication : Application() {
     }
     /** One process-wide tool catalog shared by Phone Agent, experts, and workflows. */
     val agentToolCatalog: AgentToolCatalog by lazy { InMemoryAgentToolCatalog() }
+    val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
+    val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao())) }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
@@ -225,6 +229,7 @@ class NestroApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        mcpToolCenterService.restoreEnabledTools()
         applicationScope.launch {
             ensureBackupRestoreRecovered()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))

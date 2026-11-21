@@ -42,7 +42,7 @@
 | 10 | 我的作品 | ArtifactStore、ArtifactLibraryPage、聊天保存入口 | 主体已有；需核对项目隔离、版本与备份 |
 | 11 | 专家模板 | ExpertTemplateCatalog、ExpertRevisionAndTemplate、NestroApp 模板流程 | 主体已有；对应测试已有，完整 UI 回归仍需核验 |
 | 12 | 双模型对比 | ModelComparisonPage、ModelComparisonCoordinator、ModelComparisonPolicy；复用 ModelRegistry、加密 Key 仓库与 ChatExecutionService | 功能代码已补齐并快进合并锁定（commit 5868d6d）；静态源码/结构复核完成，Kotlin 编译与 JVM 测试尚未执行，模拟器/真机留待统一验收 |
-| 13 | MCP 工具中心 | Agent 工具目录/权限契约可复用；未找到 MCP transport/server discovery 实现 | 尚未形成 MCP 模块 |
+| 13 | MCP 工具中心 | McpStreamableHttpClient（2026-07-28 stateless + 2025 legacy fallback）、McpToolCenterRepository/Service、McpToolCenterPage；复用 AgentToolCatalog/AgentRuntime/RoomAgentTaskTraceStore；Keystore Bearer vault | 远程服务/工具发现、逐工具授权、参数预览调用、审计撤销已实现并静态复核；编译/JVM/设备验收待统一阶段 |
 | 14 | GitHub 工作台 | 仓库未见 GitHub 工作台专属 package、页面或 Git 操作服务 | 尚未形成模块 |
 | 15 | AI 共建工作台 | WorkflowEngine、专家、产物、Agent 底座可复用；未见独立共建工作台 | 只有可复用基础，不算模块完成 |
 | 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
@@ -449,7 +449,7 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - `DefaultAgentRuntime` now accepts the narrow access interface rather than requiring the mutable global catalog.
 - Phone Agent now registers a typed capability for the current action only (open URL, launch app, click, enter text, scroll, wait, verify, back, or sensitive handoff). It opens a one-capability session for that step and releases the session and registration immediately afterward.
 - Added JVM tests for allow-list isolation, unknown tool rejection, and post-close invalidation.
-- This is the first executable slice of precision dispatch, not completion of the entire unified tool center. MCP/plugin discovery, per-tool schema loading, and provider-backed credential adapters remain outstanding; expert/workflow per-operation routing is recorded in the later unified capability registration section.
+- This is the first executable slice of precision dispatch, not completion of the entire unified tool center. Module 13 now implements remote MCP discovery, per-tool schemas, and encrypted Bearer-token storage. OAuth-based provider credentials and expert/workflow per-operation routing remain separate integration work.
 
 
 ## 2026-11-18 — Keep the newest Phone Agent action context
@@ -497,7 +497,7 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - `AgentTaskCoordinator` now revokes task capability and credential leases before pause/cancel and again when a task handler exits, so a stale task cannot keep using a previously opened lease.
 - Phone Agent action execution now opens its one-action capability through the lease registry and releases it in `finally`.
 - Added JVM regression coverage for task-wide tool-lease revocation and task-scoped credential resolution/revocation.
-- This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that MCP/plugin discovery, remote-provider credential adapters, or dynamic schemas are complete. Expert/workflow per-step capability selection is implemented in the later unified capability registration section; actual model-native tool invocation remains a separate adapter task.
+- This closes the lease lifecycle foundation for the current local tool runtime. It does **not** claim that OAuth-based remote-provider credential adapters, dynamic model-native tool invocation, or every plugin transport are complete. Module 13 implements remote MCP discovery, per-tool schemas, and encrypted Bearer-token storage. Expert/workflow per-step capability selection is implemented in the later unified capability registration section; actual model-native tool invocation remains a separate adapter task.
 
 
 
@@ -508,7 +508,7 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Expert-team and workflow coordinators now resolve the declaration for each member/step, open a task-owned lease only for that operation, pass a discovery-only `AgentToolDiscovery` view to a tool-aware adapter, and release the lease in `finally`. The discovery view cannot invoke handlers directly; actual invocation remains behind `AgentRuntime` and `AgentPermissionRouter`. If tools are declared but no tool-aware adapter is supplied, execution fails closed rather than silently ignoring the declaration.
 - `NestroApplication` now owns one process-wide `AgentToolCatalog`; Phone Agent, expert-team and workflow execution share this catalog. Phone Agent no longer creates an isolated catalog for each run.
 - Added coordinator regression tests proving expert/workflow operations see only their declared tools and that the access view is invalid after the operation returns.
-- Current expert/workflow model adapters remain model-only and declare no tool sets by default. This is intentional: the shared boundary is ready, but model-native tool-call execution and MCP/plugin discovery are not marked complete.
+- Current expert/workflow model adapters remain model-only and declare no tool sets by default. This is intentional: the shared boundary is ready; model-native tool-call execution remains separate work. Module 13 now implements remote MCP discovery and encrypted Bearer-token storage.
 - Tool selection remains separate from authorization. Feature adapters receive only `AgentToolDiscovery`, not the invocation-capable `AgentToolAccess`; any actual invocation must pass through `AgentRuntime` and `AgentPermissionRouter`. Loading a tool does not grant permission.
 
 
