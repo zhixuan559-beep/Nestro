@@ -95,7 +95,7 @@ fun GitWorkbenchPage(context: Context) {
                     scope.launch {
                         loading = true
                         try {
-                            val id = provider.name.lowercase() + "-" + username.trim().lowercase().replace(Regex("[^a-z0-9_.-]"), "-")
+                            val id = (provider.name.lowercase() + "-" + username.trim().lowercase().replace(Regex("[^a-z0-9_.-]"), "-")).take(95)
                             val account = GitAccount(id, provider, username.trim())
                             val verified = repo.verifyAccount(account, token.trim())
                             withContext(Dispatchers.IO) { repo.accounts.save(account.copy(displayName = verified), token.trim()) }
