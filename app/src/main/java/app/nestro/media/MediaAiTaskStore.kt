@@ -55,7 +55,7 @@ object MediaAiTaskStore {
                 (action != "video-generate" && assetId.matches(Regex("^[A-Fa-f0-9-]{36}$")))
         ) { "素材 ID 无效" }
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "服务商 ID 无效" }
-        require(prompt.length <= if (action == "video-generate") 12_000 else 2_000) { "媒体 AI 指令过长" }
+        require(prompt.length <= (if (action == "video-generate") 12_000 else 2_000)) { "媒体 AI 指令过长" }
         if (parentTaskId.isNotBlank()) {
             require(parentTaskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "上一个视频任务 ID 无效" }
             val parent = read(context, projectId, parentTaskId)
