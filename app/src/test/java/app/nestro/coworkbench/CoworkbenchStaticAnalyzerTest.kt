@@ -79,6 +79,7 @@ class CoworkbenchStaticAnalyzerTest {
                 <uses-permission android:name="android.permission.SEND_SMS" />
                 <application android:debuggable="true">
                     <service android:name=".RemoteService" android:exported="true" />
+                    <activity-alias android:name=".LauncherAlias" android:exported="true" />
                 </application>
             </manifest>""".trimIndent()
             val impact = CoworkbenchStaticAnalyzer.analyzeProposalsWithBaseline(
@@ -86,7 +87,7 @@ class CoworkbenchStaticAnalyzerTest {
                 listOf(CoworkbenchProposal("app/src/main/AndroidManifest.xml", after))
             )
             assertEquals(listOf("android.permission.SEND_SMS"), impact.permissionsAdded)
-            assertTrue(impact.findings.any { it.category == "新增导出组件" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(impact.findings.any { it.category == "新增导出组件" && it.evidence == "activity-alias:.LauncherAlias" && it.level == CoworkbenchFindingLevel.HIGH })
             assertTrue(impact.findings.any { it.category == "启用调试模式" })
         } finally {
             root.deleteRecursively()
