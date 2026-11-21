@@ -26,6 +26,9 @@ object SkillDependencyResolver {
             if (state.selected.any { (name, release) ->
                     state.constraints[name].orEmpty().any { range -> !runCatching { SkillSemVer.matches(release.version, range) }.getOrDefault(false) }
                 }) return null
+            if (state.satisfied.any { (name, version) ->
+                    state.constraints[name].orEmpty().any { range -> !runCatching { SkillSemVer.matches(version, range) }.getOrDefault(false) }
+                }) return null
             val unresolved = state.constraints.keys.firstOrNull { it !in state.selected && it !in state.satisfied }
                 ?: return state
             val ranges = state.constraints[unresolved].orEmpty()
