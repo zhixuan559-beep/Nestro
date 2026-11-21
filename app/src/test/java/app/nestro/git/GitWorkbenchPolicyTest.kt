@@ -34,4 +34,26 @@ class GitWorkbenchPolicyTest {
         assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath(".git/config") }
         assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath("src/.git/config") }
     }
+    @Test fun rejectsEncodedLikeAndMalformedRelativeSegments() {
+        listOf("a//b", "a/./b", "a/../b", "a/.git/index", "a\\\\b/../c")
+            .forEach { value ->
+                assertThrows(IllegalArgumentException::class.java) {
+                    GitWorkbenchPolicy.safeRelativePath(value)
+                }
+            }
+        assertEquals("docs/guide.md", GitWorkbenchPolicy.safeRelativePath("docs\\\\guide.md"))
+    }
+
+    @Test fun cloneUrlRejectsHostSpoofPortAndFragment() {
+        assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://github.com.evil.test/user/repo.git"))
+        assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://github.com:444/user/repo.git"))
+        assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://github.com/user/repo.git#fragment"))
+    }
+
+    @Test fun accountNamesRejectControlCharactersAndOversizedValues() {
+        assertTrue(GitWorkbenchPolicy.validAccountName("developer"))
+        assertFalse(GitWorkbenchPolicy.validAccountName("bad\\nname"))
+        assertFalse(GitWorkbenchPolicy.validAccountName("x".repeat(121)))
+    }
+
 }
