@@ -141,7 +141,7 @@
 
 **1. 真实媒体服务商适配**
 - [x] 增加 OpenAI 官方 API 配置预设：`https://api.openai.com/v1`、`/audio/transcriptions` 与  `gpt-transcribe`；音频转写模型与图像理解聊天模型分开配置，避免把转写模型误用于视觉聊天请求。
-- [x] 按 OpenAI 官方转写格式提交  `languages[]`；支持返回  `text` 的 JSON 响应，并保留带  `segments` 的兼容解析；官方 OpenAI 上传限制按 25 MB 执行。
+- [x] 按 OpenAI 官方转写格式提交 languages[]；默认 gpt-transcribe 返回全文，代码会生成全片字幕；兼容 whisper-1 的 segment 时间戳解析（旧模型将于 2027-02-26 停止服务）；官方 OpenAI 上传限制按 25 MB 执行。
 - [x] 图像理解使用 OpenAI-compatible Chat Completions 视觉输入格式；多服务商配置、Keystore 密钥保护、连接测试、切换和删除仍保留。
 - [x] 场景识别/音频处理不再假装所有服务商都有通用接口：只有填写非占位的服务商专属端点路径才声明对应能力；未配置时 UI 不会显示为可用能力，直接调用也会失败关闭。
 - [x] HTTP 上传阶段按实际字节发送量回报进度，响应下载在服务端提供 Content-Length 时持续更新进度；取消时主动断开活动连接。
