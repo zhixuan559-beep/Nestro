@@ -54,6 +54,22 @@ class CoworkbenchStaticAnalyzerTest {
     }
 
     @Test
+    fun marksPerFileLineLimitAsTruncated() {
+        val root = Files.createTempDirectory("nestro-coworkbench-line-bound").toFile()
+        try {
+            root.resolve("src/main/Large.kt").apply {
+                parentFile.mkdirs()
+                writeText((1..2_100).joinToString("\\n") { "val label$it = \\"value\\"" })
+            }
+            val report = CoworkbenchStaticAnalyzer.analyze(root)
+            assertEquals(1, report.scannedFiles)
+            assertTrue(report.truncated)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun skipsBuildAndGitDirectoriesAndReportsBoundedScan() {
         val root = Files.createTempDirectory("nestro-coworkbench-bounds").toFile()
         try {
