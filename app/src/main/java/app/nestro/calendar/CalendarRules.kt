@@ -4,7 +4,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
-import java.time.temporal.ChronoUnit
 
 object CalendarRules {
     const val NONE = "NONE"
@@ -28,14 +27,29 @@ object CalendarRules {
         return null
     }
 
-    private fun nextStart(startAt: Long, recurrence: String): Long {
+    private fun nextStart(
+        startAt: Long,
+        recurrence: String,
+        anchorDay: Int,
+        anchorMonth: Int
+    ): Long {
         val zone = ZoneId.systemDefault()
         val local = Instant.ofEpochMilli(startAt).atZone(zone)
         val next = when (recurrence) {
             DAILY -> local.plusDays(1)
             WEEKLY -> local.plusWeeks(1)
-            MONTHLY -> local.plusMonths(1)
-            YEARLY -> local.plusYears(1)
+            MONTHLY -> {
+                val month = java.time.YearMonth.from(local).plusMonths(1)
+                month.atDay(anchorDay.coerceAtMost(month.lengthOfMonth()))
+                    .atTime(local.toLocalTime()).atZone(zone)
+            }
+            YEARLY -> {
+                val date = LocalDate.of(
+                    local.year + 1, anchorMonth,
+                    anchorDay.coerceAtMost(java.time.YearMonth.of(local.year + 1, anchorMonth).lengthOfMonth())
+                )
+                date.atTime(local.toLocalTime()).atZone(zone)
+            }
             else -> return Long.MAX_VALUE
         }
         return next.toInstant().toEpochMilli()
@@ -45,13 +59,14 @@ object CalendarRules {
     fun nextOccurrenceStart(event: CalendarEvent, now: Long): Long? {
         if (event.completed || event.reminderMinutes < 0) return null
         var candidate = event.startAt
+        val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
         val reminderMillis = event.reminderMinutes * 60_000L
         if (event.recurrence == NONE) {
             return candidate.takeIf { it - reminderMillis > now }
         }
         var guard = 0
         while (candidate - reminderMillis <= now && guard++ < 20_000) {
-            candidate = nextStart(candidate, event.recurrence)
+            candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
             if (candidate == Long.MAX_VALUE) return null
         }
         return candidate.takeIf { it != Long.MAX_VALUE && it - reminderMillis > now }
@@ -64,12 +79,14 @@ object CalendarRules {
             if (event.completed) continue
             val duration = event.endAt - event.startAt
             var start = event.startAt
+            val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
             var guard = 0
             while (start < until && result.size < limit && guard++ < 20_000) {
-                val end = start + duration
+                val occurrenceLocalDate = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
+                val end = if (event.allDay) occurrenceLocalDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() else start + duration
                 if (end >= from) result += Occurrence(event, start, end)
                 if (event.recurrence == NONE) break
-                start = nextStart(start, event.recurrence)
+                start = nextStart(start, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
                 if (start == Long.MAX_VALUE) break
             }
             if (result.size >= limit) break
@@ -81,9 +98,10 @@ object CalendarRules {
         if (occurrenceStart < event.startAt) return false
         if (event.recurrence == NONE) return occurrenceStart == event.startAt
         var candidate = event.startAt
+        val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
         var guard = 0
         while (candidate < occurrenceStart && guard++ < 20_000) {
-            candidate = nextStart(candidate, event.recurrence)
+            candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
             if (candidate == Long.MAX_VALUE) return false
         }
         return candidate == occurrenceStart
