@@ -29,6 +29,7 @@ fun CapabilityDirectoryPage() {
     val scope=rememberCoroutineScope()
     val lifecycle=remember(prefs) { app.nestro.data.SkillCommunityLifecycleStore(prefs) }
     var query by remember { mutableStateOf("") }
+    var communityQuery by remember { mutableStateOf("") }
     var catalogUrl by remember { mutableStateOf(prefs.getString("skill_catalog_url_v1","") ?: "") }
     var trustedKey by remember { mutableStateOf(prefs.getString("skill_catalog_key_v1","") ?: "") }
     var releases by remember { mutableStateOf(emptyList<SignedSkillRelease>()) }
@@ -90,8 +91,11 @@ fun CapabilityDirectoryPage() {
         if(status.isNotBlank()) Text(status,style=MaterialTheme.typography.bodySmall)
         if(loading) CircularProgressIndicator()
         if(releases.isNotEmpty()) {
-            Text("已验签社区技能",style=MaterialTheme.typography.titleMedium)
-            releases.forEach { release ->
+            Text("已验签社区技能 · "+releases.size+" 个版本",style=MaterialTheme.typography.titleMedium)
+            OutlinedTextField(value=communityQuery,onValueChange={communityQuery=it},label={Text("搜索社区技能名称或说明")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+            val visibleReleases = releases.filter { communityQuery.isBlank() || it.name.contains(communityQuery,true) || it.description.contains(communityQuery,true) }
+            if (visibleReleases.isEmpty()) Text("没有匹配的社区技能。",style=MaterialTheme.typography.bodySmall)
+            visibleReleases.forEach { release ->
                 val installedSkills = runCatching { JSONObject(rawSkills) }.getOrDefault(JSONObject())
                 val installedMetadata = runCatching { JSONObject(JSONObject(rawMetadata).optString(release.name, "{}")) }.getOrDefault(JSONObject())
                 val installedVersion = installedMetadata.optString("version", "")
