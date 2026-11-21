@@ -150,7 +150,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.video.generate",
-                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填，完整视频生成提示词）。异步提交视频任务并等待结果；若超出等待窗口则返回任务 ID，用户可继续查询。会产生第三方 API 费用。",
+                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填，完整视频生成提示词）；previous_task_id（可选，用户要求修改上一版时填写）。异步提交视频任务并等待结果；若超出等待窗口则返回任务 ID，用户可继续查询。会产生第三方 API 费用。",
                     permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
                     requiresConfirmation = true
                 )
