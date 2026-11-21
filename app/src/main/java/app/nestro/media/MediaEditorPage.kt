@@ -583,6 +583,20 @@ fun MediaEditorPage(
                 }
             }) { Text("取消媒体 AI 任务") }
         }
+        if (mediaAiTasks.isNotEmpty()) {
+            Text("后台媒体 AI 任务", style = MaterialTheme.typography.titleSmall)
+            mediaAiTasks.take(5).forEach { task ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(task.action+" · "+task.status.name+" · "+task.progress+"%", style = MaterialTheme.typography.bodySmall)
+                        if (task.error.isNotBlank()) Text(task.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        if (task.status == MediaAiTaskStatus.QUEUED || task.status == MediaAiTaskStatus.RUNNING) {
+                            LinearProgressIndicator(progress = task.progress / 100f, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            }
+        }
         if (imageAnalysis.isNotBlank()) {
             Text("图片理解结果", style = MaterialTheme.typography.titleSmall)
             Text(imageAnalysis, style = MaterialTheme.typography.bodySmall)
