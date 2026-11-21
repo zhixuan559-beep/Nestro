@@ -74,6 +74,7 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(apiKey, { apiKey = it }, label = { Text(if (configured) "新 API Key（留空不允许覆盖）" else "API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
             OutlinedTextField(model, { model = it }, label = { Text("图像理解聊天模型 ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(transcriptionModel, { transcriptionModel = it }, label = { Text("音频转写模型 ID（OpenAI 官方默认 gpt-transcribe）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("gpt-transcribe 是官方推荐模型，但返回全文而非逐句时间戳；如需分段字幕，可暂用 whisper-1 的 segment 时间戳模式，该旧模型计划于 2027-02-26 停止服务。", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
