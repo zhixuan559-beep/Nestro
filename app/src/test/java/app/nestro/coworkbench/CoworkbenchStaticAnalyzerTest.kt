@@ -28,6 +28,13 @@ class CoworkbenchStaticAnalyzerTest {
                     implementation("org.example:demo:1.+")
                 }"""
             )
+            root.resolve("settings.gradle.kts").writeText(
+                """repositories {
+                    maven {
+                        url = uri("https://repo.example.invalid/releases")
+                    }
+                }"""
+            )
             root.resolve("app/src/main/Example.kt").apply {
                 parentFile.mkdirs()
                 writeText("Runtime.getRuntime().exec(\"sh\")")
@@ -40,6 +47,7 @@ class CoworkbenchStaticAnalyzerTest {
             assertTrue(report.findings.any { it.category == "导出组件" })
             assertTrue(report.findings.any { it.category == "命令执行" && it.level == CoworkbenchFindingLevel.HIGH })
             assertTrue(report.findings.any { it.category == "依赖版本" })
+            assertTrue(report.findings.any { it.category == "依赖仓库" && it.path == "settings.gradle.kts" })
         } finally {
             root.deleteRecursively()
         }
