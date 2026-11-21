@@ -9,8 +9,11 @@ class AdaptiveLayoutPolicyTest {
         assertEquals(248, adaptiveDrawerWidthDp(320))
         assertEquals(280, adaptiveDrawerWidthDp(390))
         assertEquals(280, adaptiveDrawerWidthDp(599))
-        assertEquals(320, adaptiveDrawerWidthDp(600))
-        assertEquals(360, adaptiveDrawerWidthDp(840))
+        assertEquals(240, adaptiveDrawerWidthDp(600))
+        assertEquals(280, adaptiveDrawerWidthDp(700))
+        assertEquals(320, adaptiveDrawerWidthDp(839))
+        assertEquals(320, adaptiveDrawerWidthDp(840))
+        assertEquals(360, adaptiveDrawerWidthDp(1200))
     }
 
     @Test
