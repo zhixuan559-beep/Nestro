@@ -87,7 +87,9 @@ object CoworkbenchStaticAnalyzer {
             totalBytes += size
             val relative = root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
             inspect(relative, text, findings, dependencies)
-            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text)
+            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text).map { finding ->
+                finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
+            }
             if (relative.lowercase().endsWith(".toml")) {
                 dependencyTokens(relative, text).forEach { declaration ->
                     dependencies += "$relative:$declaration"
@@ -184,7 +186,9 @@ object CoworkbenchStaticAnalyzer {
             }
             if (after != null) {
                 inspect(path, after, findings, linkedSetOf())
-                findings += CoworkbenchDataFlowAnalyzer.analyze(path, after)
+                findings += CoworkbenchDataFlowAnalyzer.analyze(path, after).map { finding ->
+                    finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
+                }
             }
         }
         return CoworkbenchChangeImpact(
