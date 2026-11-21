@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
@@ -29,12 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import app.nestro.git.GitLocalRepository
 import app.nestro.git.GitWorkbenchRepository
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
-fun AiCoworkbenchPage(onBack: () -> Unit) {
+fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
     val context = LocalContext.current
     val git = remember { GitWorkbenchRepository(context) }
     val service = remember { AiCoworkbenchService(context, git) }
@@ -42,29 +41,26 @@ fun AiCoworkbenchPage(onBack: () -> Unit) {
     val repositories = remember { git.localRepositories() }
     var selectedRepoId by remember { mutableStateOf(repositories.firstOrNull()?.id.orEmpty()) }
     var repoMenu by remember { mutableStateOf(false) }
-    var path by remember { mutableStateOf("") }
-    var proposedContent by remember { mutableStateOf("") }
-    var deleteFile by remember { mutableStateOf(false) }
+    var task by remember { mutableStateOf("") }
+    var patchJson by remember { mutableStateOf("") }
     var review by remember { mutableStateOf<CoworkbenchReview?>(null) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("AI 共建工作台", style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = onBack) { Text("返回") }
         }
-        Text("先生成补丁审查，再逐文件核对影响；只有点击批准后才会修改本地仓库。当前版本接收待审查的文本变更，不执行补丁中的代码。", style = MaterialTheme.typography.bodySmall)
+        Text("先让当前模型按结构化格式提出代码变更，再逐文件审查。模型输出不会自动写入仓库，也不会在手机上执行生成代码。",
+            style = MaterialTheme.typography.bodySmall)
         if (repositories.isEmpty()) {
             Text("尚无本地 Git 仓库。请先在 Git 工作台克隆一个仓库。")
         } else {
             OutlinedButton(onClick = { repoMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                val selected = repositories.firstOrNull { it.id == selectedRepoId }
-                Text(selected?.fullName ?: "选择本地仓库")
+                Text(repositories.firstOrNull { it.id == selectedRepoId }?.fullName ?: "选择本地仓库")
             }
             DropdownMenu(expanded = repoMenu, onDismissRequest = { repoMenu = false }) {
                 repositories.forEach { repo ->
@@ -76,89 +72,91 @@ fun AiCoworkbenchPage(onBack: () -> Unit) {
                     })
                 }
             }
-            OutlinedTextField(
-                value = path, onValueChange = { path = it; review = null },
-                modifier = Modifier.fillMaxWidth(), label = { Text("仓库相对文件路径") },
-                singleLine = true, enabled = !busy
-            )
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Checkbox(checked = deleteFile, onCheckedChange = { deleteFile = it; review = null }, enabled = !busy)
-                Text("将该文件作为删除操作审查")
+            OutlinedTextField(value = task, onValueChange = { task = it }, modifier = Modifier.fillMaxWidth(),
+                label = { Text("本次开发目标") }, minLines = 3)
+            Button(onClick = {
+                val prompt = """
+你正在为 Nestro Android 项目提出代码补丁。目标：${task.trim()}
+请只输出一个 JSON 对象，不要 Markdown 代码围栏，格式必须是：
+{"files":[{"path":"仓库相对路径","content":"该文件完整的新内容或 null（表示删除）"}]}
+要求：
+- 只修改完成目标所必需的文件；每个文件给出完整内容，不要输出 diff 片段。
+- 不得修改 .git、仓库外路径、密钥、签名文件或 CI 凭据。
+- 不得加入自动执行任意 Shell/脚本的逻辑，不得静默新增权限。
+- 如果涉及依赖、权限、构建脚本或安全边界，在 JSON 外不要添加说明；风险将在审查阶段检查。
+- 不确定现有代码结构时，先要求补充相关源码，不得臆造 API。
+""".trimIndent()
+                onUseChatPrompt(prompt)
+            }, enabled = task.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                Text("交给当前模型生成补丁方案")
             }
-            if (!deleteFile) {
-                OutlinedTextField(
-                    value = proposedContent, onValueChange = { proposedContent = it; review = null },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("待审查的新文件内容") },
-                    minLines = 8, enabled = !busy
-                )
+            OutlinedTextField(value = patchJson, onValueChange = { patchJson = it; review = null },
+                modifier = Modifier.fillMaxWidth(), label = { Text("粘贴模型返回的补丁 JSON") }, minLines = 8, enabled = !busy)
+            Button(onClick = {
+                busy = true
+                status = ""
+                scope.launch {
+                    try {
+                        val raw = patchJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+                        val rows = JSONObject(raw).getJSONArray("files")
+                        val proposals = (0 until rows.length()).map { index ->
+                            val row = rows.getJSONObject(index)
+                            require(row.has("path") && row.has("content")) { "每个文件都必须包含 path 和 content" }
+                            CoworkbenchProposal(row.getString("path"), if (row.isNull("content")) null else row.getString("content"))
+                        }
+                        review = service.prepareReview(selectedRepoId, proposals)
+                        snapshot = null
+                        status = "审查已生成。逐文件核对 diff 和风险提示后，再决定是否批准。"
+                    } catch (error: Exception) {
+                        status = error.message ?: "生成审查失败"
+                    } finally { busy = false }
+                }
+            }, enabled = !busy && selectedRepoId.isNotBlank() && patchJson.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text("解析多文件补丁并生成审查")
             }
-            Button(
-                onClick = {
-                    busy = true
-                    status = ""
-                    scope.launch {
-                        try {
-                            review = service.prepareReview(selectedRepoId, listOf(CoworkbenchProposal(path, if (deleteFile) null else proposedContent)))
-                            snapshot = null
-                            status = "审查已生成。请检查完整变更与风险提示，再决定是否批准。"
-                        } catch (error: Exception) {
-                            status = error.message ?: "生成审查失败"
-                        } finally { busy = false }
-                    }
-                },
-                enabled = !busy && selectedRepoId.isNotBlank() && path.isNotBlank() && (deleteFile || proposedContent.isNotEmpty()),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("生成补丁审查") }
 
             review?.let { item ->
                 Divider()
                 Text(item.summary, style = MaterialTheme.typography.titleMedium)
-                Text("审查摘要：${item.contentHash}", style = MaterialTheme.typography.bodySmall)
-                if (item.warnings.isNotEmpty()) {
-                    Text("影响与风险提示", style = MaterialTheme.typography.titleSmall)
-                    item.warnings.forEach { Text("• " + it, style = MaterialTheme.typography.bodySmall) }
-                } else Text("未触发已配置的风险规则；这不代表代码绝对安全。", style = MaterialTheme.typography.bodySmall)
+                Text("SHA-256 审查摘要：${item.contentHash}", style = MaterialTheme.typography.bodySmall)
+                Text("影响与风险提示", style = MaterialTheme.typography.titleSmall)
+                if (item.warnings.isEmpty()) Text("未触发已配置规则；这不代表代码绝对安全。", style = MaterialTheme.typography.bodySmall)
+                item.warnings.forEach { Text("• " + it, style = MaterialTheme.typography.bodySmall) }
                 item.files.forEach { file ->
                     Text(file.path, style = MaterialTheme.typography.titleSmall)
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                         Text(file.diff, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Button(
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            try {
-                                snapshot = service.applyApproved(item.id, item.contentHash, explicitlyApproved = true)
-                                status = "补丁已应用；回滚快照已保存。"
-                            } catch (error: Exception) {
-                                status = error.message ?: "补丁应用失败"
-                            } finally { busy = false }
-                        }
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("我已核对，批准并应用补丁") }
+                Button(onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            snapshot = service.applyApproved(item.id, item.contentHash, explicitlyApproved = true)
+                            status = "补丁已应用；回滚快照已持久化。"
+                        } catch (error: Exception) {
+                            status = error.message ?: "补丁应用失败"
+                        } finally { busy = false }
+                    }
+                }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("我已核对，批准并应用全部变更")
+                }
             }
             snapshot?.let { saved ->
                 Text("快照已保存：${saved.id}", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            try {
-                                service.rollback(saved.id)
-                                status = "已按快照回滚。"
-                                snapshot = null
-                                review = null
-                            } catch (error: Exception) {
-                                status = error.message ?: "回滚失败"
-                            } finally { busy = false }
-                        }
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("回滚本次变更") }
+                OutlinedButton(onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            service.rollback(saved.id)
+                            status = "已按快照回滚。"
+                            snapshot = null
+                            review = null
+                        } catch (error: Exception) {
+                            status = error.message ?: "回滚失败"
+                        } finally { busy = false }
+                    }
+                }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回滚本次变更") }
             }
         }
         if (busy) CircularProgressIndicator()
