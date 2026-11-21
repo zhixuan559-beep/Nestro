@@ -316,6 +316,7 @@ object MediaProjectStore {
         }
         val target = File(directory, id + "." + extension)
         val staging = File(directory, "." + id + ".importing")
+        if (target.exists()) require(target.delete()) { "无法清理上次中断的处理结果临时文件" }
         val digest = MessageDigest.getInstance("SHA-256")
         try {
             FileInputStream(source).use { input ->
