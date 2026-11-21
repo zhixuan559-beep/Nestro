@@ -200,6 +200,24 @@ fun CapabilityDirectoryPage() {
             dismissButton={TextButton(onClick={showKeyRotationConfirm=false}) { Text("取消") }}
         )
     }
+    pendingPlan?.let { plan ->
+        AlertDialog(
+            onDismissRequest={pendingPlan=null},
+            title={Text("确认安装完整依赖计划？")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("以下技能将按依赖顺序一次性写入；任何一项校验失败都不会产生部分安装。")
+                plan.orderedBundles.forEach { item -> Text("• "+item.name+" v"+item.version+" · 权限："+item.permissions.ifEmpty { listOf("无") }.joinToString("、")) }
+                if(plan.alreadySatisfied.isNotEmpty()) Text("已满足依赖："+plan.alreadySatisfied.entries.joinToString("、") { it.key+"@"+it.value })
+                Text("新安装技能默认停用；不执行技能包代码，也不会自动授予声明权限。")
+            }},
+            confirmButton={TextButton(onClick={
+                val result=runCatching { lifecycle.installAll(plan.orderedBundles) }
+                result.onSuccess { installStatus="已原子安装 "+plan.orderedBundles.size+" 个社区技能。新安装技能默认停用，旧版本可回退。"; pendingPlan=null }
+                    .onFailure { installStatus="安装失败："+(it.message ?: "本地数据提交失败") }
+            }) { Text("确认安装全部") }},
+            dismissButton={TextButton(onClick={pendingPlan=null}) { Text("取消") }}
+        )
+    }
     pendingBundle?.let { bundle ->
         AlertDialog(
             onDismissRequest={pendingBundle=null},
@@ -214,14 +232,21 @@ fun CapabilityDirectoryPage() {
                 Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。")
             }},
             confirmButton={TextButton(onClick={
-                val installResult=runCatching { lifecycle.install(bundle) }
-                installResult.onSuccess {
-                    installStatus="已安装 "+bundle.name+" v"+bundle.version+"。旧版本已保留，可在本地能力列表回退；技能默认不自动启用。"
-                    pendingBundle=null
-                }.onFailure {
-                    installStatus="安装失败："+(it.message ?: "本地数据提交失败")
+                loading=true
+                scope.launch {
+                    val installed=runCatching {
+                        val meta=JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}")
+                        meta.keys().associateWith { name -> runCatching { JSONObject(meta.optString(name,"{}")).optString("version") }.getOrDefault("") }
+                    }.getOrDefault(emptyMap())
+                    val result=withContext(Dispatchers.IO) { runCatching { app.nestro.data.SkillDependencyResolver.resolve(
+                        releases.firstOrNull { it.name==bundle.name && it.version==bundle.version } ?: error("原始签名目录版本已失效"),
+                        releases, installed
+                    ) } }
+                    result.onSuccess { pendingPlan=it; pendingBundle=null }
+                        .onFailure { installStatus="依赖解析失败："+(it.message ?: "无法形成完整安装计划") }
+                    loading=false
                 }
-            }) { Text("确认安装") }},
+            }) { Text("解析依赖并继续") }},
             dismissButton={TextButton(onClick={pendingBundle=null}) { Text("取消") }}
         )
     }
