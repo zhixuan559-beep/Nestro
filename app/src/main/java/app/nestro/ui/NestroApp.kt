@@ -228,6 +228,8 @@ fun NestroApp() {
     val chatExecutionUiState = remember { ChatExecutionUiState() }
     var draft by chatExecutionUiState.draft
     var busy by chatExecutionUiState.busy
+    var pendingCoworkbenchPrompt by remember { mutableStateOf("") }
+    var coworkbenchGeneratedPatch by remember { mutableStateOf("") }
     var stopRequested by chatExecutionUiState.stopRequested
     var activeRequestId by chatExecutionUiState.activeRequestId
     var activeRequestConversationId by chatExecutionUiState.activeRequestConversationId
@@ -867,6 +869,8 @@ fun NestroApp() {
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
+        val isCoworkbenchRequest = pendingCoworkbenchPrompt.isNotBlank() && prompt.startsWith(pendingCoworkbenchPrompt)
+        pendingCoworkbenchPrompt = ""
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
         val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
@@ -1128,6 +1132,10 @@ fun NestroApp() {
                 conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 prefs.edit().remove("chat_request_state_v1").apply()
                 if (activeConversationId == requestConversationId) messages = completedHistory
+                if (isCoworkbenchRequest && finalized.status == ChatResponseStatus.SUCCESS && !stopRequested && activeConversationId == requestConversationId) {
+                    coworkbenchGeneratedPatch = finalText
+                    page = "coworkbench"
+                }
                 status = when (finalized.status) {
                     ChatResponseStatus.STOPPED -> "已停止生成"
                     ChatResponseStatus.SUCCESS -> when {
@@ -2795,7 +2803,12 @@ fun NestroApp() {
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "git" -> GitWorkbenchPage(context)
-                        "coworkbench" -> AiCoworkbenchPage(onBack = { page = "home" }, onUseChatPrompt = { prompt -> draft = prompt; page = "home" })
+                        "coworkbench" -> AiCoworkbenchPage(
+                            onBack = { page = "home" },
+                            initialPatchJson = coworkbenchGeneratedPatch,
+                            onPatchConsumed = { coworkbenchGeneratedPatch = "" },
+                            onUseChatPrompt = { prompt -> pendingCoworkbenchPrompt = prompt; draft = prompt; page = "home" }
+                        )
                         "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
