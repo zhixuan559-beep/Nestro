@@ -387,7 +387,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                         entryBytes += count
                         total += count
                     }
-                    if (entryBytes >= 256_000 || total >= 2_000_000) {
+                    if (total >= 2_000_000) {
                         entryTruncated = true
                     } else {
                         // Read one extra byte to distinguish an exact-size entry from a truncated one.
@@ -435,8 +435,8 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                             total += count
                         }
                     }
-                    zip.closeEntry()
                     if (total >= 1_000_000) break
+                    zip.closeEntry()
                 }
                 if (total >= 1_000_000) output.append("\n…日志达到 1 MB 展示上限")
                 output.toString()
