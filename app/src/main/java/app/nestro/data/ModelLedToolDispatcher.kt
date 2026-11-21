@@ -1,5 +1,22 @@
 package app.nestro.data
 
+import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentPermissionRouter
+import app.nestro.agent.AgentTaskStateStore
+import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentToolLeaseRegistry
+import app.nestro.agent.AgentToolRequest
+import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.AgentToolAccess
+import app.nestro.agent.AgentRuntime
+import app.nestro.agent.DefaultAgentRuntime
+import app.nestro.agent.RoomAgentTaskTraceStore
+import app.nestro.agent.RoomAgentTaskStateStore
+import app.nestro.data.NestroDatabase
+import app.nestro.model.ChatExecutionService
+import org.json.JSONObject
+import java.util.UUID
+
 internal data class ModelToolDecision(
     val action: String,
     val text: String,
@@ -37,23 +54,6 @@ internal object ModelToolDecisionParser {
         )
     }
 }
-
-import app.nestro.agent.AgentTaskState
-import app.nestro.agent.AgentPermissionRouter
-import app.nestro.agent.AgentTaskStateStore
-import app.nestro.agent.AgentTaskStatus
-import app.nestro.agent.AgentToolLeaseRegistry
-import app.nestro.agent.AgentToolRequest
-import app.nestro.agent.AgentToolCatalog
-import app.nestro.agent.AgentToolAccess
-import app.nestro.agent.AgentRuntime
-import app.nestro.agent.DefaultAgentRuntime
-import app.nestro.agent.RoomAgentTaskTraceStore
-import app.nestro.agent.RoomAgentTaskStateStore
-import app.nestro.data.NestroDatabase
-import app.nestro.model.ChatExecutionService
-import org.json.JSONObject
-import java.util.UUID
 
 internal data class ModelToolDispatchResult(
     val directReply: String? = null,
@@ -173,8 +173,7 @@ $prompt
             }
             if (round == MAX_TOOL_ROUNDS - 1) {
                 markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
-                markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
-        return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
+                return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
             }
             val spec = catalog.find(decision.toolId) ?: run {
                 markTerminal(AgentTaskStatus.FAILED, "模型选择了未注册的工具：${decision.toolId}")
@@ -216,6 +215,7 @@ $prompt
             }
             workingHistory = (workingHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", "已请求工具：${spec.id}")).takeLast(40)
         }
+        markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
         return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
     }
 
