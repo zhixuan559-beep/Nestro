@@ -209,10 +209,19 @@ fun AiCoworkbenchPage(
                         require(patchJson.toByteArray(Charsets.UTF_8).size <= CoworkbenchPolicy.MAX_TOTAL_BYTES + 1_000_000) { "模型补丁 JSON 过大，已拒绝解析" }
                         val raw = patchJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
                         val rows = JSONObject(raw).getJSONArray("files")
+                        require(rows.length() in 1..CoworkbenchPolicy.MAX_FILES) { "补丁必须包含 1 到 ${CoworkbenchPolicy.MAX_FILES} 个文件" }
                         val proposals = (0 until rows.length()).map { index ->
                             val row = rows.getJSONObject(index)
-                            require(row.has("path") && row.has("content")) { "每个文件都必须包含 path 和 content" }
-                            CoworkbenchProposal(row.getString("path"), if (row.isNull("content")) null else row.getString("content"))
+                            require(row.length() == 2 && row.has("path") && row.has("content")) {
+                                "每个文件对象只能包含 path 和 content 两个字段"
+                            }
+                            val pathValue = row.get("path")
+                            require(pathValue is String) { "补丁文件 path 必须是字符串" }
+                            val contentValue = row.get("content")
+                            require(contentValue == JSONObject.NULL || contentValue is String) {
+                                "补丁文件 content 必须是完整文本字符串或 null"
+                            }
+                            CoworkbenchProposal(pathValue, if (contentValue == JSONObject.NULL) null else contentValue as String)
                         }
                         review = service.prepareReview(selectedRepoId, proposals)
                         selectedReviewPaths = review!!.files.map { it.path }.toSet()
