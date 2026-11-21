@@ -45,7 +45,7 @@ object CoworkbenchPolicy {
     }
 
     private fun isProtectedPatchPath(path: String): Boolean {
-        val normalized = path.lowercase().replace('\\\\', '/')
+        val normalized = path.lowercase().replace('\\', '/')
         val name = normalized.substringAfterLast('/')
         val protectedNames = setOf(
             "local.properties", "gradle.properties", "google-services.json", "service-account.json",
