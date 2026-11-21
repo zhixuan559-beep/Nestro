@@ -99,11 +99,11 @@ object CoworkbenchReportParser {
         val result = mutableListOf<CoworkbenchResolvedDependency>()
         val parents = mutableMapOf<Int, String>()
         var configuration = ""
-        val coordinate = Regex("""^([^\\s:]+):([^\\s:]+):([^\\s]+)(?:\\s+->\\s+([^\\s]+))?.*$""")
+        val coordinate = Regex("""^([^\s:]+):([^\s:]+):([^\s]+)(?:\s+->\s+([^\s]+))?.*$""")
         content.lineSequence().forEach { raw ->
             if (result.size >= 10_000) return@forEach
             val line = raw.take(2_000)
-            val marker = Regex("""(?:\\+---|\\\\---|---)\\s+(.+)$""").find(line)
+            val marker = Regex("""(?:\+---|\\---|---)\s+(.+)$""").find(line)
             if (marker == null) {
                 if (line.contains(" - ") && !line.trimStart().startsWith("|")) {
                     configuration = line.trim().substringBefore(" - ").take(160)
