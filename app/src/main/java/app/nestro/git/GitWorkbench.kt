@@ -351,7 +351,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val directory = File(root, id)
         try {
             val currentBranch = Git.cloneRepository().setURI(remote.cloneUrl).setDirectory(directory)
-                .setCredentialsProvider(credentials(account)).setCloneAllBranches(true).call().use { git ->
+                .setCredentialsProvider(credentials(account)).setCloneAllBranches(true).setTimeout(120).call().use { git ->
                     git.repository.branch
                 }
             val local = GitLocalRepository(id, account.id, account.provider, remote.fullName,
@@ -533,7 +533,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun pull(id: String): GitOperationResult = withRepo(id) { git ->
         require(git.status().call().isClean) { "工作区存在未提交变更，请先提交或暂存后再拉取" }
         val result = git.pull().setCredentialsProvider(credentials(requireAccount(requireLocal(id).accountId)))
-            .setRebase(false).call()
+            .setTimeout(45).setRebase(false).call()
         val merge = result.mergeResult
         val conflicts = merge?.conflicts?.keys?.toList().orEmpty()
         when {
@@ -547,7 +547,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val account = requireAccount(requireLocal(id).accountId)
         val branch = git.repository.branch
         val results = git.push().setCredentialsProvider(credentials(account))
-            .setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call()
+            .setTimeout(45).setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call()
         val messages = results.flatMap { it.remoteUpdates }.map { it.status.name }
         val failed = messages.any { it !in setOf("OK", "UP_TO_DATE") }
         GitOperationResult(!failed, if (failed) "推送未完成：" + messages.distinct().joinToString("、") else "推送完成。")
