@@ -17,6 +17,7 @@ Status: implementation in progress. This document records the agreed target; a c
 - [x] Optional phone-task planning overlaps context assembly instead of serially extending the pre-stream critical path.
 - [ ] Complete responsive layouts for compact phones, landscape, tablets and foldables; verify keyboard/IME insets, safe areas, font scaling, navigation and split-screen.
 - [ ] Profile cold start, first-frame time, recomposition, memory, CPU, storage, network wakeups and battery on representative low/mid/high-tier devices.
+- [x] Chat optional retrievals are skipped by policy and independent selected retrievals run concurrently.
 - [ ] Remove avoidable main-thread work and duplicate parsing; add bounded caches and lazy feature initialization where profiling proves benefit.
 - [ ] Define performance budgets and verify regressions with repeatable benchmarks. Do not claim "high responsiveness" based on source inspection alone.
 
@@ -43,7 +44,7 @@ Architecture invariants:
 
 ## Current implementation boundary
 
-The chat request coordinator currently centralizes context assembly and streaming. The process-wide agent task coordinator and shared capability catalog already provide reusable scheduling/catalog foundations for Phone Agent, experts, workflows and MCP. Model registry/fallback/usage accounting, project-scope primitives, and community signature/dependency foundations also exist and must be reused rather than rebuilt. The present chat path still has a legacy task-mode gate and keyword-based Phone Agent category planner; it is not yet the complete model-native tool-decision loop described above. Native model tool-call parsing, provider protocol adaptation, dispatcher handoff, bounded multi-step tool rounds and end-to-end cancellation/result reinjection must be implemented before this principle can be marked complete.
+The chat request coordinator currently centralizes context assembly and streaming. The process-wide agent task coordinator and shared capability catalog already provide reusable scheduling/catalog foundations for Phone Agent, experts, workflows and MCP. Model registry/fallback/usage accounting, project-scope primitives, and community signature/dependency foundations also exist and must be reused rather than rebuilt. The chat path now has a model-led JSON decision loop before final response: direct reply bypasses tool execution; tool decisions are restricted to the shared catalog, receive a task-local lease, pass through `AgentRuntime` and its permission router, and return bounded results for model synthesis. Existing granted MCP tools use their persisted per-tool grant check, and `knowledge.search` is registered as a project-scoped read-only capability. The decision request is streamed and cancellable; the tool loop is capped at three decision rounds. Remaining: provider-native tool-call protocol adapters (OpenAI/Anthropic/Gemini), user-confirmation continuation for non-MCP high-risk tools, richer schema-aware argument validation for every capability, and full project-scope enforcement for each future tool handler. Until those are complete, this is a functioning first model-led dispatch path, not the final native tool-call architecture.
 
 ## Acceptance sequence
 
@@ -59,3 +60,11 @@ Finish all feature code and architecture integration first. Only then run the ag
 - `ChatRequestExecutionCoordinator` and `ChatStreamingCoordinator`: existing single chat request boundary; extend these rather than creating another chat pipeline.
 - `ProjectResourceScopeStore` / `ProjectAccessControlStore`: existing project resource scoping and explicit cross-project grants.
 - Module 19 community code: SemVer dependency resolution and signed trust-root/revocation foundations.
+
+
+## Newly connected implementation
+
+- `ModelLedToolDispatcher` is wired into `ChatRequestExecutionCoordinator` from `NestroApplication`.
+- The dispatcher uses the existing process-wide `AgentToolCatalog`, creates a task-scoped lease, invokes through `DefaultAgentRuntime`, persists task state and trace, and passes project scope to non-MCP handlers.
+- MCP calls are allowed only while the persisted tool grant and server-enabled state remain valid; the MCP handler rechecks authorization at execution time.
+- `knowledge.search` is available to the model and can only query the project ID injected by the dispatcher, not an ID supplied by the model.
