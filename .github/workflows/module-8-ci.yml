@@ -86,8 +86,8 @@ jobs:
   instrumentation:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_instrumentation != true }}
     needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: macos-26-intel
+    timeout-minutes: 120
     env:
       ANDROID_I_WANT_MY_TCG: "yes"
       SKIP_ANDROID_APK_BUILD: "true"
@@ -108,7 +108,7 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none -memory 4096 -cores 4
           disable-animations: true
-          emulator-boot-timeout: 600000
+          emulator-boot-timeout: 600
           script: bash .github/scripts/run-android-instrumentation.sh
       - name: Upload Android instrumentation diagnostics
         if: always()
