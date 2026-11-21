@@ -7,6 +7,7 @@ import android.util.Base64
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.diff.DiffFormatter
 import org.eclipse.jgit.api.MergeResult
 import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.revwalk.RevCommit
@@ -14,6 +15,8 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
@@ -78,6 +81,18 @@ object GitWorkbenchPolicy {
             !value.startsWith("-") && !value.startsWith("/") && !value.endsWith("/") &&
             !value.contains("..") && !value.contains("@{") &&
             value.none { it.isWhitespace() || it in charArrayOf('~', '^', ':', '?', '*', '[', '\\', ' ') }
+
+    fun validCloneUrl(provider: GitProvider, value: String): Boolean {
+        val uri = runCatching { URI(value) }.getOrNull() ?: return false
+        if (!uri.scheme.equals("https", true) || uri.userInfo != null || uri.host.isNullOrBlank()) return false
+        val expected = when (provider) {
+            GitProvider.GITHUB -> setOf("github.com")
+            GitProvider.GITLAB -> setOf("gitlab.com")
+            GitProvider.GITEE -> setOf("gitee.com")
+        }
+        return uri.host.lowercase() in expected && uri.port in setOf(-1, 443) &&
+            uri.rawQuery == null && uri.rawFragment == null
+    }
 
     fun safeRelativePath(value: String): String {
         require(value.isNotBlank() && value.length <= 1024) { "文件路径不能为空且不能超过 1024 个字符" }
@@ -322,6 +337,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     suspend fun clone(account: GitAccount, remote: GitRemoteRepository): GitLocalRepository = withContext(Dispatchers.IO) {
         require(remote.provider == account.provider)
+        require(GitWorkbenchPolicy.validCloneUrl(remote.provider, remote.cloneUrl)) { "远程仓库地址不属于已选代码托管服务商，已阻止克隆" }
         val id = UUID.randomUUID().toString()
         val directory = File(root, id)
         try {
@@ -482,6 +498,16 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val entries = (git.diff().call() + git.diff().setCached(true).call())
         entries.map { GitChangeRecord(it.newPath.takeIf { path -> path != "/dev/null" } ?: it.oldPath, it.changeType.name) }
             .distinctBy { it.path }.sortedBy { it.path }
+    }
+
+    suspend fun diffPatch(id: String): String = withRepo(id) { git ->
+        val output = ByteArrayOutputStream()
+        DiffFormatter(output).use { formatter ->
+            formatter.setRepository(git.repository)
+            formatter.format(git.diff().call())
+            formatter.format(git.diff().setCached(true).call())
+        }
+        String(output.toByteArray(), Charsets.UTF_8).take(200_000)
     }
 
     suspend fun revert(id: String, commitId: String): GitOperationResult = withRepo(id) { git ->
