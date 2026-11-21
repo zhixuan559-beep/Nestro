@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.Instant
 
 object CalendarProviderBridge {
     data class WritableCalendar(val id: Long, val name: String)
@@ -48,14 +50,23 @@ object CalendarProviderBridge {
                 val begin = cursor.getLong(beginIndex)
                 val end = cursor.getLong(endIndex)
                 if (systemEventId <= 0L || systemCalendarId <= 0L || end <= begin) continue
+                val allDay = cursor.getInt(allDayIndex) != 0
+                val localStart = if (allDay) {
+                    Instant.ofEpochMilli(begin).atZone(ZoneOffset.UTC).toLocalDate()
+                        .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                } else begin
+                val localEnd = if (allDay) {
+                    Instant.ofEpochMilli(end).atZone(ZoneOffset.UTC).toLocalDate()
+                        .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                } else end
                 val event = CalendarEvent(
                     id = "system-$systemCalendarId-$systemEventId-$begin",
                     title = cursor.getString(titleIndex)?.take(120)?.ifBlank { "未命名日程" } ?: "未命名日程",
                     description = cursor.getString(descriptionIndex)?.take(4000).orEmpty(),
                     location = cursor.getString(locationIndex)?.take(300).orEmpty(),
-                    startAt = begin,
-                    endAt = end,
-                    allDay = cursor.getInt(allDayIndex) != 0,
+                    startAt = localStart,
+                    endAt = localEnd,
+                    allDay = allDay,
                     recurrence = CalendarRules.NONE,
                     reminderMinutes = -1,
                     completed = false,
@@ -86,9 +97,17 @@ object CalendarProviderBridge {
                 put(CalendarContract.Events.TITLE, event.title)
                 put(CalendarContract.Events.DESCRIPTION, event.description)
                 put(CalendarContract.Events.EVENT_LOCATION, event.location)
-                put(CalendarContract.Events.DTSTART, event.startAt)
-                put(CalendarContract.Events.DTEND, event.endAt)
-                put(CalendarContract.Events.EVENT_TIMEZONE, zone)
+                val start = if (event.allDay) {
+                    Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                        .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                } else event.startAt
+                val end = if (event.allDay) {
+                    Instant.ofEpochMilli(event.endAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                        .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                } else event.endAt
+                put(CalendarContract.Events.DTSTART, start)
+                put(CalendarContract.Events.DTEND, end)
+                put(CalendarContract.Events.EVENT_TIMEZONE, if (event.allDay) "UTC" else zone)
                 put(CalendarContract.Events.ALL_DAY, if (event.allDay) 1 else 0)
                 put(CalendarContract.Events.HAS_ALARM, 0)
                 when (event.recurrence) {
