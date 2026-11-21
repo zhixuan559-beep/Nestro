@@ -11,7 +11,9 @@ data class SpeechProviderConfig(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val voice: String? = null
+    val voice: String? = null,
+    val inputModel: String = "whisper-1",
+    val outputModel: String = "gpt-4o-mini-tts"
 ) {
     fun validateForRemoteProvider() {
         require(providerId.matches(Regex("[a-zA-Z0-9._-]{1,80}"))) { "语音服务商标识无效" }
@@ -21,11 +23,13 @@ data class SpeechProviderConfig(
         }
         require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.code < 0x20 || it.code == 0x7f }) { "API Key 不能为空、不能包含控制字符且不能超过 4096 字符" }
         require(uri.rawQuery == null && uri.rawFragment == null) { "语音服务地址不能包含查询参数或片段" }
-        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "语音模型名称无效" }
+        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "实时语音模型名称无效" }
+        require(inputModel.isNotBlank() && inputModel.length <= 120 && inputModel.none { it.isISOControl() }) { "语音识别模型名称无效" }
+        require(outputModel.isNotBlank() && outputModel.length <= 120 && outputModel.none { it.isISOControl() }) { "语音合成模型名称无效" }
         require(voice == null || (voice.length <= 120 && voice.none { it.isISOControl() })) { "音色标识无效或超出长度限制" }
     }
 
-    override fun toString(): String = "SpeechProviderConfig(providerId=$providerId, baseUrl=$baseUrl, apiKey=[REDACTED], model=$model, voice=$voice)"
+    override fun toString(): String = "SpeechProviderConfig(providerId=$providerId, baseUrl=$baseUrl, apiKey=[REDACTED], realtimeModel=$model, inputModel=$inputModel, outputModel=$outputModel, voice=$voice)"
 }
 
 data class SpeechTranscript(
