@@ -44,8 +44,11 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("语音输入", substring = true).performClick()
 
-        composeRule.onNodeWithText("语音输入").assertIsDisplayed()
-        composeRule.onNodeWithText("当前不内置语音合成或第三方语音插件。", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("语音输入与输出").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "语音输入：在聊天输入框按住麦克风说话，松开后由 Android 系统识别服务转写并发送。",
+            substring = true
+        ).assertIsDisplayed()
     }
 
 
