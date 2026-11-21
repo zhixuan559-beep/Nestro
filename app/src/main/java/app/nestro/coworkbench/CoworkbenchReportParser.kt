@@ -22,6 +22,17 @@ data class CoworkbenchTestReport(
     val skipped: Int
 )
 
+data class CoworkbenchResolvedDependency(
+    val configuration: String,
+    val group: String?,
+    val artifact: String,
+    val requestedVersion: String?,
+    val resolvedVersion: String?,
+    val depth: Int,
+    val parent: String?,
+    val notation: String
+)
+
 object CoworkbenchReportParser {
     private const val MAX_REPORT_CHARS = 1_000_000
     private const val MAX_COMPONENTS = 5_000
@@ -80,6 +91,50 @@ object CoworkbenchReportParser {
             }
         }
         return result.distinctBy { listOf(it.name, it.version, it.packageUrl) }.take(MAX_COMPONENTS)
+    }
+
+    fun parseGradleDependencyReport(path: String, content: String): List<CoworkbenchResolvedDependency> {
+        if (content.length > MAX_REPORT_CHARS ||
+            !path.lowercase().endsWith(".txt") && !path.lowercase().endsWith(".log")) return emptyList()
+        val result = mutableListOf<CoworkbenchResolvedDependency>()
+        val parents = mutableMapOf<Int, String>()
+        var configuration = ""
+        val coordinate = Regex("""^([^\\s:]+):([^\\s:]+):([^\\s]+)(?:\\s+->\\s+([^\\s]+))?.*$""")
+        content.lineSequence().forEach { raw ->
+            if (result.size >= 10_000) return@forEach
+            val line = raw.take(2_000)
+            val marker = Regex("""(?:\\+---|\\\\---|---)\\s+(.+)$""").find(line)
+            if (marker == null) {
+                if (line.contains(" - ") && !line.trimStart().startsWith("|")) {
+                    configuration = line.trim().substringBefore(" - ").take(160)
+                    parents.clear()
+                }
+                return@forEach
+            }
+            val depth = line.substring(0, marker.range.first).count { it == '|' }
+            val notation = marker.groupValues[1].trim()
+            val match = coordinate.find(notation)
+            if (match != null) {
+                val group = match.groupValues[1]
+                val artifact = match.groupValues[2]
+                val requested = match.groupValues[3].takeIf { it.isNotBlank() }
+                val resolved = match.groupValues[4].takeIf { it.isNotBlank() } ?: requested
+                val key = "$group:$artifact:$resolved"
+                val parent = parents.filterKeys { it < depth }.maxByOrNull { it.key }?.value
+                result += CoworkbenchResolvedDependency(configuration, group, artifact, requested, resolved,
+                    depth, parent, notation)
+                parents.keys.filter { it >= depth }.toList().forEach(parents::remove)
+                parents[depth] = key
+            } else if (notation.startsWith("project ")) {
+                val artifact = notation.substringAfter("project ").substringBefore(" ").take(160)
+                val parent = parents.filterKeys { it < depth }.maxByOrNull { it.key }?.value
+                result += CoworkbenchResolvedDependency(configuration, null, artifact, null, null,
+                    depth, parent, notation)
+                parents.keys.filter { it >= depth }.toList().forEach(parents::remove)
+                parents[depth] = artifact
+            }
+        }
+        return result
     }
 
     fun parseJunitXml(path: String, content: String): CoworkbenchTestReport? {
