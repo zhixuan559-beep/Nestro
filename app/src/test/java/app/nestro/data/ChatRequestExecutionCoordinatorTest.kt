@@ -44,7 +44,7 @@ class ChatRequestExecutionCoordinatorTest {
     )
 
     @Test
-    fun ordinaryChatRunsContextTeamAndStreamingInOrder() = runBlocking {
+    fun ordinaryChatDoesNotPreemptivelyRunTeamOrPhoneAgent() = runBlocking {
         val order = mutableListOf<String>()
         var observedSystemPrompt = ""
         val coordinator = coordinator { systemPrompt, onChunk ->
@@ -57,7 +57,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { order += "plan" },
+            planPhoneAgent = { order += "plan"; "planned" },
             runExpertTeam = { context ->
                 assertEquals("base-context", context)
                 order += "team"
@@ -65,9 +65,9 @@ class ChatRequestExecutionCoordinatorTest {
             },
             onPartialAnswer = { order += "partial:$it" }
         )
-        assertEquals(listOf("team", "stream", "partial:partial"), order)
+        assertEquals(listOf("stream", "partial:partial"), order)
         assertTrue(observedSystemPrompt.contains("base-context"))
-        assertTrue(observedSystemPrompt.contains("team-context"))
+        assertTrue(!observedSystemPrompt.contains("team-context"))
         assertEquals("complete", result.finalization.finalText)
         assertEquals(ChatResponseStatus.SUCCESS, result.finalization.status)
     }
