@@ -47,7 +47,7 @@ internal fun Suggestion(label: String, onClick: () -> Unit) {
 @Composable
 internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null) {
     val user = message.role == "user"
-    val videoMarker = Regex("""\\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\\]""")
+    val videoMarker = Regex("""\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\]""")
     val videoAssetId = videoMarker.find(message.content)?.groupValues?.getOrNull(1)
     val visibleContent = message.content.replace(videoMarker, "").trim()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
