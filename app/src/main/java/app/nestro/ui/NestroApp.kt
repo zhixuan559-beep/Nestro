@@ -136,7 +136,7 @@ internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
 }
 
 @Composable
-fun NestroApp() {
+fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val adaptiveDrawerWidth = adaptiveDrawerWidthDp(screenWidthDp).dp
@@ -145,7 +145,7 @@ fun NestroApp() {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
-    var page by remember { mutableStateOf("home") }
+    var page by remember(initialPage) { mutableStateOf(initialPage) }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
