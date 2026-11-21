@@ -12,6 +12,8 @@ import app.nestro.speech.RealtimeVoiceSession
 import app.nestro.speech.SpeechAudio
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.media.MediaPlayer
@@ -19,12 +21,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -48,6 +53,8 @@ fun VoiceSystemPage() {
     val providerStore = remember(context) { SpeechProviderConfigStore(context) }
     val savedProvider = remember(context) { providerStore.read()?.copy(apiKey = "") }
     val scope = rememberCoroutineScope()
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val realtimeAudioRef = remember { AtomicReference<RealtimeVoiceAudioController?>(null) }
     var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
     var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
     var providerVoice by remember { mutableStateOf(savedProvider?.voice ?: "alloy") }
@@ -115,36 +122,45 @@ fun VoiceSystemPage() {
             val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
                 override fun onConnected(activeSession: RealtimeVoiceSession) {
                     try {
-                        val audio = RealtimeVoiceAudioController(activeSession) { message -> status = message }
+                        val audio = RealtimeVoiceAudioController(activeSession) { message ->
+                            mainHandler.post { status = message }
+                        }
                         audio.start()
-                        realtimeAudio = audio
-                        realtimeSession = activeSession
-                        status = "实时双向语音已连接，可以直接说话"
+                        realtimeAudioRef.set(audio)
+                        mainHandler.post {
+                            realtimeAudio = audio
+                            realtimeSession = activeSession
+                            status = "实时双向语音已连接，可以直接说话"
+                        }
                     } catch (error: Throwable) {
                         activeSession.close()
-                        status = error.message ?: "实时音频设备启动失败"
+                        mainHandler.post { status = error.message ?: "实时音频设备启动失败" }
                     }
                 }
 
                 override fun onTranscript(text: String, isFinal: Boolean) {
-                    if (isFinal) realtimeTranscript = (realtimeTranscript + text + "\\n").takeLast(2_000)
-                    status = if (isFinal) "识别完成：$text" else "实时转写：$text"
+                    mainHandler.post {
+                        if (isFinal) realtimeTranscript = (realtimeTranscript + text + "\\n").takeLast(2_000)
+                        status = if (isFinal) "识别完成：$text" else "实时转写：$text"
+                    }
                 }
 
                 override fun onAudio(audio: SpeechAudio) {
-                    runCatching { realtimeAudio?.play(audio) }
-                        .onFailure { status = it.message ?: "实时音频播放失败" }
+                    runCatching { realtimeAudioRef.get()?.play(audio) }
+                        .onFailure { error -> mainHandler.post { status = error.message ?: "实时音频播放失败" } }
                 }
 
                 override fun onError(message: String) {
-                    status = message
+                    mainHandler.post { status = message }
                 }
 
                 override fun onClosed() {
-                    realtimeAudio?.close()
-                    realtimeAudio = null
-                    realtimeSession = null
-                    status = "实时语音连接已断开"
+                    realtimeAudioRef.getAndSet(null)?.close()
+                    mainHandler.post {
+                        realtimeAudio = null
+                        realtimeSession = null
+                        status = "实时语音连接已断开"
+                    }
                 }
             })
             realtimeSession = session
@@ -162,7 +178,7 @@ fun VoiceSystemPage() {
     DisposableEffect(controller) {
         onDispose {
             controller.close()
-            realtimeAudio?.close()
+            realtimeAudioRef.getAndSet(null)?.close()
             realtimeSession?.close()
             runCatching { mediaPlayer?.stop() }
             runCatching { mediaPlayer?.release() }
@@ -173,7 +189,7 @@ fun VoiceSystemPage() {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("语音输入与输出")
@@ -355,7 +371,7 @@ fun VoiceSystemPage() {
             OutlinedButton(
                 enabled = realtimeSession != null,
                 onClick = {
-                    realtimeAudio?.close()
+                    realtimeAudioRef.getAndSet(null)?.close()
                     realtimeAudio = null
                     realtimeSession?.close()
                     realtimeSession = null
