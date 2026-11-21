@@ -164,8 +164,9 @@ class NestroApplication : Application() {
                 if (config.videoGenerationModel.isBlank()) {
                     return@register app.nestro.agent.AgentToolResult(false, error = "当前媒体服务商没有配置视频生成模型 ID")
                 }
+                val parentTaskId = arguments["previous_task_id"]?.trim().orEmpty()
                 val task = runCatching {
-                    MediaVideoGeneration.enqueue(this@NestroApplication, projectId, config.providerId, prompt)
+                    MediaVideoGeneration.enqueue(this@NestroApplication, projectId, config.providerId, prompt, parentTaskId)
                 }.getOrElse {
                     return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "视频任务提交失败")
                 }
@@ -178,7 +179,7 @@ class NestroApplication : Application() {
                 when (latest.status) {
                     MediaAiTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
                         true,
-                        output = "视频生成完成并已保存到当前项目素材库。素材 ID：${runCatching { org.json.JSONObject(latest.resultJson).optString("assetId") }.getOrDefault("")}。生成提示词：$prompt"
+                        output = "视频生成完成并已保存到当前项目素材库。任务 ID：${task.id}；素材 ID：${runCatching { org.json.JSONObject(latest.resultJson).optString("assetId") }.getOrDefault("")}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}。生成提示词：$prompt"
                     )
                     MediaAiTaskStatus.FAILED -> app.nestro.agent.AgentToolResult(false, error = latest.error.ifBlank { "视频生成失败" })
                     MediaAiTaskStatus.CANCELLED -> app.nestro.agent.AgentToolResult(false, error = "视频生成任务已取消")
@@ -198,14 +199,17 @@ class NestroApplication : Application() {
                 val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围")
                 val taskId = arguments["task_id"]?.trim().orEmpty()
-                val task = runCatching { MediaAiTaskStore.read(this@NestroApplication, projectId, taskId) }.getOrNull()
-                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "当前项目不存在该媒体任务")
+                val task = if (taskId.isBlank()) {
+                    MediaAiTaskStore.list(this@NestroApplication, projectId).firstOrNull { it.action == "video-generate" }
+                } else {
+                    runCatching { MediaAiTaskStore.read(this@NestroApplication, projectId, taskId) }.getOrNull()
+                } ?: return@register app.nestro.agent.AgentToolResult(false, error = "当前项目不存在该视频任务")
                 val resultAssetId = if (task.resultJson.isNotBlank()) runCatching {
                     org.json.JSONObject(task.resultJson).optString("assetId")
                 }.getOrDefault("") else ""
                 app.nestro.agent.AgentToolResult(
                     true,
-                    output = "状态：${task.status}；进度：${task.progress}%；素材 ID：${resultAssetId.ifBlank { "尚未生成" }}；错误：${task.error}"
+                    output = "任务 ID：${task.id}；状态：${task.status}；进度：${task.progress}%；素材 ID：${resultAssetId.ifBlank { "尚未生成" }}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}；提示词：${task.prompt}；错误：${task.error}"
                 )
             }
         }
