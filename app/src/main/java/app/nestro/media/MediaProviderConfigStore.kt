@@ -388,7 +388,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                 fields.forEach { (name, value) ->
                     out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
                 }
-                out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"media.bin\"\r\nContent-Type: $mimeType\r\n\r\n".toByteArray())
+                out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$uploadName\"\r\nContent-Type: $mimeType\r\n\r\n".toByteArray())
                 var sent = 0L
                 file.inputStream().use { input ->
                     val buffer = ByteArray(64 * 1024)
