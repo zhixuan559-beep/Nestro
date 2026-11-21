@@ -101,7 +101,7 @@ object GeneratedPluginPackageValidator {
         }
     }
 
-    internal val TEMPLATE = Regex("""\\$\\{([^}]{1,100})}""")
+    internal val TEMPLATE = Regex("""\$\{([^}]{1,100})\}""")
 }
 
 internal fun parseGeneratedPluginPackage(raw: String): GeneratedPluginPackage {
