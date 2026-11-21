@@ -54,23 +54,25 @@ object SkillSemVer {
                 runCatching { parse(expectedText).let { it.pre.isNotEmpty() && it.major==candidate.major && it.minor==candidate.minor && it.patch==candidate.patch } }.getOrDefault(false)
             }
             terms.isNotEmpty() && (candidate.pre.isEmpty() || allowsPrerelease) && terms.all { term ->
-                val operator=listOf(">=","<=",">","<","^","~").firstOrNull(term::startsWith)
-                val expectedText=if(operator==null) term else term.removePrefix(operator)
-                val expected=parse(expectedText)
-                val comparison=compare(version,expectedText)
-                when(operator) {
-                    null -> comparison==0
-                    ">=" -> comparison>=0
-                    "<=" -> comparison<=0
-                    ">" -> comparison>0
-                    "<" -> comparison<0
-                    "^" -> comparison>=0 && when {
-                        expected.major>BigInteger.ZERO -> candidate.major==expected.major
-                        expected.minor>BigInteger.ZERO -> candidate.major==BigInteger.ZERO && candidate.minor==expected.minor
-                        else -> candidate.major==BigInteger.ZERO && candidate.minor==BigInteger.ZERO && candidate.patch==expected.patch
+                if (term == "*") candidate.pre.isEmpty() else {
+                    val operator=listOf(">=","<=",">","<","^","~").firstOrNull(term::startsWith)
+                    val expectedText=if(operator==null) term else term.removePrefix(operator)
+                    val expected=parse(expectedText)
+                    val comparison=compare(version,expectedText)
+                    when(operator) {
+                        null -> comparison==0
+                        ">=" -> comparison>=0
+                        "<=" -> comparison<=0
+                        ">" -> comparison>0
+                        "<" -> comparison<0
+                        "^" -> comparison>=0 && when {
+                            expected.major>BigInteger.ZERO -> candidate.major==expected.major
+                            expected.minor>BigInteger.ZERO -> candidate.major==BigInteger.ZERO && candidate.minor==expected.minor
+                            else -> candidate.major==BigInteger.ZERO && candidate.minor==BigInteger.ZERO && candidate.patch==expected.patch
+                        }
+                        "~" -> comparison>=0 && candidate.major==expected.major && candidate.minor==expected.minor
+                        else -> false
                     }
-                    "~" -> comparison>=0 && candidate.major==expected.major && candidate.minor==expected.minor
-                    else -> false
                 }
             }
         }
