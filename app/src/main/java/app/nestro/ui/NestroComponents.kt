@@ -81,7 +81,7 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
                 }
             }
             if (!user && message.content.isNotBlank() && onSaveArtifact != null) {
-                TextButton(onClick = { onSaveArtifact.invoke(message.content) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                TextButton(onClick = { onSaveArtifact.invoke(visibleContent) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
                     Icon(Icons.Outlined.Bookmark, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(5.dp))
                     Text("存入产物库", color = Mint, style = MaterialTheme.typography.labelMedium)
