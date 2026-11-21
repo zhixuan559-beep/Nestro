@@ -155,6 +155,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                         }
                         Switch(
                             checked = server.enabled,
+                            enabled = !loading,
                             onCheckedChange = { enabled ->
                                 scope.launch {
                                     loading = true
@@ -208,7 +209,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled = !loading, onClick = { discover(server.id) }) { Text("刷新工具") }
                         if (repository.hasCredential(server.id)) {
-                            TextButton(onClick = {
+                            TextButton(enabled = !loading, onClick = {
                                 scope.launch {
                                     loading = true
                                     try {
@@ -225,7 +226,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                                 }
                             }) { Text("清除凭据") }
                         }
-                        TextButton(onClick = { deleteServer = server }) {
+                        TextButton(enabled = !loading, onClick = { deleteServer = server }) {
                             Text("删除服务", color = MaterialTheme.colorScheme.error)
                         }
                     }
