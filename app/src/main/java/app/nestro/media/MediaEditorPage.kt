@@ -103,12 +103,29 @@ fun MediaEditorPage(
     LaunchedEffect(projectId) {
         runCatching { reload() }.onFailure { status = "读取媒体项目失败：" + (it.message ?: "索引损坏") }
         withContext(Dispatchers.IO) { MediaAiTaskScheduler.recover(context, projectId) }
+        val pendingResults = withContext(Dispatchers.IO) { MediaAiTaskStore.pendingResults(context, projectId) }
         val interrupted = withContext(Dispatchers.IO) { MediaAiTaskStore.recoverable(context, projectId) }
-        if (activeMediaAiTaskId.isBlank()) activeMediaAiTaskId = interrupted.firstOrNull()?.id.orEmpty()
+        if (activeMediaAiTaskId.isBlank()) activeMediaAiTaskId = pendingResults.firstOrNull()?.id ?: interrupted.firstOrNull()?.id.orEmpty()
         while (isActive) {
             tasks = withContext(Dispatchers.IO) { MediaRenderTaskStore.list(context, projectId) }
             mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
-            if (activeMediaAiTaskId.isBlank()) activeMediaAiTaskId = mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.QUEUED || it.status == MediaAiTaskStatus.RUNNING }?.id.orEmpty()
+            if (imageAnalysis.isBlank()) {
+                val savedImage = mediaAiTasks.firstOrNull { it.action == "image" && it.status == MediaAiTaskStatus.COMPLETED && it.resultJson.isNotBlank() }
+                if (savedImage != null) imageAnalysis = runCatching { JSONObject(savedImage.resultJson).optString("text") }.getOrDefault("")
+            }
+            if (detectedScenes.isEmpty()) {
+                val savedScenes = mediaAiTasks.firstOrNull { it.action == "scenes" && it.status == MediaAiTaskStatus.COMPLETED && it.resultJson.isNotBlank() }
+                if (savedScenes != null) detectedScenes = runCatching {
+                    val rows = JSONObject(savedScenes.resultJson).optJSONArray("scenes") ?: JSONArray()
+                    (0 until rows.length()).map { index -> rows.getJSONObject(index).let { row ->
+                        MediaScene(row.getLong("startMs"),row.getLong("endMs"),row.optString("title"),row.optString("description"),row.optString("caption"))
+                    } }
+                }.getOrDefault(emptyList())
+            }
+            if (activeMediaAiTaskId.isBlank()) {
+                activeMediaAiTaskId = mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.COMPLETED && !it.resultConsumed }?.id
+                    ?: mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.QUEUED || it.status == MediaAiTaskStatus.RUNNING }?.id.orEmpty()
+            }
             delay(1_000)
         }
     }
