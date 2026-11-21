@@ -5,7 +5,7 @@ import java.util.UUID
 enum class MediaAssetKind { VIDEO, AUDIO, IMAGE }
 enum class MediaTrackKind { VIDEO, AUDIO }
 enum class MediaRenderStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
-enum class MediaIntelligenceCapability { TRANSCRIPTION, SCENE_DETECTION, AUDIO_PROCESSING }
+enum class MediaIntelligenceCapability { TRANSCRIPTION, SCENE_DETECTION, AUDIO_PROCESSING, IMAGE_UNDERSTANDING }
 
 data class MediaAsset(
     val id: String,
