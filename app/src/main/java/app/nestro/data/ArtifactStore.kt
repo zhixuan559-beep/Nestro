@@ -64,23 +64,28 @@ object ArtifactStore {
     fun list(context: Context, projectId: String): List<ArtifactRecord> {
         val raw = indexFile(context).takeIf { it.exists() }?.readText(Charsets.UTF_8) ?: "[]"
         val rows = JSONArray(raw)
-        return (0 until rows.length()).mapNotNull { index ->
-            runCatching {
-                val row = rows.getJSONObject(index)
-                val id = row.getString("id")
-                require(id.matches(Regex("[0-9a-fA-F-]{36}")))
-                require(row.getString("fileName") == "${id}.md")
-                ArtifactRecord(
-                    id = id,
-                    projectId = row.getString("projectId"),
-                    title = row.getString("title"),
-                    fileName = row.getString("fileName"),
-                    mimeType = row.optString("mimeType", "text/markdown"),
-                    createdAt = row.getLong("createdAt"),
-                    sizeBytes = row.getLong("sizeBytes"),
-                    version = row.optInt("version", 1).coerceAtLeast(1)
-                )
-            }.getOrNull()
+        return (0 until rows.length()).map { index ->
+            val row = rows.getJSONObject(index)
+            val id = row.artifactString("id")
+            val fileName = row.artifactString("fileName")
+            val record = ArtifactRecord(
+                id = id,
+                projectId = row.artifactString("projectId"),
+                title = row.artifactString("title"),
+                fileName = fileName,
+                mimeType = row.optString("mimeType", "text/markdown"),
+                createdAt = row.optLong("createdAt"),
+                sizeBytes = row.optLong("sizeBytes", -1L),
+                version = row.optInt("version", 1)
+            )
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && fileName == "${id}.md") {
+                "产物索引包含无效文件引用"
+            }
+            require(record.projectId.isNotBlank() && record.title.isNotBlank() &&
+                record.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() && record.version in 1..10_000) {
+                "产物索引元数据无效"
+            }
+            record
         }.filter { it.projectId == projectId && File(root(context), it.fileName).isFile }
             .sortedWith(compareByDescending<ArtifactRecord> { it.createdAt }.thenByDescending { it.version })
     }
