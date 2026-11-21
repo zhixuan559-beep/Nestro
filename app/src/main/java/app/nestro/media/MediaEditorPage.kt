@@ -576,10 +576,12 @@ fun MediaEditorPage(
             OutlinedButton(onClick = {
                 val taskId = activeMediaAiTaskId
                 if (taskId.isNotBlank()) scope.launch {
-                    runCatching { withContext(Dispatchers.IO) { MediaAiTaskScheduler.cancel(context, projectId, taskId) } }
-                    mediaAiRunning = false
-                    activeMediaAiTaskId = ""
-                    status = "已取消媒体 AI 任务。"
+                    val result = withContext(Dispatchers.IO) { runCatching { MediaAiTaskScheduler.cancel(context, projectId, taskId) } }
+                    result.onSuccess {
+                        mediaAiRunning = false
+                        activeMediaAiTaskId = ""
+                        status = "已取消媒体 AI 任务。"
+                    }.onFailure { status = "取消未完成："+(it.message ?: "任务状态已变化") }
                 }
             }) { Text("取消媒体 AI 任务") }
         }
