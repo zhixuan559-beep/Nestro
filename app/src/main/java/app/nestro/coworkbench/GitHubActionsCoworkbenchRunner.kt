@@ -5,7 +5,6 @@ import app.nestro.git.GitLocalRepository
 import app.nestro.git.GitProvider
 import app.nestro.git.GitAccountStore
 import java.net.URLEncoder
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.zip.ZipInputStream
 import java.time.Instant
@@ -29,6 +28,8 @@ object CoworkbenchReleaseGate {
 }
 
 data class CoworkbenchJobStep(val name: String, val status: String, val conclusion: String?)
+data class CoworkbenchArtifactFile(val path: String, val content: String)
+data class CoworkbenchArtifactReport(val id: Long, val name: String, val sizeBytes: Long, val files: List<CoworkbenchArtifactFile>)
 data class CoworkbenchJobResult(
     val id: Long,
     val name: String,
@@ -44,7 +45,8 @@ data class CoworkbenchValidationResult(
     val conclusion: String?,
     val url: String,
     val createdAt: String,
-    val jobs: List<CoworkbenchJobResult> = emptyList()
+    val jobs: List<CoworkbenchJobResult> = emptyList(),
+    val artifacts: List<CoworkbenchArtifactReport> = emptyList()
 ) {
     val completed: Boolean get() = status == "completed"
     val successful: Boolean get() = completed && conclusion == "success"
@@ -137,7 +139,14 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                     } catch (_: Exception) {
                         emptyList()
                     }
-                    return@withContext found.copy(jobs = jobs)
+                    val artifacts = try {
+                        loadArtifactReports(fullName, token, found.runId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    return@withContext found.copy(jobs = jobs, artifacts = artifacts)
                 }
             } else if (visibleSince == null && System.currentTimeMillis() - startedAt > 90_000L) {
                 error("已触发 Workflow，但 90 秒内未找到对应运行记录；请检查 workflow_dispatch、分支和仓库 Actions 设置")
@@ -206,6 +215,87 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 steps,
                 logs
             )
+        }
+    }
+
+    private suspend fun loadArtifactReports(
+        repository: String,
+        token: String,
+        runId: Long
+    ): List<CoworkbenchArtifactReport> {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/runs/" + runId + "/artifacts?per_page=100")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        val body = executeCancellable(request).use { response ->
+            require(response.isSuccessful) { "读取构建产物失败（HTTP " + response.code + "）" }
+            response.body?.string().orEmpty()
+        }
+        val rows = JSONObject(body).optJSONArray("artifacts") ?: org.json.JSONArray()
+        return (0 until minOf(rows.length(), 10)).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (row.optBoolean("expired", false)) return@mapNotNull null
+            val id = row.optLong("id")
+            val name = row.optString("name")
+            val size = row.optLong("size_in_bytes")
+            val files = try {
+                downloadArtifactFiles(repository, token, id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptyList()
+            }
+            CoworkbenchArtifactReport(id, name, size, files)
+        }
+    }
+
+    private suspend fun downloadArtifactFiles(
+        repository: String,
+        token: String,
+        artifactId: Long
+    ): List<CoworkbenchArtifactFile> {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/artifacts/" + artifactId + "/zip")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        return executeCancellable(request).use { response ->
+            require(response.isSuccessful) { "下载构建产物失败（HTTP " + response.code + "）" }
+            val stream = response.body?.byteStream() ?: return@use emptyList()
+            ZipInputStream(stream).use { zip ->
+                val reports = mutableListOf<CoworkbenchArtifactFile>()
+                var total = 0
+                var entries = 0
+                while (entries < 40 && total < 2_000_000) {
+                    val entry = zip.nextEntry ?: break
+                    entries++
+                    val name = entry.name.replace('\\\\', '/')
+                    val safeName = name.split('/').none { it == ".." || it.isBlank() } &&
+                        !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)
+                    val reportFile = listOf(".xml", ".html", ".htm", ".txt", ".json", ".log")
+                        .any { name.lowercase().endsWith(it) }
+                    if (!entry.isDirectory && safeName && reportFile) {
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var entryBytes = 0
+                        while (entryBytes < 256_000 && total < 2_000_000) {
+                            val count = zip.read(buffer, 0, minOf(buffer.size, 256_000 - entryBytes, 2_000_000 - total))
+                            if (count <= 0) break
+                            output.write(buffer, 0, count)
+                            entryBytes += count
+                            total += count
+                        }
+                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"))
+                    }
+                    zip.closeEntry()
+                }
+                reports
+            }
         }
     }
 
