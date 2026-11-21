@@ -24,6 +24,9 @@ class MediaAiTaskStoreTest {
         val restored=MediaAiTaskStore.read(context,task.projectId,task.id)
         assertEquals(MediaAiTaskStatus.COMPLETED,restored?.status)
         assertEquals(100,restored?.progress)
+        assertTrue(MediaAiTaskStore.pendingResults(context,task.projectId).any { it.id==task.id })
+        MediaAiTaskStore.update(context,task.projectId,task.id,status=MediaAiTaskStatus.COMPLETED,resultConsumed=true)
+        assertTrue(MediaAiTaskStore.pendingResults(context,task.projectId).none { it.id==task.id })
         assertTrue(MediaAiTaskStore.recoverable(context,task.projectId).none { it.id==task.id })
     }
 }
