@@ -9,6 +9,7 @@ class GitWorkbenchPolicyTest {
         assertTrue(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITLAB, "https://gitlab.com/group/repo.git"))
         assertTrue(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITEE, "https://gitee.com/octo/repo.git"))
         assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "http://github.com/octo/repo.git"))
+        assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "not-a-url"))
         assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://user:token@github.com/octo/repo.git"))
         assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://attacker.example/octo/repo.git"))
         assertFalse(GitWorkbenchPolicy.validCloneUrl(GitProvider.GITHUB, "https://github.com/octo/repo.git?token=secret"))
