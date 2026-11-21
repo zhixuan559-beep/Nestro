@@ -375,19 +375,32 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                         !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)
                     val reportFile = listOf(".xml", ".html", ".htm", ".txt", ".json", ".log")
                         .any { name.lowercase().endsWith(it) }
-                    if (!entry.isDirectory && safeName && reportFile) {
-                        val output = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(8192)
-                        var entryBytes = 0
-                        while (entryBytes < 256_000 && total < 2_000_000) {
-                            val count = zip.read(buffer, 0, minOf(buffer.size, 256_000 - entryBytes, 2_000_000 - total))
-                            if (count <= 0) break
-                            output.write(buffer, 0, count)
-                            entryBytes += count
-                            total += count
-                        }
-                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"), truncated = entryBytes >= 256_000)
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var entryBytes = 0
+                    var entryTruncated = false
+                    while (entryBytes < 256_000 && total < 2_000_000) {
+                        val count = zip.read(buffer, 0, minOf(buffer.size, 256_000 - entryBytes, 2_000_000 - total))
+                        if (count < 0) break
+                        if (count == 0) continue
+                        if (reportFile && safeName) output.write(buffer, 0, count)
+                        entryBytes += count
+                        total += count
                     }
+                    if (entryBytes >= 256_000 || total >= 2_000_000) {
+                        entryTruncated = true
+                    } else {
+                        // Read one extra byte to distinguish an exact-size entry from a truncated one.
+                        val extra = zip.read()
+                        if (extra >= 0) {
+                            entryTruncated = true
+                            total++
+                        }
+                    }
+                    if (!entry.isDirectory && safeName && reportFile) {
+                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"), truncated = entryTruncated)
+                    }
+                    if (entryTruncated) break
                     zip.closeEntry()
                 }
                 reports
