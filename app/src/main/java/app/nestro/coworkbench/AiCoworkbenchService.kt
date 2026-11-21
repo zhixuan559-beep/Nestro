@@ -322,10 +322,26 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                 "文件 " + item.path + " 在补丁应用后又发生变化，已中止回滚以保护新内容"
             }
         }
-        withContext(NonCancellable) { restoreBefore(snapshot) }
-        approvals.listFiles().orEmpty().firstOrNull { it.name == snapshot.id + ".json" }?.let { eventFile ->
-            val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull()
-            if (event != null) writeJson(eventFile, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "用户通过回滚快照恢复原文件")))
+        val eventFile = File(approvals, snapshot.id + ".json")
+        val existingEvent = if (eventFile.isFile) {
+            runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull()
+        } else null
+        val event = existingEvent ?: CoworkbenchApprovalRecord(
+            snapshot.id, snapshot.repositoryId, snapshot.reviewId, System.currentTimeMillis(),
+            snapshot.files.map { it.path }, "ROLLING_BACK", "历史快照回滚事务"
+        )
+        writeJson(eventFile, encodeApproval(event.copy(status = "ROLLING_BACK", detail = "用户请求回滚；恢复事务已持久化")))
+        try {
+            withContext(NonCancellable) {
+                restoreBefore(snapshot)
+                writeJson(eventFile, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "已按快照恢复原文件")))
+            }
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERY_REQUIRED",
+                    detail = "回滚过程中断或失败；下次进入工作台将尝试恢复：" + (failure.message ?: "未知错误"))))
+            }
+            throw failure
         }
         snapshot
     }
@@ -346,7 +362,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             .filter { it.isFile && it.extension == "json" && it.length() in 1..256_000 }
             .forEach { eventFile ->
                 val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull() ?: return@forEach
-                if (event.status == "PENDING" || event.status == "RECOVERY_REQUIRED") {
+                if (event.status == "PENDING" || event.status == "ROLLING_BACK" || event.status == "RECOVERY_REQUIRED") {
                     val snapshotFile = File(snapshots, event.id + ".json")
                     try {
                         require(snapshotFile.isFile && snapshotFile.length() in 1..5_000_000) { "事务快照缺失或无效" }
@@ -422,7 +438,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         require(result.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
             result.reviewId.matches(Regex("[0-9a-fA-F-]{36}")) && result.repositoryId.isNotBlank() &&
             paths.isNotEmpty() && paths.size <= CoworkbenchPolicy.MAX_FILES &&
-            result.status in setOf("PENDING", "APPLIED", "ROLLED_BACK", "RECOVERED", "RECOVERY_REQUIRED"))
+            result.status in setOf("PENDING", "APPLIED", "ROLLING_BACK", "ROLLED_BACK", "RECOVERED", "RECOVERY_REQUIRED"))
         return result
     }
 
