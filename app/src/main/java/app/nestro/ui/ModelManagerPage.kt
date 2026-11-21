@@ -165,7 +165,7 @@ internal fun ModelManager(
                 modifier = Modifier.fillMaxWidth()
             ) { Text("查看魔搭当前免费额度与魔粒") }
             Text("魔搭免费额度、可用模型和并发限制由账户实时决定；部分 API-Inference 服务可能要求绑定阿里云账号并完成实名认证。Nestro 不承诺永久免费或固定调用次数。", color = Muted, style = MaterialTheme.typography.bodySmall)
-            Text("魔搭官方 OAuth 仍需登记 Nestro 应用，并由安全服务端完成授权码换 Token；当前通过官方令牌页直达，不会收集账号密码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("魔搭 OAuth 登录链路已集成；部署方完成一次应用注册和服务端配置后，用户即可在这里登录授权并自动绑定账号。", color = Muted, style = MaterialTheme.typography.bodySmall)
             OutlinedButton(
                 onClick = {
                     val backend = BuildConfig.MODELSCOPE_OAUTH_BACKEND_URL.trim().trimEnd('/')

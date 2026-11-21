@@ -58,7 +58,7 @@ internal object ModelScopeOAuthCallback {
                 presetId = "modelscope",
                 protocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
             )
-        val next = registry.upsertProvider(provider).upsertApiKey(
+        val next = registry.upsertProvider(provider.copy(enabled = true)).upsertApiKey(
             ModelApiKey(keyId, providerId, "魔搭 OAuth · $displayName", enabled = true)
         )
         LocalVault.writeApiKey(context.applicationContext, keyId, token)
