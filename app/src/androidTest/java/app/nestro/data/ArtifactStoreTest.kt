@@ -48,6 +48,23 @@ class ArtifactStoreTest {
     }
 
     @Test
+    fun readAndDeleteRejectForgedCrossProjectReferences() {
+        val record = ArtifactStore.save(context, "project-a", "Private", "project a content")
+        val forged = record.copy(projectId = "project-b")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.read(context, forged)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.delete(context, forged)
+        }
+
+        assertEquals("project a content", ArtifactStore.read(context, record))
+        assertEquals(1, ArtifactStore.list(context, "project-a").size)
+        assertTrue(ArtifactStore.list(context, "project-b").isEmpty())
+    }
+
+    @Test
     fun restoreStagesNewFilesAndReplacesIndexWithoutOverwritingOldRecords() {
         val old = ArtifactStore.save(context, "project-a", "Old", "old content")
         val backup = JSONArray().put(
