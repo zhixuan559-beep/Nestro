@@ -45,6 +45,7 @@ internal fun GeneratedPluginCenterPage(
     val scope = rememberCoroutineScope()
     var request by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
+    var updateTarget by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
     var plugins by remember { mutableStateOf(store.list()) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("插件以声明式工作流安装，不执行任意代码。") }
@@ -85,8 +86,9 @@ internal fun GeneratedPluginCenterPage(
                                 )
                                 factory.generate(
                                     request = request.trim(),
-                                    existingPluginIds = plugins.map { it.id }.toSet(),
+                                    existingPluginIds = plugins.map { it.id }.filterNot { it == updateTarget?.id }.toSet(),
                                     discovery = application.agentToolCatalog,
+                                    allowExistingPluginId = updateTarget?.id,
                                     configs = configs,
                                     onUsage = onUsage
                                 )
@@ -121,14 +123,24 @@ internal fun GeneratedPluginCenterPage(
                     Text("安全边界：不执行任意代码；高风险设备、身份验证和金融工具不能加入插件。", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
-                            val result = runCatching { store.install(candidate, application.agentToolCatalog) }
+                            val result = runCatching {
+                                val target = updateTarget
+                                if (target == null) store.install(candidate, application.agentToolCatalog)
+                                else {
+                                    require(candidate.id == target.id) { "升级草案必须保留原插件 ID" }
+                                    store.replaceVersion(candidate, application.agentToolCatalog)
+                                }
+                            }
                             result.onSuccess {
                                 draft = null
+                                updateTarget = null
+                                application.refreshGeneratedPluginTools()
                                 reload()
-                                status = "插件已安装，默认关闭。启用后才能在主聊天中调用。"
-                            }.onFailure { status = it.message ?: "插件安装失败" }
-                        }) { Text("安装（默认关闭）") }
-                        OutlinedButton(onClick = { draft = null }) { Text("丢弃草案") }
+                                onChanged()
+                                status = if (updateTarget == null) "插件已安装，默认关闭。启用后才能在主聊天中调用。" else "插件版本已更新并默认停用，可检查后重新启用。"
+                            }.onFailure { status = it.message ?: "插件安装/更新失败" }
+                        }) { Text(if (updateTarget == null) "安装（默认关闭）" else "更新版本（默认关闭）") }
+                        OutlinedButton(onClick = { draft = null; updateTarget = null }) { Text("丢弃草案") }
                     }
                 }
             }
@@ -163,6 +175,23 @@ internal fun GeneratedPluginCenterPage(
                                     status = "插件已卸载。"
                                 }
                             }) { Text("卸载") }
+                            if (store.historyVersions(plugin.id).isNotEmpty()) {
+                                OutlinedButton(onClick = {
+                                    val result = runCatching { store.rollbackPrevious(plugin.id, application.agentToolCatalog) }
+                                    result.onSuccess {
+                                        application.refreshGeneratedPluginTools()
+                                        reload()
+                                        onChanged()
+                                        status = "已回滚到 ${it.version}，插件默认停用。"
+                                    }.onFailure { status = it.message ?: "插件回滚失败" }
+                                }) { Text("回滚上一版本") }
+                            }
+                            OutlinedButton(onClick = {
+                                updateTarget = plugin
+                                draft = null
+                                request = "升级现有插件 ID：${plugin.id}。当前版本：${plugin.version}。保持相同 ID，生成更高的 SemVer 版本；在不改变既有输入含义的前提下优化以下流程：${plugin.description}"
+                                status = "正在准备插件升级草案，请检查生成结果后再替换。"
+                            }) { Text("生成升级草案") }
                         }
                     }
                 }
