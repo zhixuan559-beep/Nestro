@@ -206,6 +206,23 @@ fun CapabilityDirectoryPage() {
             }
         }
     }
+    if(showAuthorityPinConfirm) {
+        val authorityFingerprint=runCatching { SkillCommunityClient.fingerprint(pendingAuthorityKey) }.getOrDefault("无效公钥")
+        AlertDialog(
+            onDismissRequest={showAuthorityPinConfirm=false},
+            title={Text("确认固定独立信任根？")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("SHA-256 指纹："+authorityFingerprint)
+                Text("固定后不能通过普通目录刷新替换该信任根。请先从可信的独立渠道核对指纹。")
+            }},
+            confirmButton={TextButton(onClick={
+                val result=runCatching { trustStore.pinAuthorityKey(pendingAuthorityKey) }
+                status=result.fold({ "独立信任根已固定：SHA-256 "+trustStore.authorityFingerprint() },{ "信任根固定失败："+(it.message ?: "无效公钥") })
+                showAuthorityPinConfirm=false
+            }) { Text("确认固定") }},
+            dismissButton={TextButton(onClick={showAuthorityPinConfirm=false}) { Text("取消") }}
+        )
+    }
     if(showKeyRotationConfirm) {
         val oldFingerprint=runCatching { SkillCommunityClient.fingerprint(pinnedTrustedKey) }.getOrDefault("无法计算")
         val newFingerprint=runCatching { SkillCommunityClient.fingerprint(pendingRotationKey) }.getOrDefault("无效公钥")
