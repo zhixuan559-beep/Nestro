@@ -59,7 +59,7 @@ data class CoworkbenchValidationResult(
         artifact.diagnostic != null || artifact.files.any { it.truncated }
     }
     val successful: Boolean get() = completed && conclusion == "success" &&
-        testReports.isNotEmpty() && reportedTestFailures == 0 && !hasTruncatedReports
+        testReports.any { it.total > 0 } && reportedTestFailures == 0 && !hasTruncatedReports
 }
 
 /**
