@@ -334,7 +334,10 @@ fun GitWorkbenchPage(context: Context) {
                             }
                         }
                     }
-                    TextButton(enabled = !loading, onClick = { pendingDeleteRepo = selectedLocal.id }) { Text("彻底删除本地副本") }
+                    TextButton(enabled = !loading, onClick = {
+                        if (file.isNotBlank() && editor != originalEditor) status = "当前文件有未保存修改，请先保存后再删除仓库。"
+                        else pendingDeleteRepo = selectedLocal.id
+                    }) { Text("彻底删除本地副本") }
                 }
             }
         }
