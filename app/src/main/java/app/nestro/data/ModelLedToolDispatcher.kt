@@ -152,6 +152,7 @@ ${prompt.take(8_000)}
             val directAnswer = StringBuilder()
             var headerResolved = false
             var directMode = false
+            var lastDirectUiLength = 0
             chat.streamWithFallback(
                 configs = configs,
                 history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = maxTokens ?: 2048),
@@ -174,14 +175,24 @@ ${prompt.take(8_000)}
                             val firstBody = decisionText.substring(newline + 1)
                             if (firstBody.isNotEmpty()) {
                                 directAnswer.append(firstBody)
-                                onDirectAnswer(directAnswer.toString())
+                                if (directAnswer.length >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\\n") >= 0) {
+                                    onDirectAnswer(directAnswer.toString())
+                                    lastDirectUiLength = directAnswer.length
+                                }
                             }
                         }
                     }
                 } else if (directMode) {
                     directAnswer.append(chunk)
-                    onDirectAnswer(directAnswer.toString())
+                    if (directAnswer.length - lastDirectUiLength >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\\n") >= 0) {
+                        onDirectAnswer(directAnswer.toString())
+                        lastDirectUiLength = directAnswer.length
+                    }
                 }
+            }
+            if (directMode && directAnswer.length > lastDirectUiLength) {
+                onDirectAnswer(directAnswer.toString())
+                lastDirectUiLength = directAnswer.length
             }
             val raw = decisionText.toString()
             val decision = ModelToolDecisionParser.parse(raw) ?: run {
@@ -189,7 +200,7 @@ ${prompt.take(8_000)}
                 return ModelToolDispatchResult(directReply = raw)
             }
             if (decision.action == "reply") {
-                val answer = decision.text.ifBlank { raw }.take(24_000)
+                val answer = decision.text.ifBlank { if (directMode) "模型没有返回正文。" else raw }.take(24_000)
                 markTerminal(AgentTaskStatus.COMPLETED)
                 return ModelToolDispatchResult(
                     directReply = answer,
@@ -258,5 +269,6 @@ ${prompt.take(8_000)}
 
     private companion object {
         const val MAX_TOOL_ROUNDS = 3
+        const val DIRECT_UI_UPDATE_CHARS = 16
     }
 }
