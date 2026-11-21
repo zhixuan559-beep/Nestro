@@ -7,6 +7,7 @@ import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentToolLeaseRegistry
 import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.AgentToolSpec
 import app.nestro.agent.AgentToolAccess
 import app.nestro.agent.AgentToolResult
 import app.nestro.agent.AgentRuntime
@@ -100,11 +101,21 @@ internal class ModelLedToolDispatcher(
     ): ModelToolDispatchResult? {
         // Phone Agent registers short-lived device-action handlers while executing a task;
         // those task-local controls must never leak into ordinary chat tool discovery.
-        val available = catalog.list()
+        val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter { it.id != "phone_agent.plan" || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
+        val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
+        var visibleChars = 0
+        for (spec in candidates) {
+            val definition = toolDefinitionProvider(spec.id)?.take(2_000) ?: spec.description
+            val row = "- id: ${spec.id}; permission: ${spec.permission}; confirmation: ${spec.requiresConfirmation}; definition: $definition"
+            if (visibleChars + row.length + 1 > MAX_TOOL_CATALOG_CHARS) break
+            visibleRows += spec to row
+            visibleChars += row.length + 1
+        }
+        val available = visibleRows.map { it.first }
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
@@ -113,10 +124,7 @@ internal class ModelLedToolDispatcher(
             val current = stateStore.get(taskId) ?: AgentTaskState(taskId = taskId, owner = "chat")
             stateStore.put(current.copy(status = status, lastError = error.take(2_000), updatedAt = System.currentTimeMillis()))
         }
-        val toolList = available.joinToString("\n") {
-            val definition = toolDefinitionProvider(it.id)?.take(2_000) ?: it.description
-            "- id: ${it.id}; permission: ${it.permission}; confirmation: ${it.requiresConfirmation}; definition: ${definition}"
-        }.take(12_000)
+        val toolList = visibleRows.joinToString("\n") { it.second }
         val toolContext = StringBuilder()
         val requestHistory = if (history.lastOrNull()?.let { it.role == "user" && it.content == prompt } == true) {
             history
@@ -290,5 +298,6 @@ ${prompt.take(8_000)}
     private companion object {
         const val MAX_TOOL_ROUNDS = 3
         const val DIRECT_UI_UPDATE_CHARS = 16
+        const val MAX_TOOL_CATALOG_CHARS = 12_000
     }
 }
