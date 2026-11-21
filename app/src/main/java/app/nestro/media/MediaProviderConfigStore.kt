@@ -34,6 +34,8 @@ data class MediaProviderConfig(
     val videoStatusPath: String = "video/generations/{job_id}",
     val videoModelField: String = "model",
     val videoPromptField: String = "prompt",
+    val videoAuthHeader: String = "Authorization",
+    val videoAuthPrefix: String = "Bearer ",
     val videoJobIdField: String = "id",
     val videoStatusField: String = "status",
     val videoResultUrlField: String = "video_url"
@@ -59,6 +61,8 @@ data class MediaProviderConfig(
             videoStatusPath.count { it == '{' } == 1 && videoStatusPath.count { it == '}' } == 1 &&
             videoStatusPath.contains("{job_id}")) { "视频任务状态路径必须包含且只包含 {job_id}" }
         if (videoGenerationModel.isNotBlank()) require(videoGenerationModel.length <= 120 && videoGenerationModel.none { it.isISOControl() }) { "视频生成模型名称无效" }
+        require(videoAuthHeader.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "视频 API 认证请求头名称无效" }
+        require(videoAuthPrefix.length <= 40 && videoAuthPrefix.none { it.isISOControl() }) { "视频 API 认证前缀无效" }
         listOf(videoModelField, videoPromptField, videoJobIdField, videoStatusField, videoResultUrlField).forEach {
             require(it.matches(Regex("[A-Za-z0-9_.]{1,100}"))) { "视频任务响应字段无效" }
         }
@@ -189,6 +193,8 @@ class MediaProviderConfigStore(context: Context) {
                 videoStatusPath = json.optString("videoStatusPath", "video/generations/{job_id}"),
                 videoModelField = json.optString("videoModelField", "model"),
                 videoPromptField = json.optString("videoPromptField", "prompt"),
+                videoAuthHeader = json.optString("videoAuthHeader", "Authorization"),
+                videoAuthPrefix = json.optString("videoAuthPrefix", "Bearer "),
                 videoJobIdField = json.optString("videoJobIdField", "id"),
                 videoStatusField = json.optString("videoStatusField", "status"),
                 videoResultUrlField = json.optString("videoResultUrlField", "video_url")
@@ -238,6 +244,8 @@ class MediaProviderConfigStore(context: Context) {
         .put("videoStatusPath", config.videoStatusPath.trim())
         .put("videoModelField", config.videoModelField.trim())
         .put("videoPromptField", config.videoPromptField.trim())
+        .put("videoAuthHeader", config.videoAuthHeader.trim())
+        .put("videoAuthPrefix", config.videoAuthPrefix)
         .put("videoJobIdField", config.videoJobIdField.trim())
         .put("videoStatusField", config.videoStatusField.trim())
         .put("videoResultUrlField", config.videoResultUrlField.trim())
