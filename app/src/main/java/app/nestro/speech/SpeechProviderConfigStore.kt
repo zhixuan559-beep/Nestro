@@ -40,7 +40,9 @@ class SpeechProviderConfigStore(context: Context) {
                 baseUrl = metadata.optString("baseUrl"),
                 apiKey = apiKey,
                 model = metadata.optString("model"),
-                voice = metadata.optString("voice").ifBlank { null }
+                voice = metadata.optString("voice").ifBlank { null },
+                inputModel = metadata.optString("inputModel").ifBlank { "whisper-1" },
+                outputModel = metadata.optString("outputModel").ifBlank { "gpt-4o-mini-tts" }
             ).also { it.validateForRemoteProvider() }
         }.getOrNull()
     }
