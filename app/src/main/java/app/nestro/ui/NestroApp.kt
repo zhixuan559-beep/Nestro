@@ -1028,7 +1028,7 @@ fun NestroApp(initialPage: String = "home") {
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills) else "",
                 requestProjectInstructions,
                 if (manualExpertSelection.size in 2..4) {
-                    "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.joinToString("、")
+                    "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.filter { it in requestExperts }.joinToString("、")
                 } else "",
                 if (requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2) {
                     "当前项目可用专家目录（主模型可按任务需要自动组队）：\\n" + requestExperts
