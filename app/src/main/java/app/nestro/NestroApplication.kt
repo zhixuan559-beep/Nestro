@@ -7,6 +7,12 @@ import app.nestro.mcp.McpToolCenterService
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.InMemoryAgentToolCatalog
+import app.nestro.agent.AgentToolLeaseRegistry
+import app.nestro.agent.DefaultAgentRuntime
+import app.nestro.agent.AgentToolRequest
+import app.nestro.data.GeneratedPluginStore
+import app.nestro.data.GeneratedPluginWorkflowExecutor
+import app.nestro.data.GeneratedPluginPackageCodec
 import app.nestro.media.MediaAiTaskStore
 import app.nestro.media.MediaAiTaskStatus
 import app.nestro.media.MediaProviderConfigStore
