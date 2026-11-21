@@ -59,7 +59,13 @@ object McpToolArgumentValidator {
 class McpToolCenterRepository(context:Context) {
  private val app=context.applicationContext
  private val prefs=app.getSharedPreferences("nestro_local",Context.MODE_PRIVATE)
- fun listServers()=McpToolCenterCodec.decodeServers(prefs.getString(SERVERS_KEY,"[]").orEmpty())
+ fun listServers():List<McpServerRecord> {
+  val raw=prefs.getString(SERVERS_KEY,null)?:return emptyList()
+  return McpToolCenterCodec.decodeServersOrNull(raw)?:run {
+   if(!prefs.contains(CORRUPT_SERVERS_KEY))check(prefs.edit().putString(CORRUPT_SERVERS_KEY,raw).putLong(CORRUPT_SERVERS_AT,System.currentTimeMillis()).commit()){"无法隔离损坏的 MCP 服务配置"}
+   emptyList()
+  }
+ }
  fun findServer(id:String)=listServers().firstOrNull{it.id==id}
  fun saveServer(s:McpServerRecord){
   require(s.id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(s.name.isNotBlank()&&s.name.length<=80)
@@ -81,7 +87,13 @@ class McpToolCenterRepository(context:Context) {
  fun readCredential(id:String)=McpCredentialVault.read(app,id)
  fun clearCredential(id:String)=McpCredentialVault.delete(app,id)
  fun hasCredential(id:String)=readCredential(id).isNotBlank()
- fun listTools()=McpToolCenterCodec.decodeTools(prefs.getString(TOOLS_KEY,"[]").orEmpty())
+ fun listTools():List<McpToolDescriptor> {
+  val raw=prefs.getString(TOOLS_KEY,null)?:return emptyList()
+  return McpToolCenterCodec.decodeToolsOrNull(raw)?:run {
+   if(!prefs.contains(CORRUPT_TOOLS_KEY))check(prefs.edit().putString(CORRUPT_TOOLS_KEY,raw).putLong(CORRUPT_TOOLS_AT,System.currentTimeMillis()).commit()){"无法隔离损坏的 MCP 工具目录"}
+   emptyList()
+  }
+ }
  fun findTool(id:String)=listTools().firstOrNull{it.id==id}
  fun replaceServerTools(id:String,items:List<McpToolDescriptor>){
   require(items.size<=200&&items.all{it.serverId==id})
@@ -105,22 +117,26 @@ class McpToolCenterRepository(context:Context) {
   val encoded=JSONArray().apply{rows.forEach{put(JSONObject().put("id",it.id).put("serverName",it.serverName).put("toolName",it.toolName).put("succeeded",it.succeeded).put("createdAt",it.createdAt))}}.toString()
   check(prefs.edit().putString(AUDIT_KEY,encoded).commit()){"MCP 调用审计保存失败"}
  }
- companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1"}
+ companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1";private const val CORRUPT_SERVERS_KEY="mcp_servers_v1_unreadable_backup";private const val CORRUPT_SERVERS_AT="mcp_servers_v1_unreadable_backup_at";private const val CORRUPT_TOOLS_KEY="mcp_tools_v1_unreadable_backup";private const val CORRUPT_TOOLS_AT="mcp_tools_v1_unreadable_backup_at"}
 }
 object McpToolCenterCodec {
  fun encodeServers(items:List<McpServerRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("name",it.name).put("endpoint",it.endpoint).put("enabled",it.enabled))}}.toString()
- fun decodeServers(raw:String):List<McpServerRecord> = runCatching{
+ fun decodeServers(raw:String):List<McpServerRecord> = decodeServersOrNull(raw)?:emptyList()
+ fun decodeServersOrNull(raw:String):List<McpServerRecord>? = runCatching{
+  require(raw.length<=256_000)
   val a=JSONArray(raw);require(a.length()<=50)
   (0 until a.length()).map{i->val o=a.getJSONObject(i);McpServerRecord(o.getString("id"),o.getString("name"),McpEndpointPolicy.requireValid(o.getString("endpoint")),o.optBoolean("enabled",true))}
    .also{require(it.map(McpServerRecord::id).distinct().size==it.size)}
- }.getOrDefault(emptyList())
+ }.getOrNull()
  fun encodeTools(items:List<McpToolDescriptor>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("serverId",it.serverId).put("serverName",it.serverName).put("name",it.name).put("description",it.description).put("inputSchema",it.inputSchemaJson).put("readOnlyHint",it.readOnlyHint).put("granted",it.granted))}}.toString()
- fun decodeTools(raw:String):List<McpToolDescriptor> = runCatching{
+ fun decodeTools(raw:String):List<McpToolDescriptor> = decodeToolsOrNull(raw)?:emptyList()
+ fun decodeToolsOrNull(raw:String):List<McpToolDescriptor>? = runCatching{
+  require(raw.length<=2_000_000)
   val a=JSONArray(raw);require(a.length()<=10_000)
   (0 until a.length()).map{i->val o=a.getJSONObject(i);val schema=o.optString("inputSchema","{}");require(schema.length<=64_000&&JSONObject(schema).optString("type","object")=="object")
    McpToolDescriptor(o.getString("id"),o.getString("serverId"),o.getString("serverName"),o.getString("name"),o.optString("description").take(500),schema,o.optBoolean("readOnlyHint",false),o.optBoolean("granted",false))}
    .also{require(it.map(McpToolDescriptor::id).distinct().size==it.size)}
- }.getOrDefault(emptyList())
+ }.getOrNull()
  fun toolId(serverId:String,name:String):String{
   val bytes=MessageDigest.getInstance("SHA-256").digest("$serverId:$name".toByteArray(Charsets.UTF_8))
   return "mcp_"+bytes.take(20).joinToString(""){"%02x".format(it.toInt() and 255)}
