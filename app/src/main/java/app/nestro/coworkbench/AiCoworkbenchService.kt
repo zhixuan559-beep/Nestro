@@ -141,6 +141,36 @@ object CoworkbenchPolicy {
     }
 }
 
+internal object CoworkbenchContextPolicy {
+    fun isSensitivePath(path: String): Boolean {
+        val normalized = path.lowercase().replace('\\', '/')
+        val name = normalized.substringAfterLast('/')
+        return name in setOf("local.properties", "gradle.properties", "credentials", "google-services.json",
+            "service-account.json", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_ed25519",
+            "keystore.properties", "key.properties") ||
+            name.startsWith(".env") ||
+            listOf("secret", "credential", "keystore", "signing", "private-key", "private_key", "service-account")
+                .any { it in normalized } ||
+            listOf(".jks", ".keystore", ".p12", ".pfx", ".pem", ".key", ".der").any { name.endsWith(it) }
+    }
+
+    fun redactSecrets(source: String): String {
+        var text = source
+        val patterns = listOf(
+            Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\\\s\\\\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+            Regex("(?i)\\\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\\\\b"),
+            Regex("(?i)(authorization\\\\s*[:=]\\\\s*(?:bearer|basic)\\\\s+)[A-Za-z0-9._~+/-]{12,}"),
+            Regex("(?i)(\\\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\\\\s*[:=]\\\\s*[\\\\\\"']?)[A-Za-z0-9_./+=-]{4,}")
+        )
+        patterns.forEach { pattern ->
+            text = pattern.replace(text) { match ->
+                match.groupValues.getOrNull(1).orEmpty() + "[REDACTED]"
+            }
+        }
+        return text
+    }
+}
+
 class AiCoworkbenchService(context: Context, private val git: GitWorkbenchRepository) {
     private val lock = Mutex()
     private val root = File(context.applicationContext.filesDir, "ai-coworkbench").apply { mkdirs() }
@@ -201,7 +231,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                 }
                 .filter { file ->
                     file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
-                        !isSensitiveContextPath(root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')) &&
+                        !CoworkbenchContextPolicy.isSensitivePath(root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')) &&
                         file.extension.lowercase() in setOf("kt", "kts", "java", "xml", "gradle", "toml", "properties", "json", "yml", "yaml", "md")
                 }
                 .mapNotNull { file ->
@@ -234,7 +264,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                         }
                         ancestor = ancestor.parentFile
                     }
-                    require(!isSensitiveContextPath(relative)) { "疑似凭据或本地配置文件不得作为模型上下文：$relative" }
+                    require(!CoworkbenchContextPolicy.isSensitivePath(relative)) { "疑似凭据或本地配置文件不得作为模型上下文：$relative" }
                     val file = candidate.canonicalFile
                     require(file.toPath().startsWith(root.toPath()) && file.isFile) {
                         "上下文文件无效或路径越界：$relative"
@@ -245,37 +275,10 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                     require('\u0000' !in content) { "上下文包含二进制文件：$relative" }
                     total += size.toInt()
                     append("\n--- FILE: ").append(relative).append(" ---\n")
-                    append(redactContextSecrets(content)).append("\n")
+                    append(CoworkbenchContextPolicy.redactSecrets(content)).append("\n")
                 }
             }
         }
-    }
-
-    private fun isSensitiveContextPath(path: String): Boolean {
-        val normalized = path.lowercase().replace('\\', '/')
-        val name = normalized.substringAfterLast('/')
-        return name in setOf("local.properties", "gradle.properties", "credentials", "google-services.json",
-            "service-account.json", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_ed25519") ||
-            name.startsWith(".env") ||
-            listOf("secret", "credential", "keystore", "signing", "private-key", "private_key", "service-account")
-                .any { it in normalized }
-    }
-
-    private fun redactContextSecrets(source: String): String {
-        var text = source
-        val patterns = listOf(
-            Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
-            Regex("(?i)\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\\b"),
-            Regex("(?i)(authorization\\s*[:=]\\s*bearer\\s+)[A-Za-z0-9._~+/-]{16,}"),
-            Regex("(?i)(\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|secret)\\s*[:=]\\s*[\\\"']?)[A-Za-z0-9_./+=-]{4,}")
-        )
-        patterns.forEach { pattern ->
-            text = pattern.replace(text) { match ->
-                val prefix = if (match.groupValues.size > 1) match.groupValues[1] else ""
-                prefix + "[REDACTED]"
-            }
-        }
-        return text
     }
 
     suspend fun analyzeRepository(repositoryId: String): CoworkbenchAnalysisReport = lock.withLock {
