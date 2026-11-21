@@ -3,6 +3,7 @@ package app.nestro.model
 import android.content.Context
 import android.net.Uri
 import app.nestro.data.LocalVault
+import app.nestro.data.ModelProfileCatalogCodec
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,7 +50,13 @@ internal object ModelScopeOAuthCallback {
         val providerId = "preset-provider-modelscope"
         val keyId = "modelscope-oauth-account"
         val registryStore = ModelRegistryStore(context.applicationContext)
-        val registry = registryStore.load(emptyList()) { false }
+        val legacyProfiles = ModelProfileCatalogCodec.decode(
+            context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .getString("model_profiles_v1", "[]") ?: "[]"
+        )
+        val registry = registryStore.load(legacyProfiles) { profileId ->
+            LocalVault.readProfile(context.applicationContext, profileId).isNotBlank()
+        }
         val provider = registry.providers.firstOrNull { it.id == providerId }
             ?: ModelProvider(
                 id = providerId,
