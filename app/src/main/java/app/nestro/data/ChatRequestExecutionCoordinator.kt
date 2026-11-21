@@ -57,8 +57,7 @@ internal class ChatRequestExecutionCoordinator(
                 conversationId = request.conversationId,
                 prompt = request.prompt,
                 requestHistory = request.history,
-                baseSystemContext = request.baseSystemContext,
-                taskModeEnabled = request.taskModeEnabled
+                baseSystemContext = request.baseSystemContext
             )
             recalledCount = assembled.recalledCount
             recallSources = assembled.recallSources
