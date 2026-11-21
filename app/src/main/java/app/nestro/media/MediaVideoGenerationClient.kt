@@ -37,7 +37,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
         require(prompt.isNotBlank() && prompt.length <= 12_000) { "视频提示词为空或超过 12,000 字" }
         onProgress(3)
 
-        val submit = JSONObject()
+        val submit = JSONObject(config.videoExtraRequestJson)
             .put(config.videoModelField, config.videoGenerationModel)
             .put(config.videoPromptField, prompt)
         val created = requestJson("POST", config.videoSubmitPath, submit.toString(), 30_000)
