@@ -7,11 +7,11 @@ import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
 
-enum class ExpertTeamExecutionMode {
+enum class ExpertTeamSchedulingStrategy {
     /** User assigns each member a work package; independent work runs concurrently. */
-    MANUAL_PARALLEL,
+    PARALLEL_WORK_PACKAGES,
     /** The lead expert may hand off bounded subtasks to other members. */
-    SEQUENTIAL_DELEGATION
+    LEAD_HANDOFF
 }
 
 /**
@@ -79,8 +79,8 @@ class ExpertTeamExecutionCoordinator(
             }
         }
 
-        val result = when (mode) {
-            ExpertTeamExecutionMode.MANUAL_PARALLEL -> ExpertTeamEngine.run(
+        val result = when (strategy) {
+            ExpertTeamSchedulingStrategy.PARALLEL_WORK_PACKAGES -> ExpertTeamEngine.run(
                 teamName = teamName,
                 teamDescription = teamDescription,
                 task = task,
