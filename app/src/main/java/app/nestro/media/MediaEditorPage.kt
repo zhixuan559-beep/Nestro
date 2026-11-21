@@ -316,6 +316,7 @@ fun MediaEditorPage(
         Text("智能剪辑", style = MaterialTheme.typography.headlineSmall)
         Text("项目隔离的本地素材库、多轨时间线、非破坏性剪辑、字幕编辑与后台 MP4 导出。", style = MaterialTheme.typography.bodySmall)
         Text(status, style = MaterialTheme.typography.bodySmall)
+        MediaProviderSettingsCard()
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { importLauncher.launch(arrayOf("video/*", "audio/*", "image/*")) }) { Text("导入素材") }
             OutlinedButton(onClick = { scope.launch { runCatching { reload() }.onFailure { status = it.message ?: "刷新失败" } } }) { Text("刷新") }
