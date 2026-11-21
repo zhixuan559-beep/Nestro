@@ -56,12 +56,12 @@ fun GitWorkbenchPage(context: Context) {
         if (locals.none { it.id == localId }) localId = locals.firstOrNull()?.id.orEmpty()
     }
     suspend fun refreshWorkspace(id: String) {
-        changes = repo.status(id)
-        branches = repo.branches(id)
-        currentBranch = repo.currentBranch(id)
-        history = repo.history(id, 50)
-        patch = repo.diffPatch(id)
-        files = repo.files(id, folder)
+        changes = runCatching { repo.status(id) }.getOrElse { status = it.message ?: "状态读取失败"; emptyList() }
+        branches = runCatching { repo.branches(id) }.getOrElse { status = it.message ?: "分支读取失败"; emptyList() }
+        currentBranch = runCatching { repo.currentBranch(id) }.getOrDefault("")
+        history = runCatching { repo.history(id, 50) }.getOrElse { status = it.message ?: "提交历史读取失败"; emptyList() }
+        patch = runCatching { repo.diffPatch(id) }.getOrElse { "Diff 暂不可用：" + (it.message ?: "未知错误") }
+        files = runCatching { repo.files(id, folder) }.getOrElse { status = it.message ?: "文件列表读取失败"; emptyList() }
     }
     LaunchedEffect(Unit) { refreshLocals() }
     LaunchedEffect(localId) {
