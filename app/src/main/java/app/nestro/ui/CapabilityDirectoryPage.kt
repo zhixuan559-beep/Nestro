@@ -32,6 +32,10 @@ fun CapabilityDirectoryPage() {
     var communityQuery by remember { mutableStateOf("") }
     var catalogUrl by remember { mutableStateOf(prefs.getString("skill_catalog_url_v1","") ?: "") }
     var trustedKey by remember { mutableStateOf(prefs.getString("skill_catalog_key_v1","") ?: "") }
+    var pinnedTrustedKey by remember { mutableStateOf(prefs.getString("skill_catalog_key_v1","") ?: "") }
+    var showKeyRotationConfirm by remember { mutableStateOf(false) }
+    var pendingRotationUrl by remember { mutableStateOf("") }
+    var pendingRotationKey by remember { mutableStateOf("") }
     var releases by remember { mutableStateOf(emptyList<SignedSkillRelease>()) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -72,6 +76,24 @@ fun CapabilityDirectoryPage() {
         }.getOrDefault(builtIns)
     }
     val filtered=entries.filter { query.isBlank() || listOf(it.name,it.description,it.source,it.permission).any { value -> value.contains(query,true) } }
+    fun refreshSignedCatalog(url: String, key: String) {
+        loading=true
+        scope.launch {
+            val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.fetchCatalog(url,key) } }
+            result.fold({ verified ->
+                val fingerprint=runCatching { SkillCommunityClient.fingerprint(key) }.getOrDefault("不可用")
+                val saved=prefs.edit().putString("skill_catalog_url_v1",url).putString("skill_catalog_key_v1",key).commit()
+                releases=verified
+                if(saved) {
+                    pinnedTrustedKey=key
+                    status="签名验证通过，共 "+verified.size+" 个版本。受信任公钥 SHA-256 指纹："+fingerprint
+                } else {
+                    status="目录签名验证通过，但本机信任配置保存失败；旧公钥仍保留。"
+                }
+            },{ releases=emptyList(); status="目录拒绝加载："+(it.message ?: "验证失败")+"；原有信任配置未更改。" })
+            loading=false
+        }
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("能力目录",style=MaterialTheme.typography.headlineSmall)
@@ -79,14 +101,13 @@ fun CapabilityDirectoryPage() {
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedTextField(trustedKey,{trustedKey=it},label={Text("受信任 RSA 公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
         Button(enabled=!loading && catalogUrl.startsWith("https://") && trustedKey.isNotBlank(),onClick={
-            loading=true
-            prefs.edit().putString("skill_catalog_url_v1",catalogUrl.trim()).putString("skill_catalog_key_v1",trustedKey.trim()).apply()
-            scope.launch {
-                val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.fetchCatalog(catalogUrl.trim(),trustedKey.trim()) } }
-                result.fold({ releases=it; status="签名验证通过，共 "+it.size+" 个版本。公钥指纹："+runCatching { SkillCommunityClient.fingerprint(trustedKey.trim()).take(23) }.getOrDefault("不可用") },
-                    { releases=emptyList(); status="目录拒绝加载："+(it.message ?: "验证失败") })
-                loading=false
-            }
+            val candidateKey=trustedKey.trim()
+            val pinned=pinnedTrustedKey.trim()
+            if(pinned.isNotBlank() && candidateKey!=pinned) {
+                pendingRotationUrl=catalogUrl.trim()
+                pendingRotationKey=candidateKey
+                showKeyRotationConfirm=true
+            } else refreshSignedCatalog(catalogUrl.trim(),candidateKey)
         },modifier=Modifier.fillMaxWidth()) { Text(if(loading) "验证中…" else "验证并刷新社区目录") }
         if(status.isNotBlank()) Text(status,style=MaterialTheme.typography.bodySmall)
         if(loading) CircularProgressIndicator()
@@ -160,6 +181,24 @@ fun CapabilityDirectoryPage() {
                 }
             }
         }
+    }
+    if(showKeyRotationConfirm) {
+        val oldFingerprint=runCatching { SkillCommunityClient.fingerprint(pinnedTrustedKey) }.getOrDefault("无法计算")
+        val newFingerprint=runCatching { SkillCommunityClient.fingerprint(pendingRotationKey) }.getOrDefault("无效公钥")
+        AlertDialog(
+            onDismissRequest={showKeyRotationConfirm=false},
+            title={Text("更换社区信任公钥？")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("更换公钥意味着你将信任新的社区目录签名者。只有在通过新公钥验签后，才会保存新信任配置。")
+                Text("当前 SHA-256：$oldFingerprint",style=MaterialTheme.typography.bodySmall)
+                Text("新 SHA-256：$newFingerprint",style=MaterialTheme.typography.bodySmall)
+            }},
+            confirmButton={TextButton(onClick={
+                showKeyRotationConfirm=false
+                refreshSignedCatalog(pendingRotationUrl,pendingRotationKey)
+            }) { Text("确认更换并验签") }},
+            dismissButton={TextButton(onClick={showKeyRotationConfirm=false}) { Text("取消") }}
+        )
     }
     pendingBundle?.let { bundle ->
         AlertDialog(
