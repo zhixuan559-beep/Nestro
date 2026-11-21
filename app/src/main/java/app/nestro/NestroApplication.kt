@@ -133,6 +133,15 @@ class NestroApplication : Application() {
             ) {
                 app.nestro.agent.AgentToolResult(false, error = "Phone Agent 规划必须经由聊天统一调度器调用")
             }
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "expert_team.run",
+                    description = "调用当前会话中用户明确选择的专家团队，分工分析并汇总结果。仅在团队已启用且当前任务模式获得授权时可用。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) {
+                app.nestro.agent.AgentToolResult(false, error = "专家团队必须经由聊天统一调度器调用")
+            }
         }
     }
     val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
