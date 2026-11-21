@@ -95,19 +95,33 @@ class GitAccountStore(context: Context) {
     private val prefs = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
 
     @Synchronized
-    fun list(): List<GitAccount> = runCatching {
-        val array = JSONArray(prefs.getString(KEY, "[]").orEmpty())
+    fun list(): List<GitAccount> {
+        val raw = prefs.getString(KEY, "[]").orEmpty()
+        return decode(raw) ?: run {
+            if (!prefs.contains(CORRUPT_KEY)) {
+                check(prefs.edit().putString(CORRUPT_KEY, raw)
+                    .putLong(CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的 Git 账号配置" }
+            }
+            emptyList()
+        }
+    }
+
+    private fun decode(raw: String): List<GitAccount>? = runCatching {
+        val array = JSONArray(raw)
         require(array.length() <= 20)
         (0 until array.length()).map { index ->
             val row = array.getJSONObject(index)
-            GitAccount(
+            val account = GitAccount(
                 row.getString("id"),
                 GitProvider.valueOf(row.getString("provider")),
                 row.getString("username"),
                 row.optString("displayName")
             )
-        }
-    }.getOrDefault(emptyList())
+            require(account.id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
+            require(GitWorkbenchPolicy.validAccountName(account.username))
+            account
+        }.also { require(it.map(GitAccount::id).distinct().size == it.size) }
+    }.getOrNull()
 
     @Synchronized
     fun save(account: GitAccount, token: String) {
@@ -116,6 +130,7 @@ class GitAccountStore(context: Context) {
         require(token.isNotBlank() && token.length <= 4096) { "访问令牌不能为空且不能超过 4096 个字符" }
         val existing = list()
         require(existing.any { it.id == account.id } || existing.size < 20) { "最多保存 20 个代码托管账号" }
+        val previousToken = existing.firstOrNull { it.id == account.id }?.let { GitCredentialVault.read(app, account.id) }.orEmpty()
         GitCredentialVault.write(app, account.id, token)
         val next = existing.filterNot { it.id == account.id } + account.copy(
             username = account.username.trim(),
@@ -124,7 +139,8 @@ class GitAccountStore(context: Context) {
         try {
             check(prefs.edit().putString(KEY, encode(next)).commit()) { "账号配置保存失败" }
         } catch (error: Exception) {
-            if (existing.none { it.id == account.id }) GitCredentialVault.delete(app, account.id)
+            if (previousToken.isNotBlank()) GitCredentialVault.write(app, account.id, previousToken)
+            else GitCredentialVault.delete(app, account.id)
             throw error
         }
     }
@@ -134,9 +150,15 @@ class GitAccountStore(context: Context) {
 
     @Synchronized
     fun delete(accountId: String) {
-        val next = list().filterNot { it.id == accountId }
-        check(prefs.edit().putString(KEY, encode(next)).commit()) { "账号配置删除失败" }
+        val current = list()
+        val previousToken = GitCredentialVault.read(app, accountId)
         GitCredentialVault.delete(app, accountId)
+        try {
+            check(prefs.edit().putString(KEY, encode(current.filterNot { it.id == accountId })).commit()) { "账号配置删除失败" }
+        } catch (error: Exception) {
+            if (previousToken.isNotBlank()) GitCredentialVault.write(app, accountId, previousToken)
+            throw error
+        }
     }
 
     private fun encode(items: List<GitAccount>) = JSONArray().apply {
@@ -146,7 +168,11 @@ class GitAccountStore(context: Context) {
         }
     }.toString()
 
-    companion object { private const val KEY = "git_accounts_v1" }
+    companion object {
+        private const val KEY = "git_accounts_v1"
+        private const val CORRUPT_KEY = "git_accounts_v1_unreadable_backup"
+        private const val CORRUPT_AT = "git_accounts_v1_unreadable_backup_at"
+    }
 }
 
 private object GitCredentialVault {
@@ -311,13 +337,14 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         }
     }
 
-    suspend fun localRepositories(): List<GitLocalRepository> = withContext(Dispatchers.IO) {
+    fun localRepositories(): List<GitLocalRepository> {
         val prefs = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val array = runCatching { JSONArray(prefs.getString(LOCAL_KEY, "[]").orEmpty()) }.getOrDefault(JSONArray())
-        (0 until array.length()).mapNotNull { i ->
+        return (0 until array.length()).mapNotNull { i ->
             val row = array.optJSONObject(i) ?: return@mapNotNull null
             val local = runCatching { decodeLocal(row) }.getOrNull() ?: return@mapNotNull null
-            if (File(local.localPath, ".git").isDirectory) local else null
+            val path = runCatching { File(local.localPath).canonicalFile.toPath() }.getOrNull() ?: return@mapNotNull null
+            if (path.startsWith(root.canonicalFile.toPath()) && File(path.toFile(), ".git").isDirectory) local else null
         }
     }
 
@@ -338,7 +365,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val target = if (relativePath.isBlank()) base else resolveSafe(base, relativePath)
         require(target.toFile().isDirectory) { "目标不是目录" }
         Files.list(target).use { stream ->
-            stream.filter { it.fileName.toString() != ".git" }
+            stream.filter { it.fileName.toString() != ".git" && !Files.isSymbolicLink(it) }
                 .limit(500)
                 .map { path ->
                     val file = path.toFile()
@@ -352,6 +379,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val local = requireLocal(id)
         val rootPath = File(local.localPath).canonicalFile.toPath()
         val path = resolveSafe(rootPath, relativePath)
+        require(path.toFile().canonicalFile.toPath().startsWith(rootPath)) { "文件路径越界" }
         require(Files.isRegularFile(path) && !Files.isSymbolicLink(path)) { "只能读取普通文件" }
         require(Files.size(path) <= MAX_FILE_BYTES) { "文件超过 2 MB，暂不支持手机端编辑" }
         String(Files.readAllBytes(path), Charsets.UTF_8)
@@ -496,6 +524,8 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val safe = GitWorkbenchPolicy.safeRelativePath(relative)
         val path = rootPath.resolve(safe).normalize()
         require(path.startsWith(rootPath)) { "文件路径越界" }
+        val canonical = path.toFile().canonicalFile.toPath()
+        require(canonical.startsWith(rootPath)) { "文件路径不能通过符号链接越界" }
         return path
     }
 
