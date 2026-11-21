@@ -26,14 +26,19 @@ internal data class ModelToolDecision(
 
 internal object ModelToolDecisionParser {
     fun parse(raw: String): ModelToolDecision? {
-        val candidate = raw.trim()
+        val trimmed = raw.trimStart()
+        if (trimmed.startsWith("DIRECT\\n")) {
+            return ModelToolDecision("reply", trimmed.substringAfter("DIRECT\\n").trimEnd(), "", emptyMap())
+        }
+        val protocolBody = if (trimmed.startsWith("TOOL\\n")) trimmed.substringAfter("TOOL\\n") else trimmed
+        val candidate = protocolBody.trim()
             .removePrefix("```json").removePrefix("```")
             .removeSuffix("```").trim()
         val start = candidate.indexOf('{')
         val end = candidate.lastIndexOf('}')
         if (start < 0 || end <= start) return null
         val json = runCatching { JSONObject(candidate.substring(start, end + 1)) }.getOrNull() ?: return null
-        val action = json.optString("action")
+        val action = json.optString("action").ifBlank { if (trimmed.startsWith("TOOL\\n")) "tool" else "" }
         if (action !in setOf("reply", "tool")) return null
         val args = json.optJSONObject("arguments")
         val mapped = buildMap {
@@ -58,7 +63,8 @@ internal object ModelToolDecisionParser {
 internal data class ModelToolDispatchResult(
     val directReply: String? = null,
     val toolContext: String = "",
-    val requiresUser: Boolean = false
+    val requiresUser: Boolean = false,
+    val streamedToUi: Boolean = false
 )
 
 /**
@@ -110,8 +116,8 @@ internal class ModelLedToolDispatcher(
 你是 Nestro 的请求协调模型。你的唯一职责是判断当前用户请求应直接回答，还是调用一个已注册工具。
 只能从下方工具目录选择工具，绝不能虚构工具、参数或执行结果。
 每轮只允许选择一个动作。输出必须是单个 JSON 对象，不要 Markdown：
-直接回答：{"action":"reply","text":"给用户的回答"}
-调用工具：{"action":"tool","tool_id":"目录中的精确 id","arguments":{"参数名":"参数值"}}
+直接回答：第一行输出 DIRECT，换行后直接输出面向用户的正文，不要 JSON。
+调用工具：第一行输出 TOOL，换行后输出 JSON：{"tool_id":"目录中的精确 id","arguments":{"参数名":"参数值"}}
 工具目录：
 $toolList
 
