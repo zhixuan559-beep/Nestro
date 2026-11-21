@@ -43,7 +43,7 @@ class OpenAiCompatibleSpeechOutputProvider(
                 connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
                 if (status !in 200..299) {
-                    throw IllegalStateException(SpeechHttpPolicy.readError(connection, status))
+                    throw IllegalStateException(SpeechHttpPolicy.readError(status))
                 }
                 val mime = connection.contentType?.substringBefore(';')?.takeIf { it.startsWith("audio/", ignoreCase = true) }
                     ?: throw IllegalStateException("语音服务返回的不是音频数据")
@@ -127,7 +127,7 @@ internal object SpeechHttpPolicy {
         return "$base/$suffix"
     }
 
-    fun readError(connection: HttpURLConnection, status: Int): String {
+    fun readError(status: Int): String {
         return "语音服务请求失败（HTTP $status）"
     }
 
