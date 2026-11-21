@@ -538,6 +538,11 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val staged = git.status().call()
         require(staged.added.isNotEmpty() || staged.changed.isNotEmpty() || staged.removed.isNotEmpty()) { "没有可提交的变更" }
         require(staged.untracked.isEmpty() && staged.modified.isEmpty() && staged.missing.isEmpty()) { "仍有未暂存变更，请重新检查工作区" }
+        git.repository.config.apply {
+            setString("user", null, "name", authorName.trim())
+            setString("user", null, "email", authorEmail.trim())
+            save()
+        }
         val identity = PersonIdent(authorName.trim(), authorEmail.trim())
         git.commit().setMessage(message.trim()).setAuthor(identity).setCommitter(identity).call().name
     }
@@ -550,7 +555,9 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     suspend fun pull(id: String): GitOperationResult = withRepo(id) { git ->
         require(git.status().call().isClean) { "工作区存在未提交变更，请先提交或暂存后再拉取" }
-        val result = git.pull().setCredentialsProvider(credentials(requireAccount(requireLocal(id).accountId)))
+        val account = requireAccount(requireLocal(id).accountId)
+        ensureCommitIdentity(git, account)
+        val result = git.pull().setCredentialsProvider(credentials(account))
             .setTimeout(45).setRebase(false).call()
         val merge = result.mergeResult
         val conflicts = merge?.conflicts?.keys?.toList().orEmpty()
@@ -626,6 +633,17 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     private suspend fun <T> withRepo(id: String, block: (Git) -> T): T = withContext(Dispatchers.IO) {
         val local = requireLocal(id)
         Git.open(File(local.localPath)).use(block)
+    }
+
+    private fun ensureCommitIdentity(git: Git, account: GitAccount) {
+        val config = git.repository.config
+        val existingName = config.getString("user", null, "name")
+        val existingEmail = config.getString("user", null, "email")
+        if (!existingName.isNullOrBlank() && !existingEmail.isNullOrBlank()) return
+        val previous = runCatching { git.log().setMaxCount(1).call().firstOrNull()?.committerIdent }.getOrNull()
+        config.setString("user", null, "name", existingName?.takeIf { it.isNotBlank() } ?: previous?.name?.takeIf { it.isNotBlank() } ?: account.username)
+        config.setString("user", null, "email", existingEmail?.takeIf { it.isNotBlank() } ?: previous?.emailAddress?.takeIf { it.isNotBlank() } ?: (account.username + "@users.noreply.github.com"))
+        config.save()
     }
 
     private fun credentials(account: GitAccount) =
