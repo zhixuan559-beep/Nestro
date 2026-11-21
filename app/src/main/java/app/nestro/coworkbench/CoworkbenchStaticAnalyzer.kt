@@ -379,8 +379,8 @@ object CoworkbenchStaticAnalyzer {
 
     private val credentialPatterns = listOf(
         Regex("""-----BEGIN [A-Z ]*PRIVATE KEY-----""", RegexOption.IGNORE_CASE),
-        Regex("""\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\b"""),
-        Regex("""(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\s*[:=]\s*["']?[^"'\s,;]{8,}""")
+        Regex("""\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\\b"""),
+        Regex("""(?i)(\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\\s*[:=]\\s*["']?)[^"'\\s,;]{8,}""")
     )
 
     private fun containsCredential(line: String): Boolean =
@@ -390,10 +390,7 @@ object CoworkbenchStaticAnalyzer {
         var safe = line
         credentialPatterns.forEach { pattern ->
             safe = pattern.replace(safe) { match ->
-                val prefix = match.value.substringBefore(Regex("[:=]")).takeIf { it != match.value }
-                    ?.plus(match.value.substring(match.value.indexOfFirst { it == ':' || it == '=' }, match.value.indexOfFirst { it == ':' || it == '=' } + 1))
-                    .orEmpty()
-                prefix + "[REDACTED]"
+                match.groupValues.getOrNull(1).orEmpty() + "[REDACTED]"
             }
         }
         return safe
