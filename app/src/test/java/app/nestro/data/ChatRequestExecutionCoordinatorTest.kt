@@ -161,3 +161,35 @@ class ChatRequestExecutionCoordinatorTest {
     }
 
 }
+
+
+class ChatRequestExecutionCoordinatorConcurrencyTest {
+    @Test
+    fun optionalTaskPlanningOverlapsKnowledgeRetrieval() = runBlocking {
+        val started = java.util.concurrent.atomic.AtomicInteger(0)
+        val bothStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        suspend fun rendezvous() {
+            if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+            kotlinx.coroutines.withTimeout(1_000) { bothStarted.await() }
+        }
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
+            retrieveKnowledge = { _, _ -> rendezvous(); "knowledge-context" },
+            retrieveUserMemory = { _, _ -> "" }
+        )
+        val streaming = ChatStreamingCoordinator(
+            transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, _ -> "reply" },
+            partialStateStore = ChatPartialStateStore { _, _, _, _, _, _ -> }
+        )
+        val coordinator = ChatRequestExecutionCoordinator(assembler, streaming)
+        val result = coordinator.execute(
+            request = request(taskMode = true).copy(prompt = "请根据知识库回答"),
+            onUsage = { _, _, _ -> },
+            onProviderUsage = { _, _, _ -> },
+            planPhoneAgent = { rendezvous() },
+            onPartialAnswer = { }
+        )
+        assertEquals(2, started.get())
+        assertEquals("reply", result.finalization.finalText)
+    }
+}
