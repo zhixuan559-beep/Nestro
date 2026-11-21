@@ -21,7 +21,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        notificationDestination = intent.getStringExtra("open_page")?.takeIf { it == "calendar" } ?: "home"
+        notificationDestination = when {
+            intent.action == Intent.ACTION_ASSIST -> "home"
+            intent.getStringExtra("open_page") == "calendar" -> "calendar"
+            else -> "home"
+        }
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContent {
             NestroTheme {
@@ -34,7 +38,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationDestination = intent.getStringExtra("open_page")?.takeIf { it == "calendar" } ?: "home"
+        notificationDestination = when {
+            intent.action == Intent.ACTION_ASSIST -> "home"
+            intent.getStringExtra("open_page") == "calendar" -> "calendar"
+            else -> "home"
+        }
         handleModelScopeOAuthCallback(intent)
     }
 
