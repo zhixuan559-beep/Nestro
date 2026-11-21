@@ -43,8 +43,8 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -54,7 +54,7 @@ jobs:
           test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Compile production Kotlin
         run: gradle --no-daemon --stacktrace compileDebugKotlin
       - name: Run JVM unit tests
@@ -72,7 +72,7 @@ jobs:
       - name: Compile and package Android instrumentation tests
         run: gradle --no-daemon --stacktrace assembleDebug assembleDebugAndroidTest
       - name: Upload verified Android APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: module-8-android-test-apks
           path: |
@@ -91,9 +91,9 @@ jobs:
       SKIP_ANDROID_APK_BUILD: "true"
       ANDROID_TEST_FILTER: ${{ inputs.instrumentation_filter }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download verified Android APKs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: module-8-android-test-apks
           path: app/build/outputs/apk
@@ -110,7 +110,7 @@ jobs:
           script: bash .github/scripts/run-android-instrumentation.sh
       - name: Upload Android instrumentation diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: module-8-instrumentation-diagnostics
           path: app/build/reports/androidTests/connected/diagnostics/
