@@ -96,7 +96,7 @@ class OpenAiRealtimeVoiceProvider(
                 if (!webSocket.send(sessionUpdate.toString())) {
                     listener.onError("实时语音会话初始化消息发送失败")
                 } else {
-                    listener.onConnected()
+                    listener.onConnected(session)
                 }
             }
 
