@@ -4,6 +4,8 @@ import android.content.SharedPreferences
 import app.nestro.data.ChatMessage
 import app.nestro.data.ModelConfig
 import app.nestro.data.runCatchingCancellable
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 internal fun interface ChatStreamingTransport {
@@ -62,6 +64,11 @@ internal class ChatStreamingCoordinator(
     private val transport: ChatStreamingTransport,
     private val partialStateStore: ChatPartialStateStore
 ) {
+    private companion object {
+        const val UI_UPDATE_EVERY_CHARS = 16
+        const val PERSIST_EVERY_CHARS = 256
+        const val PERSIST_EVERY_MILLIS = 1_500L
+    }
     suspend fun execute(
         configs: List<ModelConfig>,
         history: List<ChatMessage>,
@@ -79,14 +86,38 @@ internal class ChatStreamingCoordinator(
         onPartialAnswer: suspend (String) -> Unit
     ): ChatStreamExecutionResult {
         val partial = StringBuilder()
-        val result = runCatchingCancellable {
-            transport.stream(configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId, shouldStop) { chunk ->
-                partial.append(chunk)
-                val current = partial.toString()
-                partialStateStore.persist(requestId, conversationId, projectId, prompt, current, startedAt)
-                onPartialAnswer(current)
+        val uiPending = StringBuilder()
+        var lastPersistedLength = 0
+        var lastPersistAt = System.currentTimeMillis()
+        val result = try {
+            runCatchingCancellable {
+                transport.stream(configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId, shouldStop) { chunk ->
+                    partial.append(chunk)
+                    uiPending.append(chunk)
+                    val now = System.currentTimeMillis()
+                    if (partial.length - lastPersistedLength >= PERSIST_EVERY_CHARS || now - lastPersistAt >= PERSIST_EVERY_MILLIS) {
+                        partialStateStore.persist(requestId, conversationId, projectId, prompt, partial.toString(), startedAt)
+                        lastPersistedLength = partial.length
+                        lastPersistAt = now
+                    }
+                    // Batch tiny provider deltas to avoid a Compose recomposition per token.
+                    if (uiPending.length >= UI_UPDATE_EVERY_CHARS || uiPending.indexOf("\n") >= 0) {
+                        uiPending.setLength(0)
+                        onPartialAnswer(partial.toString())
+                    }
+                }
+            }
+        } finally {
+            // Keep the latest recoverable answer even when the caller cancels the stream.
+            withContext(NonCancellable) {
+                if (partial.length > lastPersistedLength) {
+                    runCatching {
+                        partialStateStore.persist(requestId, conversationId, projectId, prompt, partial.toString(), startedAt)
+                    }
+                }
             }
         }
+        if (uiPending.isNotEmpty()) onPartialAnswer(partial.toString())
         return ChatStreamExecutionResult(
             response = result.getOrNull(),
             partialAnswer = partial.toString(),
