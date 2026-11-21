@@ -54,6 +54,7 @@ fun AiCoworkbenchPage(
     var workflowFile by remember { mutableStateOf("android.yml") }
     var patchJson by remember { mutableStateOf("") }
     var review by remember { mutableStateOf<CoworkbenchReview?>(null) }
+    var selectedReviewPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
     var snapshotHistory by remember { mutableStateOf<List<CoworkbenchSnapshot>>(emptyList()) }
     var analysisReport by remember { mutableStateOf<CoworkbenchAnalysisReport?>(null) }
@@ -100,6 +101,7 @@ fun AiCoworkbenchPage(
                     DropdownMenuItem(text = { Text(repo.fullName) }, onClick = {
                         selectedRepoId = repo.id
                         review = null
+                        selectedReviewPaths = emptySet()
                         snapshot = null
                         patchJson = ""
                         analysisReport = null
@@ -188,7 +190,7 @@ fun AiCoworkbenchPage(
                 Text("说明：这是有扫描上限的源码/配置规则分析，不等同于 Gradle 完整解析依赖图、编译器分析或安全审计。",
                     style = MaterialTheme.typography.bodySmall)
             }
-            OutlinedTextField(value = patchJson, onValueChange = { patchJson = it; review = null },
+            OutlinedTextField(value = patchJson, onValueChange = { patchJson = it; review = null; selectedReviewPaths = emptySet() },
                 modifier = Modifier.fillMaxWidth(), label = { Text("粘贴模型返回的补丁 JSON") }, minLines = 8, enabled = !busy)
             Button(onClick = {
                 busy = true
@@ -204,6 +206,7 @@ fun AiCoworkbenchPage(
                             CoworkbenchProposal(row.getString("path"), if (row.isNull("content")) null else row.getString("content"))
                         }
                         review = service.prepareReview(selectedRepoId, proposals)
+                        selectedReviewPaths = review!!.files.map { it.path }.toSet()
                         snapshot = null
                         status = "审查已生成。逐文件核对 diff 和风险提示后，再决定是否批准。"
                     } catch (error: Exception) {
@@ -221,25 +224,40 @@ fun AiCoworkbenchPage(
                 Text("影响与风险提示", style = MaterialTheme.typography.titleSmall)
                 if (item.warnings.isEmpty()) Text("未触发已配置规则；这不代表代码绝对安全。", style = MaterialTheme.typography.bodySmall)
                 item.warnings.forEach { Text("• " + it, style = MaterialTheme.typography.bodySmall) }
+                Text("分阶段应用：默认全选，可取消部分文件，分批批准。", style = MaterialTheme.typography.bodySmall)
                 item.files.forEach { file ->
-                    Text(file.path, style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Checkbox(
+                            checked = file.path in selectedReviewPaths,
+                            enabled = !busy,
+                            onCheckedChange = { checked ->
+                                selectedReviewPaths = if (checked) selectedReviewPaths + file.path else selectedReviewPaths - file.path
+                            }
+                        )
+                        Text(file.path, style = MaterialTheme.typography.titleSmall)
+                    }
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
                         Text(file.diff, modifier = Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
                     }
                 }
+                Text("本批选中 ${selectedReviewPaths.size} / ${item.files.size} 个文件。",
+                    style = MaterialTheme.typography.bodySmall)
                 Button(onClick = {
                     busy = true
                     scope.launch {
                         try {
-                            snapshot = service.applyApproved(item.id, item.contentHash, explicitlyApproved = true)
+                            val applied = service.applyApproved(item.id, item.contentHash, explicitlyApproved = true, selectedPaths = selectedReviewPaths)
+                            snapshot = applied
+                            selectedReviewPaths = selectedReviewPaths - applied.files.map { it.path }.toSet()
                             snapshotHistory = service.listSnapshots(selectedRepoId)
-                            status = "补丁已应用；回滚快照已持久化。"
+                            status = if (selectedReviewPaths.isEmpty()) "本次补丁已全部分批应用；每批均已保存独立回滚快照。"
+                                else "本批已应用并保存回滚快照；剩余 ${selectedReviewPaths.size} 个文件待下一批批准。"
                         } catch (error: Exception) {
                             status = error.message ?: "补丁应用失败"
                         } finally { busy = false }
                     }
-                }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text("我已核对，批准并应用全部变更")
+                }, enabled = !busy && selectedReviewPaths.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                    Text("批准并应用本批选中的文件")
                 }
             }
             snapshot?.let { saved ->
