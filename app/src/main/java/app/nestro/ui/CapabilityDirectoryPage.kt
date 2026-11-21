@@ -171,8 +171,6 @@ fun CapabilityDirectoryPage() {
                 Text("已验证签名目录和文件哈希。技能内容仅作为提示词保存，不执行包内代码；声明权限不会自动授予系统权限。")
             }},
             confirmButton={TextButton(onClick={
-                val skills=runCatching { JSONObject(prefs.getString("skills","{}") ?: "{}") }.getOrDefault(JSONObject())
-                val metadata=runCatching { JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}") }.getOrDefault(JSONObject())
                 val installResult=runCatching { lifecycle.install(bundle) }
                 installResult.onSuccess {
                     installStatus="已安装 "+bundle.name+" v"+bundle.version+"。旧版本已保留，可在本地能力列表回退；技能默认不自动启用。"
