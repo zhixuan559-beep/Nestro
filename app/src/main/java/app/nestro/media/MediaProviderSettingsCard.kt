@@ -2,6 +2,7 @@ package app.nestro.media
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,6 +30,8 @@ fun MediaProviderSettingsCard() {
     val context = LocalContext.current
     val store = remember(context) { MediaProviderConfigStore(context) }
     val scope = rememberCoroutineScope()
+    var providerId by remember { mutableStateOf("openai-compatible-media") }
+    var providerSummaries by remember { mutableStateOf(emptyList<MediaProviderSummary>()) }
     var displayName by remember { mutableStateOf("自定义多模态服务") }
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
@@ -41,8 +44,10 @@ fun MediaProviderSettingsCard() {
     var busy by remember { mutableStateOf(false) }
 
     LaunchedEffect(store) {
+        providerSummaries = withContext(Dispatchers.IO) { store.list() }
         val existing = withContext(Dispatchers.IO) { store.read() }
         if (existing != null) {
+            providerId = existing.providerId
             displayName = existing.displayName
             baseUrl = existing.baseUrl
             model = existing.model
@@ -60,6 +65,7 @@ fun MediaProviderSettingsCard() {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
             Text("仅在你主动确认媒体分析时，才会把素材发送到这里。转写接口使用 OpenAI 兼容格式；场景识别和音频处理接口路径可按服务商文档调整。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(apiKey, { apiKey = it }, label = { Text(if (configured) "新 API Key（留空不允许覆盖）" else "API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
@@ -76,6 +82,7 @@ fun MediaProviderSettingsCard() {
                             runCatching {
                                 MediaProviderConnectionTest.run(
                                     MediaProviderConfig(
+                                        providerId = providerId,
                                         displayName = displayName,
                                         baseUrl = baseUrl,
                                         apiKey = apiKey,
@@ -101,6 +108,7 @@ fun MediaProviderSettingsCard() {
                         val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 val config = MediaProviderConfig(
+                                    providerId = providerId,
                                     displayName = displayName,
                                     baseUrl = baseUrl,
                                     apiKey = apiKey,
@@ -111,6 +119,7 @@ fun MediaProviderSettingsCard() {
                                 )
                                 config.validate()
                                 store.save(config)
+                                store.activate(config.providerId)
                                 config
                             }
                         }
@@ -118,7 +127,9 @@ fun MediaProviderSettingsCard() {
                             MediaIntelligenceRegistry.register(OpenAiCompatibleMediaIntelligenceProvider(config))
                             MediaIntelligenceRegistry.activate(config.providerId)
                             configured = true
+                            providerId = config.providerId
                             apiKey = ""
+                            providerSummaries = withContext(Dispatchers.IO) { store.list() }
                             status = "媒体服务已保存并启用。密钥不会显示或写入普通日志。"
                         }.onFailure { status = "保存失败："+(it.message ?: "配置无效") }
                         busy = false
@@ -126,23 +137,71 @@ fun MediaProviderSettingsCard() {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (busy) "处理中…" else "保存并启用媒体服务") }
-            if (configured) {
-                OutlinedButton(
-                    enabled = !busy,
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) { runCatching { store.delete() } }
-                            if (result.isSuccess) {
-                                MediaIntelligenceRegistry.unregister("openai-compatible-media")
-                                configured = false
-                                status = "媒体服务配置已删除。"
-                            } else status = "删除失败："+(result.exceptionOrNull()?.message ?: "未知错误")
-                            busy = false
+            if (providerSummaries.isNotEmpty()) {
+                Text("已配置服务商", style = MaterialTheme.typography.titleSmall)
+                providerSummaries.forEach { summary ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(summary.displayName, style = MaterialTheme.typography.bodyMedium)
+                            Text(summary.providerId+" · "+summary.model, style = MaterialTheme.typography.labelSmall)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("删除本机媒体服务配置") }
+                        OutlinedButton(enabled = !busy, onClick = {
+                            busy = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        store.activate(summary.providerId)
+                                        store.read(summary.providerId) ?: error("服务商密钥不可用")
+                                    }
+                                }
+                                result.onSuccess { config ->
+                                    MediaIntelligenceRegistry.register(OpenAiCompatibleMediaIntelligenceProvider(config))
+                                    MediaIntelligenceRegistry.activate(config.providerId)
+                                    providerId = config.providerId
+                                    displayName = config.displayName
+                                    baseUrl = config.baseUrl
+                                    model = config.model
+                                    transcriptionPath = config.transcriptionPath
+                                    scenePath = config.scenePath
+                                    audioPath = config.audioProcessPath
+                                    apiKey = ""
+                                    configured = true
+                                    status = "已切换到 "+config.displayName
+                                }.onFailure { status = "切换失败："+(it.message ?: "配置不可用") }
+                                busy = false
+                            }
+                        }) { Text("切换") }
+                        OutlinedButton(enabled = !busy, onClick = {
+                            busy = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        store.delete(summary.providerId)
+                                        store.read()
+                                    }
+                                }
+                                result.onSuccess { fallback ->
+                                    MediaIntelligenceRegistry.unregister(summary.providerId)
+                                    if (fallback != null) {
+                                        MediaIntelligenceRegistry.register(OpenAiCompatibleMediaIntelligenceProvider(fallback))
+                                        MediaIntelligenceRegistry.activate(fallback.providerId)
+                                        providerId = fallback.providerId
+                                        displayName = fallback.displayName
+                                        baseUrl = fallback.baseUrl
+                                        model = fallback.model
+                                        transcriptionPath = fallback.transcriptionPath
+                                        scenePath = fallback.scenePath
+                                        audioPath = fallback.audioProcessPath
+                                        configured = true
+                                    } else configured = false
+                                    providerSummaries = withContext(Dispatchers.IO) { store.list() }
+                                    status = "已删除服务商配置："+summary.displayName
+                                }.onFailure { status = "删除失败："+(it.message ?: "未知错误") }
+                                busy = false
+                            }
+                        }) { Text("删除") }
+                    }
+                }
             }
             Text(status, style = MaterialTheme.typography.bodySmall)
         }
