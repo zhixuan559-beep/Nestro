@@ -171,6 +171,8 @@ fun VoiceSystemPage() {
             status = "正在连接实时语音服务…"
             realtimeConnecting = true
             val cancelled = AtomicBoolean(false)
+            val callbackSession = AtomicReference<RealtimeVoiceSession?>(null)
+            val callbackAudio = AtomicReference<RealtimeVoiceAudioController?>(null)
             realtimeConnectCancelled.set(cancelled)
             val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
                 override fun onConnected(activeSession: RealtimeVoiceSession) {
@@ -178,6 +180,7 @@ fun VoiceSystemPage() {
                         activeSession.close()
                         return
                     }
+                    callbackSession.set(activeSession)
                     realtimeSessionRef.set(activeSession)
                     try {
                         val audio = RealtimeVoiceAudioController(activeSession) { message ->
@@ -190,8 +193,17 @@ fun VoiceSystemPage() {
                             activeSession.close()
                             return
                         }
+                        callbackAudio.set(audio)
                         realtimeAudioRef.set(audio)
+                        if (cancelled.get()) {
+                            callbackAudio.compareAndSet(audio, null)
+                            realtimeAudioRef.compareAndSet(audio, null)
+                            audio.close()
+                            activeSession.close()
+                            return
+                        }
                         mainHandler.post {
+                            if (cancelled.get()) return@post
                             realtimeAudio = audio
                             realtimeSession = activeSession
                             pendingRealtimeSession = null
@@ -212,9 +224,9 @@ fun VoiceSystemPage() {
                 }
 
                 override fun onAudio(audio: SpeechAudio) {
-                    runCatching { realtimeAudioRef.get()?.play(audio) }
+                    runCatching { callbackAudio.get()?.play(audio) }
                         .onFailure { error ->
-                            realtimeSessionRef.get()?.close()
+                            callbackSession.get()?.close()
                             mainHandler.post { status = error.message ?: "实时音频播放失败" }
                         }
                 }
@@ -225,8 +237,11 @@ fun VoiceSystemPage() {
 
                 override fun onClosed() {
                     realtimeConnectCancelled.compareAndSet(cancelled, null)
-                    realtimeSessionRef.compareAndSet(realtimeSessionRef.get(), null)
-                    realtimeAudioRef.getAndSet(null)?.close()
+                    callbackSession.get()?.let { realtimeSessionRef.compareAndSet(it, null) }
+                    callbackAudio.getAndSet(null)?.let { audio ->
+                        realtimeAudioRef.compareAndSet(audio, null)
+                        audio.close()
+                    }
                     mainHandler.post {
                         realtimeAudio = null
                         realtimeSession = null
