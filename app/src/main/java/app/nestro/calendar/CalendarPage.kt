@@ -1,7 +1,6 @@
 package app.nestro.calendar
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,7 +23,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -64,6 +62,7 @@ fun CalendarPage(repository: CalendarRepository) {
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showEditor by remember { mutableStateOf(false) }
+    var showCompleted by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CalendarEvent?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
@@ -164,16 +163,23 @@ fun CalendarPage(repository: CalendarRepository) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { showCompleted = !showCompleted }) { Text(if (showCompleted) "查看未完成" else "已完成") }
             if (Build.VERSION.SDK_INT >= 33 &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) {
                 TextButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("开启提醒") }
             }
         }
+        val completedForDay = events.filter { event ->
+            event.completed && Instant.ofEpochMilli(event.startAt).atZone(zone).toLocalDate() == selectedDate
+        }
+        val visibleOccurrences = if (showCompleted) completedForDay.map {
+            CalendarRules.Occurrence(it, it.startAt, it.endAt)
+        } else dayOccurrences
         if (loading) Text("正在读取日程…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        else if (dayOccurrences.isEmpty()) Text("这一天没有安排", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else if (visibleOccurrences.isEmpty()) Text(if (showCompleted) "这一天没有已完成日程" else "这一天没有安排", color = MaterialTheme.colorScheme.onSurfaceVariant)
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(dayOccurrences, key = { "${it.event.id}-${it.startAt}" }) { occurrence ->
+            items(visibleOccurrences, key = { "${it.event.id}-${it.startAt}" }) { occurrence ->
                 val event = occurrence.event
                 Card(Modifier.fillMaxWidth().clickable { editing = event; showEditor = true }) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -181,10 +187,10 @@ fun CalendarPage(repository: CalendarRepository) {
                             Text(event.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                             TextButton(onClick = {
                                 scope.launch {
-                                    withContext(Dispatchers.IO) { repository.setCompleted(event.id, true) }
+                                    withContext(Dispatchers.IO) { repository.setCompleted(event.id, !event.completed) }
                                     refresh()
                                 }
-                            }) { Text("完成") }
+                            }) { Text(if (event.completed) "恢复" else "完成") }
                             TextButton(onClick = {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { repository.delete(event.id) }
@@ -305,7 +311,7 @@ private fun CalendarEventEditor(
                     }, label = { Text("重复规则：NONE / DAILY / WEEKLY / MONTHLY / YEARLY") }, singleLine = true
                 )
                 OutlinedTextField(
-                    reminder, { reminder = it.filter(Char::isDigit).take(4) },
+                    reminder, { reminder = it.filter { ch -> ch.isDigit() || ch == '-' }.take(5) },
                     label = { Text("提前提醒分钟（-1 表示关闭；0/5/10/15/30/60/1440）") }, singleLine = true
                 )
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
@@ -314,7 +320,7 @@ private fun CalendarEventEditor(
         confirmButton = {
             TextButton(onClick = {
                 val reminderValue = reminder.toIntOrNull()
-                val validReminder = reminderValue in setOf(-1, 0, 5, 10, 15, 30, 60, 1440)
+                val validReminder = reminderValue != null && reminderValue in setOf(-1, 0, 5, 10, 15, 30, 60, 1440)
                 val validRecurrence = recurrence in CalendarRules.recurrenceValues
                 val validTimes = allDay || runCatching {
                     java.time.LocalTime.parse(startTime, calendarTimeFormat)
