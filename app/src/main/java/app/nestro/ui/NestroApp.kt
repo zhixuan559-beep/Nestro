@@ -152,6 +152,13 @@ fun NestroApp(initialPage: String = "home") {
     val scope = rememberCoroutineScope()
     val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
+    val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
+            "Nestro 已成为系统默认助手入口。"
+        } else {
+            "系统助手设置未更改。"
+        }
+    }
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember(initialPage) { mutableStateOf(initialPage) }
@@ -2237,6 +2244,31 @@ fun NestroApp(initialPage: String = "home") {
                                             Text("从备份恢复")
                                         }
                                         Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("系统默认助手", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                        val assistantAvailable = app.nestro.phone.AndroidAssistantRoleSupport.isAvailable(context)
+                                        val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
+                                        Text(
+                                            when {
+                                                assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
+                                                else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
+                                            },
+                                            color = Muted, style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Button(
+                                            enabled = assistantAvailable && !assistantHeld,
+                                            onClick = {
+                                                val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
+                                                if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
+                                                else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                        ) { Text(if (assistantHeld) "已设为系统助手" else "设为系统默认助手") }
                                     }
                                 }
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
