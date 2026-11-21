@@ -63,7 +63,9 @@ fun ArtifactLibraryPage(projectId: String) {
     }
 
     LaunchedEffect(projectId, refresh) {
-        records = withContext(Dispatchers.IO) { runCatching { ArtifactStore.list(context, projectId) }.getOrDefault(emptyList()) }
+        val result = withContext(Dispatchers.IO) { runCatching { ArtifactStore.list(context, projectId) } }
+        result.onSuccess { records = it }
+            .onFailure { status = "加载产物失败：${it.message ?: "本机数据读取异常"}" }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -109,10 +111,12 @@ fun ArtifactLibraryPage(projectId: String) {
                                     scope.launch {
                                         val body = withContext(Dispatchers.IO) { runCatching { ArtifactStore.read(context, record) } }
                                         body.onSuccess { text ->
-                                            val intent = Intent(Intent.ACTION_SEND).setType("text/plain")
-                                                .putExtra(Intent.EXTRA_SUBJECT, record.title)
-                                                .putExtra(Intent.EXTRA_TEXT, text)
-                                            context.startActivity(Intent.createChooser(intent, "分享产物"))
+                                            runCatching {
+                                                val intent = Intent(Intent.ACTION_SEND).setType("text/plain")
+                                                    .putExtra(Intent.EXTRA_SUBJECT, record.title)
+                                                    .putExtra(Intent.EXTRA_TEXT, text)
+                                                context.startActivity(Intent.createChooser(intent, "分享产物"))
+                                            }.onFailure { status = "分享失败：${it.message ?: "当前设备无法打开分享面板"}" }
                                         }.onFailure { status = "分享失败：${it.message ?: "未知错误"}" }
                                     }
                                 }) { Text("分享") }
@@ -122,9 +126,15 @@ fun ArtifactLibraryPage(projectId: String) {
                                 }) { Text("导出") }
                                 TextButton(onClick = {
                                     scope.launch {
-                                        withContext(Dispatchers.IO) { ArtifactStore.delete(context, record) }
-                                        refresh++
-                                        status = "已删除：${record.title} v${record.version}"
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching { ArtifactStore.delete(context, record) }
+                                        }
+                                        result.onSuccess {
+                                            refresh++
+                                            status = "已删除：${record.title} v${record.version}"
+                                        }.onFailure {
+                                            status = "删除失败：${it.message ?: "本机存储异常"}"
+                                        }
                                     }
                                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                             }
