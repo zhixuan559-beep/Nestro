@@ -460,6 +460,12 @@ fun AiCoworkbenchPage(
                     Text("另有 ${result.resolvedDependencies.size - 120} 项依赖未展开。")
                 }
             }
+            Text(
+                if (result.sbomComplete) "CycloneDX SBOM：Debug/Release 双配置完整性已确认"
+                else "CycloneDX SBOM：未取得完整的 Debug/Release 依赖证据",
+                color = if (result.sbomComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
             if (result.sbomComponents.isNotEmpty()) {
                 Text("SBOM 组件：${result.sbomComponents.size} 项", style = MaterialTheme.typography.titleSmall)
                 result.sbomComponents.take(100).forEach { component ->
