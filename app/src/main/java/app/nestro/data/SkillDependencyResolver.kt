@@ -21,6 +21,23 @@ object SkillDependencyResolver {
         val initialConstraints = rootBundle.dependencies.groupBy { it.name }.mapValues { (_, rows) -> rows.map { it.version }.distinct() }
         val initial = State(initialConstraints, mapOf(rootRelease.name to rootRelease), mapOf(rootRelease.name to rootBundle), emptyMap())
 
+        fun hasCycle(bundles: Map<String, SkillBundle>): Boolean {
+            val visiting = mutableSetOf<String>()
+            val visited = mutableSetOf<String>()
+            fun visit(name: String): Boolean {
+                if (name in visiting) return false
+                if (name in visited) return true
+                visiting.add(name)
+                bundles[name]?.dependencies.orEmpty().forEach { dependency ->
+                    if (dependency.name in bundles && !visit(dependency.name)) return false
+                }
+                visiting.remove(name)
+                visited.add(name)
+                return true
+            }
+            return bundles.keys.any { !visit(it) }
+        }
+
         fun search(state: State, depth: Int): State? {
             if (depth > 50) return null
             if (state.selected.any { (name, release) ->
@@ -30,7 +47,7 @@ object SkillDependencyResolver {
                     state.constraints[name].orEmpty().any { range -> !runCatching { SkillSemVer.matches(version, range) }.getOrDefault(false) }
                 }) return null
             val unresolved = state.constraints.keys.firstOrNull { it !in state.selected && it !in state.satisfied }
-                ?: return state
+            if (unresolved == null) return if (hasCycle(state.bundles)) null else state
             val ranges = state.constraints[unresolved].orEmpty()
             val installed = installedVersions[unresolved]
             if (installed != null && ranges.all { runCatching { SkillSemVer.matches(installed, it) }.getOrDefault(false) }) {
