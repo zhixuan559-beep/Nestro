@@ -304,6 +304,7 @@ fun GitWorkbenchPage(context: Context) {
                     if (file.isNotBlank()) {
                         Text("编辑：" + file, style = MaterialTheme.typography.titleSmall)
                         OutlinedTextField(editor, { editor = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp), minLines = 8, maxLines = 24)
+                        if (editor != originalEditor) Text("存在未保存修改；保存前会限制切换分支、Pull、Commit 和回滚。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(enabled = !loading, onClick = {
                                 scope.launch {
