@@ -142,7 +142,7 @@ fun VoiceSystemPage() {
 
                 override fun onTranscript(text: String, isFinal: Boolean) {
                     mainHandler.post {
-                        if (isFinal) realtimeTranscript = (realtimeTranscript + text + "\\n").takeLast(2_000)
+                        if (isFinal) realtimeTranscript = (realtimeTranscript + text + "\n").takeLast(2_000)
                         status = if (isFinal) "识别完成：$text" else "实时转写：$text"
                     }
                 }
