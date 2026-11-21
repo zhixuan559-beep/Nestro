@@ -16,6 +16,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun McpToolCenterPage(app: NestroApplication) {
@@ -24,6 +26,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     val scope = rememberCoroutineScope()
     var servers by remember { mutableStateOf(repository.listServers()) }
     var tools by remember { mutableStateOf(repository.listTools()) }
+    var audits by remember { mutableStateOf(repository.listAudits()) }
     var serverName by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
@@ -36,6 +39,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     fun reload() {
         servers = repository.listServers()
         tools = repository.listTools()
+        audits = repository.listAudits()
     }
     fun discover(serverId: String) {
         scope.launch {
@@ -202,6 +206,20 @@ fun McpToolCenterPage(app: NestroApplication) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("调用预览") }
                 }
+            }
+        }
+        HorizontalDivider()
+        Text("最近调用记录（${audits.size}）", style = MaterialTheme.typography.titleMedium)
+        if (audits.isEmpty()) {
+            Text("MCP 工具调用记录会保存在本机，不记录调用参数或返回正文。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        audits.take(20).forEach { audit ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text(audit.serverName + " · " + audit.toolName, style = MaterialTheme.typography.bodySmall)
+                    Text(DateFormat.getDateTimeInstance().format(Date(audit.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (audit.succeeded) "成功" else "失败", color = if (audit.succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
