@@ -281,7 +281,7 @@ object CoworkbenchStaticAnalyzer {
         val lowerPath = path.lowercase()
         val lines = text.lines()
         if (lowerPath.endsWith(".gradle") || lowerPath.endsWith(".gradle.kts")) {
-            Regex("""(?is)maven\\s*\\{[\\s\\S]{0,2000}?https?://""").find(text)?.let { match ->
+            Regex("""(?is)maven\s*\{[\s\S]{0,2000}?https?://""").find(text)?.let { match ->
                 findings += finding("依赖仓库", CoworkbenchFindingLevel.WARNING, path, null,
                     match.value.take(240), "发现自定义 Maven 仓库 URL；核验仓库来源、TLS 与供应链可信度")
             }
