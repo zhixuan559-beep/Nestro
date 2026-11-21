@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 COORDINATE = re.compile(
-    r"^\\s*(?:\\+---|\\\\---|---)\\s+"
-    r"([^\\s:]+):([^\\s:]+):([^\\s]+)"
-    r"(?:\\s+->\\s+([^\\s]+))?"
+    r"^\s*(?:\+---|\\---|---)\s+"
+    r"([^\s:]+):([^\s:]+):([^\s]+)"
+    r"(?:\s+->\s+([^\s]+))?"
 )
 MAX_INPUT_BYTES = 8 * 1024 * 1024
 MAX_COMPONENTS = 20_000
@@ -83,7 +83,7 @@ def main():
         "components": components,
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Generated CycloneDX 1.5 SBOM with {len(components)} components: {destination}")
 
 
