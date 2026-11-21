@@ -82,23 +82,28 @@ fi
 run_with_timeout() {
   local limit_seconds="$1"
   shift
-  "$@" &
-  local command_pid=$!
-  (
-    sleep "$limit_seconds"
-    if kill -0 "$command_pid" 2>/dev/null; then
-      echo "Instrumentation exceeded ${limit_seconds}s; sending TERM." >&2
-      kill -TERM "$command_pid" 2>/dev/null || exit 0
-      sleep 10
-      kill -KILL "$command_pid" 2>/dev/null || true
-    fi
-  ) &
-  local watchdog_pid=$!
-  wait "$command_pid"
-  local command_status=$?
-  kill "$watchdog_pid" 2>/dev/null || true
-  wait "$watchdog_pid" 2>/dev/null || true
-  return "$command_status"
+  perl -e '
+    use strict;
+    use warnings;
+    my $limit = shift @ARGV;
+    my $pid = fork();
+    die "Unable to fork instrumentation process: $!" unless defined $pid;
+    if ($pid == 0) {
+      exec @ARGV or die "Unable to execute instrumentation command: $!";
+    }
+    $SIG{ALRM} = sub {
+      kill "TERM", $pid;
+      sleep 10;
+      kill "KILL", $pid;
+      waitpid($pid, 0);
+      exit 124;
+    };
+    alarm($limit);
+    waitpid($pid, 0);
+    alarm(0);
+    my $status = $?;
+    exit(($status & 127) ? 128 + ($status & 127) : ($status >> 8));
+  ' "$limit_seconds" "$@"
 }
 
 set +e
