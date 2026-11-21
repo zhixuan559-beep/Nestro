@@ -123,6 +123,7 @@ internal fun GeneratedPluginCenterPage(
                     Text("安全边界：不执行任意代码；高风险设备、身份验证和金融工具不能加入插件。", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
+                            val wasUpdate = updateTarget != null
                             val result = runCatching {
                                 val target = updateTarget
                                 if (target == null) store.install(candidate, application.agentToolCatalog)
@@ -137,7 +138,7 @@ internal fun GeneratedPluginCenterPage(
                                 application.refreshGeneratedPluginTools()
                                 reload()
                                 onChanged()
-                                status = if (updateTarget == null) "插件已安装，默认关闭。启用后才能在主聊天中调用。" else "插件版本已更新并默认停用，可检查后重新启用。"
+                                status = if (wasUpdate) "插件版本已更新并默认停用，可检查后重新启用。" else "插件已安装，默认关闭。启用后才能在主聊天中调用。"
                             }.onFailure { status = it.message ?: "插件安装/更新失败" }
                         }) { Text(if (updateTarget == null) "安装（默认关闭）" else "更新版本（默认关闭）") }
                         OutlinedButton(onClick = { draft = null; updateTarget = null }) { Text("丢弃草案") }
