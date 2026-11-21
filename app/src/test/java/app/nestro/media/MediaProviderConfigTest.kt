@@ -58,6 +58,7 @@ class MediaProviderConfigTest {
         assertFalse(runCatching { config().copy(videoStatusPath = "v1/{job_id}/../admin").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoResultUrlField = "video-url?token").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoPromptField = "prompt.value?").validate() }.isSuccess)
+        assertFalse(runCatching { config().copy(videoModelField = "prompt").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoAuthHeader = "Bad Header").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoAuthPrefix = "Bearer\n").validate() }.isSuccess)
         assertFalse(runCatching { config().copy(videoExtraRequestJson = "[1,2]").validate() }.isSuccess)
