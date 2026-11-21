@@ -3015,6 +3015,13 @@ fun NestroApp(initialPage: String = "home") {
                         }
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
+                        "plugins" -> GeneratedPluginCenterPage(
+                            application = appRuntime,
+                            configs = requestModelConfigs,
+                            onUsage = recordModelUsage,
+                            onProviderUsage = recordProviderModelUsage,
+                            onChanged = { }
+                        )
                         "git" -> GitWorkbenchPage(context)
                         "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
