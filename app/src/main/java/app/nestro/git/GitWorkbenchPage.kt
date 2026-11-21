@@ -189,6 +189,13 @@ fun GitWorkbenchPage(context: Context) {
                         OutlinedButton(enabled = !loading, onClick = {
                             scope.launch {
                                 loading = true
+                                refreshWorkspace(selectedLocal.id)
+                                loading = false
+                            }
+                        }) { Text("刷新") }
+                        OutlinedButton(enabled = !loading, onClick = {
+                            scope.launch {
+                                loading = true
                                 runCatching { repo.pull(selectedLocal.id) }
                                     .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString() }
                                     .onFailure { status = it.message ?: "Pull 失败" }
