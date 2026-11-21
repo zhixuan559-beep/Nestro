@@ -61,4 +61,40 @@ class CoworkbenchPolicyTest {
         assertFalse(CoworkbenchPolicy.canRecoverInterruptedFile("external", null, "created"))
     }
 
+    @Test fun strictPatchJsonAcceptsOnlyCompleteFileObjects() {
+        val proposals = CoworkbenchPolicy.parsePatchJson(
+            """{"files":[{"path":"src/A.kt","content":"package sample"}]}"""
+        )
+        assertEquals(1, proposals.size)
+        assertEquals("src/A.kt", proposals.single().path)
+        assertEquals("package sample", proposals.single().content)
+        assertFalse(runCatching {
+            CoworkbenchPolicy.parsePatchJson(
+                """{"files":[{"path":"src/A.kt","content":"x"}],"notes":"unexpected"}"""
+            )
+        }.isSuccess)
+        assertFalse(runCatching {
+            CoworkbenchPolicy.parsePatchJson(
+                """{"files":[{"path":"src/A.kt","content":"x","extra":true}]}"""
+            )
+        }.isSuccess)
+        assertFalse(runCatching {
+            CoworkbenchPolicy.parsePatchJson(
+                """{"files":[{"path":"../outside","content":"x"}]}"""
+            )
+        }.isSuccess)
+    }
+
+    @Test fun strictPatchJsonAllowsNullOnlyForExplicitFileDeletion() {
+        val proposal = CoworkbenchPolicy.parsePatchJson(
+            """{"files":[{"path":"src/Old.kt","content":null}]}"""
+        ).single()
+        assertEquals(null, proposal.content)
+        assertFalse(runCatching {
+            CoworkbenchPolicy.parsePatchJson(
+                """{"files":[{"path":"src/Old.kt","content":{"delete":true}}]}"""
+            )
+        }.isSuccess)
+    }
+
 }
