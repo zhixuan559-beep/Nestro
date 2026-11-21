@@ -67,6 +67,7 @@ data class MediaProviderConfig(
         require(videoExtraRequestJson.length <= 12_000 && runCatching { JSONObject(videoExtraRequestJson) }.isSuccess) {
             "视频 API 扩展请求参数必须是有效 JSON 对象且不超过 12 KB"
         }
+        require(videoModelField != videoPromptField) { "视频模型字段和提示词字段不能相同" }
         listOf(videoModelField, videoPromptField, videoJobIdField, videoStatusField, videoResultUrlField).forEach {
             require(it.matches(Regex("[A-Za-z0-9_.]{1,100}"))) { "视频任务响应字段无效" }
         }
