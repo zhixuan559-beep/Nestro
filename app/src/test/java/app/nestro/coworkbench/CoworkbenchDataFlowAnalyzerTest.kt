@@ -31,6 +31,12 @@ class CoworkbenchDataFlowAnalyzerTest {
         val findings = CoworkbenchDataFlowAnalyzer.analyze("src/Screen.kt", source)
         assertTrue(findings.any { it.category == "潜在数据流：SQL 查询" })
         assertTrue(findings.any { it.category == "潜在数据流：WebView 导航" })
+        val javaSource = """
+            String suppliedPath = intent.getStringExtra("path");
+            new File(suppliedPath);
+        """.trimIndent()
+        assertTrue(CoworkbenchDataFlowAnalyzer.analyze("src/Legacy.java", javaSource)
+            .any { it.category == "潜在数据流：文件路径" })
     }
 
     @Test
