@@ -150,7 +150,7 @@ fun GitWorkbenchPage(context: Context) {
                             Text(item.fullName)
                             Text((if (item.isPrivate) "私有" else "公开") + " · " + item.defaultBranch, style = MaterialTheme.typography.labelSmall)
                         }
-                        TextButton(enabled = !loading && selectedAccount != null, onClick = {
+                        TextButton(enabled = !loading && selectedAccount != null && (file.isBlank() || editor == originalEditor), onClick = {
                             scope.launch {
                                 if (file.isNotBlank() && editor != originalEditor) {
                                     status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
@@ -186,7 +186,7 @@ fun GitWorkbenchPage(context: Context) {
                         OutlinedButton(onClick = { branchMenu = true }) { Text("分支") }
                         DropdownMenu(branchMenu, { branchMenu = false }) {
                             branches.forEach { branch ->
-                                DropdownMenuItem(text = { Text(branch) }, onClick = {
+                                DropdownMenuItem(enabled = file.isBlank() || editor == originalEditor, text = { Text(branch) }, onClick = {
                                     branchMenu = false
                                     scope.launch {
                                         loading = true
@@ -214,7 +214,7 @@ fun GitWorkbenchPage(context: Context) {
                                 loading = false
                             }
                         }) { Text("Fetch") }
-                        OutlinedButton(enabled = !loading, onClick = {
+                        OutlinedButton(enabled = !loading && (file.isBlank() || editor == originalEditor), onClick = {
                             scope.launch {
                                 loading = true
                                 runCatching { repo.pull(selectedLocal.id) }
@@ -223,7 +223,7 @@ fun GitWorkbenchPage(context: Context) {
                                 refreshWorkspace(selectedLocal.id); loading = false
                             }
                         }) { Text("Pull") }
-                        OutlinedButton(enabled = !loading, onClick = {
+                        OutlinedButton(enabled = !loading && (file.isBlank() || editor == originalEditor), onClick = {
                             scope.launch {
                                 loading = true
                                 runCatching { repo.push(selectedLocal.id) }.onSuccess { status = it.message }.onFailure { status = it.message ?: "Push 失败" }
@@ -233,7 +233,7 @@ fun GitWorkbenchPage(context: Context) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(newBranch, { newBranch = it }, label = { Text("新分支") }, modifier = Modifier.weight(1f), singleLine = true)
-                        Button(enabled = !loading && newBranch.isNotBlank(), onClick = {
+                        Button(enabled = !loading && newBranch.isNotBlank() && (file.isBlank() || editor == originalEditor), onClick = {
                             scope.launch {
                                 loading = true
                                 runCatching { repo.createBranch(selectedLocal.id, newBranch.trim()) }
@@ -315,7 +315,7 @@ fun GitWorkbenchPage(context: Context) {
                     OutlinedTextField(author, { author = it }, label = { Text("提交者姓名") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     OutlinedTextField(email, { email = it }, label = { Text("提交邮箱") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     OutlinedTextField(message, { message = it }, label = { Text("提交说明") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                    Button(enabled = !loading && message.isNotBlank() && author.isNotBlank() && email.isNotBlank(), onClick = {
+                    Button(enabled = !loading && message.isNotBlank() && author.isNotBlank() && email.isNotBlank() && (file.isBlank() || editor == originalEditor), onClick = {
                         scope.launch {
                             loading = true
                             runCatching { repo.commit(selectedLocal.id, message, author, email) }
@@ -332,7 +332,7 @@ fun GitWorkbenchPage(context: Context) {
                             Text(item.shortMessage, style = MaterialTheme.typography.bodySmall)
                             Text(item.id.take(10) + " · " + item.author, style = MaterialTheme.typography.labelSmall)
                             if (item.parentCount == 1) {
-                                TextButton(onClick = { revertTarget = item }) { Text("反向回滚") }
+                                TextButton(enabled = file.isBlank() || editor == originalEditor, onClick = { revertTarget = item }) { Text("反向回滚") }
                             } else {
                                 Text("根提交或合并提交暂不支持自动回滚", style = MaterialTheme.typography.labelSmall)
                             }
