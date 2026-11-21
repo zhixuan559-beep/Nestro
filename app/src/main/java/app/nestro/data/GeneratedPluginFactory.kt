@@ -51,7 +51,7 @@ data class GeneratedPluginExecutionResult(
 
 object GeneratedPluginPackageValidator {
     private val idPattern = Regex("[a-z][a-z0-9]*(?:[.-][a-z0-9]+){1,5}")
-    private val versionPattern = Regex("0|[1-9][0-9]*\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?")
+    private val versionPattern = Regex("(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?")
 
     fun validate(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery) {
         require(idPattern.matches(plugin.id)) { "插件 ID 必须使用稳定的小写命名空间格式" }
