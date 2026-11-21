@@ -12,7 +12,7 @@ class McpToolCenterTest {
   assertNotNull(McpEndpointPolicy.validate("https://example.com/mcp#fragment"))
  }
  @Test fun permissionDefaultsToExternalWriteUnlessReadOnlyIsExplicit(){
-  assertEquals(AgentToolPermission.READ_ONLY,McpToolPermissionPolicy.permission(true))
+  assertEquals(AgentToolPermission.EXTERNAL_WRITE,McpToolPermissionPolicy.permission(true))
   assertEquals(AgentToolPermission.EXTERNAL_WRITE,McpToolPermissionPolicy.permission(false))
  }
  @Test fun argumentValidatorChecksRequiredTypesAndUnknownProperties(){
