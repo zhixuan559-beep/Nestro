@@ -38,9 +38,25 @@ object CoworkbenchPolicy {
         require(!value.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(value)) { "只允许仓库内相对路径" }
         val path = value.replace('\\', '/')
         require(path.split('/').none { it.isBlank() || it == "." || it == ".." }) { "文件路径包含越界片段" }
-        require(path.split('/').none { it == ".git" } && !path.startsWith(".git/")) { "禁止修改 Git 元数据" }
+        require(path.split('/').none { it == ".git" || it == ".nestro" }) { "禁止修改 Git/应用工作台元数据" }
         require(path.none { it.isISOControl() }) { "文件路径包含控制字符" }
+        require(!isProtectedPatchPath(path)) { "禁止补丁读取或修改密钥、签名材料及本地凭据文件：$path" }
         return path
+    }
+
+    private fun isProtectedPatchPath(path: String): Boolean {
+        val normalized = path.lowercase().replace('\\\\', '/')
+        val name = normalized.substringAfterLast('/')
+        val protectedNames = setOf(
+            "local.properties", "gradle.properties", "google-services.json", "service-account.json",
+            "credentials", "keystore.properties", "key.properties", ".npmrc", ".pypirc", ".netrc",
+            "id_rsa", "id_ed25519"
+        )
+        return name in protectedNames || name.startsWith(".env") ||
+            listOf("/secrets/", "/credentials/", "/keystore/", "/signing/", "private-key", "private_key")
+                .any { it in "/$normalized/" } ||
+            listOf(".jks", ".keystore", ".p12", ".pfx", ".pem", ".key", ".der")
+                .any { name.endsWith(it) }
     }
 
     fun canRecoverInterruptedFile(current: String?, before: String?, applied: String?): Boolean =
@@ -80,6 +96,10 @@ object CoworkbenchPolicy {
         require(proposals.isNotEmpty() && proposals.size <= MAX_FILES) { "一次补丁必须包含 1 到 40 个文件" }
         val paths = proposals.map { safePath(it.path) }
         require(paths.distinct().size == paths.size) { "补丁包含重复文件路径" }
+        val ordered = paths.sorted()
+        ordered.zipWithNext().forEach { (left, right) ->
+            require(!right.startsWith("$left/")) { "补丁同时将文件和其子目录作为目标，存在路径冲突：$left" }
+        }
         var total = 0L
         proposals.forEach { item ->
             val text = item.content ?: return@forEach
