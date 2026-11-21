@@ -410,6 +410,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             }
             return emptyList()
         }
+        recoverInterruptedRemovals(decoded)
         return decoded.filter { local ->
             val path = runCatching { File(local.localPath).canonicalFile.toPath() }.getOrNull()
             path != null && path.startsWith(root.canonicalFile.toPath()) && File(path.toFile(), ".git").isDirectory
@@ -655,7 +656,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             val next = localRepositories().filterNot { it.id == id }
             val directory = File(local.localPath).canonicalFile
             require(directory.toPath().startsWith(root.canonicalFile.toPath())) { "本地仓库路径越界，拒绝删除" }
-            val quarantine = if (deleteFiles) File(root, ".deleting-" + id + "-" + UUID.randomUUID()) else null
+            val quarantine = if (deleteFiles) File(root, ".deleting-" + id) else null
             if (quarantine != null) check(directory.renameTo(quarantine)) { "无法安全隔离本地仓库目录，索引未修改" }
             try {
                 saveLocals(next)
@@ -706,6 +707,29 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val canonical = path.toFile().canonicalFile.toPath()
         require(canonical.startsWith(rootPath)) { "文件路径不能通过符号链接越界" }
         return path
+    }
+
+    private fun recoverInterruptedRemovals(indexed: List<GitLocalRepository>) {
+        val rowsById = indexed.associateBy { it.id }
+        root.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith(".deleting-") }.forEach { quarantine ->
+            val id = quarantine.name.removePrefix(".deleting-")
+            val indexedRow = rowsById[id]
+            if (indexedRow != null) {
+                val original = File(indexedRow.localPath).canonicalFile
+                require(original.toPath().startsWith(root.canonicalFile.toPath())) { "待恢复仓库路径越界" }
+                if (!original.exists()) {
+                    check(quarantine.renameTo(original)) {
+                        "检测到上次删除中断，仓库仍保留在隔离目录：" + quarantine.name
+                    }
+                } else {
+                    throw IllegalStateException("检测到待恢复仓库，但原路径已被占用；隔离目录保留：" + quarantine.name)
+                }
+            } else {
+                check(quarantine.deleteRecursively()) {
+                    "仓库索引已删除，但上次清理未完成；残留目录：" + quarantine.name
+                }
+            }
+        }
     }
 
     private suspend fun saveLocal(local: GitLocalRepository) {
