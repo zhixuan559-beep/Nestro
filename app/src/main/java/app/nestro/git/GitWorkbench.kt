@@ -399,7 +399,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
                 check(prefs.edit().putString(LOCAL_CORRUPT_KEY, raw)
                     .putLong(LOCAL_CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的本地仓库索引" }
             }
-            return emptyList()
+            return@synchronized emptyList()
         }
         val decoded = runCatching {
             (0 until array.length()).map { i -> decodeLocal(array.getJSONObject(i)) }
@@ -411,7 +411,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             return emptyList()
         }
         recoverInterruptedRemovals(decoded)
-        return decoded.filter { local ->
+        decoded.filter { local ->
             val path = runCatching { File(local.localPath).canonicalFile.toPath() }.getOrNull()
             path != null && path.startsWith(root.canonicalFile.toPath()) && File(path.toFile(), ".git").isDirectory
         }
