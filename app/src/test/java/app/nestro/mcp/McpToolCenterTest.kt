@@ -2,6 +2,7 @@ package app.nestro.mcp
 import app.nestro.agent.AgentToolPermission
 import org.junit.Assert.*
 import org.junit.Test
+import org.json.JSONObject
 class McpToolCenterTest {
  @Test fun endpointRequiresHttpsAndRejectsEmbeddedCredentials(){
   assertNull(McpEndpointPolicy.validate("https://example.com/mcp"))
@@ -21,6 +22,16 @@ class McpToolCenterTest {
   assertEquals("参数 limit 类型不匹配，要求 integer",McpToolArgumentValidator.validate(schema,"""{"query":"hello","limit":"3"}"""))
   assertEquals("不允许未声明的参数：extra",McpToolArgumentValidator.validate(schema,"""{"query":"hello","extra":1}"""))
   assertNotNull(McpToolArgumentValidator.validate(schema,"x".repeat(32_001)))
+ }
+ @Test fun argumentMapUsesSchemaTypesRatherThanGuessingStringValues(){
+  val schema="""{"type":"object","properties":{"text":{"type":"string"},"flag":{"type":"boolean"},"count":{"type":"integer"}}}"""
+  val encoded=JSONObject(McpToolArgumentValidator.encodeArgumentMap(schema,mapOf("text" to "true","flag" to "false","count" to "3")))
+  assertEquals("true",encoded.getString("text"))
+  assertFalse(encoded.getBoolean("flag"))
+  assertEquals(3,encoded.getInt("count"))
+ }
+ @Test fun malformedPersistedServerConfigurationCanBeQuarantined(){
+  assertNull(McpToolCenterCodec.decodeServersOrNull("""[{"id":"bad","name":"bad","endpoint":"http://unsafe"}]"""))
  }
  @Test fun modernHeaderValuesEncodeUnsafeCharactersAndSentinel(){
   assertEquals("plain-ascii",McpHeaderValueEncoder.encode("plain-ascii"))
