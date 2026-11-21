@@ -1,6 +1,5 @@
 package app.nestro.ui
 
-import android.content.Context
 import app.nestro.speech.AndroidTextToSpeechController
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,7 +30,7 @@ fun VoiceSystemPage() {
     var speechRate by remember { mutableStateOf(1f) }
     var pitch by remember { mutableStateOf(1f) }
     var selectedLanguage by remember { mutableStateOf(Locale.SIMPLIFIED_CHINESE) }
-    var availableLanguages by remember { mutableStateOf<Set<Locale>>(emptySet()) }
+    var detectedLanguageCount by remember { mutableStateOf(0) }
     var ready by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("正在初始化本机语音合成…") }
 
@@ -39,11 +38,11 @@ fun VoiceSystemPage() {
         AndroidTextToSpeechController(context, object : AndroidTextToSpeechController.Listener {
             override fun onReady(availableLanguages: Set<Locale>) {
                 ready = true
-                this@VoiceSystemPage.run { }
+                detectedLanguageCount = availableLanguages.size
                 status = if (availableLanguages.isEmpty()) {
                     "语音引擎已就绪；语言列表由系统引擎提供。"
                 } else {
-                    "语音引擎已就绪，检测到 ${availableLanguages.size} 种语言。"
+                    "语音引擎已就绪，检测到 ${detectedLanguageCount} 种语言。"
                 }
             }
 
