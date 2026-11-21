@@ -48,7 +48,7 @@ object ModelProviderPresetCatalog {
             "modelscope", "魔搭社区", "https://api-inference.modelscope.cn/v1",
             ModelApiProtocol.OPENAI_CHAT_COMPLETIONS, "ModelScope API-Inference；额度以账户页面为准",
             credentialLabel = "魔搭访问令牌",
-            accountUrl = "https://www.modelscope.cn/",
+            accountUrl = "https://modelscope.cn/my/myaccesstoken",
             suggestedModels = emptyList()
         ),
         ModelProviderPreset(
