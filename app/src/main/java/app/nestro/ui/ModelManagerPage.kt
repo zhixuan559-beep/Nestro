@@ -111,7 +111,7 @@ internal fun ModelManager(
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
+        Text("支持官方服务商预置、自定义服务商、多 Key、多模型与 OpenAI 兼容模型目录发现。原生 Claude / Gemini 请求适配仍在开发中。", color = Muted)
         Text("新版模型目录 · 服务商 / API Key / 模型独立管理", color = Ink, style = MaterialTheme.typography.titleMedium)
         Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
         if (registryMessage.isNotBlank()) Text(registryMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
@@ -341,13 +341,23 @@ internal fun ModelManager(
 
             Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
             registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
-                val available = item in registry.selectableModels()
+                val providerProtocol = registry.providers.firstOrNull { it.id == item.providerId }?.protocol
+                val protocolReady = providerProtocol == app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
+                val available = item in registry.selectableModels() && protocolReady
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(item.name, color = if (item.id == activeRegistryModelId) Mint else Ink)
                             Text(item.modelCode, color = Muted, style = MaterialTheme.typography.bodySmall)
-                            Text(if (available) "可用" else "缺少可用 Key 或已停用", color = if (available) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                when {
+                                    !protocolReady -> "原生协议适配尚未完成，暂不可启用"
+                                    available -> "可用"
+                                    else -> "缺少可用 Key 或已停用"
+                                },
+                                color = if (available) Mint else ColorStop,
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                         if (item.id == activeRegistryModelId) Text("当前", color = Mint)
                     }
