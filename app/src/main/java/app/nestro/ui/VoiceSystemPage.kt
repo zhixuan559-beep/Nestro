@@ -396,7 +396,7 @@ fun VoiceSystemPage() {
             ) { Text("删除配置") }
         }
         OutlinedButton(
-            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy && !remoteRecording && mediaPlayer == null,
+            enabled = providerConfigured && providerOutputModel.isNotBlank() && !remoteBusy && !remoteRecording && mediaPlayer == null,
             onClick = {
                 scope.launch {
                     remoteBusy = true
