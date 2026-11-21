@@ -55,7 +55,7 @@ class ExpertTeamExecutionCoordinator(
                 ExpertTeamCollaborationEvent(
                     taskId = taskId, projectId = projectId, teamId = teamId,
                     sequence = eventSequence++, type = type, memberName = memberName,
-                    relatedMemberName = relatedMemberName, status = status, message = message.take(8_000)
+                    relatedMemberName = relatedMemberName, status = status, message = message.take(3_000)
                 )
             )
         }
@@ -147,7 +147,7 @@ class ExpertTeamExecutionCoordinator(
                 ExpertTeamCollaborationEvent(
                     taskId = taskId, projectId = projectId, teamId = teamId,
                     sequence = sequence++, type = type, memberName = member,
-                    status = status, message = message.take(8_000)
+                    status = status, message = message.take(3_000)
                 )
             )
         }
