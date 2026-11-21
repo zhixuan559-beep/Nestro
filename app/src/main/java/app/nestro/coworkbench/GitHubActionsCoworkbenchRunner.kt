@@ -16,6 +16,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
+object CoworkbenchReleaseGate {
+    // Kept closed until all 19 modules have complete code and the user authorizes unified validation.
+    const val ENABLE_REMOTE_VALIDATION = false
+}
+
 data class CoworkbenchValidationResult(
     val runId: Long,
     val status: String,
@@ -45,6 +50,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
         branch: String,
         timeoutMinutes: Int = 20
     ): CoworkbenchValidationResult = withContext(Dispatchers.IO) {
+        check(CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION) { "统一验收尚未开放：须先完成十九个模块全部代码。" }
         require(repository.provider == GitProvider.GITHUB) { "隔离构建当前仅支持 GitHub Actions；GitLab/Gitee runner 尚未接入" }
         require(Regex("^[A-Za-z0-9_.-]{1,100}\\.ya?ml$").matches(workflowFile)) { "Workflow 必须是 .github/workflows 下的 YAML 文件名" }
         require(branch.isNotBlank() && branch.length <= 200 && branch.none { it.isISOControl() }) { "分支名称无效" }
