@@ -99,8 +99,33 @@ class NestroApplication : Application() {
             )
         )
     }
-    /** One process-wide tool catalog shared by Phone Agent, experts, and workflows. */
-    val agentToolCatalog: AgentToolCatalog by lazy { InMemoryAgentToolCatalog() }
+    /** One process-wide tool catalog shared by chat, Phone Agent, experts, workflows and MCP. */
+    val agentToolCatalog: AgentToolCatalog by lazy {
+        InMemoryAgentToolCatalog().apply {
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "knowledge.search",
+                    description = "按当前项目搜索知识库资料。参数：query（必填，检索问题）；limit（可选，1 到 8）。只读，不会修改知识库。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，已阻止知识库检索")
+                val query = arguments["query"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "知识库检索缺少 query 参数")
+                val limit = arguments["limit"]?.toIntOrNull()?.coerceIn(1, 8) ?: 6
+                val matches = knowledgeRepository.search(projectId, query, limit)
+                if (matches.isEmpty()) {
+                    app.nestro.agent.AgentToolResult(true, output = "当前项目知识库没有找到相关资料。")
+                } else {
+                    val output = matches.joinToString("\n\n") { match ->
+                        "【${match.documentTitle}】\n${match.content}"
+                    }.take(12_000)
+                    app.nestro.agent.AgentToolResult(true, output = output)
+                }
+            }
+        }
+    }
     val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
     val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao())) }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
