@@ -91,14 +91,13 @@ class MediaProviderConfigStore(context: Context) {
     }
 
     fun delete() {
-        val keyId = prefs.getString(KEY_ID, null)
+        val keyId = runCatching { JSONObject(prefs.getString(METADATA, null) ?: "{}").optString("keyId") }.getOrNull()
         check(prefs.edit().remove(METADATA).commit()) { "媒体服务配置删除失败" }
-        keyId?.let { LocalVault.deleteApiKey(app, it) }
+        keyId?.takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,120}")) }?.let { LocalVault.deleteApiKey(app, it) }
     }
 
     private companion object {
         const val METADATA = "provider_metadata"
-        const val KEY_ID = "key_id"
     }
 }
 
