@@ -62,7 +62,9 @@ class McpToolCenterRepository(context:Context) {
  fun findServer(id:String)=listServers().firstOrNull{it.id==id}
  fun saveServer(s:McpServerRecord){
   require(s.id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(s.name.isNotBlank()&&s.name.length<=80)
-  val v=listServers().filterNot{it.id==s.id}+s.copy(name=s.name.trim(),endpoint=McpEndpointPolicy.requireValid(s.endpoint))
+  val current=listServers()
+  require(current.any{it.id==s.id}||current.size<50){"MCP 服务最多允许 50 个"}
+  val v=current.filterNot{it.id==s.id}+s.copy(name=s.name.trim(),endpoint=McpEndpointPolicy.requireValid(s.endpoint))
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(v)).commit()){"MCP 服务配置保存失败"}
  }
  fun setServerEnabled(id:String,on:Boolean){
@@ -157,7 +159,8 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   val previous=repository.listTools().filter{it.serverId==serverId}.associateBy{it.name}
   val found=remote.map{t->McpToolDescriptor(McpToolCenterCodec.toolId(serverId,t.name),serverId,server.name,t.name,t.description.take(500),t.inputSchema.toString(),t.readOnlyHint,previous[t.name]?.granted==true)}
   previous.values.filterNot{old->found.any{it.name==old.name}}.forEach{catalog.remove(it.id)}
-  repository.replaceServerTools(serverId,found);found.forEach{if(it.granted)registerTool(it)else catalog.remove(it.id)}
+  withContext(Dispatchers.IO){repository.replaceServerTools(serverId,found)}
+  found.forEach{if(it.granted)registerTool(it)else catalog.remove(it.id)}
   return found
  }
  fun setToolGranted(id:String,on:Boolean){repository.setToolGranted(id,on);val t=requireNotNull(repository.findTool(id));if(on)registerTool(t)else catalog.remove(id)}
@@ -189,11 +192,11 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
    try{
     val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).use { it.callTool(d.name,JSONObject(raw),d.inputSchemaJson) }}
-    runCatching{repository.recordAudit(d.id,true)}
+    withContext(Dispatchers.IO){runCatching{repository.recordAudit(d.id,true)}}
     AgentToolResult(true,output.take(32_000))
    } catch(cancelled:CancellationException){throw cancelled}
    catch(e:Exception){
-    runCatching{repository.recordAudit(d.id,false)}
+    withContext(Dispatchers.IO){runCatching{repository.recordAudit(d.id,false)}}
     AgentToolResult(false,error=(e.message?:"MCP 工具调用失败").take(2_000))
    }
   }
