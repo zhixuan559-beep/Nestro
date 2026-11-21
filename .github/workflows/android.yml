@@ -10,6 +10,8 @@ on:
 permissions:
   contents: read
 
+# Do not cancel an in-progress verification run when a newer commit arrives.
+# Every commit must finish its own verification; cancellations are not acceptance evidence.
 
 jobs:
   verify:

@@ -21,6 +21,38 @@ if [[ "$booted" != "1" ]]; then
   exit 2
 fi
 
+# sys.boot_completed can become 1 before Package Manager is ready to accept APK installs.
+package_ready=""
+for attempt in $(seq 1 45); do
+  if adb shell pm path android >/dev/null 2>&1; then
+    package_ready="1"
+    break
+  fi
+  sleep 2
+done
+if [[ "$package_ready" != "1" ]]; then
+  echo "Android Package Manager did not become ready after boot." > "$DIAG/diagnostic-error.txt"
+  adb logcat -d -b all -v threadtime > "$DIAG/emulator-logcat-package-manager-timeout.txt" 2>&1 || true
+  exit 3
+fi
+
+install_with_retry() {
+  local apk="$1"
+  for attempt in 1 2 3; do
+    if adb install -r "$apk"; then
+      return 0
+    fi
+    echo "APK install attempt $attempt failed; waiting for Package Manager and retrying." >&2
+    adb wait-for-device || true
+    sleep 5
+    for ready_attempt in $(seq 1 15); do
+      adb shell pm path android >/dev/null 2>&1 && break
+      sleep 2
+    done
+  done
+  return 1
+}
+
 adb logcat -c || true
 adb logcat -b all -v threadtime > "$DIAG/emulator-logcat.txt" 2>&1 &
 LOGCAT_PID=$!
@@ -38,8 +70,41 @@ if [[ "${SKIP_ANDROID_APK_BUILD:-false}" != "true" ]]; then
   fi
 fi
 
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+if ! install_with_retry app/build/outputs/apk/debug/app-debug.apk; then
+  echo "Failed to install the application APK after three attempts." > "$DIAG/diagnostic-error.txt"
+  exit 4
+fi
+if ! install_with_retry app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; then
+  echo "Failed to install the instrumentation APK after three attempts." > "$DIAG/diagnostic-error.txt"
+  exit 5
+fi
+
+run_with_timeout() {
+  local limit_seconds="$1"
+  shift
+  perl -e '
+    use strict;
+    use warnings;
+    my $limit = shift @ARGV;
+    my $pid = fork();
+    die "Unable to fork instrumentation process: $!" unless defined $pid;
+    if ($pid == 0) {
+      exec @ARGV or die "Unable to execute instrumentation command: $!";
+    }
+    $SIG{ALRM} = sub {
+      kill "TERM", $pid;
+      sleep 10;
+      kill "KILL", $pid;
+      waitpid($pid, 0);
+      exit 124;
+    };
+    alarm($limit);
+    waitpid($pid, 0);
+    alarm(0);
+    my $status = $?;
+    exit(($status & 127) ? 128 + ($status & 127) : ($status >> 8));
+  ' "$limit_seconds" "$@"
+}
 
 set +e
 instrument_args=(-w -r)
@@ -47,7 +112,7 @@ if [[ -n "${ANDROID_TEST_FILTER:-}" ]]; then
   instrument_args+=(-e class "$ANDROID_TEST_FILTER")
   echo "Running targeted instrumentation tests: $ANDROID_TEST_FILTER"
 fi
-timeout 1500 adb shell am instrument "${instrument_args[@]}" app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
+run_with_timeout 1500 adb shell am instrument "${instrument_args[@]}" app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
 instrumentation_exit=${PIPESTATUS[0]}
 set -e
 

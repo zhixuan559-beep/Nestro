@@ -4,7 +4,7 @@
 
 > **2026-11-20 模块7锁定记录：** PR #7 已合并至 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`。对应 CI Run #72 的 `verify` 与 `instrumentation` 均通过；编译、JVM 单元测试、Lint、APK/测试包构建及 Android 模拟器测试全部成功。模块7代码与云端验证锁定完成。
 
-> **2026-11-21 模块8锁定记录：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`；提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 对应 CI 的 `verify` 与 `instrumentation` 均通过。模块8云端代码与模拟器验证完成；真实设备兼容性、后台限制和功耗验收仍待完成。
+> **2026-11-21 模块8状态更正：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`。提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 的 `verify` Job 全部通过，但 `instrumented` Job 被取消；后续合并提交对应的 `verify` 与 `instrumented` 也被取消。因此模块8代码已合并、静态/单元验证通过，但模拟器验收尚未完成，不得标记为云端完整锁定。真实设备兼容性、后台限制和功耗验收同样待完成。
 
 ## 已实现
 
@@ -53,10 +53,10 @@
 - [x] 语音识别部分结果实时回填输入框，松开发起最终识别。
 - [x] 语音识别状态反馈、权限提示、错误提示和识别资源释放。
 - [x] 语音服务扩展契约与 OpenAI-compatible HTTPS Provider：实现远程语音识别（/audio/transcriptions）和语音合成（/audio/speech），分别配置识别、合成模型。
-- [x] 本机语音合成：接入 Android TextToSpeech，支持中英文选择、语速/音调调节、朗读状态反馈与停止；文本长度和控制字符校验，本机合成不上传文本。
-- [x] 远程语音配置：服务地址、模型、音色等元数据本地保存；API Key 使用 Android Keystore AES-GCM 加密；远程朗读由用户主动触发。
-- [x] 实时双向语音：实现 OpenAI Realtime-compatible WebSocket、PCM16 麦克风采集/扬声器播放、实时转写与文本发送；需用户授权麦克风并明确配置服务商。
-- [ ] 实体设备兼容性、服务商协议差异、音频路由/回声消除、网络中断恢复与交互流畅度验收。
+- [x] 本机语音合成：接入 Android TextToSpeech，支持中英文选择、语速/音调调节、朗读状态反馈与停止；本机合成不由 Nestro 上传文本。
+- [x] 远程语音配置：服务地址、识别/合成/实时模型及音色本地保存；API Key 使用 Android Keystore AES-GCM 加密。
+- [x] 实时双向语音：OpenAI Realtime-compatible WebSocket、PCM16 麦克风采集/扬声器播放、实时转写与文本发送；远程录音转写与远程 TTS 预览由用户主动触发。
+- [ ] 构建与自动化测试、实体设备音频路由/回声消除、服务商协议差异、网络中断恢复和交互流畅度验收。
 
 ### Phone Agent
 - [x] AccessibilityService 注册与用户手动授权入口。
@@ -274,7 +274,7 @@
 
 ### 阶段 4：语音、后台、产物与体验补齐
 
-- [x] 语音能力补齐原生识别、本机 TTS、可选远程 STT/TTS 与实时双向语音；设备兼容性和端到端服务商验收仍待完成。
+- [x] 语音能力补齐原生识别、本机 TTS、可选远程 STT/TTS 与实时双向语音；构建、自动化测试、设备兼容性和端到端服务商验收仍待完成。
 - [ ] 后台长任务通知、用户可见任务中心、失败重试与取消。
 - [ ] 作品/产物库、文件导出、版本记录、分享和清理策略。
 - [ ] 能力目录/社区、来源验证、安装审查、更新和卸载。
