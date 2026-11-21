@@ -49,6 +49,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     require(name.isNotBlank()&&name.length<=128&&name.none{it.isISOControl()}){"MCP 返回了无效工具名称"}
     val schema=item.optJSONObject("inputSchema")?:JSONObject().put("type","object").put("properties",JSONObject())
     require(schema.optString("type","object")=="object"){"暂不支持非 object 工具参数 schema：$name"}
+    require(schema.toString().length<=64_000){"MCP 工具 schema 超过 64 KB 限制：$name"}
     all+=McpRemoteTool(name,item.optString("description").take(500),schema,item.optJSONObject("annotations")?.optBoolean("readOnlyHint",false)==true)
     require(all.size<=200){"MCP 服务工具数量超过 200"}
    }
