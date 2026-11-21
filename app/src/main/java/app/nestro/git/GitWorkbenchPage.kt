@@ -100,7 +100,7 @@ fun GitWorkbenchPage(context: Context) {
                             val id = (provider.name.lowercase() + "-" + username.trim().lowercase().replace(Regex("[^a-z0-9_.-]"), "-")).take(95)
                             val account = GitAccount(id, provider, username.trim())
                             val verified = repo.verifyAccount(account, token.trim())
-                            withContext(Dispatchers.IO) { repo.accounts.save(account.copy(displayName = verified), token.trim()) }
+                            withContext(Dispatchers.IO) { repo.accounts.save(account.copy(username = verified, displayName = verified), token.trim()) }
                             accounts = repo.accounts.list(); accountId = id; username = verified; token = ""
                             status = verified + " 已验证并加密保存。"
                         } catch (e: Exception) { status = "授权失败：" + (e.message ?: "未知错误") }
@@ -122,7 +122,7 @@ fun GitWorkbenchPage(context: Context) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { accountMenu = true }, enabled = accounts.isNotEmpty()) { Text(selectedAccount?.username ?: "选择账号") }
                     DropdownMenu(accountMenu, { accountMenu = false }) {
-                        accounts.forEach { account -> DropdownMenuItem(text = { Text(account.provider.name + " · " + account.username) }, onClick = { accountId = account.id; accountMenu = false }) }
+                        accounts.forEach { account -> DropdownMenuItem(text = { Text(account.provider.name + " · " + account.username) }, onClick = { accountId = account.id; remote = emptyList(); accountMenu = false }) }
                     }
                     OutlinedTextField(query, { query = it }, label = { Text("搜索仓库") }, modifier = Modifier.weight(1f), singleLine = true)
                 }
