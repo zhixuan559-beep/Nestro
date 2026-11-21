@@ -235,7 +235,141 @@ internal class GeneratedPluginFactory(
 id 使用小写命名空间，例如 media.video-brief；version 使用 SemVer。
 inputs 是 [{name,required,description}]。
 steps 是按顺序执行的数组，每项为 {id,tool_id,arguments,result_key}。
-tool_id 必须来自当前工具目录；arguments 的值只能是普通文本，或 ${input.field} / ${steps.previous_result.output} 模板。
+tool_id 必须来自当前工具目录；arguments 的值只能是普通文本，或 ${'
+禁止生成 Kotlin/Java/Python/JavaScript/shell 代码，禁止任意网络、文件、设备权限声明，禁止引用不存在的工具。
+插件只组合现有已注册工具，所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
+已存在的插件 ID：${existingPluginIds.take(100).joinToString(",").ifBlank { "无" }}。
+用户需求：${request}
+""".trimIndent()
+        val raw = transport.complete(
+            configs,
+            listOf(ChatMessage(UUID.randomUUID().toString(), "user", request)),
+            system,
+            onUsage
+        )
+        val plugin = parseGeneratedPluginPackage(raw)
+        require(plugin.id !in existingPluginIds) { "插件 ID 已存在，请生成新的唯一 ID" }
+        return plugin
+    }
+}
+
+object GeneratedPluginWorkflowExecutor {
+    suspend fun execute(
+        plugin: GeneratedPluginPackage,
+        inputs: Map<String, String>,
+        discovery: AgentToolDiscovery,
+        invokeThroughRuntime: suspend (String, Map<String, String>) -> AgentToolResult
+    ): GeneratedPluginExecutionResult {
+        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val inputDefinitions = plugin.inputs.associateBy { it.name }
+        require(inputs.keys.all { it in inputDefinitions }) { "调用包含插件未声明的输入" }
+        plugin.inputs.filter { it.required }.forEach { field ->
+            require(!inputs[field.name].isNullOrBlank()) { "缺少必填插件输入：${field.name}" }
+        }
+        val results = linkedMapOf<String, String>()
+        val stepResults = mutableListOf<GeneratedPluginStepResult>()
+        for (step in plugin.steps) {
+            val arguments = step.arguments.mapValues { (_, template) ->
+                GeneratedPluginPackageValidator.TEMPLATE.replace(template) { match ->
+                    val reference = match.groupValues[1]
+                    when {
+                        reference.startsWith("input.") -> inputs[reference.removePrefix("input.")] ?: ""
+                        reference.startsWith("steps.") -> {
+                            val key = reference.removePrefix("steps.").removeSuffix(".output")
+                            results[key] ?: error("前序步骤结果不存在：$key")
+                        }
+                        else -> error("不支持的插件模板引用")
+                    }
+                }.take(2_000)
+            }
+            val result = try {
+                invokeThroughRuntime(step.toolId, arguments)
+            } catch (error: Exception) {
+                AgentToolResult(false, error = error.message?.take(1_000) ?: "插件步骤执行失败")
+            }
+            if (!result.success || result.requiresUser) {
+                val failure = GeneratedPluginStepResult(
+                    step.id, step.toolId, false,
+                    error = if (result.requiresUser) "该工具需要用户确认：${result.error}" else result.error.ifBlank { result.output }
+                )
+                stepResults += failure
+                break
+            }
+            val output = result.output.take(8_000)
+            results[step.resultKey] = output
+            stepResults += GeneratedPluginStepResult(step.id, step.toolId, true, output)
+        }
+        return GeneratedPluginExecutionResult(plugin.id, stepResults)
+    }
+}
+}{input.field} / ${'
+禁止生成 Kotlin/Java/Python/JavaScript/shell 代码，禁止任意网络、文件、设备权限声明，禁止引用不存在的工具。
+插件只组合现有已注册工具，所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
+已存在的插件 ID：${existingPluginIds.take(100).joinToString(",").ifBlank { "无" }}。
+用户需求：${request}
+""".trimIndent()
+        val raw = transport.complete(
+            configs,
+            listOf(ChatMessage(UUID.randomUUID().toString(), "user", request)),
+            system,
+            onUsage
+        )
+        val plugin = parseGeneratedPluginPackage(raw)
+        require(plugin.id !in existingPluginIds) { "插件 ID 已存在，请生成新的唯一 ID" }
+        return plugin
+    }
+}
+
+object GeneratedPluginWorkflowExecutor {
+    suspend fun execute(
+        plugin: GeneratedPluginPackage,
+        inputs: Map<String, String>,
+        discovery: AgentToolDiscovery,
+        invokeThroughRuntime: suspend (String, Map<String, String>) -> AgentToolResult
+    ): GeneratedPluginExecutionResult {
+        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val inputDefinitions = plugin.inputs.associateBy { it.name }
+        require(inputs.keys.all { it in inputDefinitions }) { "调用包含插件未声明的输入" }
+        plugin.inputs.filter { it.required }.forEach { field ->
+            require(!inputs[field.name].isNullOrBlank()) { "缺少必填插件输入：${field.name}" }
+        }
+        val results = linkedMapOf<String, String>()
+        val stepResults = mutableListOf<GeneratedPluginStepResult>()
+        for (step in plugin.steps) {
+            val arguments = step.arguments.mapValues { (_, template) ->
+                GeneratedPluginPackageValidator.TEMPLATE.replace(template) { match ->
+                    val reference = match.groupValues[1]
+                    when {
+                        reference.startsWith("input.") -> inputs[reference.removePrefix("input.")] ?: ""
+                        reference.startsWith("steps.") -> {
+                            val key = reference.removePrefix("steps.").removeSuffix(".output")
+                            results[key] ?: error("前序步骤结果不存在：$key")
+                        }
+                        else -> error("不支持的插件模板引用")
+                    }
+                }.take(2_000)
+            }
+            val result = try {
+                invokeThroughRuntime(step.toolId, arguments)
+            } catch (error: Exception) {
+                AgentToolResult(false, error = error.message?.take(1_000) ?: "插件步骤执行失败")
+            }
+            if (!result.success || result.requiresUser) {
+                val failure = GeneratedPluginStepResult(
+                    step.id, step.toolId, false,
+                    error = if (result.requiresUser) "该工具需要用户确认：${result.error}" else result.error.ifBlank { result.output }
+                )
+                stepResults += failure
+                break
+            }
+            val output = result.output.take(8_000)
+            results[step.resultKey] = output
+            stepResults += GeneratedPluginStepResult(step.id, step.toolId, true, output)
+        }
+        return GeneratedPluginExecutionResult(plugin.id, stepResults)
+    }
+}
+}{steps.previous_result.output} 模板。
 禁止生成 Kotlin/Java/Python/JavaScript/shell 代码，禁止任意网络、文件、设备权限声明，禁止引用不存在的工具。
 插件只组合现有已注册工具，所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
 已存在的插件 ID：${existingPluginIds.take(100).joinToString(",").ifBlank { "无" }}。
