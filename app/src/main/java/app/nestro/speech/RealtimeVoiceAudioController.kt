@@ -1,5 +1,8 @@
 package app.nestro.speech
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -15,6 +18,7 @@ import kotlin.math.max
  * The caller must obtain RECORD_AUDIO permission before start().
  */
 class RealtimeVoiceAudioController(
+    private val context: Context,
     private val session: RealtimeVoiceSession,
     private val onError: (String) -> Unit = {}
 ) : AutoCloseable {
@@ -28,6 +32,9 @@ class RealtimeVoiceAudioController(
 
     fun start() {
         check(!closed.get()) { "实时音频控制器已关闭" }
+        check(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            "尚未获得麦克风权限"
+        }
         check(running.compareAndSet(false, true)) { "实时音频已经启动" }
         val minInput = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val minOutput = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
