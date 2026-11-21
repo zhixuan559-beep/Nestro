@@ -35,5 +35,12 @@ class SkillTrustStoreTest {
         assertTrue(store.isFingerprintRevoked(signerFingerprint))
         assertFalse(store.isFingerprintRevoked("0".repeat(64)))
         assertFalse(runCatching { store.applySignedRevocationEnvelope(envelope) }.isSuccess)
+
+        val expiredPayload=JSONObject().put("schema",1).put("issued_at",now).put("expires_at",now-1)
+            .put("revoked_signers",JSONArray()).toString().toByteArray(Charsets.UTF_8)
+        val expiredSignature=Signature.getInstance("SHA256withRSA").apply { initSign(authority.private); update(expiredPayload) }.sign()
+        val expiredEnvelope=JSONObject().put("payload",Base64.getEncoder().encodeToString(expiredPayload))
+            .put("signature",Base64.getEncoder().encodeToString(expiredSignature)).toString()
+        assertFalse(runCatching { store.applySignedRevocationEnvelope(expiredEnvelope) }.isSuccess)
     }
 }
