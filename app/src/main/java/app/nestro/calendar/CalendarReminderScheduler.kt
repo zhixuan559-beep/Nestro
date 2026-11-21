@@ -73,7 +73,7 @@ object CalendarReminderScheduler {
         val time = Instant.ofEpochMilli(occurrenceStart).atZone(ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("M月d日 HH:mm"))
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(event.title)
             .setContentText("日程即将开始 · $time")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
@@ -102,6 +102,10 @@ class CalendarReminderWorker(
         val dao = CalendarDatabase.get(applicationContext).calendarDao()
         val event = dao.event(id) ?: return Result.success()
         if (event.completed || event.reminderMinutes < 0) return Result.success()
+        if (!CalendarRules.isOccurrence(event, occurrenceStart)) {
+            CalendarReminderScheduler.schedule(applicationContext, event)
+            return Result.success()
+        }
         val expectedTrigger = occurrenceStart - event.reminderMinutes * 60_000L
         if (System.currentTimeMillis() + 60_000L < expectedTrigger) {
             CalendarReminderScheduler.schedule(applicationContext, event)
