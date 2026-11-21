@@ -53,7 +53,7 @@ object CoworkbenchPolicy {
         if (name.startsWith(".github/workflows/") || name.endsWith(".sh") || name.endsWith(".bat")) result += "自动化脚本变更：检查命令执行、凭据暴露和工作流权限"
         val code = after.orEmpty()
         if (Regex("ProcessBuilder|Runtime\\.getRuntime\\(\\)\\.exec|/bin/(sh|bash)|powershell", RegexOption.IGNORE_CASE).containsMatchIn(code)) result += "检测到进程/命令执行入口：高风险，必须人工审查"
-        if (Regex("android.permission.(READ_SMS|SEND_SMS|RECORD_AUDIO|CAMERA|ACCESS_FINE_LOCATION|READ_CONTACTS|CALL_PHONE)", RegexOption.IGNORE_CASE).containsMatchIn(code)) result += "检测到敏感 Android 权限引用：核对最小权限和用户授权"
+        if (Regex("android\\.permission\\.(READ_SMS|SEND_SMS|RECORD_AUDIO|CAMERA|ACCESS_FINE_LOCATION|READ_CONTACTS|CALL_PHONE)", RegexOption.IGNORE_CASE).containsMatchIn(code)) result += "检测到敏感 Android 权限引用：核对最小权限和用户授权"
         if (Regex("http://", RegexOption.IGNORE_CASE).containsMatchIn(code)) result += "检测到明文 HTTP 地址：确认必要性，禁止发送敏感数据"
         if (before == null) result += "新增文件"
         if (after == null) result += "删除文件"
@@ -153,8 +153,9 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
 
     private suspend fun restoreBefore(snapshot: CoworkbenchSnapshot) {
         snapshot.files.forEach { item ->
-            if (item.before == null) runCatching { git.deleteFile(snapshot.repositoryId, item.path) }
-            else git.writeFile(snapshot.repositoryId, item.path, item.before)
+            if (item.before == null) {
+                if (readOrNull(snapshot.repositoryId, item.path) != null) git.deleteFile(snapshot.repositoryId, item.path)
+            } else git.writeFile(snapshot.repositoryId, item.path, item.before)
         }
     }
 
@@ -170,7 +171,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         digest.update(repositoryId.toByteArray(Charsets.UTF_8))
         files.sortedBy { it.path }.forEach { item ->
             listOf(item.path, item.before ?: "<absent>", item.after ?: "<deleted>").forEach {
-                digest.update(0); digest.update(it.toByteArray(Charsets.UTF_8))
+                digest.update(0.toByte()); digest.update(it.toByteArray(Charsets.UTF_8))
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
