@@ -170,7 +170,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         withContext(Dispatchers.IO) {
             require(asset.kind == MediaAssetKind.AUDIO || asset.kind == MediaAssetKind.VIDEO) { "当前素材不能转写" }
             onProgress(0.05f)
-            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "language" to languageTag))
+            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json"))
             onProgress(0.9f)
             val root = JSONObject(response.toString(Charsets.UTF_8))
             val segments = root.optJSONArray("segments")
