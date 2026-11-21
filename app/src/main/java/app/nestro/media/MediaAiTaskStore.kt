@@ -156,25 +156,25 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             val result=withContext(Dispatchers.IO) {
                 when(task.action) {
                     "transcribe" -> {
-                        val cues=provider.transcribe(asset,file,"zh-CN",progress)
+                        val cues=provider.transcribe(mediaAsset,file,"zh-CN",progress)
                         JSONObject().put("type","transcribe").put("cues",JSONArray().apply {
                             cues.forEach { put(JSONObject().put("id",it.id).put("startMs",it.startMs).put("endMs",it.endMs).put("text",it.text)) }
                         }).toString()
                     }
                     "scenes" -> {
-                        val scenes=provider.detectScenes(asset,file,progress)
+                        val scenes=provider.detectScenes(mediaAsset,file,progress)
                         JSONObject().put("type","scenes").put("scenes",JSONArray().apply {
                             scenes.forEach { put(JSONObject().put("startMs",it.startMs).put("endMs",it.endMs).put("title",it.title).put("description",it.description).put("caption",it.suggestedCaption)) }
                         }).toString()
                     }
                     "audio-clean" -> {
-                        val output=provider.processAudio(asset,file,"noise_reduction",progress)
+                        val output=provider.processAudio(mediaAsset,file,"noise_reduction",progress)
                         try {
                             val imported=MediaProjectStore.importGeneratedFile(applicationContext,projectId,output,MediaAssetKind.AUDIO,stableAssetId=task.id)
                             JSONObject().put("type","audio").put("assetId",imported.id).put("displayName",imported.displayName).toString()
                         } finally { output.delete() }
                     }
-                    "image" -> JSONObject().put("type","image").put("text",provider.analyzeImage(asset,file,task.prompt.ifBlank { "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。" },progress)).toString()
+                    "image" -> JSONObject().put("type","image").put("text",provider.analyzeImage(mediaAsset,file,task.prompt.ifBlank { "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。" },progress)).toString()
                     else -> error("不支持的媒体 AI 操作")
                 }
             }
