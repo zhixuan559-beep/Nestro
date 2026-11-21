@@ -12,6 +12,7 @@ internal data class ChatRequestExecutionRequest(
     val modelConfigs: List<ModelConfig>,
     val baseSystemContext: String,
     val taskModeEnabled: Boolean,
+    val expertTeamEnabled: Boolean = false,
     val temperature: Double?,
     val maxTokens: Int?,
     val previousAssistant: ChatMessage?,
@@ -62,11 +63,7 @@ internal class ChatRequestExecutionCoordinator(
             recalledCount = assembled.recalledCount
             recallSources = assembled.recallSources
 
-            val teamContext = runExpertTeam(assembled.systemContext)
-            val finalSystemContext = listOf(assembled.systemContext, teamContext)
-                .filter(String::isNotBlank)
-                .joinToString("\n\n")
-                .take(24_000)
+            val finalSystemContext = assembled.systemContext.take(24_000)
 
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             val coordinated = modelToolDispatcher?.let { dispatcher ->
@@ -82,6 +79,7 @@ internal class ChatRequestExecutionCoordinator(
                         maxTokens = request.maxTokens,
                         shouldStop = request.shouldStop,
                         taskModeEnabled = request.taskModeEnabled,
+                        expertTeamEnabled = request.expertTeamEnabled,
                         planPhoneAgent = {
                             try {
                                 planPhoneAgent()
@@ -91,6 +89,7 @@ internal class ChatRequestExecutionCoordinator(
                                 throw error
                             }
                         },
+                        runExpertTeam = runExpertTeam,
                         onUsage = onUsage,
                         onProviderUsage = onProviderUsage,
                         onDirectAnswer = { partial ->
