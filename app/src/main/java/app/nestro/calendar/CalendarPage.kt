@@ -99,6 +99,13 @@ fun CalendarPage(repository: CalendarRepository) {
     val monthOccurrences = remember(events, from, until) {
         CalendarRules.occurrences(events, from, until)
     }
+    val weekOccurrences = remember(events, selectedDate) {
+        val monday = selectedDate.minusDays((selectedDate.dayOfWeek.value - 1).toLong())
+        val weekStart = monday.atStartOfDay(zone).toInstant().toEpochMilli()
+        val weekEnd = monday.plusWeeks(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        CalendarRules.occurrences(events, weekStart, weekEnd)
+    }
+    val visibleGridOccurrences = if (calendarView == "WEEK") weekOccurrences else monthOccurrences
 
     var pendingSystemAction by remember { mutableStateOf("") }
     fun runSystemCalendarAction(action: String) {
@@ -214,7 +221,7 @@ fun CalendarPage(repository: CalendarRepository) {
         ) {
             items(cells.size) { index ->
                 val date = cells[index]
-                val count = if (date == null) 0 else monthOccurrences.count {
+                val count = if (date == null) 0 else visibleGridOccurrences.count {
                     Instant.ofEpochMilli(it.startAt).atZone(zone).toLocalDate() == date
                 }
                 Surface(
