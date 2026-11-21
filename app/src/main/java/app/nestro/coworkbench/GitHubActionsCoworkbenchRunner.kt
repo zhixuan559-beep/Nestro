@@ -145,23 +145,22 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("Authorization", "Bearer " + token)
             .header("User-Agent", "Nestro-AI-Coworkbench")
-.post(JSONObject().put("ref", branch).toString().toRequestBody("application/json".toMediaType()))
+            .post(JSONObject().put("ref", branch).toString().toRequestBody("application/json".toMediaType()))
             .build()
-        executeCancellable(dispatch).use { response ->
-            require(response.code == 204) {
-                val body = response.body?.string().orEmpty().take(1200)
-                when (response.code) {
-                    401, 403 -> "GitHub 拒绝访问 Actions；请检查账号权限与 Actions 写入授权。"
-                    404 -> "未找到该 Workflow，或它未声明 workflow_dispatch；请先推送分支并启用手动触发。"
-                    else -> "触发远程隔离构建失败（HTTP " + response.code + "）：" + body
-                }
-            }
-        }
-
         val deadline = startedAt + TimeUnit.MINUTES.toMillis(timeoutMinutes.toLong())
         var visibleSince: Long? = null
         var activeRunId: Long? = null
         try {
+            executeCancellable(dispatch).use { response ->
+                require(response.code == 204) {
+                    val body = response.body?.string().orEmpty().take(1200)
+                    when (response.code) {
+                        401, 403 -> "GitHub 拒绝访问 Actions；请检查账号权限与 Actions 写入授权。"
+                        404 -> "未找到该 Workflow，或它未声明 workflow_dispatch；请先推送分支并启用手动触发。"
+                        else -> "触发远程隔离构建失败（HTTP " + response.code + "）：" + body
+                    }
+                }
+            }
         while (System.currentTimeMillis() < deadline) {
             val request = Request.Builder().url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
                 .header("Accept", "application/vnd.github+json")
@@ -227,7 +226,32 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
         }
         error("远程隔离构建等待超时；任务可能仍在 GitHub Actions 运行，请到仓库 Actions 页面核对，不能据此判断失败")
         } catch (cancelled: CancellationException) {
-            val runId = activeRunId
+            val runId = activeRunId ?: withContext(NonCancellable) {
+                runCatching {
+                    val lookup = Request.Builder()
+                        .url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
+                        .header("Accept", "application/vnd.github+json")
+                        .header("X-GitHub-Api-Version", "2022-11-28")
+                        .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", "Nestro-AI-Coworkbench")
+                        .get().build()
+                    executeCancellable(lookup).use { response ->
+                        if (!response.isSuccessful) null else {
+                            val rows = JSONObject(response.body?.string().orEmpty()).optJSONArray("workflow_runs")
+                                ?: org.json.JSONArray()
+                            (0 until rows.length()).mapNotNull { index ->
+                                val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                                val createdMs = runCatching { Instant.parse(row.optString("created_at")).toEpochMilli() }
+                                    .getOrDefault(0L)
+                                if (row.optString("head_branch") == branch &&
+                                    row.optString("event") == "workflow_dispatch" &&
+                                    row.optLong("id") !in previousRunIds && createdMs >= startedAt - 5_000L
+                                ) row.optLong("id").takeIf { it > 0 } else null
+                            }.maxOrNull()
+                        }
+                    }
+                }.getOrNull()
+            }
             val remoteCancelled = if (runId == null) false else withContext(NonCancellable) {
                 runCatching { cancelRemoteRun(fullName, token, runId) }.getOrDefault(false)
             }
