@@ -208,7 +208,11 @@ fun AiCoworkbenchPage(
                     try {
                         require(patchJson.toByteArray(Charsets.UTF_8).size <= CoworkbenchPolicy.MAX_TOTAL_BYTES + 1_000_000) { "模型补丁 JSON 过大，已拒绝解析" }
                         val raw = patchJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-                        val rows = JSONObject(raw).getJSONArray("files")
+                        val patchObject = JSONObject(raw)
+                        require(patchObject.length() == 1 && patchObject.has("files")) {
+                            "补丁 JSON 顶层只能包含 files 字段"
+                        }
+                        val rows = patchObject.getJSONArray("files")
                         require(rows.length() in 1..CoworkbenchPolicy.MAX_FILES) { "补丁必须包含 1 到 ${CoworkbenchPolicy.MAX_FILES} 个文件" }
                         val proposals = (0 until rows.length()).map { index ->
                             val row = rows.getJSONObject(index)
