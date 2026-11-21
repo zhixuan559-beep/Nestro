@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -119,8 +120,11 @@ object SkillCommunityClient {
     }
 
     private fun requestHttps(address: String, maxBytes: Int): ByteArray {
-        require(address.length <= 2048 && address.startsWith("https://")) { "仅允许 HTTPS 地址" }
-        val connection = URL(address).openConnection() as? HttpURLConnection ?: error("无法建立 HTTPS 连接")
+        require(address.length <= 2048) { "远程地址过长" }
+        val uri = runCatching { URI(address) }.getOrNull() ?: error("远程地址格式无效")
+        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "仅允许不包含 URL 凭据的 HTTPS 地址" }
+        require(uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "远程地址包含不允许的片段或路径回退" }
+        val connection = URL(uri.toASCIIString()).openConnection() as? HttpURLConnection ?: error("无法建立 HTTPS 连接")
         try {
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 8_000
