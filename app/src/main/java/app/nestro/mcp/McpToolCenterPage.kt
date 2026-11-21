@@ -197,7 +197,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                     }
                     Text(tool.description.ifBlank { "服务未提供工具说明" }, style = MaterialTheme.typography.bodySmall)
                     Text(
-                        if (tool.granted) "已授权：可供任务按需调用" else "未授权：不会注册到任务工具目录",
+                        if (tool.granted) "已授权：任务可发现此工具，每次调用仍需确认" else "未授权：不会注册到任务工具目录",
                         style = MaterialTheme.typography.labelSmall
                     )
                     OutlinedButton(
