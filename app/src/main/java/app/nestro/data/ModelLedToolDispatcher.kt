@@ -7,6 +7,7 @@ import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentToolLeaseRegistry
 import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.AgentToolAccess
 import app.nestro.agent.AgentRuntime
 import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.RoomAgentTaskTraceStore
@@ -142,8 +143,18 @@ $prompt
                 return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
             }
             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+            val scopedAccess = object : AgentToolAccess {
+                override fun find(toolId: String) = lease.access.find(toolId)
+                override fun list() = lease.access.list()
+                override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
+                    lease.access.invoke(
+                        toolId,
+                        if (toolId.startsWith("mcp_")) arguments
+                        else arguments + ("__nestro_project_id" to projectId)
+                    )
+            }
             val runtime: AgentRuntime = DefaultAgentRuntime(
-                catalog = lease.access,
+                catalog = scopedAccess,
                 permissions = permissionRouter,
                 states = stateStore,
                 traces = RoomAgentTaskTraceStore(database.dao())
