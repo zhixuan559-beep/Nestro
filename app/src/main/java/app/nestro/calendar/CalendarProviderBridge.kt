@@ -78,7 +78,7 @@ object CalendarProviderBridge {
             ?: error("没有可写入的系统日历，请先在系统日历应用中创建或启用一个日历")
         val zone = ZoneId.systemDefault().id
         val events = repository.allEvents()
-            .filter { it.startAt < until && it.endAt >= from && !it.completed && !it.sourceSystemImported }
+            .filter { !it.completed && !it.sourceSystemImported }
         var written = 0
         events.forEach { event ->
             val values = ContentValues().apply {
