@@ -484,16 +484,20 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     suspend fun checkout(id: String, name: String) = withRepo(id) { git ->
-        require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
+        val remoteSelection = name.startsWith("origin/")
+        val remoteName = if (remoteSelection) name.removePrefix("origin/") else name
+        require(GitWorkbenchPolicy.validBranchName(remoteName)) { "分支名称无效" }
         require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
-        val remoteName = name.removePrefix("origin/")
-        val remoteRef = "refs/remotes/origin/$remoteName"
-        if (git.repository.findRef("refs/heads/$name") == null && git.repository.findRef(remoteRef) != null) {
+        val localRef = "refs/heads/" + remoteName
+        val remoteRef = "refs/remotes/origin/" + remoteName
+        if (remoteSelection || (git.repository.findRef(localRef) == null && git.repository.findRef(remoteRef) != null)) {
+            require(git.repository.findRef(remoteRef) != null) { "远程分支不存在，请先 Fetch" }
+            require(git.repository.findRef(localRef) == null) { "对应本地分支已存在，请选择本地分支" }
             git.checkout().setCreateBranch(true).setName(remoteName)
-                .setStartPoint("origin/$remoteName")
+                .setStartPoint("origin/" + remoteName)
                 .setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM).call()
         } else {
-            git.checkout().setName(name).call()
+            git.checkout().setName(remoteName).call()
         }
     }
 
