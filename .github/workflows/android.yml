@@ -10,9 +10,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: android-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+# Do not cancel an in-progress verification run when a newer commit arrives.
+# Every commit must finish its own verification; cancellations are not acceptance evidence.
 
 jobs:
   verify:
