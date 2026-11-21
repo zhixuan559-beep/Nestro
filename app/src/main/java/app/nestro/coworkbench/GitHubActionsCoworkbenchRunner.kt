@@ -50,6 +50,7 @@ data class CoworkbenchValidationResult(
     val artifacts: List<CoworkbenchArtifactReport> = emptyList(),
     val diagnostics: List<String> = emptyList(),
     val sbomComponents: List<CoworkbenchSbomComponent> = emptyList(),
+    val sbomComplete: Boolean = false,
     val testReports: List<CoworkbenchTestReport> = emptyList(),
     val resolvedDependencies: List<CoworkbenchResolvedDependency> = emptyList()
 ) {
@@ -60,7 +61,7 @@ data class CoworkbenchValidationResult(
     }
     val successful: Boolean get() = completed && conclusion == "success" &&
         testReports.any { it.total > 0 } && reportedTestFailures == 0 &&
-        sbomComponents.isNotEmpty() && !hasTruncatedReports
+        sbomComplete && sbomComponents.isNotEmpty() && !hasTruncatedReports
 }
 
 /**
@@ -212,6 +213,9 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                     val sbomComponents = artifacts.flatMap { artifact ->
                         artifact.files.flatMap { CoworkbenchReportParser.parseSbom(it.path, it.content) }
                     }.distinctBy { listOf(it.name, it.version, it.packageUrl) }.take(5_000)
+                    val sbomComplete = artifacts.any { artifact ->
+                        artifact.files.any { CoworkbenchReportParser.isCompleteCoworkbenchSbom(it.path, it.content) }
+                    }
                     val testReports = artifacts.flatMap { artifact ->
                         artifact.files.mapNotNull { CoworkbenchReportParser.parseJunitXml(it.path, it.content) }
                     }.take(100)
@@ -220,7 +224,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                     }.distinctBy { listOf(it.configuration, it.group, it.artifact, it.resolvedVersion, it.parent) }
                         .take(10_000)
                     return@withContext found.copy(jobs = jobs, artifacts = artifacts, diagnostics = diagnostics,
-                        sbomComponents = sbomComponents, testReports = testReports,
+                        sbomComponents = sbomComponents, sbomComplete = sbomComplete, testReports = testReports,
                         resolvedDependencies = resolvedDependencies)
                 }
             } else if (visibleSince == null && System.currentTimeMillis() - startedAt > 90_000L) {
