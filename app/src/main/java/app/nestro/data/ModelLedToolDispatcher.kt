@@ -131,10 +131,17 @@ internal class ModelLedToolDispatcher(
         val toolList = visibleRows.joinToString("\n") { it.second }
         val toolContext = StringBuilder()
         var generatedVideoAssetId = ""
-        fun attachGeneratedVideo(text: String): String =
-            if (generatedVideoAssetId.isNotBlank() && !text.contains("[NESTRO_VIDEO_ASSET:")) {
-                text.trimEnd() + "\n\n[NESTRO_VIDEO_ASSET:$generatedVideoAssetId]"
-            } else text
+        var needsMediaProviderSetup = false
+        fun attachGeneratedVideo(text: String): String {
+            var result = text
+            if (generatedVideoAssetId.isNotBlank() && !result.contains("[NESTRO_VIDEO_ASSET:")) {
+                result = result.trimEnd() + "\n\n[NESTRO_VIDEO_ASSET:$generatedVideoAssetId]"
+            }
+            if (needsMediaProviderSetup && !result.contains("[NESTRO_MEDIA_PROVIDER_SETUP]")) {
+                result = result.trimEnd() + "\n\n[NESTRO_MEDIA_PROVIDER_SETUP]"
+            }
+            return result
+        }
         val requestHistory = if (history.lastOrNull()?.let { it.role == "user" && it.content == prompt } == true) {
             history
         } else {
@@ -232,6 +239,9 @@ ${prompt.take(8_000)}
                     NativeToolCallResult("工具执行失败：$detail")
                 } else {
                     val output = result.output.take(8_000)
+                    if (spec.id == "media.provider.list" && output.contains("尚未配置媒体服务商")) {
+                        needsMediaProviderSetup = true
+                    }
                     if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
                         generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
                             .find(output)?.groupValues?.getOrNull(1).orEmpty().ifBlank { generatedVideoAssetId }
@@ -397,6 +407,9 @@ ${prompt.take(8_000)}
             if (!result.success) {
                 toolContext.append("[工具 ${spec.id} 执行失败] ").append(result.error.ifBlank { result.output }.take(3_000)).append("\n")
             } else {
+                if (spec.id == "media.provider.list" && result.output.contains("尚未配置媒体服务商")) {
+                    needsMediaProviderSetup = true
+                }
                 if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
                     generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
                         .find(result.output)?.groupValues?.getOrNull(1).orEmpty().ifBlank { generatedVideoAssetId }
