@@ -2,6 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolResult
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -97,6 +98,7 @@ object GeneratedPluginPackageValidator {
                     }
                 }
             }
+            require(step.resultKey !in seenResults) { "插件步骤结果键不能重复：${step.resultKey}" }
             seenResults += step.resultKey
         }
     }
@@ -292,6 +294,8 @@ object GeneratedPluginWorkflowExecutor {
             }
             val result = try {
                 invokeThroughRuntime(step.toolId, arguments)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
                 AgentToolResult(false, error = error.message?.take(1_000) ?: "插件步骤执行失败")
             }
