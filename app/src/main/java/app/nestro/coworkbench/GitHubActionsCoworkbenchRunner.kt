@@ -71,7 +71,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("Authorization", "Bearer " + token)
             .header("User-Agent", "Nestro-AI-Coworkbench")
-            .post("{\"ref\":\"" + JSONObject.quote(branch).removeSurrounding("\"", "\"") + "\"}".toRequestBody("application/json".toMediaType()))
+.post(JSONObject().put("ref", branch).toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(dispatch).execute().use { response ->
             require(response.code == 204) {
