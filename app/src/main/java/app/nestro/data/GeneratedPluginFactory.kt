@@ -237,6 +237,7 @@ class GeneratedPluginStore(context: Context) {
         val current = list()
         if (current.none { it.id == pluginId }) return false
         persist(current.filterNot { it.id == pluginId })
+        prefs.edit().remove(historyKey(pluginId)).commit()
         return true
     }
 
@@ -247,9 +248,36 @@ class GeneratedPluginStore(context: Context) {
         val existing = current.firstOrNull { it.id == plugin.id } ?: error("待更新插件不存在")
         require(compareSemVer(plugin.version, existing.version) > 0) { "插件更新版本必须高于当前版本" }
         val updated = plugin.copy(enabled = false)
+        val history = historyVersions(plugin.id)
+        persistHistory(plugin.id, (history + existing).takeLast(MAX_HISTORY_VERSIONS))
         persist(current.map { if (it.id == plugin.id) updated else it })
         return updated
     }
+
+    @Synchronized
+    fun historyVersions(pluginId: String): List<GeneratedPluginPackage> =
+        GeneratedPluginPackageCodec.decode(prefs.getString(historyKey(pluginId), "[]").orEmpty())
+
+    @Synchronized
+    fun rollbackPrevious(pluginId: String, discovery: AgentToolDiscovery): GeneratedPluginPackage {
+        val current = list()
+        val active = current.firstOrNull { it.id == pluginId } ?: error("插件不存在")
+        val history = historyVersions(pluginId)
+        val previous = history.lastOrNull() ?: error("没有可回滚的插件版本")
+        GeneratedPluginPackageValidator.validate(previous, discovery)
+        persistHistory(pluginId, history.dropLast(1) + active)
+        val restored = previous.copy(enabled = false)
+        persist(current.map { if (it.id == pluginId) restored else it })
+        return restored
+    }
+
+    private fun persistHistory(pluginId: String, versions: List<GeneratedPluginPackage>) {
+        check(prefs.edit().putString(historyKey(pluginId), GeneratedPluginPackageCodec.encode(versions)).commit()) {
+            "插件版本历史写入失败"
+        }
+    }
+
+    private fun historyKey(pluginId: String) = "history_${pluginId}"
 
     private fun persist(packages: List<GeneratedPluginPackage>) {
         check(prefs.edit().putString(KEY_PACKAGES, GeneratedPluginPackageCodec.encode(packages)).commit()) {
@@ -278,6 +306,7 @@ class GeneratedPluginStore(context: Context) {
     private companion object {
         const val KEY_PACKAGES = "installed_packages"
         const val MAX_PLUGINS = 100
+        const val MAX_HISTORY_VERSIONS = 5
     }
 }
 
