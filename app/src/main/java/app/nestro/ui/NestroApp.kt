@@ -4,6 +4,7 @@ import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistry
 import app.nestro.mcp.McpToolCenterPage
 import app.nestro.git.GitWorkbenchPage
+import app.nestro.coworkbench.AiCoworkbenchPage
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
@@ -1229,6 +1230,7 @@ fun NestroApp() {
                             }
                         }
                         TextButton(onClick = { page = "comparison" }) { Text("双模型", color = Mint, style = MaterialTheme.typography.labelMedium) }
+                        TextButton(onClick = { page = "coworkbench" }) { Text("AI共建", color = Mint, style = MaterialTheme.typography.labelMedium) }
                         IconButton(onClick = { page = "models" }) {
                             Icon(Icons.Outlined.Tune, contentDescription = "模型设置", tint = Mint)
                         }
@@ -2793,6 +2795,7 @@ fun NestroApp() {
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "git" -> GitWorkbenchPage(context)
+                        "coworkbench" -> AiCoworkbenchPage(onBack = { page = "home" })
                         "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
