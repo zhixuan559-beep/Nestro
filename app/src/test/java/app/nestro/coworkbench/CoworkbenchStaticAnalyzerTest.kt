@@ -60,4 +60,61 @@ class CoworkbenchStaticAnalyzerTest {
             root.deleteRecursively()
         }
     }
+    @Test
+    fun comparesProposedManifestPermissionsAndExportedComponents() {
+        val root = Files.createTempDirectory("nestro-coworkbench-manifest-diff").toFile()
+        try {
+            root.resolve("app/src/main/AndroidManifest.xml").apply {
+                parentFile.mkdirs()
+                writeText("""<manifest>
+                    <uses-permission android:name="android.permission.CAMERA" />
+                    <application>
+                        <activity android:name=".HomeActivity" android:exported="false" />
+                    </application>
+                </manifest>""".trimIndent())
+            }
+            val after = """<manifest>
+                <uses-permission android:name="android.permission.CAMERA" />
+                <uses-permission android:name="android.permission.SEND_SMS" />
+                <application android:debuggable="true">
+                    <service android:name=".RemoteService" android:exported="true" />
+                </application>
+            </manifest>""".trimIndent()
+            val impact = CoworkbenchStaticAnalyzer.analyzeProposalsWithBaseline(
+                root,
+                listOf(CoworkbenchProposal("app/src/main/AndroidManifest.xml", after))
+            )
+            assertEquals(listOf("android.permission.SEND_SMS"), impact.permissionsAdded)
+            assertTrue(impact.findings.any { it.category == "新增导出组件" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(impact.findings.any { it.category == "启用调试模式" })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun comparesAddedAndRemovedGradleDependencies() {
+        val root = Files.createTempDirectory("nestro-coworkbench-dependency-diff").toFile()
+        try {
+            root.resolve("app/build.gradle.kts").apply {
+                parentFile.mkdirs()
+                writeText("""dependencies {
+                    implementation("org.example:old:1.0")
+                }""".trimIndent())
+            }
+            val after = """dependencies {
+                implementation("org.example:new:2.+")
+            }""".trimIndent()
+            val impact = CoworkbenchStaticAnalyzer.analyzeProposalsWithBaseline(
+                root,
+                listOf(CoworkbenchProposal("app/build.gradle.kts", after))
+            )
+            assertTrue(impact.dependenciesAdded.any { it.contains("org.example:new:2.+") })
+            assertTrue(impact.dependenciesRemoved.any { it.contains("org.example:old:1.0") })
+            assertTrue(impact.findings.any { it.category == "新增构建依赖" && it.level == CoworkbenchFindingLevel.HIGH })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }
