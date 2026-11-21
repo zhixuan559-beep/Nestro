@@ -18,7 +18,7 @@
 | 12 | 双模型对比 | 功能代码已补齐并静态复核，已快进合并锁定至 refactor/phase-2-architecture（commit 5868d6d）；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段 |
 | 13 | MCP 工具中心 | 审计写入串行化、失败可见、损坏审计先备份隔离且保留原始数据，专项回归测试源码已补充；PR #12 已合并，最新锁定 commit `97ed25e`；Kotlin 编译/JVM 测试未执行，模拟器/真机仍按十九模块统一阶段执行 |
 | 14 | GitHub 工作台 | 已完成代码阶段并合并锁定至 `refactor/phase-2-architecture`（PR #10，commit `2e7ca199`）；GitHub/GitLab/Gitee PAT 与 Keystore 加密、仓库搜索/克隆、JGit 分支/Fetch/Pull/Push/Commit、手机端文件浏览编辑/新建删除、Diff/历史/反向回滚、冲突处理、网络与存储保护均已落地；编译/JVM/仪器测试/模拟器/真机验收按十九模块统一测试阶段执行，当前未执行 |
-| 15 | AI 共建工作台 | 开发分支已补齐模型补丁回流与严格 JSON 校验、脱敏上下文、逐文件分批审批、持久化审批历史/中断恢复/整份补丁回滚、补丁前后 Manifest 与依赖声明差异、仓库级安全规则扫描、Runner 预检/远程取消/诊断、Gradle 依赖树解析、内联/多行 TOML 版本目录差异及有界 ZIP 产物读取、CycloneDX/SPDX/JUnit 报告解析；完整 SBOM 生成接入、深层数据流分析、细粒度 Runner 权限预检与最终静态复核仍待完成；未合并、未锁定 |
+| 15 | AI 共建工作台 | 开发分支已补齐模型补丁回流与严格 JSON 校验、脱敏上下文、逐文件分批审批、持久化审批历史/中断恢复/整份补丁回滚、补丁前后 Manifest 与依赖声明差异、仓库级安全规则扫描、Runner 预检/远程取消/诊断、Gradle 依赖树解析、内联/多行 TOML 版本目录差异、多行 Maven 仓库扫描、严格补丁 JSON 策略解析及有界 ZIP 产物读取、CycloneDX/SPDX/JUnit 报告解析；完整 SBOM 生成接入、深层数据流分析、细粒度 Runner 权限预检与最终静态复核仍待完成；未合并、未锁定 |
 | 16 | 统一能力中心 | 已完成（此前已完成并锁定，不因顺序推进而重做） |
 | 17 | 智能剪辑 | 待开发 |
 | 18 | 日历 | 待开发 |
@@ -118,7 +118,8 @@
 - [x] 补丁前后 Manifest 权限/导出组件/调试配置差异，以及 Gradle 依赖声明和版本目录差异；明确不等同完整解析后的传递依赖图。
 - [x] GitHub Actions Runner：远程分支与 Workflow 预检、触发轮询、等待取消时尝试取消远程 Run、Job/Step 状态、有限长度日志、产物读取诊断。
 - [x] Runner 结果解析：Gradle debug/release dependency tree、CycloneDX/SPDX SBOM 组件/版本/PURL/许可证及 JUnit XML 测试汇总；XML 解析禁用外部实体并设内容上限。
-- [x] 版本目录解析支持 TOML 内联表与 `[libraries.alias]` 多行表；报告 ZIP 对每个条目、总解压字节数及文件数设置上限，遇到超限即停止，不调用无界条目排空。
+- [x] 版本目录解析支持 TOML 内联表与 `[libraries.alias]` 多行表；多行 Gradle Maven 仓库声明扫描；补丁 JSON 严格解析器拒绝未知顶层字段、文件对象额外字段、错误类型、重复路径和越界路径。
+- [x] 报告 ZIP 对每个条目、总解压字节数及文件数设置上限，遇到超限即停止，不调用无界条目排空；验证成功必须取得完整 JUnit 报告且产物未截断/下载失败。
 - [x] Android CI Workflow 增加手动触发门禁及 debug/release Gradle 依赖树报告导出；仅提交工作流源码，尚未触发执行。
 - [x] 新增策略、Manifest/依赖差异、CI 风险、SBOM/JUnit 解析等回归测试源码；尚未运行。
 
