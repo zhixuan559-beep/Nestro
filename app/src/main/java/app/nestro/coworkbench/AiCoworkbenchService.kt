@@ -26,7 +26,7 @@ object CoworkbenchPolicy {
     fun safePath(value: String): String {
         require(value.isNotBlank() && value.length <= 1024) { "文件路径无效" }
         require(!value.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(value)) { "只允许仓库内相对路径" }
-        val path = value.replace('\\\\', '/')
+        val path = value.replace('\\', '/')
         require(path.split('/').none { it.isBlank() || it == "." || it == ".." }) { "文件路径包含越界片段" }
         require(path.split('/').none { it == ".git" } && !path.startsWith(".git/")) { "禁止修改 Git 元数据" }
         require(path.none { it.isISOControl() }) { "文件路径包含控制字符" }
