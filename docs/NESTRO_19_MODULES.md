@@ -18,7 +18,7 @@
 | 12 | 双模型对比 | 功能代码已补齐并静态复核，已快进合并锁定至 refactor/phase-2-architecture（commit 5868d6d）；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段 |
 | 13 | MCP 工具中心 | 审计写入串行化、失败可见、损坏审计先备份隔离且保留原始数据，专项回归测试源码已补充；PR #12 已合并，最新锁定 commit `97ed25e`；Kotlin 编译/JVM 测试未执行，模拟器/真机仍按十九模块统一阶段执行 |
 | 14 | GitHub 工作台 | 已完成代码阶段并合并锁定至 `refactor/phase-2-architecture`（PR #10，commit `2e7ca199`）；GitHub/GitLab/Gitee PAT 与 Keystore 加密、仓库搜索/克隆、JGit 分支/Fetch/Pull/Push/Commit、手机端文件浏览编辑/新建删除、Diff/历史/反向回滚、冲突处理、网络与存储保护均已落地；编译/JVM/仪器测试/模拟器/真机验收按十九模块统一测试阶段执行，当前未执行 |
-| 15 | AI 共建工作台 | 开发分支已补齐模型补丁回流与严格 JSON 校验、脱敏上下文、逐文件分批审批、持久化审批历史/中断恢复/整份补丁回滚、补丁前后 Manifest 与依赖声明差异、仓库级安全规则扫描、Runner 预检/远程取消/诊断、Gradle 依赖树解析、内联/多行 TOML 版本目录差异、多行 Maven 仓库扫描、严格补丁 JSON 策略解析及有界 ZIP 产物读取、CycloneDX/SPDX/JUnit 报告解析；完整 SBOM 生成接入、深层数据流分析、细粒度 Runner 权限预检与最终静态复核仍待完成；未合并、未锁定 |
+| 15 | AI 共建工作台 | 补齐模型补丁回流、严格 JSON 校验、凭据/签名路径硬拦截、上下文脱敏、逐文件分批审批、持久化事务恢复与整份回滚、Manifest/Gradle 差异、仓库安全规则/凭据检测及证据脱敏、Kotlin/Java 同文件污点传播、动态代码加载/反序列化/弱加密/WebView 风险识别、GitHub Actions 只读权限预检与响应头诊断、远程取消、Gradle Debug/Release 依赖树、CycloneDX 1.5 SBOM 生成与完整性验收门槛、SPDX/JUnit 解析、有界 ZIP 产物读取；新增策略/数据流/凭据/SBOM/报告测试源码。代码已补齐，未执行测试、未合并、未锁定 |
 | 16 | 统一能力中心 | 已完成（此前已完成并锁定，不因顺序推进而重做） |
 | 17 | 智能剪辑 | 待开发 |
 | 18 | 日历 | 待开发 |
@@ -109,26 +109,30 @@
 ### 当前分支已实现（尚未合并）
 - [x] 本地 Git 仓库选择、多文件补丁解析、严格 JSON 字段/类型校验与逐文件变更预览。
 - [x] 仓库相对路径校验、禁止路径穿越和 Git 元数据修改；补丁文件数量/体积限制及二进制内容拒绝。
+- [x] 补丁目标硬拦截本地凭据、环境变量文件、签名配置/密钥材料及应用私有元数据；拒绝文件与其子目录同时作为补丁目标，避免批量写入冲突。
 - [x] SHA-256 审查摘要、显式批准、应用前快照、外部修改检测、失败恢复与回滚冲突保护。
 - [x] 当前聊天模型最终回复自动回流补丁输入区；模型输出始终先解析、审查，不会直接写入仓库。
 - [x] 上下文文件选择：最多 20 个 UTF-8 文本文件、单文件/总量设限；排除构建目录、Git 元数据、符号链接和常见凭据配置，模型上下文发送前脱敏。
 - [x] 分阶段逐文件审批与应用；每批独立快照，支持整份补丁跨批次一键回滚。
 - [x] 审批事件持久化；应用和回滚事务均先写入日志，进程中断后自动恢复；恢复前检查文件仍为变更前/变更后版本，不覆盖外部新修改。
 - [x] 仓库级有界静态规则扫描：依赖声明/版本目录、Manifest 权限与导出组件、命令执行、TLS、WebView、敏感 API、明文 HTTP、CI 写权限、pull_request_target、未固定 Action 和远程脚本执行。
+- [x] 仓库扫描增加疑似硬编码凭据识别并在证据中脱敏；增加动态代码加载、原生反序列化、弱加密、WebView 文件/混合内容访问及可变 PendingIntent 风险规则。
 - [x] 补丁前后 Manifest 权限/导出组件/调试配置差异，以及 Gradle 依赖声明和版本目录差异；明确不等同完整解析后的传递依赖图。
 - [x] GitHub Actions Runner：远程分支与 Workflow 预检、触发轮询、等待取消时尝试取消远程 Run、Job/Step 状态、有限长度日志、产物读取诊断。
+- [x] Runner 预检读取远程分支、Workflow 启用状态与既有 Run；对 401/403 读取 GitHub accepted-permissions / OAuth scopes 响应头，向用户说明 Contents/Actions 读权限。Actions: write 无安全的只读探针，必须仅在用户主动启动正式 Workflow 时由真实响应确认，不发送虚假 dispatch。
 - [x] Runner 结果解析：Gradle debug/release dependency tree、CycloneDX/SPDX SBOM 组件/版本/PURL/许可证及 JUnit XML 测试汇总；XML 解析禁用外部实体并设内容上限。
 - [x] 版本目录解析支持 TOML 内联表与 `[libraries.alias]` 多行表；多行 Gradle Maven 仓库声明扫描；补丁 JSON 严格解析器拒绝未知顶层字段、文件对象额外字段、错误类型、重复路径和越界路径。
 - [x] 报告 ZIP 对每个条目、总解压字节数及文件数设置上限，遇到超限即停止，不调用无界条目排空；验证成功必须取得完整 JUnit 报告且产物未截断/下载失败。
-- [x] Android CI Workflow 增加手动触发门禁及 debug/release Gradle 依赖树报告导出；仅提交工作流源码，尚未触发执行。
+- [x] Android CI Workflow 增加手动触发门禁、debug/release Gradle 依赖树报告导出、CycloneDX 1.5 SBOM 自动生成与产物上传；SBOM 组件版本从 app/build.gradle.kts 读取，空报告/缺失任一配置/超限时拒绝生成。
+- [x] 验收成功必须取得 Nestro 自身的完整 CycloneDX 1.5 SBOM，校验 Debug/Release 双依赖来源、组件 PURL/版本/唯一性；不能用任意非空 SBOM 冒充完整依赖证据。
 - [x] 新增策略、Manifest/依赖差异、CI 风险、SBOM/JUnit 解析等回归测试源码；尚未运行。
 
-### 尚未完成（不得锁定）
-- [ ] 验证隔离 Runner 的 debug/release Gradle 依赖树报告是否完整生成并成功回传；当前工作流源码已加入报告导出步骤，但尚未执行。CycloneDX/SPDX SBOM 解析已接入，SBOM 生成插件/步骤尚未接入。
-- [ ] 编译器级语义分析、完整敏感数据流/污点分析及复杂危险操作影响分析；当前为有界源码与配置规则扫描。
-- [ ] 更细粒度的 GitHub Token/仓库 Actions 权限预检；当前已检查远程分支、Workflow 存在/启用状态，实际触发权限仍由 GitHub API 响应确认。
-- [ ] 专项回归测试源码继续补齐（含多行 TOML 版本目录与依赖树解析）后统一执行；不提前运行编译、JVM、模拟器或真机测试。
-- [ ] 全部代码静态复核完成前，不提交合并、不锁定模块15。
+### 代码已补齐；验收仍待十九模块统一阶段
+- [ ] 验证隔离 Runner 的 debug/release Gradle 依赖树与 CycloneDX SBOM 是否在真实 GitHub Actions 环境完整生成、上传并回传；当前仅完成源码与验收门槛，未触发 Workflow。
+- [x] 有界 Kotlin/Java 同文件数据流分析：覆盖常见外部输入、局部变量/类型声明传播及命令、SQL、WebView、文件读写、网络 URL 敏感入口；明确标注启发式结果，不冒充编译器级、跨过程或完整语义分析。
+- [x] GitHub Token 只读预检与权限诊断已覆盖分支/Workflow/Run/Job/Artifact 读取及 accepted-permissions / OAuth scopes；Actions: write 不存在安全的只读探针，只有用户主动启动正式 Workflow 时才能由 GitHub 响应确认。
+- [x] 专项回归测试源码已补齐：策略/路径冲突/上下文凭据脱敏/危险 API/数据流/双变体 SBOM/JUnit 计数；按既定十九模块流程暂不执行编译、JVM、模拟器或真机测试。
+- [x] 已完成本轮源码静态复核与接口接线核对；模块15仍未提交 PR、未合并、未锁定，等待十九模块统一验收。
 
 ### 安全边界
 - 模型输出始终视为不可信数据；审查通过不等于安全。
