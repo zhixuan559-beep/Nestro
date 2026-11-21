@@ -90,41 +90,65 @@ object MediaProviderConnectionTest {
     }
 }
 
+data class MediaProviderSummary(
+    val providerId: String,
+    val displayName: String,
+    val baseUrl: String,
+    val model: String
+)
+
 class MediaProviderConfigStore(context: Context) {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences("nestro_media_provider_v1", Context.MODE_PRIVATE)
 
     fun save(config: MediaProviderConfig) {
         config.validate()
-        val oldKey = runCatching { JSONObject(prefs.getString(METADATA, null) ?: "{}").optString("keyId") }.getOrNull()
+        val root = readRoot()
+        val providers = root.optJSONObject(PROVIDERS) ?: JSONObject()
+        val previous = providers.optJSONObject(config.providerId)
+        val oldKey = previous?.optString("keyId")
         val nextKey = "media-provider-${UUID.randomUUID()}"
         LocalVault.writeApiKey(app, nextKey, config.apiKey)
-        val metadata = JSONObject()
-            .put("providerId", config.providerId)
-            .put("displayName", config.displayName.trim())
-            .put("baseUrl", config.baseUrl.trim().trimEnd('/'))
-            .put("model", config.model.trim())
-            .put("transcriptionPath", config.transcriptionPath.trim())
-            .put("scenePath", config.scenePath.trim())
-            .put("audioProcessPath", config.audioProcessPath.trim())
-            .put("keyId", nextKey)
-        if (!prefs.edit().putString(METADATA, metadata.toString()).commit()) {
+        providers.put(config.providerId, metadata(config, nextKey))
+        root.put(PROVIDERS, providers)
+        if (root.optString(ACTIVE_ID).isBlank()) root.put(ACTIVE_ID, config.providerId)
+        if (!prefs.edit().putString(METADATA, root.toString()).commit()) {
             LocalVault.deleteApiKey(app, nextKey)
             error("媒体服务配置保存失败")
         }
-        oldKey?.takeIf { it != nextKey }?.let { runCatching { LocalVault.deleteApiKey(app, it) } }
+        oldKey?.takeIf { it.isNotBlank() && it != nextKey }?.let { runCatching { LocalVault.deleteApiKey(app, it) } }
     }
 
-    fun read(): MediaProviderConfig? {
-        val raw = prefs.getString(METADATA, null) ?: return null
-        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    fun list(): List<MediaProviderSummary> {
+        val providers = readRoot().optJSONObject(PROVIDERS) ?: return emptyList()
+        return providers.keys().asSequence().mapNotNull { id ->
+            val row = providers.optJSONObject(id) ?: return@mapNotNull null
+            MediaProviderSummary(id, row.optString("displayName"), row.optString("baseUrl"), row.optString("model"))
+        }.sortedBy { it.displayName }
+    }
+
+    fun activeProviderId(): String = readRoot().optString(ACTIVE_ID)
+
+    fun activate(providerId: String) {
+        val root = readRoot()
+        require(root.optJSONObject(PROVIDERS)?.has(providerId) == true) { "媒体服务商配置不存在" }
+        root.put(ACTIVE_ID, providerId)
+        check(prefs.edit().putString(METADATA, root.toString()).commit()) { "媒体服务切换失败" }
+    }
+
+    fun read(providerId: String? = null): MediaProviderConfig? {
+        val root = readRoot()
+        val providers = root.optJSONObject(PROVIDERS) ?: return null
+        val id = providerId?.takeIf { it.isNotBlank() } ?: root.optString(ACTIVE_ID)
+        if (id.isBlank()) return null
+        val json = providers.optJSONObject(id) ?: return null
         val keyId = json.optString("keyId")
         if (!keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) return null
         val key = runCatching { LocalVault.readApiKey(app, keyId) }.getOrDefault("")
         if (key.isBlank()) return null
         return runCatching {
             MediaProviderConfig(
-                providerId = json.optString("providerId"),
+                providerId = id,
                 displayName = json.optString("displayName"),
                 baseUrl = json.optString("baseUrl"),
                 apiKey = key,
@@ -136,14 +160,48 @@ class MediaProviderConfigStore(context: Context) {
         }.getOrNull()
     }
 
-    fun delete() {
-        val keyId = runCatching { JSONObject(prefs.getString(METADATA, null) ?: "{}").optString("keyId") }.getOrNull()
-        check(prefs.edit().remove(METADATA).commit()) { "媒体服务配置删除失败" }
+    fun delete(providerId: String? = null) {
+        val root = readRoot()
+        val providers = root.optJSONObject(PROVIDERS) ?: JSONObject()
+        val id = providerId?.takeIf { it.isNotBlank() } ?: root.optString(ACTIVE_ID)
+        if (id.isBlank()) return
+        val keyId = providers.optJSONObject(id)?.optString("keyId")
+        providers.remove(id)
+        root.put(PROVIDERS, providers)
+        if (root.optString(ACTIVE_ID) == id) {
+            root.put(ACTIVE_ID, providers.keys().asSequence().firstOrNull().orEmpty())
+        }
+        check(prefs.edit().putString(METADATA, root.toString()).commit()) { "媒体服务配置删除失败" }
         keyId?.takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,120}")) }?.let { runCatching { LocalVault.deleteApiKey(app, it) } }
     }
 
+    private fun readRoot(): JSONObject {
+        val raw = prefs.getString(METADATA, null) ?: return JSONObject().put(PROVIDERS, JSONObject()).put(ACTIVE_ID, "")
+        val parsed = runCatching { JSONObject(raw) }.getOrNull() ?: return JSONObject().put(PROVIDERS, JSONObject()).put(ACTIVE_ID, "")
+        if (parsed.has(PROVIDERS)) return parsed
+        // Migrate the previous single-provider metadata format without losing its encrypted key.
+        val legacyId = parsed.optString("providerId")
+        if (legacyId.isNotBlank() && parsed.has("keyId")) {
+            return JSONObject()
+                .put(PROVIDERS, JSONObject().put(legacyId, parsed))
+                .put(ACTIVE_ID, legacyId)
+        }
+        return JSONObject().put(PROVIDERS, JSONObject()).put(ACTIVE_ID, "")
+    }
+
+    private fun metadata(config: MediaProviderConfig, keyId: String) = JSONObject()
+        .put("displayName", config.displayName.trim())
+        .put("baseUrl", config.baseUrl.trim().trimEnd('/'))
+        .put("model", config.model.trim())
+        .put("transcriptionPath", config.transcriptionPath.trim())
+        .put("scenePath", config.scenePath.trim())
+        .put("audioProcessPath", config.audioProcessPath.trim())
+        .put("keyId", keyId)
+
     private companion object {
         const val METADATA = "provider_metadata"
+        const val PROVIDERS = "providers"
+        const val ACTIVE_ID = "activeProviderId"
     }
 }
 
