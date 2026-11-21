@@ -388,4 +388,4 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - 一侧请求失败时保留另一侧结果；停止操作会取消协程并主动断开两侧活动 HTTP 连接。
 - 宽屏并排展示、手机纵向展示；支持单侧回答复制、清空和重新发起对比。
 - 新增模型选择/重复选择/不可用模型/空提示词/长度限制 JVM 测试源；尚未执行测试。
-- 当前状态：功能代码已补齐并完成静态源码/结构复核；Kotlin 编译与 JVM 测试尚未执行；不启动模拟器或真机验收，按十九模块统一验收安排执行。
+- 当前状态：功能代码已补齐并完成静态源码/结构复核，已快进合并锁定至 `refactor/phase-2-architecture`（commit `5868d6d`）；Kotlin 编译与 JVM 测试尚未执行；不启动模拟器或真机验收，按十九模块统一验收安排执行。
