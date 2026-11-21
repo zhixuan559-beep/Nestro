@@ -104,7 +104,8 @@ object ExpertProjectPlanExecutor {
         maxParallel: Int = 4,
         shouldStop: () -> Boolean = { false },
         invoke: suspend (memberName: String, instruction: String) -> String,
-        onPackage: suspend (packageId: String, status: String, detail: String) -> Unit = { _, _, _ -> }
+        onPackage: suspend (packageId: String, status: String, detail: String) -> Unit = { _, _, _ -> },
+        onHandoff: suspend (fromPackageId: String, toPackageId: String, fromMember: String, toMember: String, artifact: String) -> Unit = { _, _, _, _, _ -> }
     ): ExpertProjectExecutionResult {
         require(maxParallel in 1..4) { "并发上限必须在 1 到 4 之间" }
         validate(plan, availableMembers)
@@ -134,6 +135,13 @@ object ExpertProjectPlanExecutor {
                                 val dependencyContext = item.dependsOn.joinToString("\n\n") { dependencyId ->
                                     val dependency = results.getValue(dependencyId)
                                     "【前置成果 $dependencyId】\n${dependency.output.take(4_000)}"
+                                }
+                                item.dependsOn.forEach { dependencyId ->
+                                    val dependency = results.getValue(dependencyId)
+                                    onHandoff(
+                                        dependencyId, item.id, dependency.memberName, item.memberName,
+                                        dependency.output.take(4_000)
+                                    )
                                 }
                                 val prompt = buildString {
                                     append("项目总目标：\n").append(plan.projectGoal.take(6_000))
