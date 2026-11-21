@@ -41,7 +41,8 @@ object ModelProviderPresetCatalog {
         ),
         ModelProviderPreset(
             "siliconflow", "硅基流动", "https://api.siliconflow.cn/v1",
-            ModelApiProtocol.OPENAI_CHAT_COMPLETIONS, "模型广场与 API 服务",
+            ModelApiProtocol.OPENAI_CHAT_COMPLETIONS, "官方 OpenAI 兼容 API；模型与价格以实时目录为准",
+            accountUrl = "https://cloud.siliconflow.cn/account/ak",
             suggestedModels = listOf("deepseek-ai/DeepSeek-V3", "Qwen/Qwen3-8B")
         ),
         ModelProviderPreset(
