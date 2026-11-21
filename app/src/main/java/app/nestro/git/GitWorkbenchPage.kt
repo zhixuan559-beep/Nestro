@@ -211,7 +211,20 @@ fun GitWorkbenchPage(context: Context) {
                         }) { Text("创建") }
                     }
                     Text("变更（" + changes.size + "）", style = MaterialTheme.typography.titleSmall)
-                    changes.forEach { Text(it.changeType + " · " + it.path, style = MaterialTheme.typography.bodySmall) }
+                    changes.forEach { change ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(change.changeType + " · " + change.path, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            if (change.changeType == "冲突") TextButton(enabled = !loading, onClick = {
+                                scope.launch {
+                                    loading = true
+                                    runCatching { repo.stageResolvedFile(selectedLocal.id, change.path) }
+                                        .onSuccess { status = "已标记冲突文件为已解决。"; refreshWorkspace(selectedLocal.id) }
+                                        .onFailure { status = it.message ?: "冲突文件标记失败" }
+                                    loading = false
+                                }
+                            }) { Text("标记已解决") }
+                        }
+                    }
                     Text("文件", style = MaterialTheme.typography.titleSmall)
                     if (folder.isNotBlank()) TextButton(onClick = { folder = folder.substringBeforeLast('/', "") }) { Text("返回上级：" + folder) }
                     files.forEach { entry ->
