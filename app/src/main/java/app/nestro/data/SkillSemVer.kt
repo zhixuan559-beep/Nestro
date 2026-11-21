@@ -1,5 +1,7 @@
 package app.nestro.data
 
+import java.math.BigInteger
+
 /** SemVer 2.0 precedence and a bounded range matcher for community skill dependencies. */
 object SkillSemVer {
     private data class Version(val major: Long, val minor: Long, val patch: Long, val pre: List<String>)
@@ -40,10 +42,15 @@ object SkillSemVer {
 
     fun matches(version: String, range: String): Boolean {
         val candidate=parse(version)
-        if(range=="*" || range.isBlank()) return true
+        if(range.isBlank()) return false
+        if(range=="*") return candidate.pre.isEmpty()
         return range.split("||").any { alternative ->
             val terms=alternative.trim().split(Regex("[ ,]+")).filter { it.isNotBlank() }
-            terms.isNotEmpty() && terms.all { term ->
+            val allowsPrerelease = terms.any { term ->
+                val expectedText = term.removePrefix(">=").removePrefix("<=").removePrefix(">").removePrefix("<").removePrefix("^").removePrefix("~")
+                runCatching { parse(expectedText).let { it.pre.isNotEmpty() && it.major==candidate.major && it.minor==candidate.minor && it.patch==candidate.patch } }.getOrDefault(false)
+            }
+            terms.isNotEmpty() && (candidate.pre.isEmpty() || allowsPrerelease) && terms.all { term ->
                 val operator=listOf(">=","<=",">","<","^","~").firstOrNull(term::startsWith)
                 val expectedText=if(operator==null) term else term.removePrefix(operator)
                 val expected=parse(expectedText)
