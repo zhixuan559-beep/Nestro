@@ -128,6 +128,27 @@ class CoworkbenchStaticAnalyzerTest {
     }
 
     @Test
+    fun detectsCredentialsWithoutCopyingSecretValuesIntoEvidence() {
+        val root = Files.createTempDirectory("nestro-coworkbench-secret-scan").toFile()
+        try {
+            val secret = "ghp_" + "A".repeat(36)
+            root.resolve("src/main/Config.kt").apply {
+                parentFile.mkdirs()
+                writeText("""val apiKey = "$secret"
+                    |val access_token = "token-value-123456789"
+                """.trimMargin())
+            }
+            val report = CoworkbenchStaticAnalyzer.analyze(root)
+            val findings = report.findings.filter { it.category == "疑似硬编码凭据" }
+            assertTrue(findings.isNotEmpty())
+            assertTrue(findings.all { !it.evidence.contains(secret) })
+            assertTrue(findings.all { it.evidence.contains("[REDACTED]") })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun flagsUntrustedWorkflowTriggersAndMutableActions() {
         val root = Files.createTempDirectory("nestro-coworkbench-workflow").toFile()
         try {
