@@ -19,10 +19,10 @@ data class SpeechProviderConfig(
         require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null) {
             "语音服务地址必须使用 HTTPS，且不能包含 URL 用户凭据"
         }
-        require(apiKey.isNotBlank() && apiKey.length <= 4096) { "API Key 不能为空且不能超过 4096 字符" }
+        require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.code < 0x20 || it.code == 0x7f }) { "API Key 不能为空、不能包含控制字符且不能超过 4096 字符" }
         require(uri.rawQuery == null && uri.rawFragment == null) { "语音服务地址不能包含查询参数或片段" }
-        require(model.isNotBlank() && model.length <= 120) { "语音模型名称无效" }
-        require(voice == null || voice.length <= 120) { "音色标识超出长度限制" }
+        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "语音模型名称无效" }
+        require(voice == null || (voice.length <= 120 && voice.none { it.isISOControl() })) { "音色标识无效或超出长度限制" }
     }
 
     override fun toString(): String = "SpeechProviderConfig(providerId=$providerId, baseUrl=$baseUrl, apiKey=[REDACTED], model=$model, voice=$voice)"
