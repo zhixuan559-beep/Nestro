@@ -228,7 +228,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .post("{}".toRequestBody("application/json".toMediaType()))
             .build()
         return executeCancellable(request).use { response ->
-            response.code == 202 || response.code == 409
+            response.code == 202
         }
     }
 
