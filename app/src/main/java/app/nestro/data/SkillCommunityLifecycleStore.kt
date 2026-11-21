@@ -117,6 +117,20 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val snapshots = history.optJSONArray(name) ?: error("没有可回退的历史版本")
         require(snapshots.length() > 0) { "没有可回退的历史版本" }
         val previous = snapshots.getJSONObject(snapshots.length() - 1)
+        val restoredVersion = if (previous.optBoolean("hadSkill")) runCatching { JSONObject(previous.getString("metadata")).optString("version") }.getOrDefault("") else ""
+        metadata.keys().forEach { dependentName ->
+            if (dependentName == name) return@forEach
+            val dependent = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val deps = dependent.optJSONArray("dependencies") ?: return@forEach
+            for (i in 0 until deps.length()) {
+                val dep = deps.optJSONObject(i) ?: continue
+                if (dep.optString("name") == name) {
+                    require(restoredVersion.isNotBlank() && SkillSemVer.matches(restoredVersion, dep.optString("version", "*"))) {
+                        "回退会破坏已有技能依赖：$dependentName 要求 $name ${dep.optString("version", "*")}"
+                    }
+                }
+            }
+        }
         snapshots.remove(snapshots.length() - 1)
         val disabled = setDisabled(name, previous.optBoolean("wasDisabled", true))
         if (previous.optBoolean("hadSkill")) {
