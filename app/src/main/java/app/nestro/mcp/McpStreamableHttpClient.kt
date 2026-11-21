@@ -21,9 +21,15 @@ object McpHeaderValueEncoder {
   return if(plainAscii)value else "=?base64?"+Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))+"?="
  }
 }
+private object McpHttpClientProvider {
+ val client:OkHttpClient=OkHttpClient.Builder()
+  .connectTimeout(12,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS)
+  .writeTimeout(20,TimeUnit.SECONDS).callTimeout(75,TimeUnit.SECONDS)
+  .followRedirects(false).followSslRedirects(false).build()
+}
 class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : AutoCloseable {
  private val url=McpEndpointPolicy.requireValid(endpoint)
- private val client=OkHttpClient.Builder().connectTimeout(12,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(20,TimeUnit.SECONDS).callTimeout(75,TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+ private val client=McpHttpClientProvider.client
  private val ids=AtomicLong(0)
  private var protocolVersion="2026-07-28"
  private var legacyMode=false
