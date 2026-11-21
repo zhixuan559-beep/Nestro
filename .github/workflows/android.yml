@@ -50,6 +50,10 @@ jobs:
           gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt 2>&1 || true
           gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt 2>&1 || true
 
+      - name: Test CycloneDX SBOM exporter
+        if: always() && steps.setup_gradle.outcome == 'success'
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
       - name: Generate CycloneDX SBOM
         if: always() && steps.setup_gradle.outcome == 'success'
         continue-on-error: true
