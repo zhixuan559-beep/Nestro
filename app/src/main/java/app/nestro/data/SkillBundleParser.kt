@@ -53,8 +53,11 @@ object SkillBundleParser {
             val dependencyName = item.optString("name").trim()
             val dependencyVersion = item.optString("version", "*").trim()
             require(dependencyName.isNotBlank() && dependencyName.length <= 80 && dependencyVersion.length <= 40) { "技能依赖格式无效" }
+            require(dependencyVersion == "*" || dependencyVersion.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能依赖版本必须使用语义版本或 *" }
             SkillDependency(dependencyName, dependencyVersion)
         }
+        require(dependencies.map { it.name }.distinct().size == dependencies.size) { "技能依赖不能重复" }
+        require(dependencies.none { it.name == name }) { "技能不能依赖自身" }
         return SkillBundle(name, version, description, prompt, source, permissions, dependencies)
     }
 
