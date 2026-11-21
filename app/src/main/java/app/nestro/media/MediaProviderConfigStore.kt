@@ -233,10 +233,10 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         withContext(Dispatchers.IO) {
             require(asset.kind == MediaAssetKind.AUDIO || asset.kind == MediaAssetKind.VIDEO) { "当前素材不能转写" }
             onProgress(0.05f)
-            val transcriptionFields = if (config.transcriptionModel == "gpt-transcribe") {
-                mapOf("model" to config.transcriptionModel, "languages[]" to languageTag.lowercase())
-            } else {
-                mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
+            val transcriptionFields = when (config.transcriptionModel) {
+                "gpt-transcribe" -> mapOf("model" to config.transcriptionModel, "languages[]" to languageTag.lowercase())
+                "whisper-1" -> mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
+                else -> mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'))
             }
             val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields, onProgress = onProgress)
             onProgress(0.97f)
