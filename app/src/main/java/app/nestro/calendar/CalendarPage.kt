@@ -97,6 +97,50 @@ fun CalendarPage(repository: CalendarRepository) {
     val monthOccurrences = remember(events, from, until) {
         CalendarRules.occurrences(events, from, until)
     }
+
+    var pendingSystemAction by remember { mutableStateOf("") }
+    fun runSystemCalendarAction(action: String) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (action == "import") {
+                        CalendarProviderBridge.importEvents(context, repository, from, until)
+                    } else {
+                        CalendarProviderBridge.exportEvents(context, repository, from, until)
+                    }
+                }
+            }
+            status = result.fold(
+                { count -> if (action == "import") "已从系统日历导入 $count 条日程" else "已写入系统日历 $count 条日程" },
+                { "系统日历操作失败：${it.message ?: "权限不足或日历不可用"}" }
+            )
+            refresh()
+        }
+    }
+    val systemCalendarPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val action = pendingSystemAction
+        pendingSystemAction = ""
+        val granted = grants[Manifest.permission.READ_CALENDAR] == true &&
+            (action == "import" || grants[Manifest.permission.WRITE_CALENDAR] == true)
+        if (granted) runSystemCalendarAction(action)
+        else status = "系统日历权限未授予，未执行读写操作"
+    }
+    fun requestSystemCalendarAction(action: String) {
+        val needsRead = !CalendarProviderBridge.canRead(context)
+        val needsWrite = action == "export" && !CalendarProviderBridge.canWrite(context)
+        if (!needsRead && !needsWrite) {
+            runSystemCalendarAction(action)
+        } else {
+            pendingSystemAction = action
+            val permissions = buildList {
+                if (needsRead) add(Manifest.permission.READ_CALENDAR)
+                if (needsWrite) add(Manifest.permission.WRITE_CALENDAR)
+            }.toTypedArray()
+            systemCalendarPermission.launch(permissions)
+        }
+    }
     val dayOccurrences = remember(events, selectedDate) {
         val dayStart = selectedDate.atStartOfDay(zone).toInstant().toEpochMilli()
         val dayEnd = selectedDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -125,6 +169,10 @@ fun CalendarPage(repository: CalendarRepository) {
             TextButton(onClick = { visibleMonth = visibleMonth.minusMonths(1) }) { Text("‹") }
             Text(visibleMonth.format(DateTimeFormatter.ofPattern("yyyy年M月")), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = { visibleMonth = visibleMonth.plusMonths(1) }) { Text("›") }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { requestSystemCalendarAction("import") }, modifier = Modifier.weight(1f)) { Text("导入系统日程") }
+            OutlinedButton(onClick = { requestSystemCalendarAction("export") }, modifier = Modifier.weight(1f)) { Text("写入系统日历") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
             listOf("一", "二", "三", "四", "五", "六", "日").forEach {
