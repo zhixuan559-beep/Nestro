@@ -341,12 +341,14 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val id = UUID.randomUUID().toString()
         val directory = File(root, id)
         try {
-            Git.cloneRepository().setURI(remote.cloneUrl).setDirectory(directory)
+            val currentBranch = Git.cloneRepository().setURI(remote.cloneUrl).setDirectory(directory)
                 .setCredentialsProvider(credentials(account)).setCloneAllBranches(true).call().use { git ->
-                    val branch = git.repository.branch
-                    saveLocal(GitLocalRepository(id, account.id, account.provider, remote.fullName,
-                        remote.cloneUrl, directory.absolutePath, branch.ifBlank { remote.defaultBranch }))
+                    git.repository.branch
                 }
+            val local = GitLocalRepository(id, account.id, account.provider, remote.fullName,
+                remote.cloneUrl, directory.absolutePath, currentBranch.ifBlank { remote.defaultBranch })
+            saveLocal(local)
+            local
         } catch (error: Exception) {
             directory.deleteRecursively()
             throw error
@@ -450,7 +452,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     suspend fun branches(id: String): List<String> = withRepo(id) { git ->
-        git.branchList().setListMode(org.eclipse.jgit.lib.ListBranchCommand.ListMode.ALL).call()
+        git.branchList().setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.ALL).call()
             .mapNotNull {
                 when {
                     it.name.startsWith("refs/heads/") -> it.name.removePrefix("refs/heads/")
