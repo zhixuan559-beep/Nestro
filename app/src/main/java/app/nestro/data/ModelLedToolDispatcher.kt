@@ -93,7 +93,7 @@ internal class ModelLedToolDispatcher(
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         onDirectAnswer: suspend (String) -> Unit = {}
     ): ModelToolDispatchResult? {
-        val available = catalog.list().take(40)
+        // Phone Agent registers short-lived device-action handlers while executing a task;\n        // those task-local controls must never leak into ordinary chat tool discovery.\n        val available = catalog.list().filterNot { it.id.startsWith("phone.") }.take(40)
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
