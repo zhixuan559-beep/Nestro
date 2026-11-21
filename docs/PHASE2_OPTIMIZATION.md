@@ -5,10 +5,10 @@ Status: implementation in progress. This document records the agreed target; a c
 ## Cross-module improvements recovered from development
 
 - [ ] AI co-development workbench: isolated execution sandbox, scoped permissions, patch preview, impact analysis, isolated build/test, explicit approval, snapshots and rollback.
-- [ ] Unified capability center: one registry and lifecycle for Skills, plugins and MCP; capability discovery must not imply authorization; all invocation passes through the shared permission boundary.
-- [ ] Project spaces: project-scoped knowledge, files, experts, teams, Skills, workflows and artifacts; cross-project access remains explicit and auditable.
-- [ ] Model routing: provider/model/key selection, capability-aware routing, bounded fallback, cancellation, rate limits, budgets, token and cost attribution.
-- [ ] Community ecosystem: signed catalogs, trust roots and revocation, dependency resolution, import/export/share, safe updates and rollback.
+- [x] Shared Agent capability foundation exists: `AgentToolCatalog`, task-scoped sessions/leases, `AgentRuntime`, permission routing and MCP registration reuse the process-wide catalog. Remaining: unify Skill/plugin catalog lifecycle and verify every invocation path goes through the same boundary.
+- [ ] Project spaces: project and cross-project scope primitives exist; complete project-level ownership and lifecycle for files, experts, teams, Skills, workflows and artifacts, with explicit auditable cross-project access.
+- [ ] Model routing: multi-provider/model/key registry, fallback and usage attribution exist; complete capability-aware selection, rate limits, budgets and cost-aware routing.
+- [ ] Community ecosystem: signature/trust-root/revocation and SemVer dependency foundations exist; complete trusted catalog distribution, import/export/share, safe updates and rollback.
 
 ## Second optimization: device adaptation and responsiveness
 
@@ -43,8 +43,19 @@ Architecture invariants:
 
 ## Current implementation boundary
 
-The chat request coordinator currently centralizes context assembly and streaming. The process-wide agent task coordinator and shared capability catalog already provide reusable scheduling/catalog foundations for Phone Agent, experts, workflows and MCP. The present chat path still has a legacy task-mode gate and keyword-based Phone Agent category planner; it is not yet the complete model-native tool-decision loop described above. Native model tool-call parsing, provider protocol adaptation, dispatcher handoff, bounded multi-step tool rounds and end-to-end cancellation/result reinjection must be implemented before this principle can be marked complete.
+The chat request coordinator currently centralizes context assembly and streaming. The process-wide agent task coordinator and shared capability catalog already provide reusable scheduling/catalog foundations for Phone Agent, experts, workflows and MCP. Model registry/fallback/usage accounting, project-scope primitives, and community signature/dependency foundations also exist and must be reused rather than rebuilt. The present chat path still has a legacy task-mode gate and keyword-based Phone Agent category planner; it is not yet the complete model-native tool-decision loop described above. Native model tool-call parsing, provider protocol adaptation, dispatcher handoff, bounded multi-step tool rounds and end-to-end cancellation/result reinjection must be implemented before this principle can be marked complete.
 
 ## Acceptance sequence
 
 Finish all feature code and architecture integration first. Only then run the agreed unified compile, automated tests, emulator checks and real-device acceptance. Until then, implementation status and acceptance status must remain separate.
+
+
+## Existing code to reuse (do not duplicate)
+
+- `agent/AgentRuntime.kt`: `AgentToolCatalog`, task-local tool sessions/leases, `AgentPermissionRouter`, `DefaultAgentRuntime`, trace and state transitions.
+- `agent/AgentTaskCoordinator.kt`: persistent single-consumer task queue, idempotent enqueue, pause/resume/cancel and recovery.
+- `NestroApplication.agentToolCatalog`: process-wide capability catalog already shared by Phone Agent, expert teams, workflows and MCP.
+- `model/ModelRegistry.kt` and `ModelRequestConfigurationSelector`: provider/model/key registry and ordered request configuration selection.
+- `ChatRequestExecutionCoordinator` and `ChatStreamingCoordinator`: existing single chat request boundary; extend these rather than creating another chat pipeline.
+- `ProjectResourceScopeStore` / `ProjectAccessControlStore`: existing project resource scoping and explicit cross-project grants.
+- Module 19 community code: SemVer dependency resolution and signed trust-root/revocation foundations.
