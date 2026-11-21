@@ -17,6 +17,15 @@ data class CoworkbenchFileReview(val path: String, val before: String?, val afte
 data class CoworkbenchReview(val id: String, val repositoryId: String, val createdAt: Long, val contentHash: String, val files: List<CoworkbenchFileReview>, val warnings: List<String>, val summary: String)
 data class CoworkbenchSnapshot(val id: String, val repositoryId: String, val reviewId: String, val createdAt: Long, val files: List<CoworkbenchSnapshotFile>)
 data class CoworkbenchSnapshotFile(val path: String, val before: String?, val applied: String?)
+data class CoworkbenchApprovalRecord(
+    val id: String,
+    val repositoryId: String,
+    val reviewId: String,
+    val createdAt: Long,
+    val paths: List<String>,
+    val status: String,
+    val detail: String
+)
 
 object CoworkbenchPolicy {
     const val MAX_FILES = 40
@@ -91,8 +100,10 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     private val root = File(context.applicationContext.filesDir, "ai-coworkbench").apply { mkdirs() }
     private val reviews = File(root, "reviews").apply { mkdirs() }
     private val snapshots = File(root, "snapshots").apply { mkdirs() }
+    private val approvals = File(root, "approvals").apply { mkdirs() }
 
     suspend fun prepareReview(repositoryId: String, proposals: List<CoworkbenchProposal>): CoworkbenchReview = lock.withLock {
+        recoverPendingApprovalsUnlocked()
         val repository = git.localRepositories().firstOrNull { it.id == repositoryId }
             ?: error("本地仓库不存在")
         CoworkbenchPolicy.validate(proposals)
@@ -191,6 +202,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     }
 
     suspend fun listSnapshots(repositoryId: String): List<CoworkbenchSnapshot> = lock.withLock {
+        recoverPendingApprovalsUnlocked()
         require(repositoryId.isNotBlank()) { "仓库标识无效" }
         snapshots.listFiles().orEmpty()
             .filter { it.isFile && it.extension == "json" && it.length() in 1..5_000_000 }
@@ -206,6 +218,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         explicitlyApproved: Boolean,
         selectedPaths: Set<String>? = null
     ): CoworkbenchSnapshot = lock.withLock {
+        recoverPendingApprovalsUnlocked()
         require(explicitlyApproved) { "未取得用户明确批准，禁止应用补丁" }
         val review = loadReviewUnlocked(reviewId)
         require(review.createdAt + 86_400_000L > System.currentTimeMillis()) { "审查已过期，请重新生成" }
@@ -221,13 +234,26 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         val snapshot = CoworkbenchSnapshot(UUID.randomUUID().toString(), review.repositoryId, review.id,
             System.currentTimeMillis(), selected.map { CoworkbenchSnapshotFile(it.path, it.before, it.after) })
         writeJson(File(snapshots, snapshot.id + ".json"), encodeSnapshot(snapshot))
+        val approval = CoworkbenchApprovalRecord(snapshot.id, review.repositoryId, review.id,
+            snapshot.createdAt, selected.map { it.path }, "PENDING", "应用事务已持久化，等待文件写入完成")
+        writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval))
         try {
             selected.forEach { item ->
                 if (item.after == null) git.deleteFile(review.repositoryId, item.path)
                 else git.writeFile(review.repositoryId, item.path, item.after)
             }
+            writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
+                status = "APPLIED", detail = "本批文件已全部应用；回滚快照已持久化")))
         } catch (failure: Throwable) {
-            try { restoreBefore(snapshot) } catch (rollback: Throwable) {
+            try {
+                restoreBefore(snapshot)
+                writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
+                    status = "ROLLED_BACK", detail = "应用失败，已自动恢复：" + (failure.message ?: "未知错误"))))
+            } catch (rollback: Throwable) {
+                runCatching {
+                    writeJson(File(approvals, approval.id + ".json"), encodeApproval(approval.copy(
+                        status = "RECOVERY_REQUIRED", detail = "自动恢复失败；快照保留。应用错误：" + failure.message + "；恢复错误：" + rollback.message)))
+                }
                 throw IllegalStateException("补丁应用失败且自动恢复失败；快照已保留。应用错误：" + failure.message + "；恢复错误：" + rollback.message, failure)
             }
             throw IllegalStateException("补丁应用失败，已自动恢复：" + failure.message, failure)
@@ -236,6 +262,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     }
 
     suspend fun rollback(snapshotId: String): CoworkbenchSnapshot = lock.withLock {
+        recoverPendingApprovalsUnlocked()
         require(snapshotId.matches(Regex("[0-9a-fA-F-]{36}"))) { "快照 ID 无效" }
         val file = File(snapshots, snapshotId + ".json")
         require(file.isFile && file.length() <= 5_000_000) { "快照不存在或大小无效" }
@@ -246,7 +273,43 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             }
         }
         restoreBefore(snapshot)
+        approvals.listFiles().orEmpty().firstOrNull { it.name == snapshot.id + ".json" }?.let { eventFile ->
+            val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull()
+            if (event != null) writeJson(eventFile, encodeApproval(event.copy(status = "ROLLED_BACK", detail = "用户通过回滚快照恢复原文件")))
+        }
         snapshot
+    }
+
+    suspend fun listApprovalHistory(repositoryId: String): List<CoworkbenchApprovalRecord> = lock.withLock {
+        recoverPendingApprovalsUnlocked()
+        require(repositoryId.isNotBlank()) { "仓库标识无效" }
+        approvals.listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "json" && it.length() in 1..256_000 }
+            .mapNotNull { file -> runCatching { decodeApproval(JSONObject(file.readText(Charsets.UTF_8))) }.getOrNull() }
+            .filter { it.repositoryId == repositoryId }
+            .sortedByDescending { it.createdAt }
+            .take(100)
+    }
+
+    private suspend fun recoverPendingApprovalsUnlocked() {
+        approvals.listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "json" && it.length() in 1..256_000 }
+            .forEach { eventFile ->
+                val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull() ?: return@forEach
+                if (event.status == "PENDING") {
+                    val snapshotFile = File(snapshots, event.id + ".json")
+                    try {
+                        require(snapshotFile.isFile && snapshotFile.length() in 1..5_000_000) { "事务快照缺失或无效" }
+                        val snapshot = decodeSnapshot(JSONObject(snapshotFile.readText(Charsets.UTF_8)))
+                        require(snapshot.id == event.id && snapshot.repositoryId == event.repositoryId) { "事务快照与审批记录不匹配" }
+                        restoreBefore(snapshot)
+                        writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERED", detail = "检测到进程中断，已按预写快照自动恢复")))
+                    } catch (failure: Throwable) {
+                        writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERY_REQUIRED",
+                            detail = "检测到未完成事务，自动恢复失败：" + (failure.message ?: "未知错误"))))
+                    }
+                }
+            }
     }
 
     private suspend fun readOrNull(repositoryId: String, path: String): String? = try {
@@ -285,6 +348,24 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         val temp = File(file.parentFile, "." + file.name + "." + UUID.randomUUID() + ".tmp")
         try { temp.writeText(json.toString(), Charsets.UTF_8); check(temp.renameTo(file)) { "审查/快照持久化失败" } }
         finally { temp.delete() }
+    }
+
+    private fun encodeApproval(value: CoworkbenchApprovalRecord) = JSONObject()
+        .put("id", value.id).put("repositoryId", value.repositoryId).put("reviewId", value.reviewId)
+        .put("createdAt", value.createdAt).put("paths", JSONArray(value.paths))
+        .put("status", value.status).put("detail", value.detail)
+
+    private fun decodeApproval(json: JSONObject): CoworkbenchApprovalRecord {
+        val pathsJson = json.getJSONArray("paths")
+        val paths = (0 until pathsJson.length()).map { CoworkbenchPolicy.safePath(pathsJson.getString(it)) }
+        val result = CoworkbenchApprovalRecord(json.getString("id"), json.getString("repositoryId"),
+            json.getString("reviewId"), json.getLong("createdAt"), paths,
+            json.getString("status"), json.optString("detail"))
+        require(result.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
+            result.reviewId.matches(Regex("[0-9a-fA-F-]{36}")) && result.repositoryId.isNotBlank() &&
+            paths.isNotEmpty() && paths.size <= CoworkbenchPolicy.MAX_FILES &&
+            result.status in setOf("PENDING", "APPLIED", "ROLLED_BACK", "RECOVERED", "RECOVERY_REQUIRED"))
+        return result
     }
 
     private fun encodeReview(value: CoworkbenchReview) = JSONObject()
