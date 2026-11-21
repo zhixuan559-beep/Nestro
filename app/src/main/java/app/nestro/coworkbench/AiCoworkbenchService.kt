@@ -468,11 +468,22 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
 
     private fun hash(repositoryId: String, files: List<CoworkbenchFileReview>): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        digest.update(repositoryId.toByteArray(Charsets.UTF_8))
-        files.sortedBy { it.path }.forEach { item ->
-            listOf(item.path, item.before ?: "<absent>", item.after ?: "<deleted>").forEach {
-                digest.update(0.toByte()); digest.update(it.toByteArray(Charsets.UTF_8))
+        fun updateValue(value: String?) {
+            if (value == null) {
+                digest.update(0.toByte())
+            } else {
+                val bytes = value.toByteArray(Charsets.UTF_8)
+                digest.update(1.toByte())
+                digest.update(bytes.size.toString().toByteArray(Charsets.US_ASCII))
+                digest.update(0.toByte())
+                digest.update(bytes)
             }
+        }
+        updateValue(repositoryId)
+        files.sortedBy { it.path }.forEach { item ->
+            updateValue(item.path)
+            updateValue(item.before)
+            updateValue(item.after)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
@@ -525,6 +536,8 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             json.getJSONArray("warnings").let { array -> (0 until array.length()).map(array::getString) },
             json.getString("summary"))
         require(result.id.matches(Regex("[0-9a-fA-F-]{36}")) && result.repositoryId.isNotBlank())
+        require(result.files.map { it.path }.distinct().size == result.files.size) { "审查记录包含重复路径" }
+        CoworkbenchPolicy.validate(result.files.map { CoworkbenchProposal(it.path, it.after) })
         require(result.contentHash == hash(result.repositoryId, result.files)) { "审查记录摘要校验失败" }
         return result
     }
@@ -546,6 +559,10 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         }
         return CoworkbenchSnapshot(json.getString("id"), json.getString("repositoryId"),
             json.getString("reviewId"), json.getLong("createdAt"), items)
-            .also { require(it.id.matches(Regex("[0-9a-fA-F-]{36}")) && it.repositoryId.isNotBlank()) }
+            .also {
+                require(it.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
+                    it.reviewId.matches(Regex("[0-9a-fA-F-]{36}")) && it.repositoryId.isNotBlank())
+                require(it.files.map { item -> item.path }.distinct().size == it.files.size) { "快照包含重复路径" }
+            }
     }
 }
