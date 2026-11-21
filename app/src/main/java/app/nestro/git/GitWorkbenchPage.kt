@@ -57,24 +57,6 @@ fun GitWorkbenchPage(context: Context) {
     val selectedAccount = accounts.firstOrNull { it.id == accountId }
     val selectedLocal = locals.firstOrNull { it.id == localId }
 
-    suspend fun cloneRepository(item: GitRemoteRepository) {
-        if (file.isNotBlank() && editor != originalEditor) {
-            status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
-            return
-        }
-        val account = selectedAccount ?: run { status = "请先选择已授权账号"; return }
-        loading = true
-        try {
-            val cloned = repo.clone(account, item)
-            refreshLocals()
-            localId = cloned.id
-            status = "已克隆 " + item.fullName
-        } catch (error: Exception) {
-            status = "克隆失败：" + (error.message ?: "未知错误")
-        } finally {
-            loading = false
-        }
-    }
     suspend fun refreshLocals() {
         locals = withContext(Dispatchers.IO) { repo.localRepositories() }
         if (locals.none { it.id == localId }) localId = locals.firstOrNull()?.id.orEmpty()
@@ -94,6 +76,25 @@ fun GitWorkbenchPage(context: Context) {
         patch = runCatching { repo.diffPatch(id) }.getOrElse { "Diff 暂不可用：" + (it.message ?: "未知错误") }
         files = runCatching { repo.files(id, folder) }.getOrElse { status = it.message ?: "文件列表读取失败"; emptyList() }
     }
+    suspend fun cloneRepository(item: GitRemoteRepository) {
+        if (file.isNotBlank() && editor != originalEditor) {
+            status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
+            return
+        }
+        val account = selectedAccount ?: run { status = "请先选择已授权账号"; return }
+        loading = true
+        try {
+            val cloned = repo.clone(account, item)
+            refreshLocals()
+            localId = cloned.id
+            status = "已克隆 " + item.fullName
+        } catch (error: Exception) {
+            status = "克隆失败：" + (error.message ?: "未知错误")
+        } finally {
+            loading = false
+        }
+    }
+
     LaunchedEffect(Unit) { refreshLocals() }
     LaunchedEffect(localId) {
         if (localId.isNotBlank()) {
