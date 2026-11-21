@@ -411,6 +411,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(target.toFile().isDirectory) { "目标不是目录" }
         Files.list(target).use { stream ->
             stream.filter { it.fileName.toString() != ".git" && !Files.isSymbolicLink(it) }
+                .sorted()
                 .limit(500)
                 .map { path ->
                     val file = path.toFile()
