@@ -26,6 +26,7 @@ class SkillTrustStore(private val preferences: SharedPreferences) {
 
     fun authorityFingerprint(): String = preferences.getString(KEY_AUTHORITY_FINGERPRINT, "").orEmpty()
     fun isSignerRevoked(signerPublicKeyBase64: String): Boolean = fingerprint(decodeKey(signerPublicKeyBase64)) in revokedFingerprints()
+    fun isFingerprintRevoked(value: String): Boolean = value.replace(":", "").lowercase() in revokedFingerprints()
 
     fun refreshRevocations(url: String): Int {
         val authority = preferences.getString(KEY_AUTHORITY, null) ?: error("尚未固定独立的社区信任根公钥")
