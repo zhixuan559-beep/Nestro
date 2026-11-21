@@ -91,7 +91,7 @@ class OpenAiRealtimeVoiceProvider(
                         .put("voice", config.voice ?: "alloy")
                         .put("input_audio_format", "pcm16")
                         .put("output_audio_format", "pcm16")
-                        .put("input_audio_transcription", JSONObject().put("model", "whisper-1"))
+                        .put("input_audio_transcription", JSONObject().put("model", config.inputModel))
                         .put("turn_detection", JSONObject().put("type", "server_vad")))
                 if (!webSocket.send(sessionUpdate.toString())) {
                     listener.onError("实时语音会话初始化消息发送失败")
