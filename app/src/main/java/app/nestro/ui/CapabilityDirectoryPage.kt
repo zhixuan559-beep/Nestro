@@ -233,7 +233,7 @@ fun CapabilityDirectoryPage() {
                 Text("新安装技能默认停用；不执行技能包代码，也不会自动授予声明权限。")
             }},
             confirmButton={TextButton(onClick={
-                val result=runCatching { lifecycle.installAll(plan.orderedBundles) }
+                val result=runCatching { require(plan.orderedBundles.none { trustStore.isFingerprintRevoked(it.signerFingerprint) }) { "安装计划中的签名者已被撤销，请重新刷新目录" }; lifecycle.installAll(plan.orderedBundles) }
                 result.onSuccess { installStatus="已原子安装 "+plan.orderedBundles.size+" 个社区技能。新安装技能默认停用，旧版本可回退。"; pendingPlan=null }
                     .onFailure { installStatus="安装失败："+(it.message ?: "本地数据提交失败") }
             }) { Text("确认安装全部") }},
