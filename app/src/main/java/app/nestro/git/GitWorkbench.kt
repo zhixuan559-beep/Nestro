@@ -284,7 +284,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
                 }
                 if (fullName.isBlank() || fullName.length > 300 || cloneUrl.isBlank() || cloneUrl.length > 2000) return@mapNotNull null
                 GitRemoteRepository(
-                    id = row.opt("id")?.toString() ?: fullName,
+                    id = row.optString("id").takeIf { it.isNotBlank() && it != "null" } ?: fullName,
                     provider = account.provider,
                     fullName = fullName,
                     description = row.optString("description").take(500),
@@ -303,6 +303,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
         JSONObject(request(account, token, path))
 
     private fun request(account: GitAccount, token: String, path: String): String {
+        require(token.isNotBlank() && token.length <= 4096 && token.none { it.isISOControl() }) { "访问令牌格式无效" }
         require(path.startsWith("/") && !path.startsWith("//"))
         val builder = okhttp3.Request.Builder().url(account.provider.apiBase + path)
             .get().header("Accept", "application/json")
