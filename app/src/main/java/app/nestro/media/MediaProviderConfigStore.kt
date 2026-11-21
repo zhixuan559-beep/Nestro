@@ -28,7 +28,13 @@ data class MediaProviderConfig(
     val transcriptionModel: String = model,
     val transcriptionPath: String = "audio/transcriptions",
     val scenePath: String = "media/scenes",
-    val audioProcessPath: String = "audio/process"
+    val audioProcessPath: String = "audio/process",
+    val videoGenerationModel: String = "",
+    val videoSubmitPath: String = "video/generations",
+    val videoStatusPath: String = "video/generations/{job_id}",
+    val videoJobIdField: String = "id",
+    val videoStatusField: String = "status",
+    val videoResultUrlField: String = "video_url"
 ) {
     fun validate() {
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "媒体服务商标识无效" }
@@ -40,8 +46,16 @@ data class MediaProviderConfig(
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "媒体服务地址必须使用 HTTPS，且不能包含 URL 凭据" }
         require(uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "媒体服务地址包含不允许的路径参数" }
         require(transcriptionPath.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && transcriptionPath.split('/').none { it == "." || it == ".." }) { "转写 API 路径无效" }
-        listOf(scenePath, audioProcessPath).filter { it.isNotBlank() }.forEach {
+        listOf(scenePath, audioProcessPath, videoSubmitPath).filter { it.isNotBlank() }.forEach {
             require(it.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && it.split('/').none { part -> part == "." || part == ".." }) { "媒体 API 路径无效" }
+        }
+        require(videoStatusPath.length in 1..200 && videoStatusPath.matches(Regex("[A-Za-z0-9._~/{}/-]+")) &&
+            videoStatusPath.replace("{job_id}", "job-id").split('/').none { it == "." || it == ".." } &&
+            videoStatusPath.count { it == '{' } == 1 && videoStatusPath.count { it == '}' } == 1 &&
+            videoStatusPath.contains("{job_id}")) { "视频任务状态路径必须包含且只包含 {job_id}" }
+        if (videoGenerationModel.isNotBlank()) require(videoGenerationModel.length <= 120 && videoGenerationModel.none { it.isISOControl() }) { "视频生成模型名称无效" }
+        listOf(videoJobIdField, videoStatusField, videoResultUrlField).forEach {
+            require(it.matches(Regex("[A-Za-z0-9_.]{1,100}"))) { "视频任务响应字段无效" }
         }
     }
 
@@ -159,7 +173,13 @@ class MediaProviderConfigStore(context: Context) {
                 transcriptionModel = json.optString("transcriptionModel", json.optString("model")),
                 transcriptionPath = json.optString("transcriptionPath", "audio/transcriptions"),
                 scenePath = json.optString("scenePath", "media/scenes"),
-                audioProcessPath = json.optString("audioProcessPath", "audio/process")
+                audioProcessPath = json.optString("audioProcessPath", "audio/process"),
+                videoGenerationModel = json.optString("videoGenerationModel", ""),
+                videoSubmitPath = json.optString("videoSubmitPath", "video/generations"),
+                videoStatusPath = json.optString("videoStatusPath", "video/generations/{job_id}"),
+                videoJobIdField = json.optString("videoJobIdField", "id"),
+                videoStatusField = json.optString("videoStatusField", "status"),
+                videoResultUrlField = json.optString("videoResultUrlField", "video_url")
             ).also { it.validate() }
         }.getOrNull()
     }
@@ -201,6 +221,12 @@ class MediaProviderConfigStore(context: Context) {
         .put("transcriptionPath", config.transcriptionPath.trim())
         .put("scenePath", config.scenePath.trim())
         .put("audioProcessPath", config.audioProcessPath.trim())
+        .put("videoGenerationModel", config.videoGenerationModel.trim())
+        .put("videoSubmitPath", config.videoSubmitPath.trim())
+        .put("videoStatusPath", config.videoStatusPath.trim())
+        .put("videoJobIdField", config.videoJobIdField.trim())
+        .put("videoStatusField", config.videoStatusField.trim())
+        .put("videoResultUrlField", config.videoResultUrlField.trim())
         .put("keyId", keyId)
 
     private companion object {
