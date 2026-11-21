@@ -4,7 +4,7 @@
 
 Nestro 不运营自营账号系统，也不托管用户的模型推理服务。用户自行选择兼容的模型服务商并配置 API Key。
 
-> **当前阶段（2026-11-21）：模块7已通过完整 CI 并锁定；模块8 PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`，对应 verify 与 instrumentation 通过。模块8真机验收仍待完成。** 本页区分代码、CI、合并与真机验收状态。
+> **当前阶段（2026-11-21）：模块7已通过完整 CI 并锁定；模块8 PR #8 已合并至 `refactor/phase-2-architecture`，但最近可查 CI 中 verify 通过而 instrumentation 被取消，后续合并提交的两项 Job 也被取消。模块8模拟器验收尚未完成，真机验收亦待完成。** 本页区分代码、CI、合并与真机验收状态。
 
 ## 产品原则
 
