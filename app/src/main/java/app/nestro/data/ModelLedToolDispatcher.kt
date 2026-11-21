@@ -253,11 +253,11 @@ ${prompt.take(8_000)}
             )
         } catch (nativeError: Throwable) {
             if (nativeError is kotlinx.coroutines.CancellationException) throw nativeError
-            if (nativeToolCallsExecuted > 0) {
+            if (nativeToolCallsExecuted > 0 || nativeError !is NativeToolCallingUnsupportedException) {
                 markTerminal(AgentTaskStatus.FAILED, nativeError.message ?: "原生工具执行中断")
                 throw nativeError
             }
-            // Compatibility fallback for providers that reject native function-calling schemas.
+            // Compatibility fallback is reserved for providers that explicitly reject native function calling.
         }
 
         try {
