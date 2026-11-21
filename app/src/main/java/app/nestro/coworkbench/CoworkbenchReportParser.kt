@@ -182,7 +182,13 @@ object CoworkbenchReportParser {
             val document = builder.parse(InputSource(StringReader(content)))
             val root = document.documentElement ?: return null
             if (root.tagName !in setOf("testsuite", "testsuites")) return null
-            fun count(attribute: String): Int = root.getAttribute(attribute).toIntOrNull()?.coerceAtLeast(0) ?: 0
+            fun count(attribute: String): Int {
+                if (!root.hasAttribute(attribute)) return 0
+                val parsed = root.getAttribute(attribute).toIntOrNull()
+                    ?: error("JUnit 报告计数不是整数：$attribute")
+                require(parsed >= 0) { "JUnit 报告计数不能为负数：$attribute" }
+                return parsed
+            }
             val hasRootCounts = root.hasAttribute("tests")
             val total: Int
             val failures: Int
