@@ -145,3 +145,31 @@ class ChatRequestHistoryBudgetTest {
         assertTrue(bounded.sumOf { ChatRequestPolicy.estimateTokens(it.content) } <= 3584)
     }
 }
+
+
+class ChatRequestContextAssemblerParallelRetrievalTest {
+    @Test
+    fun independentContextSourcesCanCompleteWithoutSerialWaiting() = kotlinx.coroutines.runBlocking {
+        val started = java.util.concurrent.atomic.AtomicInteger(0)
+        val allStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        suspend fun markStarted(): String {
+            if (started.incrementAndGet() == 3) allStarted.complete(Unit)
+            kotlinx.coroutines.withTimeout(1_000) { allStarted.await() }
+            return "并行来源"
+        }
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> markStarted().let { ConversationRecallResult(it, emptyList()) } },
+            retrieveKnowledge = { _, _ -> markStarted() },
+            retrieveUserMemory = { _, _ -> markStarted() }
+        )
+        val result = assembler.assemble(
+            projectId = "p",
+            conversationId = "c",
+            prompt = "结合知识库、历史对话和我的偏好分析",
+            requestHistory = emptyList(),
+            baseSystemContext = "base"
+        )
+        assertEquals(3, started.get())
+        assertTrue(result.systemContext.contains("并行来源"))
+    }
+}
