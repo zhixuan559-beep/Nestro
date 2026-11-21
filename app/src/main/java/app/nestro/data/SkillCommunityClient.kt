@@ -71,7 +71,7 @@ object SkillCommunityClient {
         verifyCatalogEnvelope(requestHttps(catalogUrl, MAX_CATALOG_BYTES).toString(Charsets.UTF_8), trustedPublicKeyBase64)
 
     fun downloadVerifiedBundle(release: SignedSkillRelease): SkillBundle {
-        require(release.bundleUrl.startsWith("https://")) { "技能包必须使用 HTTPS" }
+        require(release.bundleUrl.startsWith("https://", ignoreCase = true)) { "技能包必须使用 HTTPS" }
         return verifyBundleBytes(release, requestHttps(release.bundleUrl, MAX_BUNDLE_BYTES))
     }
 
