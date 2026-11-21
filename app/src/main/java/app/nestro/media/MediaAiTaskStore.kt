@@ -109,7 +109,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         val projectId=inputData.getString(KEY_PROJECT) ?: return Result.failure()
         val taskId=inputData.getString(KEY_TASK) ?: return Result.failure()
         val task=MediaAiTaskStore.read(applicationContext,projectId,taskId) ?: return Result.failure()
-        if(task.status==MediaAiTaskStatus.CANCELLED || task.status==MediaAiTaskStatus.COMPLETED) return Result.success()
+        if(task.status !in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) return Result.success()
         val providerConfig=MediaProviderConfigStore(applicationContext).read(task.providerId)
             ?: return fail(projectId,taskId,"媒体服务商配置不存在或 API Key 无法读取")
         val asset=runCatching { MediaProjectStore.listAssets(applicationContext,projectId).firstOrNull { it.id==task.assetId } }.getOrNull()
