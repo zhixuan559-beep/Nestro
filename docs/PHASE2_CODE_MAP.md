@@ -564,3 +564,14 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - Wired SBOM generation and upload into the actual manual Android CI workflow; the exporter derives app version from Gradle and refuses missing Debug/Release dependency sections or empty/oversized reports.
 - Extended Runner permission diagnostics across branch, Workflow, Run, Job, artifact and log reads. Actions: write cannot be safely proven by a read-only probe; it is only confirmed by GitHub when the user explicitly starts the real workflow.
 - Added policy, context redaction, data-flow, dangerous API, dual-variant SBOM and malformed JUnit counter test sources. No compilation, unit test, emulator, device or remote workflow has been run, preserving the 19-module sequencing gate. Module 15 remains unmerged and unlocked pending unified validation.
+
+
+## 2026-11-22 — Module 15 second static review
+
+- Repository static traversal now bounds directory entries as well as source files; analysis no longer risks traversing an unbounded tree of irrelevant/empty directories.
+- Repository and proposed-patch inspection now apply the same 2,000-line ceiling to static rules and intra-file data-flow heuristics. Truncation is surfaced instead of silently scanning beyond the documented limit.
+- JUnit XML parsing validates every nested testsuite counter even when the root has aggregate counters, rejects negative/out-of-range values, and uses Long for aggregate arithmetic.
+- CycloneDX generation now records actual Debug/Release provenance per component and rejects a report unless both configurations contribute at least one resolved component. Runner validation checks metadata and component-level provenance.
+- Added regression test source for nested JUnit counters and dual-configuration SBOM provenance. No Kotlin/JVM/Python/Android/remote Workflow tests were executed; the 19-module unified validation gate remains closed.
+- Module 15 source implementation is complete on its isolated branch, but it is not merged or locked.
+- Module 17 inventory: the current architecture branch contains no video editor, media-processing service, media Provider, or editing task implementation. Module 17 must be designed around the existing Model Registry, project isolation, ArtifactStore, shared AgentTaskCoordinator/WorkManager, and Android media/SAF APIs; do not create a parallel task runtime or capability center.
