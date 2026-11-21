@@ -23,6 +23,7 @@ class SkillSemVerTest {
         assertTrue(SkillSemVer.matches("1.4.9","~1.4.2"))
         assertFalse(SkillSemVer.matches("1.5.0","~1.4.2"))
         assertTrue(SkillSemVer.matches("3.0.0","^1.0.0 || ^3.0.0"))
+        assertTrue(SkillSemVer.matches("2.0.0","^1.0.0 || *"))
         assertFalse(SkillSemVer.matches("1.2.0-beta.1","*"))
         assertFalse(SkillSemVer.matches("1.2.0-beta.1",">=1.0.0 <2.0.0"))
         assertTrue(SkillSemVer.matches("1.2.0-beta.2",">=1.2.0-beta.1 <2.0.0"))
