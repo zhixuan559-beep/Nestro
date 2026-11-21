@@ -66,6 +66,8 @@ import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
 import app.nestro.data.ExpertTeamDefaults
 import app.nestro.data.ExpertTeamMemberTask
+import app.nestro.data.ExpertProjectPlan
+import app.nestro.data.ExpertWorkPackage
 import app.nestro.data.ExpertTeamRunResult
 import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.WorkflowDefinition
