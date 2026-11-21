@@ -27,7 +27,7 @@ internal data class ModelToolDecision(
 
 internal object ModelToolDecisionParser {
     fun parse(raw: String): ModelToolDecision? {
-        val trimmed = raw.trimStart()
+        val trimmed = raw.replace("\\r\\n", "\\n").trimStart()
         if (trimmed.startsWith("DIRECT\n")) {
             return ModelToolDecision("reply", trimmed.substringAfter("DIRECT\n").trimEnd(), "", emptyMap())
         }
