@@ -77,7 +77,7 @@ object GitWorkbenchPolicy {
         value.isNotBlank() && value.length <= 120 && value.none { it.isISOControl() }
 
     fun validBranchName(value: String): Boolean =
-        value.isNotBlank() && value.length <= 120 &&
+        value.isNotBlank() && value.length <= 120 && !value.startsWith("-") &&
             org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/" + value)
 
     fun validCloneUrl(provider: GitProvider, value: String): Boolean {
