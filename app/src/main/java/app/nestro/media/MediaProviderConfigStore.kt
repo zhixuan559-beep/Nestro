@@ -44,6 +44,51 @@ data class MediaProviderConfig(
     override fun toString(): String = "MediaProviderConfig(providerId=$providerId, displayName=$displayName, baseUrl=$baseUrl, apiKey=[REDACTED], model=$model)"
 }
 
+object MediaProviderConnectionTest {
+    suspend fun run(config: MediaProviderConfig): String = withContext(Dispatchers.IO) {
+        config.validate()
+        val payload = JSONObject()
+            .put("model", config.model)
+            .put("messages", org.json.JSONArray().put(JSONObject()
+                .put("role", "user")
+                .put("content", "Reply with OK only.")))
+            .put("max_tokens", 8)
+            .toString()
+        val connection = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
+            .openConnection() as? HttpURLConnection ?: error("无法建立媒体服务连接")
+        try {
+            connection.requestMethod = "POST"
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 30_000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val status = connection.responseCode
+            require(status in 200..299) { "连接测试失败（HTTP $status）" }
+            val body = connection.inputStream.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    require(output.size() + count <= 64 * 1024) { "连接测试响应超过 64 KB" }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
+            val message = JSONObject(body.toString(Charsets.UTF_8))
+                .optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+            require(message != null) { "服务已响应，但返回格式不符合 OpenAI Chat Completions" }
+            "连接成功，模型已响应。"
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
+
 class MediaProviderConfigStore(context: Context) {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences("nestro_media_provider_v1", Context.MODE_PRIVATE)
@@ -66,7 +111,7 @@ class MediaProviderConfigStore(context: Context) {
             LocalVault.deleteApiKey(app, nextKey)
             error("媒体服务配置保存失败")
         }
-        oldKey?.takeIf { it != nextKey }?.let { LocalVault.deleteApiKey(app, it) }
+        oldKey?.takeIf { it != nextKey }?.let { runCatching { LocalVault.deleteApiKey(app, it) } }
     }
 
     fun read(): MediaProviderConfig? {
@@ -93,7 +138,7 @@ class MediaProviderConfigStore(context: Context) {
     fun delete() {
         val keyId = runCatching { JSONObject(prefs.getString(METADATA, null) ?: "{}").optString("keyId") }.getOrNull()
         check(prefs.edit().remove(METADATA).commit()) { "媒体服务配置删除失败" }
-        keyId?.takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,120}")) }?.let { LocalVault.deleteApiKey(app, it) }
+        keyId?.takeIf { it.matches(Regex("[A-Za-z0-9_.-]{1,120}")) }?.let { runCatching { LocalVault.deleteApiKey(app, it) } }
     }
 
     private companion object {
