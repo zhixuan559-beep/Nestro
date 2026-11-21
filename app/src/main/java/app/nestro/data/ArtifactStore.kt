@@ -132,7 +132,7 @@ object ArtifactStore {
         require(requested.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
             requested.fileName == "${requested.id}.md") { "产物文件引用无效" }
         val rows = readAll(context)
-        val matches = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
+        val matches = (0 until rows.length()).map { rows.getJSONObject(it) }
             .filter { it.optString("id") == requested.id }
         require(matches.size == 1) { "产物记录不存在或索引重复" }
         val row = matches.single()
