@@ -42,7 +42,7 @@ class OpenAiRealtimeVoiceProvider(
         val session = object : RealtimeVoiceSession {
             override fun sendAudio(audio: ByteArray, mimeType: String) {
                 check(!closed.get()) { "语音连接已关闭" }
-                require(mimeType.startsWith("audio/pcm", ignoreCase = true)) {
+                require(mimeType.equals("audio/pcm;rate=24000", ignoreCase = true)) {
                     "实时语音输入仅接受 PCM 音频，请先将录音转换为 PCM16"
                 }
                 require(audio.isNotEmpty() && audio.size <= MAX_AUDIO_CHUNK_BYTES && audio.size % 2 == 0) {
