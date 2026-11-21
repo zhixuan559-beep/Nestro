@@ -146,6 +146,23 @@ class ArtifactStoreTest {
     }
 
     @Test
+    fun missingIndexRestoresStagedArtifactBeforeFailingClosed() {
+        val record = ArtifactStore.save(context, "project-a", "Preserve", "must not be lost")
+        val directory = File(context.filesDir, "artifacts")
+        val original = File(directory, record.fileName)
+        val staged = File(directory, ".${record.fileName}.${UUID.randomUUID()}.deleting")
+        assertTrue(original.renameTo(staged))
+        File(directory, "index.json").delete()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.list(context, "project-a")
+        }
+        assertTrue("staged content must be restored", original.isFile)
+        assertFalse(staged.exists())
+        assertEquals("must not be lost", original.readText(Charsets.UTF_8))
+    }
+
+    @Test
     fun projectDeletionGuardFailsClosedWhenArtifactIndexIsCorrupt() {
         val directory = File(context.filesDir, "artifacts").apply { mkdirs() }
         val index = File(directory, "index.json")
