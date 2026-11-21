@@ -121,4 +121,14 @@ class CoworkbenchReportParserTest {
         assertFalse(failedDownload.successful)
     }
 
+    @Test
+    fun rejectsNonJUnitXmlAndInconsistentCounters() {
+        assertNull(CoworkbenchReportParser.parseJunitXml(
+            "report.xml", """<root tests="1" failures="0"/>"""
+        ))
+        assertNull(CoworkbenchReportParser.parseJunitXml(
+            "report.xml", """<testsuite tests="1" failures="2" errors="0" skipped="0"/>"""
+        ))
+    }
+
 }
