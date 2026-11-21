@@ -41,6 +41,8 @@ internal data class NativeToolCallResult(val output: String, val requiresUser: B
 internal data class NativeToolCompletion(val text: String, val requiresUser: Boolean = false, val toolCallsExecuted: Int = 0)
 
 internal object OpenAiClient {
+    private const val MAX_NATIVE_TOOL_ROUNDS = 4
+    private const val MAX_NATIVE_TOOL_CALLS = 8
     private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
     private val requestConnections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
 
