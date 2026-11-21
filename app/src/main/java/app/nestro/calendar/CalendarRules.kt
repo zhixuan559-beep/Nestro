@@ -77,6 +77,18 @@ object CalendarRules {
         return result.sortedWith(compareBy<Occurrence> { it.startAt }.thenBy { it.event.title })
     }
 
+    fun isOccurrence(event: CalendarEvent, occurrenceStart: Long): Boolean {
+        if (occurrenceStart < event.startAt) return false
+        if (event.recurrence == NONE) return occurrenceStart == event.startAt
+        var candidate = event.startAt
+        var guard = 0
+        while (candidate < occurrenceStart && guard++ < 20_000) {
+            candidate = nextStart(candidate, event.recurrence)
+            if (candidate == Long.MAX_VALUE) return false
+        }
+        return candidate == occurrenceStart
+    }
+
     fun dateTime(date: LocalDate, hour: Int, minute: Int): Long {
         require(hour in 0..23 && minute in 0..59)
         return date.atTime(hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
