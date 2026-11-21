@@ -57,7 +57,13 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         history.put(name, snapshots)
         skills.remove(name)
         metadata.remove(name)
-        val disabled = disabledSkills().apply { remove(name) }
+        val disabled = JSONArray().apply {
+            val current = disabledSkills()
+            for (index in 0 until current.length()) {
+                val value = current.optString(index)
+                if (value != name) put(value)
+            }
+        }
         commit(skills, metadata, history, disabled)
     }
 
