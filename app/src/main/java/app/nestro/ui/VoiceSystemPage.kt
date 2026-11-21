@@ -123,6 +123,7 @@ fun VoiceSystemPage() {
     }
     fun startRemoteRecording() {
         try {
+            controller.stop()
             val recorder = SpeechRecordingController()
             recorder.start()
             speechRecorder = recorder
@@ -277,7 +278,7 @@ fun VoiceSystemPage() {
         Slider(value = pitch, onValueChange = { pitch = it }, valueRange = 0.5f..2f)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
-                enabled = ready,
+                enabled = ready && !remoteBusy && !remoteRecording && mediaPlayer == null && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
                 onClick = {
                     if (controller.speak(speechText, selectedLanguage, speechRate, pitch)) {
                         status = "已提交朗读任务…"
@@ -299,7 +300,7 @@ fun VoiceSystemPage() {
         }
         Text("第三方语音服务（可选）")
         Text(
-            "仅在你主动保存并点击远程朗读时，文本才会发送到下方配置的 HTTPS 服务商。API Key 使用 Android Keystore 加密保存。",
+            "只有你主动启动远程录音、远程朗读或实时语音时，音频/文本才会发送到下方配置的 HTTPS 服务商。API Key 使用 Android Keystore 加密保存。",
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall
         )
         OutlinedTextField(
@@ -348,7 +349,8 @@ fun VoiceSystemPage() {
         Text("远程语音识别")
         OutlinedButton(
             enabled = providerConfigured && providerInputModel.isNotBlank() &&
-                (!remoteBusy || remoteRecording) && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
+                (!remoteBusy || remoteRecording) && realtimeSession == null && pendingRealtimeSession == null &&
+                !realtimeConnecting && mediaPlayer == null,
             onClick = {
                 if (remoteRecording) {
                     stopRemoteRecording()
@@ -396,7 +398,8 @@ fun VoiceSystemPage() {
             ) { Text("删除配置") }
         }
         OutlinedButton(
-            enabled = providerConfigured && providerOutputModel.isNotBlank() && !remoteBusy && !remoteRecording && mediaPlayer == null,
+            enabled = providerConfigured && providerOutputModel.isNotBlank() && !remoteBusy && !remoteRecording &&
+                mediaPlayer == null && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting,
             onClick = {
                 scope.launch {
                     remoteBusy = true
@@ -451,7 +454,8 @@ fun VoiceSystemPage() {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null && pendingRealtimeSession == null && !realtimeConnecting && !remoteRecording,
+                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null &&
+                    pendingRealtimeSession == null && !realtimeConnecting && !remoteRecording && !remoteBusy && mediaPlayer == null,
                 onClick = {
                     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         connectRealtime()
