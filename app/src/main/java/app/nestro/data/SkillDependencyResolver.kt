@@ -17,7 +17,7 @@ object SkillDependencyResolver {
         val byName = catalog.groupBy { it.name }
         var attempts = 0
         val rootBundle = verifiedRootBundle ?: SkillCommunityClient.downloadVerifiedBundle(rootRelease)
-        require(rootBundle.name == rootRelease.name && rootBundle.version == rootRelease.version) { "根技能与签名目录不一致" }
+        require(rootBundle.name == rootRelease.name && rootBundle.version == rootRelease.version && rootBundle.source == "已验证签名社区目录" && rootBundle.signerFingerprint == rootRelease.signerFingerprint) { "根技能与签名目录不一致" }
         val initialConstraints = rootBundle.dependencies.groupBy { it.name }.mapValues { (_, rows) -> rows.map { it.version }.distinct() }
         val initial = State(initialConstraints, mapOf(rootRelease.name to rootRelease), mapOf(rootRelease.name to rootBundle), emptyMap())
 
@@ -45,7 +45,7 @@ object SkillDependencyResolver {
                 attempts++
                 require(attempts <= 100) { "依赖冲突求解超过 100 次尝试，已停止以避免无限下载" }
                 val bundle = runCatching { SkillCommunityClient.downloadVerifiedBundle(candidate) }.getOrNull() ?: continue
-                if (bundle.name != candidate.name || bundle.version != candidate.version) continue
+                if (bundle.name != candidate.name || bundle.version != candidate.version || bundle.source != "已验证签名社区目录" || bundle.signerFingerprint != candidate.signerFingerprint) continue
                 val nextConstraints = state.constraints.mapValues { it.value.toMutableList() }.toMutableMap()
                 bundle.dependencies.forEach { dep ->
                     val current = nextConstraints[dep.name].orEmpty().toMutableList()
