@@ -47,7 +47,7 @@ class GeneratedPluginFactoryTest {
     fun executorRoutesEveryStepThroughInjectedRuntime() = runBlocking {
         val calls = mutableListOf<Pair<String, Map<String, String>>>()
         val result = GeneratedPluginWorkflowExecutor.execute(
-            plugin = plugin(),
+            plugin = plugin().copy(enabled = true),
             inputs = mapOf("source" to "content://video/1"),
             discovery = discovery,
             invokeThroughRuntime = { toolId, args ->
