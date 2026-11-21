@@ -94,4 +94,31 @@ class CoworkbenchReportParserTest {
         assertEquals("1.3", dependencies[2].resolvedVersion)
     }
 
+    @Test
+    fun validationRequiresCompleteJUnitReportsAndIntactArtifacts() {
+        val base = CoworkbenchValidationResult(
+            runId = 8L,
+            status = "completed",
+            conclusion = "success",
+            url = "https://github.com/example/repo/actions/runs/8",
+            createdAt = "2026-11-22T00:00:00Z"
+        )
+        assertFalse(base.successful)
+        val withTests = base.copy(
+            testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 2, 2, 0, 0, 0))
+        )
+        assertTrue(withTests.successful)
+        val truncated = withTests.copy(
+            artifacts = listOf(CoworkbenchArtifactReport(
+                1L, "reports", 300_000L,
+                listOf(CoworkbenchArtifactFile("TEST-sample.xml", "<testsuites/>", truncated = true))
+            ))
+        )
+        assertFalse(truncated.successful)
+        val failedDownload = withTests.copy(
+            artifacts = listOf(CoworkbenchArtifactReport(2L, "reports", 100L, emptyList(), "download failed"))
+        )
+        assertFalse(failedDownload.successful)
+    }
+
 }
