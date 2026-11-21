@@ -38,7 +38,7 @@ object McpEndpointPolicy {
  }
  fun requireValid(endpoint:String):String { val v=endpoint.trim(); require(validate(v)==null){validate(v)?:"MCP 地址无效"}; return v }
 }
-object McpToolPermissionPolicy { fun permission(readOnlyHint:Boolean)=if(readOnlyHint) AgentToolPermission.READ_ONLY else AgentToolPermission.EXTERNAL_WRITE }
+object McpToolPermissionPolicy { fun permission(readOnlyHint:Boolean)=AgentToolPermission.EXTERNAL_WRITE }
 object McpToolArgumentValidator {
  fun encodeArgumentMap(schemaJson:String,arguments:Map<String,String>):String {
   val props=runCatching{JSONObject(schemaJson).optJSONObject("properties")}.getOrNull()
@@ -179,7 +179,7 @@ private object McpCredentialVault {
  fun read(c:Context,id:String):String{
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
   val packed=c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).getString(PREFIX+id,null)?:return ""
-  return runCatching{val p=packed.split(":");require(p.size==2);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(p[0],Base64.NO_WRAP)));cipher.updateAAD(id.toByteArray(Charsets.UTF_8));String(cipher.doFinal(Base64.decode(p[1],Base64.NO_WRAP)),Charsets.UTF_8)}.getOrDefault("")
+  return runCatching{val p=packed.split(":");require(p.size==2);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(p[0],Base64.NO_WRAP)));cipher.updateAAD(id.toByteArray(Charsets.UTF_8));String(cipher.doFinal(Base64.decode(p[1],Base64.NO_WRAP)),Charsets.UTF_8)}.getOrElse{throw IllegalStateException("MCP 凭据无法解密，请重新保存 Bearer Token",it)}
  }
  fun delete(c:Context,id:String){
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
