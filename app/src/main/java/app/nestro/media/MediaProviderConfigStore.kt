@@ -32,6 +32,8 @@ data class MediaProviderConfig(
     val videoGenerationModel: String = "",
     val videoSubmitPath: String = "video/generations",
     val videoStatusPath: String = "video/generations/{job_id}",
+    val videoModelField: String = "model",
+    val videoPromptField: String = "prompt",
     val videoJobIdField: String = "id",
     val videoStatusField: String = "status",
     val videoResultUrlField: String = "video_url"
@@ -54,7 +56,7 @@ data class MediaProviderConfig(
             videoStatusPath.count { it == '{' } == 1 && videoStatusPath.count { it == '}' } == 1 &&
             videoStatusPath.contains("{job_id}")) { "视频任务状态路径必须包含且只包含 {job_id}" }
         if (videoGenerationModel.isNotBlank()) require(videoGenerationModel.length <= 120 && videoGenerationModel.none { it.isISOControl() }) { "视频生成模型名称无效" }
-        listOf(videoJobIdField, videoStatusField, videoResultUrlField).forEach {
+        listOf(videoModelField, videoPromptField, videoJobIdField, videoStatusField, videoResultUrlField).forEach {
             require(it.matches(Regex("[A-Za-z0-9_.]{1,100}"))) { "视频任务响应字段无效" }
         }
     }
@@ -181,6 +183,8 @@ class MediaProviderConfigStore(context: Context) {
                 videoGenerationModel = json.optString("videoGenerationModel", ""),
                 videoSubmitPath = json.optString("videoSubmitPath", "video/generations"),
                 videoStatusPath = json.optString("videoStatusPath", "video/generations/{job_id}"),
+                videoModelField = json.optString("videoModelField", "model"),
+                videoPromptField = json.optString("videoPromptField", "prompt"),
                 videoJobIdField = json.optString("videoJobIdField", "id"),
                 videoStatusField = json.optString("videoStatusField", "status"),
                 videoResultUrlField = json.optString("videoResultUrlField", "video_url")
@@ -228,6 +232,8 @@ class MediaProviderConfigStore(context: Context) {
         .put("videoGenerationModel", config.videoGenerationModel.trim())
         .put("videoSubmitPath", config.videoSubmitPath.trim())
         .put("videoStatusPath", config.videoStatusPath.trim())
+        .put("videoModelField", config.videoModelField.trim())
+        .put("videoPromptField", config.videoPromptField.trim())
         .put("videoJobIdField", config.videoJobIdField.trim())
         .put("videoStatusField", config.videoStatusField.trim())
         .put("videoResultUrlField", config.videoResultUrlField.trim())
