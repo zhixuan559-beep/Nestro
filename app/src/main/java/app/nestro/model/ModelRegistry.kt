@@ -9,7 +9,9 @@ data class ModelProvider(
     val id: String,
     val name: String,
     val baseUrl: String,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val presetId: String = "",
+    val protocol: ModelApiProtocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
 )
 
 data class ModelApiKey(
@@ -231,7 +233,8 @@ object ModelRegistryCodec {
             put("providers", JSONArray().apply {
                 registry.providers.forEach { item ->
                     put(JSONObject().put("id", item.id).put("name", item.name)
-                        .put("baseUrl", item.baseUrl).put("enabled", item.enabled))
+                        .put("baseUrl", item.baseUrl).put("enabled", item.enabled)
+                        .put("presetId", item.presetId).put("protocol", item.protocol.name))
                 }
             })
             put("apiKeys", JSONArray().apply {
@@ -261,8 +264,13 @@ object ModelRegistryCodec {
         val providers = root.getJSONArray("providers").let { array ->
             (0 until array.length()).map { index ->
                 val item = array.getJSONObject(index)
-                ModelProvider(item.getString("id"), item.getString("name"),
-                    item.getString("baseUrl"), item.optBoolean("enabled", true))
+                ModelProvider(
+                    item.getString("id"), item.getString("name"),
+                    item.getString("baseUrl"), item.optBoolean("enabled", true),
+                    item.optString("presetId", ""),
+                    runCatching { ModelApiProtocol.valueOf(item.optString("protocol", ModelApiProtocol.OPENAI_CHAT_COMPLETIONS.name)) }
+                        .getOrDefault(ModelApiProtocol.OPENAI_CHAT_COMPLETIONS)
+                )
             }
         }
         val keys = root.getJSONArray("apiKeys").let { array ->
