@@ -1037,6 +1037,7 @@ fun NestroApp(initialPage: String = "home") {
                         modelConfigs = requestModelConfigs,
                         baseSystemContext = baseSystemContext,
                         taskModeEnabled = requestExecutionAuthorization.taskModeEnabled,
+                        expertTeamEnabled = requestExecutionAuthorization.shouldRunExpertTeam(),
                         temperature = requestExpertProfile?.temperature,
                         maxTokens = requestExpertProfile?.maxTokens,
                         previousAssistant = previousAssistant,
