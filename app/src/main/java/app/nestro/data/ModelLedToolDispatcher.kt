@@ -113,7 +113,7 @@ internal class ModelLedToolDispatcher(
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
         var visibleChars = 0
         for (spec in candidates) {
-            val definition = toolDefinitionProvider(spec.id)?.take(2_000) ?: spec.description
+            val definition = toolDefinitionProvider(spec.id)?.take(if (spec.id.startsWith("plugin.")) 6_000 else 2_000) ?: spec.description
             val row = "- id: ${spec.id}; permission: ${spec.permission}; confirmation: ${spec.requiresConfirmation}; definition: $definition"
             if (visibleChars + row.length + 1 > MAX_TOOL_CATALOG_CHARS) break
             visibleRows += spec to row
