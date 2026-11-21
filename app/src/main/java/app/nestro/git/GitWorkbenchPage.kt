@@ -133,7 +133,7 @@ fun GitWorkbenchPage(context: Context) {
                             val existing = accounts.firstOrNull { it.provider == provider && it.username.equals(verified, ignoreCase = true) }
                             val digest = MessageDigest.getInstance("SHA-256")
                                 .digest(verified.lowercase().toByteArray(Charsets.UTF_8))
-                                .joinToString("") { byte -> "%02x".format(byte) }.take(32)
+                                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }.take(32)
                             val id = existing?.id ?: (provider.name.lowercase() + "-" + digest)
                             val account = GitAccount(id, provider, verified, verified)
                             withContext(Dispatchers.IO) { repo.accounts.save(account, token.trim()) }
