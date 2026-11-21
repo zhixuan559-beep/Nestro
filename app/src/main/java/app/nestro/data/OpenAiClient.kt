@@ -245,7 +245,7 @@ internal object OpenAiClient {
                 toolNames.entries.forEach { (name, definition) ->
                     put(JSONObject().put("name", name)
                         .put("description", "${definition.description} (tool id: ${definition.id})")
-                        .put("parameters", JSONObject(definition.parametersJson).apply { put("type", "OBJECT") }))
+                        .put("parameters", toGeminiSchema(JSONObject(definition.parametersJson))))
                 }
             }))
         }
@@ -417,6 +417,33 @@ internal object OpenAiClient {
             }
         }
         return NativeToolCompletion("工具调度已结束。", toolCallsExecuted = executed)
+    }
+
+    private fun toGeminiSchema(source: JSONObject): JSONObject {
+        val result = JSONObject()
+        val keys = source.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = source.opt(key)
+            when (key) {
+                "type" -> result.put(key, value.toString().uppercase())
+                "properties" -> {
+                    val properties = value as? JSONObject ?: JSONObject()
+                    val converted = JSONObject()
+                    val propertyKeys = properties.keys()
+                    while (propertyKeys.hasNext()) {
+                        val property = propertyKeys.next()
+                        converted.put(property, toGeminiSchema(properties.optJSONObject(property) ?: JSONObject()))
+                    }
+                    result.put(key, converted)
+                }
+                "items" -> result.put(key, toGeminiSchema(value as? JSONObject ?: JSONObject()))
+                "additionalProperties" -> Unit
+                else -> result.put(key, value)
+            }
+        }
+        if (!result.has("type")) result.put("type", "OBJECT")
+        return result
     }
 
     private fun parseNativeToolArguments(raw: String): Map<String, String> {
