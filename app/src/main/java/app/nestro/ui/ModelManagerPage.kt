@@ -335,6 +335,17 @@ internal fun ModelManager(
             }
             OutlinedTextField(modelNameDraft, { modelNameDraft = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型显示名称") }, singleLine = true)
             OutlinedTextField(modelCodeDraft, { modelCodeDraft = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型 ID / model code") }, singleLine = true)
+            val selectedPresetId = registry.providers.firstOrNull { it.id == selectedProviderId }?.presetId.orEmpty()
+            val suggestedModels = ModelProviderPresetCatalog.byId(selectedPresetId)?.suggestedModels.orEmpty()
+            if (suggestedModels.isNotEmpty()) {
+                Text("常用模型快捷选择（以服务商账户实际可用列表为准）", color = Muted, style = MaterialTheme.typography.bodySmall)
+                suggestedModels.forEach { suggested ->
+                    TextButton(onClick = {
+                        modelCodeDraft = suggested
+                        if (modelNameDraft.isBlank()) modelNameDraft = suggested
+                    }) { Text(suggested, color = Mint) }
+                }
+            }
             OutlinedTextField(modelInputPriceDraft, { modelInputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输入价格 / 百万 Token（可留空）") }, singleLine = true)
             OutlinedTextField(modelOutputPriceDraft, { modelOutputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输出价格 / 百万 Token（可留空）") }, singleLine = true)
             OutlinedTextField(modelCurrencyDraft, { modelCurrencyDraft = it.take(3).uppercase() }, modifier = Modifier.fillMaxWidth(), label = { Text("价格币种（3 位代码）") }, singleLine = true)
