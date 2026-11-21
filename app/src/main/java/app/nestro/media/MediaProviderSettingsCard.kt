@@ -88,7 +88,7 @@ fun MediaProviderSettingsCard() {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
-            Text("支持 OpenAI 官方音频转写与 OpenAI-compatible 图像理解。场景识别、音频处理只有填写真实服务商端点后才会启用；空路径表示不支持。", style = MaterialTheme.typography.bodySmall)
+            Text("媒体服务商可只配置视频模型，不必同时填写聊天模型。聊天/视觉连接测试只验证对应聊天接口；视频生成协议会在首次真实任务时验证，可能产生费用。", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoAuthHeader="Authorization"; videoAuthPrefix="Bearer "; videoExtraRequestJson="{}"; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
             OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
