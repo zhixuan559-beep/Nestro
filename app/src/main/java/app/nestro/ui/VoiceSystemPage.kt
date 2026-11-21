@@ -211,7 +211,11 @@ fun VoiceSystemPage() {
 
                 override fun onAudio(audio: SpeechAudio) {
                     runCatching { realtimeAudioRef.get()?.play(audio) }
-                        .onFailure { error -> mainHandler.post { status = error.message ?: "实时音频播放失败" } }
+                        .onFailure { error ->
+                            pendingRealtimeSession?.close()
+                            realtimeSession?.close()
+                            mainHandler.post { status = error.message ?: "实时音频播放失败" }
+                        }
                 }
 
                 override fun onError(message: String) {
