@@ -472,6 +472,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun createBranch(id: String, name: String, checkout: Boolean = true) = withRepo(id) { git ->
         require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
         require(git.repository.findRef("refs/heads/$name") == null) { "本地分支已存在" }
+        require(git.repository.findRef("refs/remotes/origin/$name") == null) { "远程分支已存在，请从远程分支列表切换" }
         if (checkout) require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
         git.branchCreate().setName(name).setStartPoint("HEAD").call()
         git.repository.config.apply {
