@@ -70,7 +70,7 @@ interface RealtimeVoiceProvider {
 }
 
 interface RealtimeVoiceListener {
-    fun onConnected() = Unit
+    fun onConnected(session: RealtimeVoiceSession) = Unit
     fun onTranscript(text: String, isFinal: Boolean)
     fun onAudio(audio: SpeechAudio)
     fun onError(message: String)
