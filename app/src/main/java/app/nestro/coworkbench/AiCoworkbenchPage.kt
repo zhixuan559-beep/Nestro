@@ -59,6 +59,7 @@ fun AiCoworkbenchPage(
     var selectedReviewPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
     var snapshotHistory by remember { mutableStateOf<List<CoworkbenchSnapshot>>(emptyList()) }
+    var approvalHistory by remember { mutableStateOf<List<CoworkbenchApprovalRecord>>(emptyList()) }
     var analysisReport by remember { mutableStateOf<CoworkbenchAnalysisReport?>(null) }
     var validationJob by remember { mutableStateOf<Job?>(null) }
     var validationResult by remember { mutableStateOf<CoworkbenchValidationResult?>(null) }
@@ -67,10 +68,12 @@ fun AiCoworkbenchPage(
     LaunchedEffect(selectedRepoId) {
         if (selectedRepoId.isNotBlank()) {
             snapshotHistory = runCatching { service.listSnapshots(selectedRepoId) }.getOrDefault(emptyList())
+            approvalHistory = runCatching { service.listApprovalHistory(selectedRepoId) }.getOrDefault(emptyList())
             contextFiles = runCatching { service.listContextFiles(selectedRepoId) }.getOrDefault(emptyList())
             selectedContextFiles = emptySet()
         } else {
             snapshotHistory = emptyList()
+            approvalHistory = emptyList()
             contextFiles = emptyList()
             selectedContextFiles = emptySet()
         }
@@ -110,6 +113,7 @@ fun AiCoworkbenchPage(
                         patchJson = ""
                         analysisReport = null
                         validationResult = null
+                        approvalHistory = emptyList()
                         selectedContextFiles = emptySet()
                         repoMenu = false
                     })
@@ -255,6 +259,7 @@ fun AiCoworkbenchPage(
                             snapshot = applied
                             selectedReviewPaths = selectedReviewPaths - applied.files.map { it.path }.toSet()
                             snapshotHistory = service.listSnapshots(selectedRepoId)
+                            approvalHistory = service.listApprovalHistory(selectedRepoId)
                             status = if (selectedReviewPaths.isEmpty()) "本次补丁已全部分批应用；每批均已保存独立回滚快照。"
                                 else "本批已应用并保存回滚快照；剩余 ${selectedReviewPaths.size} 个文件待下一批批准。"
                         } catch (error: Exception) {
@@ -272,6 +277,8 @@ fun AiCoworkbenchPage(
                     scope.launch {
                         try {
                             service.rollback(saved.id)
+                            snapshotHistory = service.listSnapshots(selectedRepoId)
+                            approvalHistory = service.listApprovalHistory(selectedRepoId)
                             status = "已按快照回滚。"
                             snapshot = null
                             review = null
@@ -280,6 +287,15 @@ fun AiCoworkbenchPage(
                         } finally { busy = false }
                     }
                 }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回滚本次变更") }
+            }
+        }
+        if (approvalHistory.isNotEmpty()) {
+            Divider()
+            Text("补丁审批与事务历史", style = MaterialTheme.typography.titleMedium)
+            approvalHistory.forEach { event ->
+                Text("状态：${event.status} · ${event.paths.size} 个文件 · ${event.id.take(8)}",
+                    style = MaterialTheme.typography.labelMedium)
+                Text(event.detail, style = MaterialTheme.typography.bodySmall)
             }
         }
         if (snapshotHistory.isNotEmpty()) {
@@ -294,6 +310,7 @@ fun AiCoworkbenchPage(
                             try {
                                 service.rollback(saved.id)
                                 snapshotHistory = service.listSnapshots(selectedRepoId)
+                                approvalHistory = service.listApprovalHistory(selectedRepoId)
                                 snapshot = null
                                 review = null
                                 status = "已按历史快照回滚。"
