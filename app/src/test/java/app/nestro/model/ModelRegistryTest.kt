@@ -360,4 +360,17 @@ class ModelRegistryTest {
         )
     }
 
+
+    @Test
+    fun siliconFlowAndModelScopePresetsExposeOfficialCredentialPortals() {
+        val siliconFlow = ModelProviderPresetCatalog.byId("siliconflow")!!
+        assertEquals("https://api.siliconflow.cn/v1", siliconFlow.baseUrl)
+        assertEquals("https://cloud.siliconflow.cn/account/ak", siliconFlow.accountUrl)
+        assertEquals(ModelApiProtocol.OPENAI_CHAT_COMPLETIONS, siliconFlow.protocol)
+
+        val modelScope = ModelProviderPresetCatalog.byId("modelscope")!!
+        assertEquals("https://api-inference.modelscope.cn/v1", modelScope.baseUrl)
+        assertEquals("https://modelscope.cn/my/myaccesstoken", modelScope.accountUrl)
+        assertEquals(ModelApiProtocol.OPENAI_CHAT_COMPLETIONS, modelScope.protocol)
+    }
 }
