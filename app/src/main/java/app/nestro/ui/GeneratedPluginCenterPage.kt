@@ -1,0 +1,172 @@
+package app.nestro.ui
+
+import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import app.nestro.NestroApplication
+import app.nestro.data.GeneratedPluginDraftTransport
+import app.nestro.data.GeneratedPluginFactory
+import app.nestro.data.GeneratedPluginPackage
+import app.nestro.data.GeneratedPluginStore
+import app.nestro.model.ModelConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+internal fun GeneratedPluginCenterPage(
+    application: NestroApplication,
+    configs: List<ModelConfig>,
+    onUsage: (ModelConfig, Int, Int) -> Unit,
+    onProviderUsage: (ModelConfig, Int, Int) -> Unit,
+    onChanged: () -> Unit
+) {
+    val store = remember(application) { GeneratedPluginStore(application) }
+    val scope = rememberCoroutineScope()
+    var request by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
+    var plugins by remember { mutableStateOf(store.list()) }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("插件以声明式工作流安装，不执行任意代码。") }
+
+    fun reload() {
+        plugins = store.list()
+    }
+
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("插件工坊", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "描述你想自动化的流程，主模型会从已注册能力中组合工作步骤。插件仅允许调用只读或外部写入工具；执行时由统一 AgentRuntime 调度。",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = request,
+            onValueChange = { request = it.take(8_000) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("描述要创建的插件") },
+            minLines = 3
+        )
+        Button(
+            onClick = {
+                if (configs.isEmpty() || request.isBlank()) {
+                    status = if (configs.isEmpty()) "请先在模型管理中配置可用模型。" else "先描述插件要完成的工作。"
+                } else {
+                    busy = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val factory = GeneratedPluginFactory(
+                                    GeneratedPluginDraftTransport { selectedConfigs, history, systemPrompt, usage ->
+                                        application.chatExecutionService.completeWithFallback(
+                                            selectedConfigs, history, systemPrompt,
+                                            onUsage = usage, onProviderUsage = onProviderUsage
+                                        )
+                                    }
+                                )
+                                factory.generate(
+                                    request = request.trim(),
+                                    existingPluginIds = plugins.map { it.id }.toSet(),
+                                    discovery = application.agentToolCatalog,
+                                    configs = configs,
+                                    onUsage = onUsage
+                                )
+                            }
+                        }
+                        result.onSuccess {
+                            draft = it
+                            status = "插件草案已生成。检查工作步骤后再安装；安装后默认关闭。"
+                        }.onFailure {
+                            status = "生成失败：" + (it.message ?: "模型没有返回有效插件包")
+                        }
+                        busy = false
+                    }
+                }
+            },
+            enabled = !busy && request.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (busy) "生成中…" else "AI 生成插件草案") }
+
+        if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+
+        draft?.let { candidate ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("草案预览", style = MaterialTheme.typography.titleMedium)
+                    Text("${candidate.name} · ${candidate.id} · v${candidate.version}")
+                    Text(candidate.description, style = MaterialTheme.typography.bodySmall)
+                    Text("输入参数：${candidate.inputs.joinToString { it.name + if (it.required) "（必填）" else "（可选）" }}")
+                    candidate.steps.forEachIndexed { index, step ->
+                        Text("${index + 1}. ${step.id} → ${step.toolId}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("安全边界：不执行任意代码；高风险设备、身份验证和金融工具不能加入插件。", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val result = runCatching { store.install(candidate, application.agentToolCatalog) }
+                            result.onSuccess {
+                                draft = null
+                                reload()
+                                status = "插件已安装，默认关闭。启用后才能在主聊天中调用。"
+                            }.onFailure { status = it.message ?: "插件安装失败" }
+                        }) { Text("安装（默认关闭）") }
+                        OutlinedButton(onClick = { draft = null }) { Text("丢弃草案") }
+                    }
+                }
+            }
+        }
+
+        Text("已安装插件（${plugins.size}）", style = MaterialTheme.typography.titleMedium)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(plugins, key = { it.id }) { plugin ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${plugin.name} · v${plugin.version}", style = MaterialTheme.typography.titleSmall)
+                        Text(plugin.id, style = MaterialTheme.typography.labelSmall)
+                        Text(plugin.description, style = MaterialTheme.typography.bodySmall)
+                        Text("${plugin.steps.size} 个步骤 · ${plugin.inputs.size} 个输入参数", style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val result = runCatching {
+                                    store.setEnabled(plugin.id, !plugin.enabled, application.agentToolCatalog)
+                                }
+                                result.onSuccess {
+                                    application.refreshGeneratedPluginTools()
+                                    reload()
+                                    onChanged()
+                                    status = if (it.enabled) "插件已启用，可在主聊天中由模型按需调用。" else "插件已停用，已从工具目录移除。"
+                                }.onFailure { status = it.message ?: "插件状态更新失败" }
+                            }) { Text(if (plugin.enabled) "停用" else "启用") }
+                            OutlinedButton(onClick = {
+                                if (store.remove(plugin.id)) {
+                                    application.refreshGeneratedPluginTools()
+                                    reload()
+                                    onChanged()
+                                    status = "插件已卸载。"
+                                }
+                            }) { Text("卸载") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
