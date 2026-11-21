@@ -136,11 +136,19 @@ internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
     else -> 360
 }
 
+internal fun adaptiveContentPaddingDp(screenWidthDp: Int): Int = when {
+    screenWidthDp < 360 -> 12
+    screenWidthDp < 600 -> 16
+    screenWidthDp < 840 -> 24
+    else -> 32
+}
+
 @Composable
 fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
     val adaptiveDrawerWidth = adaptiveDrawerWidthDp(screenWidthDp).dp
+    val adaptiveContentPadding = adaptiveContentPaddingDp(screenWidthDp).dp
     val scope = rememberCoroutineScope()
     val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
@@ -1213,7 +1221,7 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = adaptiveContentPadding, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
