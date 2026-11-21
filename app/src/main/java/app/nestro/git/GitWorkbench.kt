@@ -674,7 +674,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(local.accountId.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
         require(local.fullName.isNotBlank() && local.fullName.length <= 300)
         require(GitWorkbenchPolicy.validCloneUrl(local.provider, local.cloneUrl))
-        require(File(local.localPath).isAbsolute)
+        require(File(local.localPath).isAbsolute())
         return local
     }
 
