@@ -128,7 +128,7 @@ object SpeechTextPolicy {
 
     fun normalize(text: String): String? {
         val normalized = text
-            .replace("\\u0000", "")
+            .replace("\u0000", "")
             .replace(Regex("[\\u0001-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
             .trim()
         return normalized.takeIf { it.isNotEmpty() && it.length <= MAX_CHARACTERS }
