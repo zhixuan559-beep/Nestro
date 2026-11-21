@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 @Composable
 fun GitWorkbenchPage(context: Context) {
@@ -97,10 +98,12 @@ fun GitWorkbenchPage(context: Context) {
                     scope.launch {
                         loading = true
                         try {
-                            val id = (provider.name.lowercase() + "-" + username.trim().lowercase().replace(Regex("[^a-z0-9_.-]"), "-")).take(95)
-                            val account = GitAccount(id, provider, username.trim())
-                            val verified = repo.verifyAccount(account, token.trim())
-                            withContext(Dispatchers.IO) { repo.accounts.save(account.copy(username = verified, displayName = verified), token.trim()) }
+                            val pending = GitAccount("pending-" + UUID.randomUUID().toString(), provider, username.trim())
+                            val verified = repo.verifyAccount(pending, token.trim())
+                            val existing = accounts.firstOrNull { it.provider == provider && it.username.equals(verified, ignoreCase = true) }
+                            val id = existing?.id ?: (provider.name.lowercase() + "-" + UUID.randomUUID().toString())
+                            val account = GitAccount(id, provider, verified, verified)
+                            withContext(Dispatchers.IO) { repo.accounts.save(account, token.trim()) }
                             accounts = repo.accounts.list(); accountId = id; username = verified; token = ""
                             status = verified + " 已验证并加密保存。"
                         } catch (e: Exception) { status = "授权失败：" + (e.message ?: "未知错误") }
