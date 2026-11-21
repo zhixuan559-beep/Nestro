@@ -188,11 +188,11 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
    try{
     val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).callTool(d.name,JSONObject(raw),d.inputSchemaJson)}
-    repository.recordAudit(d.id,true)
+    runCatching{repository.recordAudit(d.id,true)}
     AgentToolResult(true,output.take(32_000))
    } catch(cancelled:CancellationException){throw cancelled}
    catch(e:Exception){
-    repository.recordAudit(d.id,false)
+    runCatching{repository.recordAudit(d.id,false)}
     AgentToolResult(false,error=(e.message?:"MCP 工具调用失败").take(2_000))
    }
   }
