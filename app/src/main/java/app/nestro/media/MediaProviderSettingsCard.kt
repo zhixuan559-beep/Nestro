@@ -36,7 +36,7 @@ fun MediaProviderSettingsCard() {
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
-    var transcriptionModel by remember { mutableStateOf("gpt-transcribe") }
+    var transcriptionModel by remember { mutableStateOf("") }
     var transcriptionPath by remember { mutableStateOf("audio/transcriptions") }
     var scenePath by remember { mutableStateOf("") }
     var audioPath by remember { mutableStateOf("") }
@@ -140,7 +140,7 @@ fun MediaProviderSettingsCard() {
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (busy) "测试中…" else "测试服务连接") }
             Button(
-                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank(),
+                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || videoModel.isNotBlank()),
                 onClick = {
                     busy = true
                     scope.launch {
@@ -192,7 +192,7 @@ fun MediaProviderSettingsCard() {
                         Column(Modifier.weight(1f)) {
                             Text(summary.displayName, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                summary.providerId + " · 聊天：" + summary.model +
+                                summary.providerId + " · 聊天：" + summary.model.ifBlank { "未配置" } +
                                     (summary.videoGenerationModel.takeIf { it.isNotBlank() }?.let { " · 视频：$it" } ?: " · 未配置视频模型"),
                                 style = MaterialTheme.typography.labelSmall
                             )
