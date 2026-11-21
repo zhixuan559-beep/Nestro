@@ -99,9 +99,10 @@ class McpToolCenterRepository(context:Context) {
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(v.map{if(it.id==id)it.copy(enabled=on)else it})).commit()){"MCP 服务状态保存失败"}
  }
  fun deleteServer(id:String){
-  check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(listServers().filterNot{it.id==id}))
-   .putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(listTools().filterNot{it.serverId==id})).commit()){"MCP 服务删除失败"}
-  McpCredentialVault.delete(app,id)
+  val editor=prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(listServers().filterNot{it.id==id}))
+   .putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(listTools().filterNot{it.serverId==id}))
+  McpCredentialVault.removeFrom(editor,id)
+  check(editor.commit()){"MCP 服务、工具和凭据删除失败"}
  }
  fun saveCredential(id:String,token:String)=McpCredentialVault.write(app,id,token)
  fun readCredential(id:String)=McpCredentialVault.read(app,id)
@@ -138,7 +139,7 @@ class McpToolCenterRepository(context:Context) {
   val encoded=JSONArray().apply{rows.forEach{put(JSONObject().put("id",it.id).put("serverName",it.serverName).put("toolName",it.toolName).put("succeeded",it.succeeded).put("createdAt",it.createdAt))}}.toString()
   check(prefs.edit().putString(AUDIT_KEY,encoded).commit()){"MCP 调用审计保存失败"}
  }
- companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1";private const val CORRUPT_SERVERS_KEY="mcp_servers_v1_unreadable_backup";private const val CORRUPT_SERVERS_AT="mcp_servers_v1_unreadable_backup_at";private const val CORRUPT_TOOLS_KEY="mcp_tools_v1_unreadable_backup";private const val CORRUPT_TOOLS_AT="mcp_tools_v1_unreadable_backup_at"}
+ companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1";private const val CORRUPT_SERVERS_KEY="mcp_servers_v1_unreadable_backup";private const val CORRUPT_SERVERS_AT="mcp_servers_v1_unreadable_backup_at";private const val CORRUPT_TOOLS_KEY="mcp_tools_v1_unreadable_backup";private const val CORRUPT_TOOLS_AT="mcp_tools_v1_unreadable_backup_at";private const val CORRUPT_AUDIT_KEY="mcp_tool_audit_v1_unreadable_backup";private const val CORRUPT_AUDIT_AT="mcp_tool_audit_v1_unreadable_backup_at"}
 }
 object McpToolCenterCodec {
  fun encodeServers(items:List<McpServerRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("name",it.name).put("endpoint",it.endpoint).put("enabled",it.enabled))}}.toString()
