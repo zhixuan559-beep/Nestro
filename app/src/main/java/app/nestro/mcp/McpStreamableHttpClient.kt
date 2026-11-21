@@ -113,7 +113,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val negotiated=result.optString("protocolVersion",version)
     require(negotiated in listOf("2025-11-25","2025-06-18","2025-03-26")){"MCP 服务返回了不支持的协议版本："+negotiated}
     protocolVersion=negotiated
-    val notified=post(JSONObject().put("jsonrpc","2.0").put("method","notifications/initialized"),"notifications/initialized",null,"{}",false,false)
+    val notified=post(JSONObject().put("jsonrpc","2.0").put("method","notifications/initialized"),"notifications/initialized",null,"{}",false)
     require(notified.code in 200..299){"MCP 初始化通知失败：HTTP "+notified.code}
     initialized=true;return
    }
