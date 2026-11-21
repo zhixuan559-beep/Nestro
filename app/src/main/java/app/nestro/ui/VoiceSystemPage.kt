@@ -176,6 +176,7 @@ fun VoiceSystemPage() {
         try {
             controller.stop()
             status = "正在连接实时语音服务…"
+            realtimeTranscript = ""
             realtimeConnecting = true
             val cancelled = AtomicBoolean(false)
             val callbackSession = AtomicReference<RealtimeVoiceSession?>(null)
@@ -467,7 +468,12 @@ fun VoiceSystemPage() {
                         val audio = OpenAiCompatibleSpeechOutputProvider().synthesize(speechText, config)
                         mediaPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }
                         audioFile?.delete()
-                        val file = File.createTempFile("nestro-voice-", ".audio", context.cacheDir)
+                        val suffix = when (audio.mimeType.lowercase()) {
+                            "audio/wav", "audio/x-wav" -> ".wav"
+                            "audio/ogg" -> ".ogg"
+                            else -> ".mp3"
+                        }
+                        val file = File.createTempFile("nestro-voice-", suffix, context.cacheDir)
                         audioFile = file
                         file.writeBytes(audio.bytes)
                         val player = MediaPlayer()
