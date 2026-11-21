@@ -12,7 +12,8 @@ data class SkillBundle(
     val prompt: String,
     val source: String,
     val permissions: List<String>,
-    val dependencies: List<SkillDependency>
+    val dependencies: List<SkillDependency>,
+    val signerFingerprint: String = ""
 )
 
 object SkillBundleParser {
@@ -66,6 +67,7 @@ object SkillBundleParser {
             .put("version", bundle.version)
             .put("description", bundle.description)
             .put("source", bundle.source)
+            .put("signerFingerprint", bundle.signerFingerprint)
             .put("permissions", JSONArray(bundle.permissions))
             .put("dependencies", JSONArray().apply {
                 bundle.dependencies.forEach { put(JSONObject().put("name", it.name).put("version", it.version)) }
