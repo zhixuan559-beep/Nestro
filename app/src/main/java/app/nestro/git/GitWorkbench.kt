@@ -154,8 +154,12 @@ class GitAccountStore(context: Context) {
         try {
             check(prefs.edit().putString(KEY, encode(next)).commit()) { "账号配置保存失败" }
         } catch (error: Exception) {
-            if (previousCipher != null) prefs.edit().putString(CREDENTIAL_PREFIX + account.id, previousCipher).commit()
-            else GitCredentialVault.delete(app, account.id)
+            val restored = if (previousCipher != null) {
+                prefs.edit().putString(CREDENTIAL_PREFIX + account.id, previousCipher).commit()
+            } else {
+                runCatching { GitCredentialVault.delete(app, account.id) }.isSuccess
+            }
+            if (!restored) throw IllegalStateException("账号配置保存失败，且旧凭据恢复失败；请立即重新验证该账号", error)
             throw error
         }
     }
@@ -171,7 +175,9 @@ class GitAccountStore(context: Context) {
         try {
             check(prefs.edit().putString(KEY, encode(current.filterNot { it.id == accountId })).commit()) { "账号配置删除失败" }
         } catch (error: Exception) {
-            if (previousCipher != null) prefs.edit().putString(CREDENTIAL_PREFIX + accountId, previousCipher).commit()
+            val restored = previousCipher == null ||
+                prefs.edit().putString(CREDENTIAL_PREFIX + accountId, previousCipher).commit()
+            if (!restored) throw IllegalStateException("账号配置删除失败，且访问令牌恢复失败；请立即重新授权", error)
             throw error
         }
     }
@@ -590,8 +596,12 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val results = git.push().setCredentialsProvider(credentials(account))
             .setTimeout(45).setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call()
         val messages = results.flatMap { it.remoteUpdates }.map { it.status.name }
-        val failed = messages.any { it !in setOf("OK", "UP_TO_DATE") }
-        GitOperationResult(!failed, if (failed) "推送未完成：" + messages.distinct().joinToString("、") else "推送完成。")
+        if (results.isEmpty() || messages.isEmpty()) {
+            GitOperationResult(false, "远程未返回任何分支推送结果，不能判定为成功。")
+        } else {
+            val failed = messages.any { it !in setOf("OK", "UP_TO_DATE") }
+            GitOperationResult(!failed, if (failed) "推送未完成：" + messages.distinct().joinToString("、") else "推送完成。")
+        }
     }
 
     suspend fun history(id: String, limit: Int = 100): List<GitCommitRecord> = withRepo(id) { git ->
