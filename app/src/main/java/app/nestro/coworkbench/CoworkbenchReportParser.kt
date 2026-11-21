@@ -42,7 +42,8 @@ object CoworkbenchReportParser {
         val json = runCatching { JSONObject(content) }.getOrNull() ?: return false
         if (json.optString("bomFormat") != "CycloneDX" || json.optString("specVersion") != "1.5") return false
         val metadata = json.optJSONObject("metadata") ?: return false
-        if (metadata.optJSONObject("component")?.optString("name") != "Nestro") return false
+        val application = metadata.optJSONObject("component") ?: return false
+        if (application.optString("name") != "Nestro" || application.optString("version").isBlank()) return false
         val properties = metadata.optJSONArray("properties") ?: return false
         val source = (0 until properties.length()).mapNotNull { properties.optJSONObject(it) }
             .firstOrNull { it.optString("name") == "nestro:sbom:source" }
@@ -54,10 +55,13 @@ object CoworkbenchReportParser {
         for (index in 0 until components.length()) {
             val item = components.optJSONObject(index) ?: return false
             val purl = item.optString("purl")
+            val group = item.optString("group")
+            val name = item.optString("name")
+            val version = item.optString("version")
+            val expectedPurl = "pkg:maven/" + group + "/" + name + "@" + version
             if (item.optString("type") != "library" || purl.isBlank() ||
-                !purl.startsWith("pkg:maven/") || item.optString("bom-ref") != purl ||
-                item.optString("group").isBlank() || item.optString("name").isBlank() ||
-                item.optString("version").isBlank() || !refs.add(purl)
+                !purl.startsWith("pkg:maven/") || purl != expectedPurl || item.optString("bom-ref") != purl ||
+                group.isBlank() || name.isBlank() || version.isBlank() || !refs.add(purl)
             ) return false
         }
         return true
