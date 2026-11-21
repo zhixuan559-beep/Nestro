@@ -152,7 +152,7 @@ fun MediaProviderSettingsCard() {
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (busy) "测试中…" else "测试聊天/视觉模型连接") }
             Button(
-                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || videoModel.isNotBlank()),
+                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || transcriptionModel.isNotBlank() || videoModel.isNotBlank()),
                 onClick = {
                     busy = true
                     scope.launch {
