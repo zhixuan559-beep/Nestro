@@ -502,8 +502,13 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     suspend fun stageResolvedFile(id: String, relativePath: String) = withRepo(id) { git ->
         val safe = GitWorkbenchPolicy.safeRelativePath(relativePath)
-        require(File(requireLocal(id).localPath, safe).isFile) { "冲突文件不存在或尚未保存" }
-        git.add().addFilepattern(safe).call()
+        require(safe in git.status().call().conflicting) { "文件不在待解决冲突列表中" }
+        val target = File(requireLocal(id).localPath, safe)
+        if (target.isFile) git.add().addFilepattern(safe).call()
+        else {
+            require(!target.exists()) { "冲突目标不是普通文件" }
+            git.add().addFilepattern(safe).setUpdate(true).call()
+        }
         require(safe !in git.status().call().conflicting) { "文件仍处于冲突状态" }
     }
 
