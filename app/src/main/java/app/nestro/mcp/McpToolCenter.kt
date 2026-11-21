@@ -20,6 +20,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class McpServerRecord(val id:String,val name:String,val endpoint:String,val enabled:Boolean=true)
 data class McpToolDescriptor(val id:String,val serverId:String,val serverName:String,val name:String,val description:String,val inputSchemaJson:String,val readOnlyHint:Boolean,val granted:Boolean=false)
+data class McpToolAuditRecord(val id:String,val serverName:String,val toolName:String,val succeeded:Boolean,val createdAt:Long)
 
 object McpEndpointPolicy {
  fun validate(endpoint:String):String? {
@@ -90,7 +91,17 @@ class McpToolCenterRepository(context:Context) {
   check(prefs.edit().putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(v.map{if(it.id==id)it.copy(granted=on)else it})).commit()){"MCP 工具授权保存失败"}
  }
  fun isToolGranted(id:String)=findTool(id)?.let{it.granted&&findServer(it.serverId)?.enabled==true}==true
- companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1"}
+ fun listAudits():List<McpToolAuditRecord> = runCatching {
+  val a=JSONArray(prefs.getString(AUDIT_KEY,"[]").orEmpty())
+  (0 until a.length()).map{i->val o=a.getJSONObject(i);McpToolAuditRecord(o.getString("id"),o.getString("serverName"),o.getString("toolName"),o.optBoolean("succeeded"),o.optLong("createdAt"))}
+ }.getOrDefault(emptyList())
+ fun recordAudit(toolId:String,succeeded:Boolean) {
+  val tool=findTool(toolId) ?: return
+  val rows=(listOf(McpToolAuditRecord(UUID.randomUUID().toString(),tool.serverName,tool.name,succeeded,System.currentTimeMillis()))+listAudits()).take(100)
+  val encoded=JSONArray().apply{rows.forEach{put(JSONObject().put("id",it.id).put("serverName",it.serverName).put("toolName",it.toolName).put("succeeded",it.succeeded).put("createdAt",it.createdAt))}}.toString()
+  check(prefs.edit().putString(AUDIT_KEY,encoded).commit()){"MCP 调用审计保存失败"}
+ }
+ companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1"}
 }
 object McpToolCenterCodec {
  fun encodeServers(items:List<McpServerRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("name",it.name).put("endpoint",it.endpoint).put("enabled",it.enabled))}}.toString()
@@ -136,7 +147,7 @@ private object McpCredentialVault {
   return g.generateKey()
  }
 }
-class McpToolCenterService(private val repository:McpToolCenterRepository,private val catalog:AgentToolCatalog){
+class McpToolCenterService(private val repository:McpToolCenterRepository,private val catalog:AgentToolCatalog,private val traces:AgentTaskTraceStore?=null){
  fun restoreEnabledTools(){repository.listTools().filter{it.granted&&repository.findServer(it.serverId)?.enabled==true}.forEach(::registerTool)}
  suspend fun discover(serverId:String):List<McpToolDescriptor>{
   val server=requireNotNull(repository.findServer(serverId)){"MCP 服务不存在"};require(server.enabled){"MCP 服务已停用"}
@@ -155,8 +166,17 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   require(repository.isToolGranted(id)){"该 MCP 工具尚未获得授权"}
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
-  val runtime=DefaultAgentRuntime(catalog,AgentPermissionRouter{_,tool->if(repository.isToolGranted(tool.id))AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具授权已撤销")},InMemoryAgentTaskStateStore())
+  val runtime=DefaultAgentRuntime(catalog,AgentPermissionRouter{_,tool->if(repository.isToolGranted(tool.id))AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具授权已撤销")},InMemoryAgentTaskStateStore(),safeTraceStore())
   return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("json" to argsJson)))
+ }
+ private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
+  object:AgentTaskTraceStore {
+   override suspend fun append(trace:AgentTaskTrace) {
+    val detail=when(trace.event){"tool_succeeded"->"MCP 工具执行成功";"tool_failed"->"MCP 工具执行失败";else->trace.detail.take(300)}
+    delegate.append(trace.copy(detail=detail))
+   }
+   override suspend fun recent(taskId:String,limit:Int)=delegate.recent(taskId,limit)
+  }
  }
  private fun registerTool(d:McpToolDescriptor){
   val s=repository.findServer(d.serverId)?:return
@@ -166,9 +186,15 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
    val current=repository.findServer(d.serverId)?:return@register AgentToolResult(false,error="MCP 服务已删除")
    val raw=arguments["json"]?:"{}"
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
-   try{val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).callTool(d.name,JSONObject(raw),d.inputSchemaJson)};AgentToolResult(true,output.take(32_000))}
-   catch(cancelled:CancellationException){throw cancelled}
-   catch(e:Exception){AgentToolResult(false,error=(e.message?:"MCP 工具调用失败").take(2_000))}
+   try{
+    val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).callTool(d.name,JSONObject(raw),d.inputSchemaJson)}
+    repository.recordAudit(d.id,true)
+    AgentToolResult(true,output.take(32_000))
+   } catch(cancelled:CancellationException){throw cancelled}
+   catch(e:Exception){
+    repository.recordAudit(d.id,false)
+    AgentToolResult(false,error=(e.message?:"MCP 工具调用失败").take(2_000))
+   }
   }
  }
 }
