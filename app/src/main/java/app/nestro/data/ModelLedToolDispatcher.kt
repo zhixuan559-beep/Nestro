@@ -239,8 +239,9 @@ ${prompt.take(8_000)}
                     NativeToolCallResult("工具执行失败：$detail")
                 } else {
                     val output = result.output.take(8_000)
-                    if (spec.id == "media.provider.list" && output.contains("尚未配置媒体服务商")) {
-                        needsMediaProviderSetup = true
+                    if (spec.id == "media.provider.list") {
+                        val providerRows = output.lineSequence().filter { it.startsWith("provider_id=") }.toList()
+                        needsMediaProviderSetup = providerRows.isEmpty() || providerRows.all { it.contains("video_model=未配置") }
                     }
                     if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
                         generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
@@ -407,8 +408,9 @@ ${prompt.take(8_000)}
             if (!result.success) {
                 toolContext.append("[工具 ${spec.id} 执行失败] ").append(result.error.ifBlank { result.output }.take(3_000)).append("\n")
             } else {
-                if (spec.id == "media.provider.list" && result.output.contains("尚未配置媒体服务商")) {
-                    needsMediaProviderSetup = true
+                if (spec.id == "media.provider.list") {
+                    val providerRows = result.output.lineSequence().filter { it.startsWith("provider_id=") }.toList()
+                    needsMediaProviderSetup = providerRows.isEmpty() || providerRows.all { it.contains("video_model=未配置") }
                 }
                 if (spec.id == "media.video.generate" || spec.id == "media.video.status") {
                     generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
