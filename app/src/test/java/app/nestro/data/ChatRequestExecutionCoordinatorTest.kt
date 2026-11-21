@@ -169,7 +169,6 @@ class ChatRequestExecutionCoordinatorConcurrencyTest {
         val started = java.util.concurrent.atomic.AtomicInteger(0)
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
-            retrieveKnowledge = { _, _ -> started.incrementAndGet(); "knowledge-context" },
             retrieveUserMemory = { _, _ -> "" }
         )
         val streaming = ChatStreamingCoordinator(
@@ -184,7 +183,6 @@ class ChatRequestExecutionCoordinatorConcurrencyTest {
             planPhoneAgent = { error("must not run before model tool selection") },
             onPartialAnswer = { }
         )
-        assertEquals(0, started.get())
         assertEquals("reply", result.finalization.finalText)
     }
 }
