@@ -87,6 +87,16 @@ object CoworkbenchStaticAnalyzer {
             totalBytes += size
             val relative = root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
             inspect(relative, text, findings, dependencies)
+            if (relative.lowercase().endsWith(".toml")) {
+                dependencyTokens(relative, text).forEach { declaration ->
+                    dependencies += "$relative:$declaration"
+                    if (declaration.contains("+") || declaration.contains("SNAPSHOT", true) ||
+                        declaration.contains("latest.", true)) {
+                        findings += finding("依赖版本", CoworkbenchFindingLevel.WARNING, relative, null,
+                            declaration, "版本目录包含动态/快照依赖信息，构建结果可能不可复现")
+                    }
+                }
+            }
         }
 
         return CoworkbenchAnalysisReport(
