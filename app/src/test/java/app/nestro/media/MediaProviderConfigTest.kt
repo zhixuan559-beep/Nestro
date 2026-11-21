@@ -35,6 +35,24 @@ class MediaProviderConfigTest {
         assertFalse(runCatching { config().copy(apiKey="secret\nkey").validate() }.isSuccess)
     }
 
+    @Test fun acceptsConfigurableAsyncVideoGenerationContract() {
+        config().copy(
+            videoGenerationModel = "video-model",
+            videoSubmitPath = "v1/videos",
+            videoStatusPath = "v1/videos/{job_id}",
+            videoJobIdField = "data.id",
+            videoStatusField = "data.status",
+            videoResultUrlField = "data.output.url"
+        ).validate()
+    }
+
+    @Test fun rejectsUnsafeVideoGenerationRoutesAndFields() {
+        assertFalse(runCatching { config().copy(videoSubmitPath = "../admin").validate() }.isSuccess)
+        assertFalse(runCatching { config().copy(videoStatusPath = "v1/videos").validate() }.isSuccess)
+        assertFalse(runCatching { config().copy(videoStatusPath = "v1/{job_id}/../admin").validate() }.isSuccess)
+        assertFalse(runCatching { config().copy(videoResultUrlField = "video-url?token").validate() }.isSuccess)
+    }
+
     @Test fun secretIsRedactedFromStringRepresentation() {
         val rendered = config().toString()
         assertTrue(rendered.contains("[REDACTED]"))
