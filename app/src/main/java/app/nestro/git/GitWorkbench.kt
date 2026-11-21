@@ -312,12 +312,24 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
             GitProvider.GITEE -> builder.header("Authorization", "token $token")
         }
         return client.newCall(builder.build()).execute().use { response ->
-            val body = response.body?.string().orEmpty()
+            val responseBody = response.body
+            val length = responseBody?.contentLength() ?: 0L
+            require(length <= 4_000_000L || length == -1L) { "代码托管服务响应超过 4 MB" }
+            val body = responseBody?.byteStream()?.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    require(output.size() + count <= 4_000_000) { "代码托管服务响应超过 4 MB" }
+                    output.write(buffer, 0, count)
+                }
+                String(output.toByteArray(), Charsets.UTF_8)
+            }.orEmpty()
             require(response.isSuccessful) {
                 val message = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
                 "代码托管服务 HTTP ${response.code}：" + message.ifBlank { body.take(500) }
             }
-            require(body.length <= 4_000_000) { "代码托管服务响应超过 4 MB" }
             body
         }
     }
@@ -443,7 +455,6 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
         require(git.repository.findRef("refs/heads/$name") == null) { "本地分支已存在" }
         if (checkout) require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
-        val defaultBranch = requireLocal(id).defaultBranch
         git.branchCreate().setName(name).setStartPoint("HEAD").call()
         git.repository.config.apply {
             setString("branch", name, "remote", "origin")
