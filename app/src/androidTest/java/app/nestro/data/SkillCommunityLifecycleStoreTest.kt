@@ -64,6 +64,19 @@ class SkillCommunityLifecycleStoreTest {
         assertEquals("local prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
     }
 
+    @Test fun acceptsInstalledDependencyWhenVersionSatisfiesRange() {
+        val base = SkillBundle("BaseSkill", "1.2.0", "base", "base prompt", "local", emptyList(), emptyList())
+        preferences.edit()
+            .putString("skills", org.json.JSONObject().put("BaseSkill", "base prompt").toString())
+            .putString("skill_metadata_v1", org.json.JSONObject().put("BaseSkill", SkillBundleParser.metadataJson(base)).toString())
+            .commit()
+        val dependent = bundle("1.0.0", "dependent prompt").copy(
+            dependencies = listOf(SkillDependency("BaseSkill", ">=1.0"))
+        )
+        store.install(dependent)
+        assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
+    }
+
     @Test fun rejectsMissingDependenciesBeforeMutation() {
         val dependent = bundle("1.0.0", "prompt").copy(
             dependencies = listOf(SkillDependency("MissingDependency", "1.0.0"))
