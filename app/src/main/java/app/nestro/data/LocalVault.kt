@@ -9,7 +9,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
+internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String, val reasoningEffort: String? = null)
 
 internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
@@ -43,10 +43,12 @@ internal object LocalVault {
         val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val preferenceKey = MODEL_KEY_PREFIX + keyId
         if (apiKey.isBlank()) {
-            preferences.edit().remove(preferenceKey).apply()
+            check(preferences.edit().remove(preferenceKey).commit()) { "API Key 删除失败" }
             return
         }
-        preferences.edit().putString(preferenceKey, encryptSecret(apiKey)).apply()
+        check(preferences.edit().putString(preferenceKey, encryptSecret(apiKey)).commit()) {
+            "API Key 加密保存失败"
+        }
     }
 
     fun readApiKey(context: Context, keyId: String): String {
@@ -58,8 +60,10 @@ internal object LocalVault {
 
     fun deleteApiKey(context: Context, keyId: String) {
         require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
-        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().remove(MODEL_KEY_PREFIX + keyId).apply()
+        check(
+            context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+                .edit().remove(MODEL_KEY_PREFIX + keyId).commit()
+        ) { "API Key 删除失败" }
     }
 
     fun writeProfile(context: Context, id: String, apiKey: String) {

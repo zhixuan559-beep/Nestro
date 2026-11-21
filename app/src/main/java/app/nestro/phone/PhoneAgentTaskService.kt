@@ -6,6 +6,9 @@ import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * Application boundary for Phone Agent task persistence and background scheduling.
@@ -27,7 +30,7 @@ class PhoneAgentTaskService(
     ): Map<String, List<PhoneAgentTaskLogEntity>> {
         val dao = database.dao()
         return tasks.associate { task ->
-            task.id to runCatching {
+            task.id to runCatchingCancellable {
                 PhoneAgentTaskStore.recentLogs(dao, task.id, limit.coerceIn(1, 100))
             }.getOrDefault(emptyList())
         }
@@ -65,8 +68,10 @@ class PhoneAgentTaskService(
         // whose completion was already persisted by the worker.
         val cancelled = PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
         if (!cancelled) return
-        PhoneAgentWorkScheduler.cancel(appContext, taskId, stopCurrent)
-        PhoneAgentNotifications.cancel(appContext, taskId)
-        coordinator.cancel(taskId)
+        withContext(NonCancellable) {
+            PhoneAgentWorkScheduler.cancel(appContext, taskId, stopCurrent)
+            PhoneAgentNotifications.cancel(appContext, taskId)
+            coordinator.cancel(taskId)
+        }
     }
 }

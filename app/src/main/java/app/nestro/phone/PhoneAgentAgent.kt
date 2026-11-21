@@ -3,12 +3,42 @@ package app.nestro.phone
 import android.content.Context
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
 import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentToolCatalog
+import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.RoomAgentTaskStateStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 object PhoneAgentAgent {
+    enum class LoadPolicy { ON_DEMAND, EAGER }
+
+    data class AgentCapability(
+        val id: String,
+        val loadPolicy: LoadPolicy = LoadPolicy.ON_DEMAND,
+        val estimatedCost: Int = 1
+    )
+
+    /**
+     * Select only the capabilities required by the current task. Loading is declarative;
+     * execution and permissions remain in the existing Phone Agent service/executor.
+     */
+    fun selectCapabilities(task: String, available: List<AgentCapability>, maxCost: Int = 6): List<AgentCapability> {
+        val normalized = task.lowercase()
+        return available.asSequence()
+            .filter { it.id.isNotBlank() }
+            .distinctBy { it.id }
+            .filter { it.loadPolicy == LoadPolicy.EAGER || normalized.contains(it.id.lowercase()) }
+            .sortedBy { it.estimatedCost }
+            .runningFold(0 to emptyList<AgentCapability>()) { acc, capability ->
+                if (acc.first + capability.estimatedCost <= maxCost) {
+                    (acc.first + capability.estimatedCost) to (acc.second + capability)
+                } else acc
+            }.lastOrNull()?.second ?: emptyList()
+    }
+
+
     data class Result(val outcome: PhoneAgentExecutor.Outcome, val message: String)
 
     suspend fun run(
@@ -16,23 +46,25 @@ object PhoneAgentAgent {
         dao: NestroDao,
         taskId: String,
         afterUserHandoff: Boolean = false,
-        allowRetryCurrentAction: Boolean = false
+        allowRetryCurrentAction: Boolean = false,
+        toolCatalog: AgentToolCatalog = InMemoryAgentToolCatalog()
     ): Result {
         var task = dao.phoneAgentTask(taskId)
             ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
         if (isCancellationRequested(context, taskId, task.status)) {
             return Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
         }
-        val service = PhoneAgentService.activeService
+        val service = PhoneAgentExecutionEnvironmentProvider.active
             ?: return pause(dao, taskId, "无障碍服务尚未连接")
         if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
-        val existingActions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.getOrNull()
+        val existingActions = try { PhoneAgentTaskStore.decodeActions(task.planJson) } catch (_: Exception) { null }
         if (existingActions != null) {
             val resumed = PhoneAgentExecutor.resume(
                 dao = dao,
                 taskId = taskId,
                 afterUserHandoff = afterUserHandoff,
-                allowRetryCurrentAction = allowRetryCurrentAction
+                allowRetryCurrentAction = allowRetryCurrentAction,
+                catalog = toolCatalog
             )
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
@@ -50,7 +82,7 @@ object PhoneAgentAgent {
         }
         var loop = 0
         while (loop < 8) {
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
             if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效")
             task = dao.phoneAgentTask(taskId)
                 ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
@@ -59,6 +91,9 @@ object PhoneAgentAgent {
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
+            if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screen)) {
+                return handoffToUser(dao, taskId, "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。")
+            }
             val plan = try {
                 PhoneAgentModelClient.planNext(
                     context = context,
@@ -69,7 +104,7 @@ object PhoneAgentAgent {
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 return pause(dao, taskId, error.message ?: "动作规划失败")
             }
             task = dao.phoneAgentTask(taskId)
@@ -77,16 +112,29 @@ object PhoneAgentAgent {
             if (isCancellationRequested(context, taskId, task.status)) {
                 return Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             }
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
+
+            if (plan.summary.isNotBlank()) {
+                PhoneAgentTaskStore.recordActionResult(
+                    dao,
+                    taskId,
+                    task.currentStep,
+                    "任务进度",
+                    true,
+                    PhoneAgentRiskPolicy.redactSensitiveText(plan.summary).take(240)
+                )
+            }
 
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&
                     service.verifyVisibleText(plan.completionEvidence)
                 ) {
                     val current = dao.phoneAgentTask(taskId) ?: task
-                    val count = runCatching {
+                    val count = try {
                         PhoneAgentTaskStore.decodeActions(current.planJson).size
-                    }.getOrDefault(current.currentStep)
+                    } catch (_: Exception) {
+                        current.currentStep
+                    }
                     PhoneAgentTaskStore.recordActionResult(
                         dao, taskId, count, "任务完成",
                         true,
@@ -113,12 +161,20 @@ object PhoneAgentAgent {
                 dao = dao,
                 taskId = taskId,
                 actions = plan.actions,
-                markTaskCompleted = false
+                markTaskCompleted = false,
+                catalog = toolCatalog
             ) { completed, result ->
                 actionHistory.append("#").append(completed).append(" ")
                     .append(result.action).append("：")
                     .append(if (result.success) "成功" else "失败")
                     .append("，").append(result.detail.take(100)).append("\n")
+                PhoneAgentNotifications.show(
+                    context,
+                    taskId,
+                    "Phone Agent 正在执行",
+                    "${result.action} · ${if (result.success) "已核验" else "未完成"}",
+                    true
+                )
             }
             if (execution.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(execution.outcome, execution.handoffReason)
@@ -127,6 +183,21 @@ object PhoneAgentAgent {
             loop++
         }
         return pause(dao, taskId, "达到单次自动执行轮数上限，任务已暂停，避免无限操作。")
+    }
+
+    private suspend fun handoffToUser(dao: NestroDao, taskId: String, message: String): Result {
+        val task = dao.phoneAgentTask(taskId) ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, task.currentStep)
+        PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "需要用户接手", false, message)
+        val stateStore = RoomAgentTaskStateStore(dao)
+        stateStore.get(taskId)?.let { state ->
+            stateStore.put(state.copy(
+                status = AgentTaskStatus.WAITING_FOR_USER,
+                lastError = message.take(2_000),
+                updatedAt = System.currentTimeMillis()
+            ))
+        }
+        return Result(PhoneAgentExecutor.Outcome.WAITING_USER, message)
     }
 
     private fun isCancellationRequested(context: Context, taskId: String, taskStatus: String): Boolean =
@@ -154,11 +225,11 @@ object PhoneAgentAgent {
             }
         }
         if (task != null) {
-            runCatching {
+            runCatchingCancellable {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "任务状态", false, message)
             }
         }
-        runCatching {
+        runCatchingCancellable {
             val stateStore = RoomAgentTaskStateStore(dao)
             val state = stateStore.get(taskId)
             if (state != null && state.status !in setOf(

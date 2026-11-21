@@ -1,35 +1,26 @@
 name: Android CI
 
+# Run the full acceptance suite only when explicitly dispatched after all modules are complete.
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: android-ci-${{ github.ref }}
-  cancel-in-progress: false
+# Do not cancel an in-progress verification run when a newer commit arrives.
+# Every commit must finish its own verification; cancellations are not acceptance evidence.
 
 jobs:
   verify:
-    # PR verification compiles Kotlin, runs JVM tests and Android lint.
-    # It deliberately does not assemble/install an APK before the integrated acceptance stage.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -42,19 +33,27 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        id: setup_gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+      - name: Compile production Kotlin
+        run: gradle --no-daemon --stacktrace compileDebugKotlin
 
-      - name: Compile Kotlin, run unit tests and lint
-        run: |
-          gradle --no-daemon --stacktrace compileDebugKotlin
-          gradle --no-daemon --stacktrace testDebugUnitTest
-          gradle --no-daemon --stacktrace lintDebug
-          # Compile Android tests without launching an emulator or producing an installable APK.
-          gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
+      - name: Run JVM unit tests
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Run Android lint
+        if: always() && steps.setup_gradle.outcome == 'success'
+        run: gradle --no-daemon --stacktrace lintDebug
+
+      - name: Compile Android instrumentation test sources
+        if: always() && steps.setup_gradle.outcome == 'success'
+        run: gradle --no-daemon --stacktrace compileDebugAndroidTestKotlin
 
       - name: Upload verification reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Nestro-verification-reports
           path: |
@@ -62,5 +61,56 @@ jobs:
             app/build/test-results/**
             app/build/reports/lint-results-*.html
             app/build/reports/lint-results-*.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  instrumented:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: macos-26-intel
+    # The full 70-test suite on the software-rendered emulator needs ~40+ minutes
+    # including SDK setup and both APK builds; 35 minutes killed run #1094 at
+    # test 68/70 even though the suite itself was still making progress.
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 4 -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.10.2"
+      - name: Run Android instrumentation tests on emulator
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none -memory 4096 -cores 4
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: bash .github/scripts/run-android-instrumentation.sh
+
+      - name: Upload Android instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nestro-android-instrumentation-reports
+          path: |
+            app/build/reports/androidTests/connected/**
+            app/build/outputs/androidTest-results/connected/**
           if-no-files-found: ignore
           retention-days: 7

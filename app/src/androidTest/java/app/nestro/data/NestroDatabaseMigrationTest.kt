@@ -55,7 +55,33 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionTenWithoutLosingConversationData() = runBlocking {
+    @Test fun deletingKnowledgeDocumentRemovesItsFullTextIndexRows() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("p1", "项目一", "", 1L)))
+            val document = KnowledgeDocumentEntity("doc-delete", "p1", "待删除文档", "text/plain", 12L, 1L, "c".repeat(64))
+            val chunk = KnowledgeChunkEntity("chunk-delete", document.id, "p1", 0, "deleteindexmarker searchable content")
+            dao.insertKnowledgeDocument(document)
+            dao.insertKnowledgeChunks(listOf(chunk))
+            dao.insertKnowledgeChunkFts(listOf(KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content)))
+
+            val before = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
+            assertEquals(1, before.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
+
+            dao.deleteKnowledgeDocumentAndIndex(document.id, "p1")
+
+            val after = db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
+            assertEquals(0, after.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
+            assertEquals(emptyList<KnowledgeChunkEntity>(), dao.searchKnowledgeChunksFts("p1", "deleteindexmarker*", 5))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test fun migratesVersionOneDatabaseThroughVersionThirteenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -76,13 +102,22 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(10, schemaVersion)
+            assertEquals(13, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
             assertEquals("[]", rows.single().messages.single().versionsJson)
             assertEquals(0, rows.single().messages.single().activeVersion)
             assertNotNull(migrated.dao().allKnowledgeDocuments())
+            val embeddingTable = migrated.openHelper.readableDatabase.query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_chunk_embeddings'"
+            )
+            assertEquals(true, embeddingTable.use { it.moveToFirst() })
+            migrated.dao().insertKnowledgeDocument(KnowledgeDocumentEntity("doc-fts", "default", "FTS 文档", "text/plain", 10, 2, "b".repeat(64)))
+            val ftsChunk = KnowledgeChunkEntity("chunk-fts", "doc-fts", "default", 0, "统一调度 虚拟屏 工具权限")
+            migrated.dao().insertKnowledgeChunks(listOf(ftsChunk))
+            migrated.dao().insertKnowledgeChunkFts(listOf(KnowledgeChunkFtsEntity(ftsChunk.id.stableFtsRowId(), ftsChunk.id, ftsChunk.projectId, ftsChunk.content)))
+            assertEquals("chunk-fts", migrated.dao().searchKnowledgeChunksFts("default", "虚拟屏*", 5).single().id)
             assertEquals(0L, migrated.dao().loadProjects().single { it.id == "default" }.archivedAt)
             migrated.dao().putUserMemory(UserMemoryEntity("mem1", "default", "fact", "保留的记忆", "fp1", "c1", "m1", 0.9, 1, 1))
             assertEquals(1, migrated.dao().allUserMemories().size)

@@ -58,6 +58,20 @@ object ChatRequestPolicy {
         return boundedNewestFirst.asReversed()
     }
 
+    internal fun boundedChatHistory(
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        contextWindowTokens: Int = 16_384,
+        outputReserveTokens: Int = 2_048
+    ): List<ChatMessage> = boundedHistory(
+        history.map { ChatHistoryItem(it.role, it.content) },
+        systemPrompt,
+        contextWindowTokens,
+        outputReserveTokens
+    ).mapIndexed { index, item ->
+        ChatMessage("request-context-$index", item.role, item.content)
+    }
+
     private fun takeLastWithinBudget(
         text: String,
         maxChars: Int,

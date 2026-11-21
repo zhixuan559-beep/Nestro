@@ -43,13 +43,27 @@ class ModelConfigurationRepository(context: Context) {
         LocalVault.deleteProfile(vaultContext, profileId)
 
     fun readApiKey(keyId: String): String =
-        LocalVault.readApiKey(vaultContext, keyId)
+        if (keyId.startsWith("legacy-key-")) {
+            readProfileKey(keyId.removePrefix("legacy-key-"))
+        } else {
+            LocalVault.readApiKey(vaultContext, keyId)
+        }
 
-    fun writeApiKey(keyId: String, apiKey: String) =
-        LocalVault.writeApiKey(vaultContext, keyId, apiKey)
+    fun writeApiKey(keyId: String, apiKey: String) {
+        if (keyId.startsWith("legacy-key-")) {
+            writeProfileKey(keyId.removePrefix("legacy-key-"), apiKey)
+        } else {
+            LocalVault.writeApiKey(vaultContext, keyId, apiKey)
+        }
+    }
 
-    fun deleteApiKey(keyId: String) =
-        LocalVault.deleteApiKey(vaultContext, keyId)
+    fun deleteApiKey(keyId: String) {
+        if (keyId.startsWith("legacy-key-")) {
+            deleteProfileKey(keyId.removePrefix("legacy-key-"))
+        } else {
+            LocalVault.deleteApiKey(vaultContext, keyId)
+        }
+    }
 
     fun clearAllApiKeys() =
         LocalVault.clearAllApiKeys(vaultContext)

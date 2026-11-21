@@ -17,7 +17,10 @@ data class WorkflowStep(
     val timeoutSeconds:Int=120,
     val continueOnError:Boolean=false,
     val skipIfPreviousContains:String="",
-    val repeatCount:Int=1
+    val repeatCount:Int=1,
+    val condition:String="",
+    val approvalRequired:Boolean=false,
+    val parallelGroup:String=""
 )
 
 data class WorkflowDefinition(
@@ -41,7 +44,8 @@ data class WorkflowRunResult(
     val output:String,
     val completedSteps:Int,
     val stepOutputs:List<String>,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val checkpointIndex:Int = 0
 )
 
 data class WorkflowRunRecord(
@@ -52,15 +56,17 @@ data class WorkflowRunRecord(
     val startedAt:Long,
     val status:String,
     val output:String,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val projectId:String = "default"
 )
 
 object WorkflowRunHistoryCodec {
     fun encode(records:List<WorkflowRunRecord>):String = JSONArray().apply {
-        records.take(50).forEach { record ->
+        records.take(200).forEach { record ->
             put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
                 .put("workflowName",record.workflowName).put("input",record.input.take(12000))
-                .put("startedAt",record.startedAt).put("status",record.status)
+                .put("startedAt",record.startedAt).put("status",record.status).put("projectId",record.projectId)
+                .put("checkpointIndex",record.stepRuns.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
                 .put("output",record.output.take(20000))
                 .put("stepRuns",JSONArray().apply {
                     record.stepRuns.take(20).forEach { step ->
@@ -100,10 +106,37 @@ object WorkflowRunHistoryCodec {
                 startedAt=item.optLong("startedAt"),
                 status=item.optString("status").take(20),
                 output=item.optString("output").take(20000),
-                stepRuns=parsed
+                stepRuns=parsed,
+                projectId=item.optString("projectId", "default").ifBlank { "default" }
             )
-        }.take(50)
+        }.take(200)
     }.getOrDefault(emptyList())
+}
+
+object WorkflowDefinitionEditor {
+    fun insertStep(workflow: WorkflowDefinition, index: Int, step: WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.size < 20) { "工作流最多支持 20 个步骤" }
+        val target = index.coerceIn(0, workflow.steps.size)
+        return workflow.copy(steps = workflow.steps.toMutableList().apply { add(target, step) })
+    }
+    fun removeStep(workflow: WorkflowDefinition, stepId: String): WorkflowDefinition {
+        require(workflow.steps.size > 1) { "工作流至少保留 1 个步骤" }
+        val remaining = workflow.steps.filterNot { it.id == stepId }
+        require(remaining.size < workflow.steps.size) { "未找到要删除的步骤" }
+        return workflow.copy(steps = remaining)
+    }
+    fun moveStep(workflow: WorkflowDefinition, stepId: String, targetIndex: Int): WorkflowDefinition {
+        val currentIndex = workflow.steps.indexOfFirst { it.id == stepId }
+        require(currentIndex >= 0) { "未找到要移动的步骤" }
+        val items = workflow.steps.toMutableList()
+        val item = items.removeAt(currentIndex)
+        items.add(targetIndex.coerceIn(0, items.size), item)
+        return workflow.copy(steps = items)
+    }
+    fun updateStep(workflow: WorkflowDefinition, stepId: String, transform: (WorkflowStep) -> WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.any { it.id == stepId }) { "未找到要编辑的步骤" }
+        return workflow.copy(steps = workflow.steps.map { if (it.id == stepId) transform(it) else it })
+    }
 }
 
 object WorkflowDefinitionCodec {
@@ -116,7 +149,9 @@ object WorkflowDefinitionCodec {
                         .put("retries",step.retries).put("timeoutSeconds",step.timeoutSeconds)
                         .put("continueOnError",step.continueOnError)
                         .put("skipIfPreviousContains",step.skipIfPreviousContains)
-                        .put("repeatCount",step.repeatCount))
+                        .put("repeatCount",step.repeatCount)
+                        .put("condition",step.condition).put("approvalRequired",step.approvalRequired)
+                        .put("parallelGroup",step.parallelGroup))
                 } }))
         }
     }.toString()
@@ -143,7 +178,10 @@ object WorkflowDefinitionCodec {
                     timeoutSeconds=step.optInt("timeoutSeconds",120).coerceIn(15,300),
                     continueOnError=step.optBoolean("continueOnError",false),
                     skipIfPreviousContains=step.optString("skipIfPreviousContains").take(120),
-                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3)
+                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3),
+                    condition=step.optString("condition").take(200),
+                    approvalRequired=step.optBoolean("approvalRequired",false),
+                    parallelGroup=step.optString("parallelGroup").take(40)
                 )
             }.take(20)
             val name=item.optString("name").trim()
@@ -163,6 +201,8 @@ object WorkflowDefinitionCodec {
             require(it.timeoutSeconds in 15..300) { "单步超时必须在 15 到 300 秒之间" }
             require(it.skipIfPreviousContains.length<=120) { "条件文本不能超过 120 个字符" }
             require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
+            require(it.condition.length<=200) { "条件不能超过 200 个字符" }
+            require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
             if(it.kind != WorkflowStepKind.PROMPT) {
                 require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
             }
@@ -181,7 +221,8 @@ object WorkflowEngine {
         workflow:WorkflowDefinition,
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
-        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> }
+        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
+        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> true }
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
@@ -191,6 +232,15 @@ object WorkflowEngine {
         val active=workflow.steps.filter { it.enabled }
         require(active.isNotEmpty()) { "工作流没有启用的步骤" }
         active.forEachIndexed { index,step ->
+            if(step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput)) {
+                runs += WorkflowStepRun(step.id,step.title,"skipped",0,error="条件未满足")
+                outputs += previousOutput
+                return@forEachIndexed
+            }
+            if(step.approvalRequired && !requestApproval(step, previousOutput)) {
+                runs += WorkflowStepRun(step.id,step.title,"approval_rejected",0,error="审批未通过")
+                throw WorkflowExecutionException("步骤“${step.title}”未获批准", runs.toList())
+            }
             if(step.skipIfPreviousContains.isNotBlank() &&
                 previousOutput.contains(step.skipIfPreviousContains,ignoreCase=true)) {
                 runs += WorkflowStepRun(step.id,step.title,"skipped",0,output=previousOutput)
@@ -267,6 +317,14 @@ object WorkflowEngine {
             previousOutput=stepOutput
             outputs += stepOutput
         }
-        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs)
+        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs,runs.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
+    }
+    private fun evaluateCondition(condition:String, previousOutput:String):Boolean {
+        val c=condition.trim()
+        if(c.equals("always",true)) return true
+        if(c.equals("nonblank",true)) return previousOutput.isNotBlank()
+        if(c.startsWith("contains:",true)) return previousOutput.contains(c.substringAfter(":").trim(),true)
+        if(c.startsWith("not_contains:",true)) return !previousOutput.contains(c.substringAfter(":").trim(),true)
+        return false
     }
 }

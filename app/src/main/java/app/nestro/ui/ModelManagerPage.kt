@@ -4,6 +4,10 @@ import app.nestro.data.ModelConfig
 import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
+import app.nestro.model.ModelRegistry
+import app.nestro.model.ModelProvider
+import app.nestro.model.ModelApiKey
+import app.nestro.model.ModelDefinition
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -34,6 +38,16 @@ internal fun ModelManager(
     onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onDeleteKey: (String) -> Unit,
+    registry: ModelRegistry,
+    activeRegistryModelId: String,
+    loadApiKey: (String) -> String,
+    onSaveProvider: (ModelProvider) -> Unit,
+    onDeleteProvider: (String) -> Unit,
+    onSaveApiKey: (ModelApiKey, String) -> Unit,
+    onSaveRegistryModel: (ModelDefinition) -> Unit,
+    onDeleteRegistryApiKey: (String) -> Unit,
+    onDeleteRegistryModel: (String) -> Unit,
+    onActivateRegistryModel: (String) -> Unit,
     onTestConnection: suspend (ModelConfig) -> String
 ) {
     val scope = rememberCoroutineScope()
@@ -47,6 +61,26 @@ internal fun ModelManager(
     var testing by remember { mutableStateOf(false) }
     var testStatus by remember { mutableStateOf("") }
     var formError by remember { mutableStateOf("") }
+    var providerNameDraft by remember { mutableStateOf("") }
+    var providerUrlDraft by remember { mutableStateOf("https://") }
+    var editingProviderId by remember { mutableStateOf("") }
+    var confirmDeleteProvider by remember { mutableStateOf(false) }
+    var providerToDeleteId by remember { mutableStateOf("") }
+    var selectedProviderId by remember {
+        mutableStateOf(registry.providers.firstOrNull()?.id.orEmpty())
+    }
+    var apiKeyLabelDraft by remember { mutableStateOf("") }
+    var apiKeyDraft by remember { mutableStateOf("") }
+    var modelNameDraft by remember { mutableStateOf("") }
+    var modelCodeDraft by remember { mutableStateOf("") }
+    var editingRegistryModelId by remember { mutableStateOf("") }
+    var modelInputPriceDraft by remember { mutableStateOf("") }
+    var modelOutputPriceDraft by remember { mutableStateOf("") }
+    var modelCurrencyDraft by remember { mutableStateOf("USD") }
+    var supportsReasoningEffortDraft by remember { mutableStateOf(false) }
+    var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
+    var replacingApiKeyId by remember { mutableStateOf("") }
+    var registryMessage by remember { mutableStateOf("") }
 
     fun beginNew() {
         editingId = java.util.UUID.randomUUID().toString()
@@ -73,6 +107,247 @@ internal fun ModelManager(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
         Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
+        Text("新版模型目录 · 服务商 / API Key / 模型独立管理", color = Ink, style = MaterialTheme.typography.titleMedium)
+        Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        if (registryMessage.isNotBlank()) Text(registryMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
+
+        Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
+        registry.providers.forEach { provider ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = selectedProviderId == provider.id, onClick = {
+                    selectedProviderId = provider.id
+                    replacingApiKeyId = ""
+                    apiKeyLabelDraft = ""
+                    apiKeyDraft = ""
+                    selectedModelKeyIds = emptySet()
+                    editingRegistryModelId = ""
+                    modelNameDraft = ""
+                    modelCodeDraft = ""
+                    modelInputPriceDraft = ""
+                    modelOutputPriceDraft = ""
+                    modelCurrencyDraft = "USD"
+                    supportsReasoningEffortDraft = false
+                })
+                Column(Modifier.weight(1f)) {
+                    Text(provider.name, color = Ink)
+                    Text(provider.baseUrl, color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                if (!provider.id.startsWith("legacy-provider-")) {
+                    TextButton(onClick = {
+                        selectedProviderId = provider.id
+                        editingProviderId = provider.id
+                        providerNameDraft = provider.name
+                        providerUrlDraft = provider.baseUrl
+                    }) { Text("编辑", color = Mint) }
+                }
+                TextButton(onClick = { onSaveProvider(provider.copy(enabled = !provider.enabled)) }) {
+                    Text(if (provider.enabled) "停用" else "启用", color = if (provider.enabled) Mint else ColorStop)
+                }
+                TextButton(onClick = {
+                    providerToDeleteId = provider.id
+                    confirmDeleteProvider = true
+                }) { Text("删除", color = ColorStop) }
+            }
+        }
+        OutlinedTextField(providerNameDraft, { providerNameDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("新增服务商名称") }, singleLine = true)
+        OutlinedTextField(
+            providerUrlDraft,
+            { providerUrlDraft = it.take(2048) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (editingProviderId.startsWith("legacy-provider-")) "旧配置服务商地址请在下方旧模型配置中修改" else "服务商 API 根地址") },
+            enabled = !editingProviderId.startsWith("legacy-provider-"),
+            singleLine = true
+        )
+        OutlinedButton(
+            onClick = {
+                val url = providerUrlDraft.trim().trimEnd('/')
+                if (providerNameDraft.isBlank() || !url.startsWith("https://", true)) {
+                    registryMessage = "请填写服务商名称和 HTTPS 地址"
+                } else {
+                    val provider = ModelProvider(
+                        editingProviderId.ifBlank { UUID.randomUUID().toString() },
+                        providerNameDraft.trim(),
+                        url
+                    )
+                    onSaveProvider(provider)
+                    selectedProviderId = provider.id
+                    editingProviderId = ""
+                    providerNameDraft = ""
+                    providerUrlDraft = "https://"
+                }
+            },
+            enabled = providerNameDraft.isNotBlank() && providerUrlDraft.startsWith("https://"),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(if (editingProviderId.isBlank()) "添加服务商" else "保存服务商修改") }
+        if (editingProviderId.isNotBlank()) {
+            TextButton(onClick = {
+                editingProviderId = ""
+                providerNameDraft = ""
+                providerUrlDraft = "https://"
+            }) { Text("取消编辑服务商") }
+        }
+        if (confirmDeleteProvider) {
+            AlertDialog(
+                onDismissRequest = { confirmDeleteProvider = false },
+                title = { Text("删除服务商？") },
+                text = { Text("将同时删除该服务商下的模型和 API Key。此操作不可撤销。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val deletingId = providerToDeleteId
+                        if (deletingId.isNotBlank()) onDeleteProvider(deletingId)
+                        confirmDeleteProvider = false
+                        providerToDeleteId = ""
+                        if (selectedProviderId == deletingId) {
+                            selectedProviderId = registry.providers.firstOrNull { it.id != deletingId }?.id.orEmpty()
+                            editingRegistryModelId = ""
+                            modelNameDraft = ""
+                            modelCodeDraft = ""
+                            selectedModelKeyIds = emptySet()
+                            modelInputPriceDraft = ""
+                            modelOutputPriceDraft = ""
+                            modelCurrencyDraft = "USD"
+                        }
+                        if (editingProviderId == deletingId) {
+                            editingProviderId = ""
+                            providerNameDraft = ""
+                            providerUrlDraft = "https://"
+                        }
+                    }) { Text("确认删除") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDeleteProvider = false }) { Text("取消") }
+                }
+            )
+        }
+
+        if (selectedProviderId.isNotBlank()) {
+            Text("API Key", color = Ink, style = MaterialTheme.typography.titleSmall)
+            registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.label, color = Ink)
+                        Text(if (loadApiKey(item.id).isNotBlank()) "已加密保存 · 可用" else "密钥缺失", color = if (loadApiKey(item.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                    }
+                    TextButton(
+                        onClick = { onSaveApiKey(item.copy(enabled = !item.enabled), loadApiKey(item.id)) },
+                        enabled = loadApiKey(item.id).isNotBlank()
+                    ) { Text(if (item.enabled) "停用" else "启用", color = if (item.enabled) Mint else ColorStop) }
+                    TextButton(onClick = {
+                        replacingApiKeyId = item.id
+                        apiKeyLabelDraft = item.label
+                        apiKeyDraft = ""
+                    }) { Text("替换密钥", color = Mint) }
+                    TextButton(onClick = {
+                        onDeleteRegistryApiKey(item.id)
+                        selectedModelKeyIds = selectedModelKeyIds - item.id
+                        if (replacingApiKeyId == item.id) replacingApiKeyId = ""
+                    }) { Text("删除", color = ColorStop) }
+                }
+            }
+            OutlinedTextField(apiKeyLabelDraft, { apiKeyLabelDraft = it.take(60) }, modifier = Modifier.fillMaxWidth(), label = { Text("Key 名称") }, singleLine = true)
+            OutlinedTextField(apiKeyDraft, { apiKeyDraft = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key 密钥") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+            OutlinedButton(
+                onClick = {
+                    val item = ModelApiKey(
+                        replacingApiKeyId.ifBlank { UUID.randomUUID().toString() },
+                        selectedProviderId,
+                        apiKeyLabelDraft.trim()
+                    )
+                    onSaveApiKey(item, apiKeyDraft.trim())
+                    replacingApiKeyId = ""
+                    apiKeyLabelDraft = ""
+                    apiKeyDraft = ""
+                },
+                enabled = apiKeyLabelDraft.isNotBlank() && apiKeyDraft.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (replacingApiKeyId.isBlank()) "添加 API Key" else "保存替换后的 API Key") }
+
+            Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
+            registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
+                val available = item in registry.selectableModels()
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(item.name, color = if (item.id == activeRegistryModelId) Mint else Ink)
+                            Text(item.modelCode, color = Muted, style = MaterialTheme.typography.bodySmall)
+                            Text(if (available) "可用" else "缺少可用 Key 或已停用", color = if (available) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (item.id == activeRegistryModelId) Text("当前", color = Mint)
+                    }
+                    Row {
+                        TextButton(onClick = { onSaveRegistryModel(item.copy(enabled = !item.enabled)) }) {
+                            Text(if (item.enabled) "停用" else "启用", color = if (item.enabled) Mint else ColorStop)
+                        }
+                        TextButton(onClick = {
+                            editingRegistryModelId = item.id
+                            modelNameDraft = item.name
+                            modelCodeDraft = item.modelCode
+                            selectedModelKeyIds = item.apiKeyIds.toSet()
+                            modelInputPriceDraft = item.inputPricePerMillion?.toString().orEmpty()
+                            modelOutputPriceDraft = item.outputPricePerMillion?.toString().orEmpty()
+                            modelCurrencyDraft = item.currency
+                            supportsReasoningEffortDraft = item.supportsReasoningEffort
+                        }) { Text("编辑", color = Mint) }
+                        TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("设为当前", color = Mint) }
+                        TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
+                    }
+                }
+            }
+            OutlinedTextField(modelNameDraft, { modelNameDraft = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型显示名称") }, singleLine = true)
+            OutlinedTextField(modelCodeDraft, { modelCodeDraft = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型 ID / model code") }, singleLine = true)
+            OutlinedTextField(modelInputPriceDraft, { modelInputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输入价格 / 百万 Token（可留空）") }, singleLine = true)
+            OutlinedTextField(modelOutputPriceDraft, { modelOutputPriceDraft = it.take(24) }, modifier = Modifier.fillMaxWidth(), label = { Text("输出价格 / 百万 Token（可留空）") }, singleLine = true)
+            OutlinedTextField(modelCurrencyDraft, { modelCurrencyDraft = it.take(3).uppercase() }, modifier = Modifier.fillMaxWidth(), label = { Text("价格币种（3 位代码）") }, singleLine = true)
+            Text("编辑时会保留模型启停状态及原有价格等目录元数据；API Key 关联按当前勾选保存。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = supportsReasoningEffortDraft, onCheckedChange = { supportsReasoningEffortDraft = it })
+                Text("该模型明确支持 reasoning_effort（四档参数）", color = Ink, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("只有服务商确认支持 Off/Low/Medium/High 四档时才勾选；否则不发送该参数。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("关联 API Key（可多选，按顺序故障切换）", color = Muted, style = MaterialTheme.typography.bodySmall)
+            registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = item.id in selectedModelKeyIds, onCheckedChange = { checked ->
+                        selectedModelKeyIds = if (checked) selectedModelKeyIds + item.id else selectedModelKeyIds - item.id
+                    })
+                    Text(item.label, color = Ink)
+                }
+            }
+            OutlinedButton(
+                onClick = {
+                    val inputPrice = modelInputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val outputPrice = modelOutputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val existing = registry.models.firstOrNull { it.id == editingRegistryModelId }
+                    val model = ModelDefinition(
+                        id = editingRegistryModelId.ifBlank { UUID.randomUUID().toString() },
+                        providerId = selectedProviderId,
+                        name = modelNameDraft.trim(),
+                        modelCode = modelCodeDraft.trim(),
+                        apiKeyIds = registry.apiKeys.filter { it.providerId == selectedProviderId && it.id in selectedModelKeyIds }.map { it.id },
+                        enabled = existing?.enabled ?: true,
+                        inputPricePerMillion = inputPrice,
+                        outputPricePerMillion = outputPrice,
+                        currency = modelCurrencyDraft.trim().uppercase(),
+                        supportsReasoningEffort = supportsReasoningEffortDraft
+                    )
+                    onSaveRegistryModel(model)
+                    editingRegistryModelId = ""
+                    modelNameDraft = ""
+                    modelCodeDraft = ""
+                    selectedModelKeyIds = emptySet()
+                    modelInputPriceDraft = ""
+                    modelOutputPriceDraft = ""
+                    modelCurrencyDraft = "USD"
+                },
+                enabled = modelNameDraft.isNotBlank() && modelCodeDraft.isNotBlank() &&
+                    (modelInputPriceDraft.isBlank() || modelInputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
+                    (modelOutputPriceDraft.isBlank() || modelOutputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
+                    modelCurrencyDraft.trim().length == 3 &&
+                    registry.apiKeys.any { it.providerId == selectedProviderId && it.id in selectedModelKeyIds && loadApiKey(it.id).isNotBlank() },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("添加模型") }
+        }
+        HorizontalDivider(color = Line)
         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -95,7 +370,8 @@ internal fun ModelManager(
                                 Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存 · 可用" else "API Key 已删除或未配置 · 此模型不可选择", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
                                 usage[profile.id]?.let { stats ->
-                                    Text("成功请求 ${stats.requests} 次 · 估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                    Text("成功请求 ${stats.requests} 次 · 服务商实报 Token：输入 ${stats.providerInputTokens} / 输出 ${stats.providerOutputTokens}（${stats.providerUsageRequests} 次）", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                    Text("本地估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}（${stats.estimatedUsageRequests} 次）", color = Muted, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }

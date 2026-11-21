@@ -23,9 +23,18 @@ internal fun ChatMessage.allVersions(): List<String> = when {
 
 @Composable
 internal fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
-    Surface(color = Card2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Text("$icon   $label", color = Ink, modifier = Modifier.padding(14.dp))
-    }
+    NavigationDrawerItem(
+        label = { Text("$icon   $label", color = Ink) },
+        selected = false,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = NavigationDrawerItemDefaults.colors(
+            unselectedContainerColor = Card2,
+            unselectedTextColor = Ink,
+            selectedContainerColor = Card2,
+            selectedTextColor = Ink
+        )
+    )
 }
 
 @Composable
@@ -90,13 +99,29 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
 @Composable
 internal fun NavigationDrawerContent(
     modifier: Modifier = Modifier,
-    onNavigate: (String) -> Unit
+    onNavigate: (String) -> Unit,
+    onClose: (() -> Unit)? = null
 ) {
     Column(
         modifier.background(Card).verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Nestro",
+                style = MaterialTheme.typography.headlineSmall,
+                color = Mint,
+                modifier = Modifier.weight(1f)
+            )
+            if (onClose != null) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Outlined.Close, contentDescription = "关闭菜单", tint = Ink)
+                }
+            }
+        }
         Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(12.dp))
         DrawerItem("⌂", "工作台") { onNavigate("home") }
@@ -109,6 +134,8 @@ internal fun NavigationDrawerContent(
         DrawerItem("麦", "语音输入") { onNavigate("voice") }
         DrawerItem("▣", "产物库") { onNavigate("artifacts") }
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
+        DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
+        DrawerItem("⑂", "Git 工作台") { onNavigate("git") }
         DrawerItem("✦", "我的专家") { onNavigate("experts") }
         DrawerItem("♧", "专家团队") { onNavigate("teams") }
         DrawerItem("◇", "能力中心") { onNavigate("skills") }

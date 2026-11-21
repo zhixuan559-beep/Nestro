@@ -137,4 +137,47 @@ class WorkflowEngineTest {
         }
         assertEquals(true, failure is IllegalArgumentException)
     }
+    @Test fun workflowEditorCanInsertRemoveMoveAndUpdateSteps() {
+        val first = WorkflowStep(title = "A", instruction = "a")
+        val second = WorkflowStep(title = "B", instruction = "b")
+        var workflow = WorkflowDefinition(name = "编辑", description = "", steps = listOf(first, second))
+        val third = WorkflowStep(title = "C", instruction = "c")
+        workflow = WorkflowDefinitionEditor.insertStep(workflow, 1, third)
+        assertEquals(listOf("A", "C", "B"), workflow.steps.map { it.title })
+        workflow = WorkflowDefinitionEditor.moveStep(workflow, third.id, 2)
+        assertEquals(listOf("A", "B", "C"), workflow.steps.map { it.title })
+        workflow = WorkflowDefinitionEditor.updateStep(workflow, second.id) { it.copy(title = "B2") }
+        assertEquals("B2", workflow.steps[1].title)
+        workflow = WorkflowDefinitionEditor.removeStep(workflow, first.id)
+        assertEquals(listOf("B2", "C"), workflow.steps.map { it.title })
+    }
+
+    @Test fun workflowConditionCanSkipAndApprovalCanReject() = kotlinx.coroutines.test.runTest {
+        val skipped = WorkflowDefinition("w1","条件","",listOf(
+            WorkflowStep(title="条件步",instruction="x",condition="contains:命中")
+        ))
+        val result = WorkflowEngine.run(skipped,"目标",{ _, _ -> "不会执行" })
+        assertEquals("skipped", result.stepRuns.single().status)
+
+        val gated = WorkflowDefinition("w2","审批","",listOf(
+            WorkflowStep(title="审批步",instruction="x",approvalRequired=true)
+        ))
+        try {
+            WorkflowEngine.run(gated,"目标",{ _, _ -> "不会执行" },requestApproval={ _, _ -> false })
+            throw AssertionError("expected rejection")
+        } catch (e: WorkflowExecutionException) {
+            assertEquals("approval_rejected", e.stepRuns.single().status)
+        }
+    }
+
+    @Test fun successfulRunExposesCheckpointForResume() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("w","恢复","",listOf(
+            WorkflowStep(title="A",instruction="a"),
+            WorkflowStep(title="B",instruction="b")
+        ))
+        val result = WorkflowEngine.run(workflow,"输入",{ step, _ -> step.title })
+        assertEquals(2, result.checkpointIndex)
+        assertEquals(2, result.completedSteps)
+    }
+
 }

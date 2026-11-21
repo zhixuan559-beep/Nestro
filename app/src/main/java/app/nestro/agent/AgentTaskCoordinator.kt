@@ -41,8 +41,12 @@ class AgentTaskExecutionContext internal constructor(
     private val traces: AgentTaskTraceStore? = null
 ) {
     private suspend fun trace(event: String, detail: String = "") {
-        runCatching {
+        try {
             traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the task, but cancellation must remain observable.
         }
     }
 
@@ -86,8 +90,12 @@ class AgentTaskCoordinator(
     private val requestedStops = ConcurrentHashMap<String, AgentTaskStatus>()
 
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
-        runCatching {
+        try {
             traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the task, but cancellation must remain observable.
         }
     }
 
@@ -161,6 +169,31 @@ class AgentTaskCoordinator(
         return queued
     }
 
+    /**
+     * Reattaches a persisted RUNNING task to the in-memory consumer when its durable
+     * scheduler (for example WorkManager) starts after process recreation.
+     * An already-active task is left untouched to prevent duplicate execution.
+     */
+    suspend fun requeueRunningTaskIfIdle(taskId: String): AgentTaskState? {
+        val shouldQueue = withTransitionLock {
+            val state = states.get(taskId) ?: return@withTransitionLock false
+            if (state.status != AgentTaskStatus.RUNNING || activeJobs.containsKey(taskId)) {
+                return@withTransitionLock false
+            }
+            states.put(state.copy(
+                status = AgentTaskStatus.QUEUED,
+                lastError = "",
+                updatedAt = System.currentTimeMillis()
+            ))
+            true
+        }
+        if (shouldQueue) {
+            queue.send(taskId)
+            trace(taskId, "reattached_by_external_scheduler")
+        }
+        return states.get(taskId)
+    }
+
     suspend fun <T> runInline(
         taskId: String,
         owner: String,
@@ -210,7 +243,7 @@ class AgentTaskCoordinator(
         stop(taskId, AgentTaskStatus.CANCELLED)
     }
 
-    suspend fun recoverAfterProcessRestart(): List<AgentTaskState> {
+    suspend fun recoverAfterProcessRestart(externallyScheduledOwners: Set<String> = emptySet()): List<AgentTaskState> {
         val recovered = mutableListOf<AgentTaskState>()
         val queuedIds = mutableListOf<String>()
         states.recoverable().forEach { state ->
@@ -218,16 +251,26 @@ class AgentTaskCoordinator(
                 val latest = states.get(state.taskId) ?: return@withTransitionLock null
                 when (latest.status) {
                     AgentTaskStatus.RUNNING -> {
-                        val paused = latest.copy(
-                            status = AgentTaskStatus.PAUSED,
-                            lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        states.put(paused)
-                        paused
+                        if (latest.owner in externallyScheduledOwners) {
+                            // Let the durable scheduler reattach execution after process restart.
+                            latest
+                        } else {
+                            val paused = latest.copy(
+                                status = AgentTaskStatus.PAUSED,
+                                lastError = "应用曾在任务执行期间退出；请核对当前状态后继续",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            states.put(paused)
+                            paused
+                        }
                     }
                     AgentTaskStatus.QUEUED -> {
-                        if (handlers.find(latest.owner) != null) {
+                        if (latest.owner in externallyScheduledOwners) {
+                            // Durable schedulers (for example WorkManager) own dispatch.
+                            // Keep the task queued for that scheduler instead of executing
+                            // it directly from the application-scope recovery worker.
+                            latest
+                        } else if (handlers.find(latest.owner) != null) {
                             queuedIds += latest.taskId
                             latest
                         } else {
@@ -259,6 +302,9 @@ class AgentTaskCoordinator(
     }
 
     private suspend fun stop(taskId: String, status: AgentTaskStatus) {
+        // Revoke task-scoped capabilities and credentials before the task can continue.
+        AgentToolLeaseRegistry.revokeTask(taskId)
+        AgentCredentialLeaseRegistry.revokeTask(taskId)
         withTransitionLock {
             val state = states.get(taskId) ?: return@withTransitionLock
             if (state.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return@withTransitionLock
@@ -385,6 +431,8 @@ class AgentTaskCoordinator(
                     trace(taskId, "failed", message)
                 }
             } finally {
+                AgentToolLeaseRegistry.revokeTask(taskId)
+                AgentCredentialLeaseRegistry.revokeTask(taskId)
                 withTransitionLock { activeJobs.remove(taskId, job) }
             }
         }

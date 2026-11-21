@@ -2,11 +2,24 @@ package app.nestro.phone
 
 /** Goal-driven task planning contract. Planning never grants permission or performs actions. */
 object PhoneAgentPlanner {
+    /** Replans remaining work from the current screen without granting permissions. */
+    fun replanFromCurrentState(plan: Plan, currentScreen: String, completedStep: Int): Plan {
+        require(completedStep >= 0)
+        val safeScreen = currentScreen.take(8_000)
+        val remaining = plan.steps.drop(completedStep.coerceAtMost(plan.steps.size))
+        return plan.copy(steps = remaining.mapIndexed { index, step ->
+            step.copy(title = if (index == 0 && safeScreen.isNotBlank()) step.title + "（基于当前屏幕重新核验）" else step.title)
+        })
+    }
+
     enum class Category { SHOPPING, FOOD_ORDER, BOOKING, WEB_RESEARCH, FORM, GENERAL }
     enum class Risk { LOW, MEDIUM, HIGH }
     enum class StepKind { CLARIFY_REQUIREMENTS, DISCOVER_OPTIONS, COMPARE_TOTAL_COST, SELECT_CANDIDATE, OPEN_DESTINATION, VERIFY_PAGE, FILL_NON_SENSITIVE_DETAILS, REVIEW_ORDER, REQUEST_USER_CONFIRMATION, HANDOFF_TO_USER, VERIFY_COMPLETION }
     data class Step(val kind: StepKind, val title: String, val risk: Risk = Risk.LOW, val requiresUserConfirmation: Boolean = false)
     data class Plan(val category: Category, val goal: String, val steps: List<Step>, val requiresHumanAtCommit: Boolean = true)
+
+    fun shouldCreateTask(taskModeEnabled: Boolean, plan: Plan): Boolean =
+        taskModeEnabled && plan.category != Category.GENERAL
 
     fun plan(prompt: String): Plan {
         val text = prompt.trim()

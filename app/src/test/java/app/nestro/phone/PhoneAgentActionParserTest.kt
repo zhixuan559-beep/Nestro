@@ -52,6 +52,82 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun webSearchBecomesEncodedHttpsSearchUrl() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"成都 咖啡 到手价"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://html.duckduckgo.com/html/?q="))
+        assertTrue(action.url.contains("%"))
+    }
+
+    @Test
+    fun searchWebCanUseAlternatePublicSearchEngines() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"coffee delivery fees","engine":"google"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://www.google.com/search?q="))
+    }
+
+    @Test
+    fun rejectsUnknownSearchEngine() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"search_web","query":"coffee","engine":"unknown"}]}"""
+            )
+            fail("unknown search engine must be rejected")
+        } catch (_: IllegalStateException) {
+        }
+    }
+
+    @Test
+    fun sensitiveSearchTermsAndFieldLabelsBecomeUserHandoff() {
+        val search = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"phone number: +1 202 555 0123"}]}"""
+        )
+        val field = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"test@example.com","value":"ordinary"}]}"""
+        )
+        assertTrue(search.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        assertTrue(field.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun sensitivePostClickEvidenceBecomesUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"继续","expectedAfter":"test@example.com"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun completedPlanCannotAlsoRequestNewActions() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":true,"completionEvidence":"已完成","actions":[{"type":"wait","millis":1}]}"""
+            )
+            fail("a completed plan must not include executable actions")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun rejectsMissingOrWrongTypedActionEnvelope() {
+        listOf(
+            """{"done":false}""",
+            """{"done":"false","actions":[]}""",
+            """{"done":false,"actions":"wait"}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid action envelope should be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""

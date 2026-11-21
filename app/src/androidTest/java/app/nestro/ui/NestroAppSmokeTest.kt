@@ -34,7 +34,7 @@ class NestroAppSmokeTest {
     @Test
     fun opensProjectSpacesFromNavigationDrawer() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("项目空间", substring = true).performClick()
+        composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
 
         composeRule.onNodeWithText("每个空间拥有独立会话与项目指令。", substring = true).assertIsDisplayed()
     }
@@ -44,8 +44,11 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("语音输入", substring = true).performClick()
 
-        composeRule.onNodeWithText("语音输入").assertIsDisplayed()
-        composeRule.onNodeWithText("当前不内置语音合成或第三方语音插件。", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("语音输入与输出").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "语音输入：在聊天输入框按住麦克风说话，松开后由 Android 系统识别服务转写并发送。",
+            substring = true
+        ).assertIsDisplayed()
     }
 
 
@@ -63,11 +66,11 @@ class NestroAppSmokeTest {
     @Test
     fun opensWorkflowAndDataSettingsDestinations() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工作流", substring = true).performClick()
+        composeRule.onNodeWithText("工作流", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("数据与设置", substring = true).performClick()
+        composeRule.onNodeWithText("数据与设置", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("数据与设置").assertIsDisplayed()
         composeRule.onNodeWithText("本地数据备份").assertIsDisplayed()
     }
@@ -103,7 +106,7 @@ class NestroAppSmokeTest {
 
         composeRule.onNodeWithText("保存模型配置").performScrollTo().performClick()
 
-        composeRule.onNodeWithText("配置名称需为 1 到 40 个字符").assertIsDisplayed()
+        composeRule.onNodeWithText("配置名称需为 1 到 40 个字符").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -122,8 +125,8 @@ class NestroAppSmokeTest {
             composeRule.waitForIdle()
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
-            composeRule.onNodeWithText("项目空间", substring = true).performClick()
-            composeRule.onNodeWithText("项目空间").assertIsDisplayed()
+            composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
+            composeRule.onNodeWithText("项目空间", substring = false).assertIsDisplayed()
         } finally {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
@@ -133,14 +136,14 @@ class NestroAppSmokeTest {
     @Test
     fun expertTemplateLibraryShowsBuiltInsAndFiltersBySearch() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("我的专家", substring = true).performClick()
+        composeRule.onNodeWithText("我的专家", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
-        composeRule.onNodeWithText("深度研究员").assertIsDisplayed()
         composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
-        composeRule.onNodeWithText("搜索模板名称、说明或指令").performTextInput("风险")
-        composeRule.onNodeWithText("风险审查员").assertIsDisplayed()
-        composeRule.onNodeWithText("深度研究员").assertIsNotDisplayed()
+        composeRule.onNodeWithText("深度研究员", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("搜索模板名称、说明或指令").performScrollTo().performTextInput("风险审查员")
+        composeRule.onNodeWithText("✦  风险审查员", substring = false).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("深度研究员", substring = true).assertIsNotDisplayed()
     }
 
     @Test

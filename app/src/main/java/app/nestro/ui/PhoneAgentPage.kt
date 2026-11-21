@@ -92,23 +92,32 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                     color = if (hasTaskGrant || hasSingleGrant) Mint else Muted
                 )
                 Button(
-                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("授予单次操作") }
                 OutlinedButton(
-                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).remove("phone_task_stop_requested").apply(); refresh++ },
+                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).apply(); refresh++ },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("授予本次任务持续授权（最长 2 小时）") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = {
-                            PhoneAgentService.activeService?.requestTaskStop()
-                            taskMessage = "已请求停止当前任务"
+                            tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }?.id?.let { taskId ->
+                                PhoneAgentService.activeService?.requestTaskStop(taskId)
+                                taskMessage = "已请求停止任务：${taskId.take(8)}"
+                            } ?: run { taskMessage = "当前没有正在运行的任务" }
                         },
                         modifier = Modifier.weight(1f)
                     ) { Text("停止当前任务") }
                     TextButton(
-                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").putBoolean("phone_task_stop_requested", true).apply(); refresh++ },
+                        onClick = {
+                            prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").apply()
+                            tasks.firstOrNull { it.status == PhoneAgentTaskStore.STATUS_RUNNING }?.id?.let { taskId ->
+                                PhoneAgentService.activeService?.requestTaskStop(taskId)
+                                taskMessage = "授权已撤销，正在停止当前任务"
+                            } ?: run { taskMessage = "授权已撤销" }
+                            refresh++
+                        },
                         modifier = Modifier.weight(1f)
                     ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                 }
@@ -120,6 +129,16 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             modifier = Modifier.fillMaxWidth()
         ) { Text("读取当前界面（仅本次主动触发）") }
         Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(
+            onClick = {
+                val undone = PhoneAgentService.activeService?.undoLastTextEdit() == true
+                taskMessage = if (undone) "已撤销上一次安全文本填写" else "当前没有可撤销的安全文本填写，或页面已发生变化"
+                refresh++
+            },
+            enabled = serviceEnabled,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("撤销上次安全文本填写") }
+        Text("仅支持页面未变化时撤销最后一次非敏感文本填写；需要有效操作授权。", color = Muted, style = MaterialTheme.typography.labelSmall)
         if (taskMessage.isNotBlank()) Text(taskMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
@@ -131,7 +150,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_FAILED)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
@@ -163,7 +182,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                 }
                             }) { Text("补充信息并重新规划", color = Mint) }
                         }
-                        taskLogs[task.id].orEmpty().takeLast(3).forEach { log ->
+                        taskLogs[task.id].orEmpty().takeLast(12).forEach { log ->
                             Text(
                                 "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
                                 color = if (log.success) Muted else androidx.compose.ui.graphics.Color(0xFFF87171),
@@ -190,7 +209,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                     },
                                     enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
+                                ) { Text(when { task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
@@ -210,6 +229,6 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                 }
             }
         }
-        Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。网页检索会向搜索服务发送检索词，含手机号、邮箱、卡号等敏感信息会被拦截。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
 }

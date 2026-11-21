@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.data.runCatchingCancellable
 import app.nestro.NestroApplication
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentTaskState
@@ -20,6 +21,14 @@ class PhoneAgentWorker(
     override suspend fun doWork(): Result {
         val taskId = inputData.getString(PhoneAgentWorkScheduler.KEY_TASK_ID)
             ?: return Result.success()
+        val app = applicationContext as NestroApplication
+        try {
+            app.ensureBackupRestoreRecovered()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return Result.retry()
+        }
         val preferences = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         // WorkManager input survives process death and automatic retries. Rehydrate
         // handoff/retry intent before the coordinator handler reads its durable flags.
@@ -43,7 +52,7 @@ class PhoneAgentWorker(
             return executeTask(taskId)
         } finally {
             applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove("phone_task_stop_requested").apply()
+                .edit().remove(PhoneAgentWorkScheduler.pendingKey(taskId)).remove(PhoneAgentWorkScheduler.pendingAtKey(taskId)).remove(PhoneAgentWorkScheduler.cancelKey(taskId)).remove(PhoneAgentWorkScheduler.afterHandoffKey(taskId)).remove(PhoneAgentWorkScheduler.allowRetryKey(taskId)).remove(PhoneAgentWorkScheduler.stopKey(taskId)).apply()
         }
     }
 
@@ -75,10 +84,10 @@ class PhoneAgentWorker(
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
             AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)
-            // Another WorkManager invocation may observe an already-running coordinator task.
-            // Never pause/resume it here: that creates a cancellation/resume race and can
-            // duplicate a device action. The polling loop below waits for its persisted outcome.
-            AgentTaskStatus.RUNNING -> Unit
+            // After process recreation, the durable Room state can still say RUNNING
+            // while the in-memory coordinator has no active handler. Reattach only when idle;
+            // if another Worker already owns the active handler this is a no-op.
+            AgentTaskStatus.RUNNING -> coordinator.requeueRunningTaskIfIdle(taskId)
             AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
             AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             null -> error("无法初始化 Phone Agent 任务状态")
@@ -128,10 +137,9 @@ class PhoneAgentWorker(
             PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已取消", "任务已停止，不会自动重新执行。", false)
             return Result.success()
         }
-        preferences.edit().remove("phone_task_stop_requested").apply()
         setForeground(PhoneAgentNotifications.foregroundInfo(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100)))
         PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 正在执行", task.goal.take(100), true)
-        if (PhoneAgentService.activeService == null) {
+        if (PhoneAgentExecutionEnvironmentProvider.active == null) {
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
                 PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
@@ -183,23 +191,29 @@ class PhoneAgentWorker(
                 }
             }
         } catch (cancelled: CancellationException) {
-            val latest = dao.phoneAgentTask(taskId)
             val userCancelled = applicationContext.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
                 .getBoolean(PhoneAgentWorkScheduler.cancelKey(taskId), false)
-            if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
-                if (userCancelled) PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
-                else PhoneAgentTaskStore.markInterrupted(dao, taskId)
-            }
-            runCatching {
-                val stateStore = RoomAgentTaskStateStore(dao)
-                stateStore.get(taskId)?.let { state ->
-                    if (state.status !in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.FAILED, AgentTaskStatus.WAITING_FOR_USER)) {
-                        stateStore.put(state.copy(
-                            status = if (userCancelled) AgentTaskStatus.CANCELLED else AgentTaskStatus.PAUSED,
-                            lastError = if (userCancelled) "用户取消任务" else "后台任务被中断，可核对当前页面后继续",
-                            updatedAt = System.currentTimeMillis()
-                        ))
+            withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    val latest = dao.phoneAgentTask(taskId)
+                    if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
+                        if (userCancelled) PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_CANCELLED, latest.currentStep)
+                        else PhoneAgentTaskStore.markInterrupted(dao, taskId)
                     }
+                    runCatchingCancellable {
+                        val stateStore = RoomAgentTaskStateStore(dao)
+                        stateStore.get(taskId)?.let { state ->
+                            if (state.status !in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.FAILED, AgentTaskStatus.WAITING_FOR_USER)) {
+                                stateStore.put(state.copy(
+                                    status = if (userCancelled) AgentTaskStatus.CANCELLED else AgentTaskStatus.PAUSED,
+                                    lastError = if (userCancelled) "用户取消任务" else "后台任务被中断，可核对当前页面后继续",
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Preserve the original cancellation after best-effort durable cleanup.
                 }
             }
             PhoneAgentNotifications.show(
@@ -209,7 +223,7 @@ class PhoneAgentWorker(
                 false
             )
             if (userCancelled) Result.success() else throw cancelled
-        } catch (_: Throwable) {
+        } catch (error: Exception) {
             val latest = dao.phoneAgentTask(taskId)
             if (latest != null && latest.status == PhoneAgentTaskStore.STATUS_RUNNING) {
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, latest.currentStep, "任务失败", false, "后台执行发生未处理异常")

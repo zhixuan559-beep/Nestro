@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -7,8 +8,30 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Strict message-version codec shared by Room persistence and restore paths. */
+internal fun encodeMessageVersions(message: ChatMessage): String {
+    require(message.versions.size <= 20) { "回答版本数量超过持久化上限" }
+    require(message.versions.all { it.length <= 200_000 }) { "回答版本内容超过持久化上限" }
+    require(message.activeVersion >= 0 && (message.versions.isEmpty() || message.activeVersion < message.versions.size)) {
+        "回答版本索引无效"
+    }
+    return JSONArray(message.versions).toString()
+}
+
+internal fun decodeMessageVersions(raw: String, activeVersion: Int): List<String> {
+    val values = JSONArray(raw)
+    require(values.length() <= 20) { "回答版本数量超过持久化上限" }
+    val versions = (0 until values.length()).map { index ->
+        require(values.opt(index) is String) { "回答版本格式无效" }
+        values.getString(index).also { require(it.length <= 200_000) { "回答版本内容超过持久化上限" } }
+    }
+    require(activeVersion >= 0 && (versions.isEmpty() || activeVersion < versions.size)) { "回答版本索引无效" }
+    return versions
+}
+
+
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
-class ConversationPersistenceService(private val database: NestroDatabase) {
+class ConversationPersistenceService(private val database: NestroDatabase, private val context: Context? = null) {
     internal data class RestoreResult(
         val conversations: List<ConversationRecord>,
         val projects: List<ProjectRecord>
@@ -36,7 +59,15 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                 it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
             }
             val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-            val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
+            val hasExclusiveResources = runCatching {
+                ProjectResourceScopeStore.resourcesOwnedOnlyByProject(
+                    ProjectResourceScopeStore.load(prefs), pendingProjectDeleteId
+                ).isNotEmpty()
+            }.getOrDefault(true)
+            val artifactsCleaned = context?.let { appContext ->
+                runCatching { ArtifactStore.deleteProjectIfEmpty(appContext, pendingProjectDeleteId) }.getOrDefault(false)
+            } ?: true
+            val canRecover = !hasExclusiveResources && artifactsCleaned && ProjectSpaceRules.canRecoverPendingDeletion(
                 projectId = pendingProjectDeleteId,
                 activeProjectId = activeId,
                 hasRunningRequest = hasRunningRequest,
@@ -57,9 +88,33 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     ProjectPreferencesStore.loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
                     markDirty = false
                 )
+                ProjectResourceScopeStore.save(
+                    prefs,
+                    ProjectResourceScopeStore.removeProjectScope(
+                        ProjectResourceScopeStore.load(prefs),
+                        pendingProjectDeleteId
+                    )
+                )
+                ProjectMemorySettingsStore.removeProject(prefs, pendingProjectDeleteId)
+                ProjectAccessControlStore.removeProject(prefs, pendingProjectDeleteId)
                 val editor = prefs.edit()
                 (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
                     .distinct().forEach { editor.remove("draft_$it") }
+                editor.putString(
+                    "workflow_runs_v1",
+                    WorkflowRunHistoryCodec.encode(
+                        WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                            .filterNot { it.projectId == pendingProjectDeleteId }
+                    )
+                )
+                editor.putString(
+                    "expert_team_runs_v1",
+                    ExpertTeamRunHistoryCodec.encode(
+                        ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+                            .filterNot { it.projectId == pendingProjectDeleteId }
+                    )
+                )
+                editor.remove("project_last_opened_$pendingProjectDeleteId")
                 editor.remove("pending_project_delete_id").commit()
             } else {
                 prefs.edit().remove("pending_project_delete_id").commit()
@@ -82,7 +137,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     val rows = record.messages.mapIndexed { index, message ->
                         MessageEntity(
                             message.id, record.id, index, message.role, message.content,
-                            JSONArray(message.versions.take(20)).toString(), message.activeVersion
+                            encodeMessageVersions(message)
                         )
                     }
                     if (rows.isNotEmpty()) dao.putMessages(rows)
@@ -131,15 +186,31 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
         entity.messages.sortedBy { it.position }.map { message ->
             ChatMessage(
                 message.id, message.role, message.content,
-                decodeVersions(message.versionsJson), message.activeVersion
+                decodeMessageVersions(message.versionsJson, message.activeVersion), message.activeVersion
             )
         }
     }
 
-    private fun decodeVersions(raw: String): List<String> = runCatching {
-        val values = JSONArray(raw)
-        (0 until values.length()).mapNotNull { values.optString(it).takeIf(String::isNotBlank) }.take(20)
-    }.getOrDefault(emptyList())
+    /** Persist an interrupted chat recovery directly to Room before startup continues. */
+    internal suspend fun persistRecoveredMessages(conversationId: String, messages: List<ChatMessage>) = withContext(Dispatchers.IO) {
+        val dao = database.dao()
+        database.withTransaction {
+            val current = dao.conversationWithMessages(conversationId)?.conversation
+                ?: return@withTransaction
+            val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
+                ?.ifBlank { "新对话" } ?: current.title
+            val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
+            dao.putConversation(current.copy(title = title, updatedAt = System.currentTimeMillis()))
+            dao.clearMessages(conversationId)
+            val rows = messages.mapIndexed { index, message ->
+                MessageEntity(
+                    message.id, conversationId, index, message.role, message.content,
+                    encodeMessageVersions(message)
+                )
+            }
+            if (rows.isNotEmpty()) dao.putMessages(rows)
+        }
+    }
 
     internal suspend fun persist(
         prefs: SharedPreferences,
@@ -160,7 +231,7 @@ class ConversationPersistenceService(private val database: NestroDatabase) {
                     val rows = record.messages.mapIndexed { index, message ->
                         MessageEntity(
                             message.id, record.id, index, message.role, message.content,
-                            JSONArray(message.versions.take(20)).toString(), message.activeVersion
+                            encodeMessageVersions(message)
                         )
                     }
                     if (rows.isNotEmpty()) dao.putMessages(rows)

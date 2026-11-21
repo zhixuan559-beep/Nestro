@@ -72,12 +72,223 @@ sealed interface AgentAuthorization {
     data class RequireConfirmation(val reason: String) : AgentAuthorization
 }
 
-interface AgentToolCatalog {
-    fun register(spec: AgentToolSpec, handler: suspend (Map<String, String>) -> AgentToolResult)
-    fun remove(toolId: String)
+interface AgentToolDiscovery {
     fun find(toolId: String): AgentToolSpec?
     fun list(): List<AgentToolSpec>
+}
+
+/** Invocation is reserved for AgentRuntime, which applies AgentPermissionRouter. */
+interface AgentToolAccess : AgentToolDiscovery {
     suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult
+}
+
+interface AgentToolCatalog : AgentToolAccess {
+    fun register(spec: AgentToolSpec, handler: suspend (Map<String, String>) -> AgentToolResult)
+    fun remove(toolId: String)
+
+    /** Creates a task-local view that exposes only explicitly selected capabilities. */
+    fun openSession(toolIds: Set<String>): AgentToolSession {
+        val selected = toolIds.mapNotNull(::find).associateBy { it.id }
+        return AgentToolSession(selected) { toolId, arguments -> invoke(toolId, arguments) }
+    }
+}
+
+/**
+ * A capability lease for one task/step. Tool definitions outside the allow-list
+ * are invisible, invocation outside the allow-list is rejected, and close() makes
+ * the lease unusable. Sessions never grant permissions; AgentPermissionRouter still
+ * authorizes every invocation.
+ */
+class AgentToolSession internal constructor(
+    allowedSpecs: Map<String, AgentToolSpec>,
+    private val invokeSelected: suspend (String, Map<String, String>) -> AgentToolResult
+) : AgentToolAccess, AutoCloseable {
+    private val specs = allowedSpecs.toMap()
+    @Volatile private var closed = false
+
+    override fun find(toolId: String): AgentToolSpec? =
+        if (closed) null else specs[toolId]
+
+    override fun list(): List<AgentToolSpec> =
+        if (closed) emptyList() else specs.values.sortedBy { it.id }
+
+    override suspend fun invoke(toolId: String, arguments: Map<String, String>): AgentToolResult {
+        if (closed) return AgentToolResult(false, error = "工具会话已释放")
+        if (toolId !in specs) return AgentToolResult(false, error = "当前任务未加载该工具：$toolId")
+        return invokeSelected(toolId, arguments)
+    }
+
+    override fun close() {
+        closed = true
+    }
+
+    /** Revocation is explicit and immediate; it has the same terminal effect as close(). */
+    fun revoke() {
+        closed = true
+    }
+}
+
+/**
+ * Process-local registry for task-scoped capability leases.
+ * A task can revoke every open lease without holding individual session references.
+ */
+object AgentToolLeaseRegistry {
+    data class Lease internal constructor(
+        val id: String,
+        val taskId: String,
+        val access: AgentToolSession
+    )
+
+    private val leases = ConcurrentHashMap<String, Lease>()
+
+    fun open(taskId: String, catalog: AgentToolCatalog, toolIds: Set<String>): Lease {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(toolIds.isNotEmpty())
+        val lease = Lease(
+            id = java.util.UUID.randomUUID().toString(),
+            taskId = taskId,
+            access = catalog.openSession(toolIds)
+        )
+        leases[lease.id] = lease
+        return lease
+    }
+
+    fun release(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.access.close()
+        return true
+    }
+
+    fun revoke(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.access.revoke()
+        return true
+    }
+
+    fun revokeTask(taskId: String): Int {
+        val selected = leases.values.filter { it.taskId == taskId }
+        selected.forEach { lease ->
+            if (leases.remove(lease.id, lease)) lease.access.revoke()
+        }
+        return selected.size
+    }
+
+    fun activeLeaseCount(taskId: String): Int = leases.values.count { it.taskId == taskId }
+}
+
+/**
+ * A short-lived credential view for one task. The secret is resolved only when
+ * used, never copied into the lease registry or persisted by this abstraction.
+ */
+class AgentCredentialLease internal constructor(
+    val id: String,
+    val taskId: String,
+    private val expiresAtMillis: Long,
+    private val secretProvider: () -> String?
+) : AutoCloseable {
+    @Volatile private var revoked = false
+
+    fun isUsable(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        !revoked && nowMillis < expiresAtMillis
+
+    fun <T> withSecret(block: (String) -> T): T? {
+        if (!isUsable()) return null
+        val secret = secretProvider()?.takeIf { it.isNotBlank() } ?: return null
+        if (!isUsable()) return null
+        return block(secret)
+    }
+
+    fun revoke() {
+        revoked = true
+    }
+
+    override fun close() = revoke()
+}
+
+/** In-memory, task-bound credential leases; credentials themselves remain in their secure owner. */
+object AgentCredentialLeaseRegistry {
+    private val leases = ConcurrentHashMap<String, AgentCredentialLease>()
+
+    fun open(
+        taskId: String,
+        ttlMillis: Long = 60_000,
+        secretProvider: () -> String?
+    ): AgentCredentialLease {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(ttlMillis in 1..900_000) { "凭据租约有效期必须为 1 毫秒到 15 分钟" }
+        val lease = AgentCredentialLease(
+            id = java.util.UUID.randomUUID().toString(),
+            taskId = taskId,
+            expiresAtMillis = System.currentTimeMillis() + ttlMillis,
+            secretProvider = secretProvider
+        )
+        leases[lease.id] = lease
+        return lease
+    }
+
+    fun release(leaseId: String): Boolean {
+        val lease = leases.remove(leaseId) ?: return false
+        lease.close()
+        return true
+    }
+
+    fun revokeTask(taskId: String): Int {
+        val selected = leases.values.filter { it.taskId == taskId }
+        selected.forEach { lease ->
+            if (leases.remove(lease.id, lease)) lease.revoke()
+        }
+        return selected.size
+    }
+
+    fun activeLeaseCount(taskId: String): Int =
+        leases.values.count { it.taskId == taskId && it.isUsable() }
+}
+
+/**
+ * Central declaration point for the minimum tools required by one feature operation.
+ * Declarations are intentionally operation-scoped (expert member / workflow step),
+ * not a global list injected into every task or chat turn.
+ */
+object AgentCapabilityRegistry {
+    private data class Key(val owner: String, val operation: String)
+    private val declarations = ConcurrentHashMap<Key, Set<String>>()
+
+    fun register(owner: String, operation: String, toolIds: Set<String>) {
+        require(owner.matches(Regex("[a-zA-Z0-9_.-]{1,80}")))
+        require(operation.isNotBlank() && operation.length <= 120)
+        require(toolIds.size <= 32)
+        require(toolIds.all { it.matches(Regex("[a-zA-Z0-9_.-]{1,100}")) })
+        declarations[Key(owner, operation)] = toolIds.toSortedSet()
+    }
+
+    fun unregister(owner: String, operation: String): Boolean =
+        declarations.remove(Key(owner, operation)) != null
+
+    fun resolve(owner: String, operation: String): Set<String> =
+        declarations[Key(owner, operation)].orEmpty().toSet()
+
+    fun clearOwner(owner: String) {
+        declarations.keys.removeIf { it.owner == owner }
+    }
+
+    fun openLease(
+        taskId: String,
+        owner: String,
+        operation: String,
+        catalog: AgentToolCatalog?
+    ): AgentToolLeaseRegistry.Lease? {
+        val required = resolve(owner, operation)
+        if (required.isEmpty()) return null
+        requireNotNull(catalog) {
+            "操作 $owner/$operation 声明了工具能力，但当前没有可用的统一工具目录"
+        }
+        val available = catalog.list().map { it.id }.toSet()
+        val missing = required - available
+        require(missing.isEmpty()) {
+            "操作 $owner/$operation 所需工具尚未注册：" + missing.sorted().joinToString("、")
+        }
+        return AgentToolLeaseRegistry.open(taskId, catalog, required)
+    }
 }
 
 class InMemoryAgentToolCatalog : AgentToolCatalog {
@@ -104,6 +315,17 @@ class InMemoryAgentToolCatalog : AgentToolCatalog {
     override fun list(): List<AgentToolSpec> = entries.values
         .map { it.spec }
         .sortedBy { it.id }
+
+    /** Captures both definitions and handlers so later registry changes cannot retarget an active lease. */
+    override fun openSession(toolIds: Set<String>): AgentToolSession {
+        val selected = toolIds.mapNotNull { toolId ->
+            entries[toolId]?.let { toolId to it }
+        }.toMap()
+        return AgentToolSession(selected.mapValues { it.value.spec }) { toolId, arguments ->
+            selected[toolId]?.handler?.invoke(arguments)
+                ?: AgentToolResult(false, error = "当前任务的工具能力已失效：$toolId")
+        }
+    }
 
     override suspend fun invoke(
         toolId: String,
@@ -181,13 +403,19 @@ interface AgentRuntime {
 }
 
 class DefaultAgentRuntime(
-    private val catalog: AgentToolCatalog,
+    private val catalog: AgentToolAccess,
     private val permissions: AgentPermissionRouter,
     private val states: AgentTaskStateStore,
     private val traces: AgentTaskTraceStore? = null
 ) : AgentRuntime {
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
-        runCatching { traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000))) }
+        try {
+            traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Trace persistence must not fail the tool call, but cancellation must remain observable.
+        }
     }
     override suspend fun execute(request: AgentToolRequest): AgentToolResult {
         val current = states.get(request.taskId) ?: AgentTaskState(

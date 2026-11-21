@@ -1,6 +1,14 @@
 # Nestro 实现状态与开发路线图
 
+> **2026-11-21 模块13代码阶段记录：** MCP 工具中心已实现远程 Streamable HTTP（2026-07-28 stateless 优先，并兼容旧版 initialize/session）、服务与工具发现、逐工具授权、参数预览/调用、Keystore 凭据加密、审计和撤销。后续静态复核补齐了损坏审计记录隔离及对应回归测试；代码已合并锁定至 `refactor/phase-2-architecture`（初始锁定 commit `5d805a9`，审计修复提交 `f2dd742` / `4284a37`）。Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段。Android 端仅连接 HTTPS 远程 MCP，不启动任意本地 stdio Server。
+
 > 状态口径：只有代码已落地且对应构建通过，才标记为「已实现」。UI 占位、设计说明、接口草稿不计入完成。实体设备相关行为在真机验收前仍标记为「待真机验证」。
+
+> **2026-11-20 模块7锁定记录：** PR #7 已合并至 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`。对应 CI Run #72 的 `verify` 与 `instrumentation` 均通过；编译、JVM 单元测试、Lint、APK/测试包构建及 Android 模拟器测试全部成功。模块7代码与云端验证锁定完成。
+
+> **2026-11-21 模块8状态更正：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`。提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 的 `verify` Job 全部通过，但 `instrumented` Job 被取消；后续合并提交对应的 `verify` 与 `instrumented` 也被取消。因此模块8代码已合并、静态/单元验证通过，但模拟器验收尚未完成，不得标记为云端完整锁定。真实设备兼容性、后台限制和功耗验收同样待完成。
+
+> **2026-11-21 模块9锁定记录：** PR #9 已合并至 `refactor/phase-2-architecture`，合并提交 `5191ba81859914926652b52d3c19281256ff7d30`。CI Run #1190 对应提交 `f16d3ed9eba1c59b888ffea47aa198d18c973567`，`verify` 与 Android emulator `instrumented` 两个 Job 均成功；编译、JVM 单元测试、Lint、instrumentation test sources 与模拟器测试通过。模块9云端代码与自动化验收锁定；真实设备音频路由、回声、厂商兼容及网络恢复留待十九模块完成后的统一设备验收。
 
 ## 已实现
 
@@ -28,7 +36,7 @@
 - [x] 每个会话独立保存输入草稿，重新进入会话时恢复。
 - [x] 历史召回来源可追溯：展示来源会话/消息 ID，并可从引用面板跳转原会话。
 - [x] 项目级自动记忆候选提取初版：默认关闭，用户可主动开启；额外请求前执行基础本地敏感内容预检，候选返回后再过滤，支持本地保存、去重、关键词召回、单条编辑/删除。
-- [ ] 语义向量召回、结构化记忆管理增强、跨项目调用授权；敏感内容预检规则仍需持续完善。
+- [x] 本地 BGE 语义向量召回、记忆分类/来源/时间/置信度管理、项目级自动提取开关、单条记忆编辑/删除/导入/导出、按项目清空及跨项目显式 READ 授权；敏感内容预检规则持续迭代。
 - [x] 当前项目跨会话关键词召回初版：按问题检索其他会话消息，注入会话/消息 ID、标题与角色；限制单会话召回数量；完整聊天记录仍留在本机。
 
 ### 专家与技能
@@ -48,17 +56,21 @@
 - [x] 新消息列表平滑滚动。
 - [x] 语音识别部分结果实时回填输入框，松开发起最终识别。
 - [x] 语音识别状态反馈、权限提示、错误提示和识别资源释放。
-- [x] 语音服务扩展契约：定义可选 SpeechInputProvider、SpeechOutputProvider 与 RealtimeVoiceProvider；预留服务商、API 地址、API Key、模型和音色配置字段，不内置第三方服务。
-- [ ] 实体设备键盘、语音识别兼容性和交互流畅度验收。
+- [x] 语音服务扩展契约与 OpenAI-compatible HTTPS Provider：实现远程语音识别（/audio/transcriptions）和语音合成（/audio/speech），分别配置识别、合成模型。
+- [x] 本机语音合成：接入 Android TextToSpeech，支持中英文选择、语速/音调调节、朗读状态反馈与停止；本机合成不由 Nestro 上传文本。
+- [x] 远程语音配置：服务地址、识别/合成/实时模型及音色本地保存；API Key 使用 Android Keystore AES-GCM 加密。
+- [x] 实时双向语音：OpenAI Realtime-compatible WebSocket、PCM16 麦克风采集/扬声器播放、实时转写与文本发送；远程录音转写与远程 TTS 预览由用户主动触发。
+- [x] 构建与自动化测试（CI Run #1190 的 verify 与 Android emulator instrumentation 均通过）；[ ] 实体设备音频路由/回声消除、服务商协议差异、网络中断恢复和交互流畅度验收。
 
 ### Phone Agent
 - [x] AccessibilityService 注册与用户手动授权入口。
 - [x] 用户主动读取当前窗口可访问文本，跳过密码字段。
 - [x] 基础可见文本点击能力。
 - [x] 临时单次/任务授权、撤销和本地审计。
-- [ ] 自然语言任务规划与动作编排（已有模型驱动的多轮观察-规划-执行循环、严格 JSON 动作解析和类型化动作执行；跨平台搜索覆盖率与真机稳定性仍待验证）。
-- [ ] 动作前目标校验、动作后结果验证、停止控制和异常恢复（已有可见节点匹配、动作后验证、WorkManager 持久任务与中断后人工核对恢复；真机适配仍待验收）。
-- [ ] 风险分类、敏感内容脱敏与真机应用适配（已有高风险动作拦截、敏感字段阻断和界面文本脱敏；完整风险策略与真机适配仍待实现）。
+- [x] 自然语言任务规划与动作编排：模型驱动多轮观察-规划-执行-核验；严格有界 JSON 响应解析；Google、Bing、DuckDuckGo 三路网页检索与多来源交叉核验提示；真机稳定性单独验收。
+- [x] 动作前目标校验、动作后结果验证、停止控制和异常恢复：点击/输入目标必须唯一、可见、启用；动作结果逐步核验；停止标记按 taskId 隔离；WorkManager 持久队列、进程恢复和不确定动作人工核对；真机适配单独验收。
+- [x] 风险分类与敏感内容保护：统一模型解析、持久化计划恢复和 Android 执行端策略；覆盖高风险提交、登录/验证码/风控、同意条款、系统权限、敏感字段与个人信息值、公开 URL 安全校验、任务目标/进度/日志脱敏；真机适配单独验收。
+- [ ] Phone Agent 真机专项验收：不同 Android 版本、主流浏览器/目标应用、登录与权限弹窗、系统进程回收、厂商后台限制、连续任务稳定性和功耗。
 
 ### 工程交付
 - [x] GitHub Actions PR 自动化测试；第一版 APK 构建与 artifact 上传延后至十九个模块全部完成后的统一交付阶段。
@@ -73,11 +85,14 @@
 - 数据库 schema 版本升级、可回滚迁移、崩溃恢复与备份一致性测试。
 - 附件管理、文件引用、完整备份校验和设备迁移。
 - [x] TXT、Markdown、HTML、CSV、JSON、XML 等文本导入与本地解析（单文件 2 MB）。
-- [x] DOCX、XLSX、PPTX Office 文档文本解析；[ ] PDF 文本解析。
+- [x] DOCX、XLSX、PPTX Office 文档文本解析；[x] PDF 文本层提取与扫描页中文本地 OCR（逐页处理、加密/页数/文本量限制）。
 - [x] 文档分块、项目内关键词检索与 RAG 上下文来源标注初版。
-- [x] 关键词覆盖度/词频启发式排序、命中词展示、检索预览与项目切换隔离；尚非 FTS/BM25。
-- [ ] SQLite FTS/BM25 全文检索、语义向量索引与更可靠的检索排序。
+- [x] SQLite FTS4 全文召回、项目级 BM25 排序、中文 n-gram/子串召回、稀有词权重、长查询覆盖、来源标注与项目隔离。
+- [x] SQLite FTS4 + 项目级 BM25 混合词法检索；[ ] 本地 BGE-small-zh-v1.5 INT8 ONNX 向量索引与混合排序（实现已加入模块6分支，待 CI 通过后勾选；模型下载后离线运行，不上传知识库内容）。
+- [x] Phase 3 首项：知识库加入 Room FTS4 索引与 10→11 数据库迁移；检索优先走 FTS，失败或无命中时安全回退关键词检索；迁移测试覆盖旧库升级与 FTS 命中。
+- [x] Phase 3 知识库继续补齐：Apache PDFBox 提取文本层；无文本层页面由内置 ML Kit 中文识别器在本机逐页 OCR，进入现有分块/去重/FTS/BM25 索引链路。
 - [x] 删除文档时通过 Room 外键级联清理全部知识片段索引。
+- [ ] Room 12→13 迁移新增项目知识片段向量表；项目隔离查询、文档删除级联和迁移测试已补，待最终 CI 核验。
 
 ### 2. 对话与记忆
 - [x] OpenAI 兼容 SSE 流式响应解码：按事件边界合并 data 字段、处理 `[DONE]`、兼容文本分片与 EOF flush，并有单元测试。
@@ -86,8 +101,8 @@
 - [x] 动态上下文预算：最多 40 条历史、48,000 字符；按系统提示词与输出 Token 预留动态裁剪，使用保守 16K 上下文估算与约 4 字符/Token 估算。
 - [x] 请求状态持久化：保存会话、输入和已接收分片；应用/进程重建后恢复草稿及中断内容，避免静默丢失。
 - [x] 基于本地 Room 消息的项目内跨会话关键词召回初版。
-- 自动记忆语义检索、结构化记忆的来源/时间/置信度增强与跨项目授权。
-- 单条记忆编辑、删除、导出和项目级记忆隔离。
+- [x] 自动记忆语义检索、结构化记忆来源/时间/置信度管理与跨项目显式授权。
+- [x] 单条记忆编辑、删除、导入/导出、项目级隔离及按项目清空。
 - 后台请求状态持久化，切换窗口或 Activity 重建不丢任务状态。
 
 ### 3. 项目空间
@@ -96,15 +111,21 @@
 - [x] 项目级指令仅注入当前项目请求上下文。
 - [x] 项目与会话关联数据纳入本地 JSON 备份/恢复。
 - [x] 项目删除前统一检查会话、知识文档、记忆与 Agent 任务关联；仅允许删除无关联数据的非默认空间。
-- [ ] 项目归档与恢复：代码已提交，待构建与数据库迁移测试验收。
-- [ ] 专家/技能/文件的项目级关联（记忆与知识库已有项目字段和隔离查询）。
-- [ ] 跨项目检索与调用授权机制。
+- [x] 项目归档与恢复：已实现归档/恢复及启动恢复保护；对应回归测试已提交，待当前 head CI 核验。
+- [x] 项目复制：Room 事务复制会话/消息、知识文档/片段、项目记忆、全部产物版本、资源归属和项目自动记忆设置；回归测试已提交。
+- [x] 专家/团队/Skills/工作流项目归属：显式全局/项目范围、管理入口、聊天与工作流调用过滤、变更权限校验及损坏时 fail-closed 已接入。
+- [x] 项目自动记忆开关独立于全局记忆；旧版全局开关迁移兼容默认空间，并纳入复制及备份/恢复。
+- [x] 最近使用项目置顶：按最近使用时间排序。
+- [x] 项目级 JSON 导出/导入：覆盖会话/消息/草稿、知识文档/片段、记忆、产物、专家/团队/技能/工作流、项目指令及自动记忆设置；导入新建项目、重映射 ID、知识去重、校验 checksum、限制体积/数量并阻止资源名称冲突。项目包不包含 API Key 和跨项目授权，导入保留本机模型设置与现有授权。
+- [x] 跨项目访问授权：方向性 READ/WRITE 独立授权、用户确认入口、即时撤销、持久化审计；知识检索/聊天上下文/工作流调用及资源变更入口按授权执行，默认拒绝。
+
+> 2026-11-20：模块5已完整验收并锁定：PR #4 已合并至 `refactor/phase-2-architecture`，合并提交 `dba49675483520a5413ebea494423f7a80d395ae`；CI #149 的 Android instrumentation 90/90 通过。模块6原有知识库代码已迁移到模块5锁定后的基线，并补齐本地 BGE-small-zh-v1.5 INT8 ONNX 语义向量、BM25 混合排序、FTS 安全回退、OCR 协程取消、XML/Office 格式测试、向量索引迁移与项目隔离。分支 `feature/module-6-knowledge-base` 正在执行最终 CI；未通过前不提交 PR、不锁定模块6。
 
 ### 4. 专家与多智能体
-- [x] 自定义专家配置导入/导出初版；专家版本历史与差异比较待补。
+- [x] 自定义专家配置导入/导出、专家版本历史与差异比较。
 - [x] 团队角色指令、2–4 成员并行执行、主模型汇总、单成员超时/重试/失败隔离、停止控制、调用次数上限与执行轨迹。
 - [ ] 动态任务拆解与派发、精确 Token/费用预算、进程级中断恢复。
-- 专家模板安全导入导出。
+- [x] 专家模板安全导入导出：自定义模板创建/编辑/复制/删除确认、内置模板复制、分类搜索、套用、JSON 批量导入预览/导出；限制文件体积、模板数量、名称/ID 唯一性与技能项目范围，导入持久化采用提交确认。
 
 ### 5. Skills 与工作流
 - [x] 本地技能 CRUD、启停、试用入口、导入导出和权限声明校验。
@@ -130,6 +151,9 @@
 - 不允许 AI 静默扩大权限或直接执行未审查任意代码。
 
 ### 8. Phone Agent 完整化
+- [x] 风险规则统一：模型动作解析与 Accessibility 执行边界共用高风险动作/敏感字段/敏感值策略；敏感值在执行端再次拦截。
+- [x] 点击目标执行前唯一性校验：同名目标不唯一、目标不可见或不可用时拒绝点击，避免误操作。
+- [x] 停止请求按 taskId 隔离，停止一个任务不会污染后续任务；入队恢复时清理该任务的旧停止标记。
 - 单一对话入口解析目标、规划步骤并选择可用动作。
 - 普通低风险动作连续执行，不为每一步弹窗。
 - 用户单次/任务授权、随时停止、授权过期和撤销。
@@ -147,14 +171,14 @@
 - **其他同类任务**：订餐、订票、预约、商品搜索与比价、资料查找和网页表单等复用同一套“目标理解→信息收集→决策→执行→核验→用户确认”任务引擎，而不是各做一套硬编码脚本。
 
 ### 9. 后台、语音与产物
-- [ ] WorkManager 按任务类型持久化执行，避免无意义常驻（已有串行任务队列、进度持久化、中断状态保留与恢复入口；本轮补入任务状态通知和用户主动任务前台服务；异常后保留待核验状态，避免自动重放不确定动作；进程重启后的真机恢复与厂商后台适配待验收）。
-- [ ] 通知、任务恢复、失败重试和用户取消（已有通知栏任务状态、通知权限引导、通知栏停止请求和取消状态回写；任务页支持人工核对后继续/重试/取消；完整任务中心与可靠恢复仍待补）。
-- [x] 原生语音输入与可选 SpeechInputProvider、SpeechOutputProvider、RealtimeVoiceProvider 扩展接口；不内置 TTS 或第三方语音服务。
-- [ ] 作品/产物库、文件导出、版本和分享（已有按项目隔离的本地 Markdown 产物库、助手回复一键保存、版本递增、预览、分享、SAF 导出和删除；已纳入带 SHA-256 校验的 JSON 备份/恢复，并校验项目归属）。
+- [x] WorkManager 按任务类型持久化执行，避免无意义常驻（已有串行任务队列、进度持久化、中断状态保留与恢复入口；任务状态通知和用户主动任务前台服务；异常后保留待核验状态，避免自动重放不确定动作；进程重启后的真机恢复与厂商后台适配待验收）。
+- [x] 通知、任务恢复、失败重试和用户取消（通知栏任务状态、通知权限引导、通知栏停止请求和取消状态回写；任务页支持人工核对后继续/重试/取消；完整任务中心仍属后续产品增强）。
+- [x] 原生语音输入、本机 Android TTS、可选 OpenAI-compatible HTTPS 语音识别/合成 Provider、Android Keystore 加密配置，以及 Realtime WebSocket + PCM16 双向音频链路；云端服务均由用户主动配置并触发。
+- [x] 作品/产物库、文件导出、版本和分享（已实现按项目隔离的本地 Markdown 作品库、助手回复一键保存、手动创建、名称搜索、版本递增与历史版本恢复为新版本、预览、分享、SAF 导出、二次确认删除、项目复制保留版本号/时间、项目包导入校验及完整备份/恢复；索引缺失/损坏、文件缺失/大小不符、跨项目伪造引用均失败关闭；单元与 Android UI 回归测试已补充，待全部模块完成后统一执行）。
 - [ ] 能力目录/社区、安装来源和权限透明（已实现 HTTPS 远程目录读取、用户固定 RSA 公钥验签、技能包 SHA-256/名称/版本核验、权限与依赖预览及用户确认安装；代码已补社区版本比较、防降级和同名覆盖提示，卸载复用本地技能库删除流程；仍需接入经过独立渠道核验的正式社区地址/公钥，并完成 CI/设备验收）。
 
 ### 10. 质量、性能与适配
-- 单元测试：已有模型请求策略、SSE 解码、技能/专家/工作流、Phone Agent 等 JVM 覆盖；已编写 Room 迁移与会话分页 Android 自动化测试。已抽离共享 HTTP 传输边界，并新增本地 HTTP Server 隔离测试，覆盖 POST、Bearer/Content-Type/Accept 请求头、请求体、超时下限和非 2xx 错误体。当前 PR 自动执行 JVM 单元测试；Room 迁移与 Compose Android 测试尚未执行，不能标记为通过。
+- 单元测试：已有模型请求策略、SSE 解码、技能/专家/工作流、Phone Agent、知识分块/检索与 tokenizer/vector 排序 JVM 覆盖；Android 自动化补充 Room 迁移、PDF OCR、DOCX/XLSX/PPTX/XML 解析、向量项目隔离/级联及 BGE ONNX 端侧推理 smoke test。当前模块6最终 CI 待执行完毕，不能提前标记为通过。
 - Compose UI：已编写主界面、会话历史、项目空间、语音说明页、知识库、工作流、数据设置、模型管理入口及返回工作台的导航冒烟测试；覆盖无模型发送提示、模型配置必填校验、连接测试禁用态、横屏导航回归，以及语音输入按钮的角色和启用/禁用语义；新增 320/393/673/840/1200dp 窗口宽度下主导航、项目空间、能力目录、知识库和产物库页面测试。知识库、产物库、能力目录页面使用单一纵向滚动容器，避免窄屏内容被截断及嵌套 LazyColumn 的无限高度测量问题。以上 Android UI 测试尚待实际执行；复杂业务交互、网络失败/权限异常态仍待补齐。
 - 性能基线：已编写 Room 会话列表基准测试，固定 250 个会话/3,000 条消息并记录分页与内容搜索耗时；基准尚未实际运行。冷启动、滚动帧率、内存、CPU、网络唤醒和耗电指标留待最终设备阶段采集。
 - 大会话列表分页/惰性加载：历史页按项目分页、数据库侧搜索、摘要限制 240 字符；启动仅加载会话摘要与项目，当前会话按需读取完整消息；元数据更新不清空未加载消息；Room 初始化后保留旧版完整快照，避免摘要缓存覆盖历史；停止每次状态变化时重复序列化整份历史。
@@ -182,7 +206,7 @@
 - [ ] 数据库：逐项审计 Room Entity/DAO/外键/索引/迁移，补齐迁移测试、事务边界、损坏与恢复策略。
 - [ ] 数据安全：API Key、记忆、附件、备份、日志的敏感信息边界；默认最小权限；导入数据校验。
 - [ ] 任务引擎：统一任务状态机、队列、暂停/恢复/取消、超时、重试、进程重启恢复与幂等保护。
-- [ ] 网络层：连接超时、读取超时、取消传播、SSE 断线处理、错误分类、有限重试与速率限制。
+- [x] 网络层策略：连接/读取/总超时边界、取消不重试、瞬态错误有限重试与指数退避、HTTP 错误分类；SSE 解码与请求取消已由现有实现覆盖。
 - [ ] 稳定性：统一异常处理、日志分级、崩溃信息、状态一致性和资源释放。
 - [ ] 测试基础：建立可重复运行的单元测试、数据库迁移测试和 CI 验证基线。
 
@@ -199,15 +223,15 @@
 - [x] 本地按模型配置统计成功请求次数与估算 Token（按字符数估算，不代表服务商账单精确用量）；配置元数据与估算统计纳入备份，API Key 不进入备份。
 
 #### 1B. 项目、记忆与知识库
-- [ ] 项目归档与恢复（待 CI 验收）。
-- [ ] 记忆/知识库/专家/技能/文件的完整项目级关联与跨项目授权。
+- [x] 项目创建、复制、归档、恢复与安全删除；模块5已完成验收并锁定（PR #4，合并提交 `dba49675`，CI instrumentation 90/90）。
+- [x] 记忆/知识库/专家/技能/工作流/产物的项目级关联与跨项目 READ/WRITE 授权；项目资源按作用域隔离，授权可审计、可撤销。
 - [x] DOCX/XLSX/PPTX Office 文档文本解析；[ ] PDF 文本解析。
-- [ ] SQLite FTS/BM25 全文检索、语义索引、混合检索与排序。
+- [x] SQLite FTS4/BM25 全文检索、项目级本地 BGE 向量索引与混合检索排序（最终 CI 待确认）。
 - [ ] 记忆来源、时间、置信度和可追溯管理；跨项目访问授权。
 - [ ] 附件管理、文件引用、完整备份校验、版本兼容和设备迁移。
 
 #### 1C. 专家、团队与 Skills
-- [ ] 专家创建、编辑、版本、启停、导入导出和生命周期管理。
+- [x] 专家创建、编辑、版本、启停、导入导出和生命周期管理（含依赖工作流/团队处理、项目范围校验；统一任务轨迹仍待后续完善）。
 - [x] 团队角色配置、并发协作、部分失败容错、有限重试、超时隔离、主模型汇总、运行历史和备份恢复。
 - [ ] 动态子任务规划/派发、精确 Token/费用统计、进程级断点恢复。
 - [x] 本地技能创建/编辑/删除/启停/试用、技能包导入导出、声明权限与依赖校验、备份恢复。
@@ -223,16 +247,17 @@
 ### 阶段 2：外部工具与开发能力
 
 #### 2A. MCP 与工具权限
-- [ ] 本地/远程 MCP 传输适配、服务发现、协议握手和工具 schema。
-- [ ] 每个服务、每个工具单独授权；调用前预览参数，调用后审计。
-- [ ] 凭据加密、权限撤销、超时、断连恢复和不可信工具输出隔离。
-- [ ] Android 不默认承诺可运行任意本地 MCP Server；按实际运行环境提供连接方式。
+- [x] 远程 Streamable HTTP MCP 传输、协议版本协商、tools/list 服务工具发现与 schema 缓存。
+- [x] 每个服务/工具单独授权；调用前参数预览、调用后本地审计、权限即时撤销。
+- [x] Bearer 凭据 Android Keystore 加密；请求超时/取消、断连错误收口、不可信工具输出隔离。
+- [x] Android 端仅连接用户配置的 HTTPS 远程服务，不承诺启动任意本地 MCP Server；stdio 与模型原生 tool-call schema 适配不在本模块范围内。
 
 #### 2B. Git 工作台
-- [ ] GitHub/GitLab/Gitee 授权与凭据安全存储。
-- [ ] 仓库浏览、搜索、clone、pull、push、commit、branch、历史和回滚。
-- [ ] 手机端代码查看/编辑、diff、冲突处理和变更审查。
-- [ ] 网络中断、仓库状态冲突和大仓库性能处理。
+> **代码阶段已完成并锁定：** PR #10 已合并至 `refactor/phase-2-architecture`，合并提交 `2e7ca199`。支持 GitHub/GitLab/Gitee PAT 授权与 Android Keystore 加密、仓库搜索/克隆、JGit 分支/Fetch/Pull/Push/Commit、手机端文件浏览编辑/新建删除、Diff/冲突处理/历史/反向回滚；API 超时与连接失败重试、Git 传输超时、失败克隆清理、大仓库可用空间预检均已实现。断点续传、增量/浅克隆作为后续性能增强，不阻塞当前模块锁定。**按既定顺序，Kotlin 编译/JVM/仪器测试、模拟器与真机验收统一留到十九模块代码完成后；目前尚未执行。**
+- [x] GitHub/GitLab/Gitee 授权与凭据安全存储（PAT）。
+- [x] 仓库浏览、搜索、clone、fetch、pull、push、commit、branch、历史和安全反向回滚。
+- [x] 手机端代码查看/编辑、新建/删除、diff、冲突处理和变更审查入口。
+- [x] 基础网络/状态/大仓库保护：API 连接失败重试与超时、Git 传输超时、失败克隆清理、可用空间预检、未提交修改保护和冲突处理。
 
 #### 2C. AI 开发工作台
 - [ ] AI 生成补丁、变更范围说明和逐文件 diff 预览。
@@ -254,9 +279,9 @@
 
 ### 阶段 4：语音、后台、产物与体验补齐
 
-- [x] 语音方向收敛为原生语音输入；第三方识别、语音合成和实时语音仅预留 Provider 扩展契约。
+- [x] 语音能力补齐原生识别、本机 TTS、可选远程 STT/TTS 与实时双向语音；构建、自动化测试、设备兼容性和端到端服务商验收仍待完成。
 - [ ] 后台长任务通知、用户可见任务中心、失败重试与取消。
-- [ ] 作品/产物库、文件导出、版本记录、分享和清理策略。
+- [x] 作品/产物库、文件导出、版本记录、分享和清理策略（代码与回归测试已补齐；统一验收阶段执行测试）。
 - [ ] 能力目录/社区、来源验证、安装审查、更新和卸载。
 - [ ] 手机、平板、折叠屏布局，中英文与无障碍体验。
 - [ ] 冷启动、内存、CPU、帧率、网络唤醒和耗电优化。
@@ -289,3 +314,81 @@
 - CI 成功只证明云端编译与打包通过。
 - 涉及键盘、麦克风、无障碍、后台任务、通知、耗电和厂商系统限制的功能，必须在实体设备验证。
 - 路线图中的未实现项只有在代码、测试和验收证据齐全后才能移入「已实现」。
+
+
+## Cross-cutting requirement: low-cost chat and on-demand task execution
+
+The Phase 2 refactor must preserve a strict separation between ordinary conversation and task execution. The composer must visibly indicate when the active model has not declared support for the selected reasoning mode; a user selection must never imply that the provider received it. Model capability is configured per model, defaults off for legacy entries, and unsupported request fields are omitted. Ordinary chat defaults to Light (轻量思考), with four user-selectable levels: Off (关闭思考), Light (轻量思考), Medium (中度思考), and Heavy (重度思考), does not automatically start Agents or load tools, and uses a compact context budget. Medium/Heavy reasoning and task-only capabilities are opt-in. For an explicit task, resolve the minimum required capability set and load only those tools; never enumerate or inject the full tool catalog on every turn. Task context must be scoped to the task and released afterward. See [the detailed architecture and acceptance gates](PHASE2_CODE_MAP.md#2026-11-18--lightweight-chat-controllable-reasoning-and-precision-tool-dispatch-product-wide-refactor-requirement).
+
+
+## Explicit task-mode gate
+
+The chat composer exposes **普通聊天** as the default and a separate **任务执行** opt-in. Ordinary chat must not invoke Phone Agent planning or create task records based on keyword matches. Phone Agent planning is reachable only while task mode is explicitly enabled; a GENERAL classification still creates no task. A persisted expert-team selection also does not authorize team execution during ordinary chat.
+
+Task authorization and the related team/expert/skill selections are captured at message-send time. Composer changes after sending cannot retroactively turn an ordinary chat into a task or change the resources used by an in-flight request.
+
+
+Ordinary chat must not inject selected expert role prompts, expert profile skill context, or selected skill prompt assets solely because a prior selection persisted. Those prompt assets are eligible only after explicit task mode is enabled.
+
+
+Every model invocation must receive a bounded history window sized against its system prompt and output reserve. Keep full conversation history for persistence/UI; trim only the request payload. Apply the same budget to each expert-team member call as to normal streaming.
+
+
+All request-affecting UI state—including active expert IDs, project instructions, automatic-memory preference, and user identity—is snapshotted before launching the chat coroutine. In-flight requests must not observe later UI changes.
+
+
+## Task-scoped capability dispatch — implementation status
+
+The shared Agent runtime now supports short-lived allow-listed tool sessions. Phone Agent exposes only the typed capability needed by the current action and releases it immediately after the step. This is an implemented foundation. Module 13 now adds remote Streamable HTTP MCP discovery and encrypted Bearer-token storage; OAuth-based provider credential leasing and model-native tool invocation remain separate integration work. Ordinary chat remains outside this execution path. Acceptance still requires CI for the exact PR head and dedicated integration tests for expert/workflow/tool routing.
+
+
+Phone Agent's action-history compactor now retains the most recent 12 distinct action results within a fixed 1,000-character budget, rather than preserving only the oldest entries. This keeps the latest execution evidence available to the next planning call without growing the prompt.
+
+
+Usage accounting now stores estimated token counts directly, attributes each request to the actual selected Registry model (including failover), and includes Phone Agent planning calls. Streaming fallback estimates use the same bounded-history estimator as non-streaming calls. Provider-reported usage and estimates remain separate; background automatic-memory extraction still needs usage callback integration.
+
+
+Automatic-memory extraction now contributes its model usage to the same provider-vs-estimate accounting as chat, experts, workflows, and Phone Agent. Usage attribution uses the selected Registry model ID while retaining legacy profile identifiers. Chat callbacks merge against the latest persisted stats rather than stale UI state.
+
+
+Security invariant: task-scoped capability selection is not authorization. Every selected tool still passes through AgentPermissionRouter; external writes, authentication, financial actions, and device actions remain subject to their separate confirmation/grant rules. Regression coverage verifies that loading an external-write capability does not execute it or bypass WAITING_FOR_USER.
+
+
+Tool sessions now snapshot the exact handler as well as the selected capability definition. A later registration using the same tool ID cannot retarget an already-open task lease; new sessions use the new registration. JVM regression coverage verifies this isolation. Explicit revocation of already-open leases and credential expiry remain separate follow-up work.
+
+
+## 2026-11-18 — Phase 2 lease lifecycle closeout work
+
+- Implemented revocable task-owned capability leases and short-lived task credential lease primitives.
+- Task pause/cancel and handler exit now revoke leases; Phone Agent action execution uses the shared lease registry and releases each action lease in `finally`.
+- Added JVM tests for lease revocation and credential access expiry/revocation.
+- Remaining Phase 2 work: connect expert-team and workflow steps to explicit minimum capability sets through the shared tool boundary; complete the capability registration/routing contract; verify the latest PR head with CI. Module 13 now implements remote MCP discovery and encrypted Bearer-token credentials; remaining Phase 2 work is expert-team/workflow routing, OAuth provider credential leasing, model-native tool invocation, and final unified CI after all 19 modules are complete.
+- APK construction, installation, and device acceptance remain deferred until all feature code across the 19 modules is written and the final unified acceptance stage begins.
+
+
+
+## 2026-11-18 — Unified capability registration and cross-feature catalog
+
+- Added a process-wide tool catalog shared by Phone Agent, expert-team and workflow execution.
+- Added operation-scoped capability declarations, with expert-member and workflow-step resolution. Only the declared minimum tool set is leased for that operation; missing tools or missing tool-aware adapters fail closed.
+- Added tests for member/step tool isolation and lease release.
+- The current expert/workflow adapters still perform model-only calls and have no declared tool sets by default. Model-native tool invocation and OAuth-based remote credential adapters remain follow-up integration work; MCP remote discovery and encrypted Bearer-token storage are implemented in module 13 and must not be described as outstanding.
+- APK generation, installation and real-device acceptance remain deferred until all feature code for all 19 modules is complete, followed by one unified final acceptance.
+
+
+## 2026-11-18 — Phone Agent host-independent execution environment
+
+- Phone Agent now depends on a host-independent `PhoneAgentExecutionEnvironment` contract; the current AccessibilityService is the existing adapter.
+- Agent execution, WorkManager availability checks, and UI stop requests use one active-environment provider. Detaching the selected environment leaves no implicit fallback to the user's real screen.
+- Phase 2 provides the architecture seam only. A concrete isolated VirtualDisplay adapter is a Phone Agent feature implementation; reuse from Mika requires the exact repository and license to be checked before copying code.
+- This does not change the unified final-acceptance rule: no APK build or device acceptance until all 19 modules' feature code is complete.
+
+
+## 2026-11-21 模块12：双模型对比开发记录
+
+- 新增双模型对比页面：从统一模型目录选择两个不同且可用的模型，共享同一条用户指令与可选系统指令。
+- 新增并行请求协调器：两个模型独立发起流式请求，独立显示增量结果；仅在所选模型自身的多个 Key 之间按既有策略尝试，不跨模型静默切换。
+- 一侧请求失败时保留另一侧结果；停止操作会取消协程并主动断开两侧活动 HTTP 连接。
+- 宽屏并排展示、手机纵向展示；支持单侧回答复制、清空和重新发起对比。
+- 新增模型选择/重复选择/不可用模型/空提示词/长度限制 JVM 测试源；尚未执行测试。
+- 当前状态：功能代码已补齐并完成静态源码/结构复核，已快进合并锁定至 `refactor/phase-2-architecture`（commit `5868d6d`）；Kotlin 编译与 JVM 测试尚未执行；不启动模拟器或真机验收，按十九模块统一验收安排执行。

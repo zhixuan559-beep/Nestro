@@ -2,6 +2,7 @@ package app.nestro.model
 
 import app.nestro.data.ModelProfileMetadata
 import org.json.JSONArray
+import java.net.URI
 import org.json.JSONObject
 
 data class ModelProvider(
@@ -27,7 +28,8 @@ data class ModelDefinition(
     val enabled: Boolean = true,
     val inputPricePerMillion: Double? = null,
     val outputPricePerMillion: Double? = null,
-    val currency: String = "USD"
+    val currency: String = "USD",
+    val supportsReasoningEffort: Boolean = false
 )
 
 data class ModelRegistry(
@@ -133,7 +135,8 @@ data class ModelRegistry(
             enabled = previousModel?.enabled ?: true,
             inputPricePerMillion = previousModel?.inputPricePerMillion,
             outputPricePerMillion = previousModel?.outputPricePerMillion,
-            currency = previousModel?.currency ?: "USD"
+            currency = previousModel?.currency ?: "USD",
+            supportsReasoningEffort = previousModel?.supportsReasoningEffort ?: false
         )
         val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
         return copy(
@@ -178,7 +181,8 @@ data class ModelRegistry(
                 enabled = old?.enabled ?: model.enabled,
                 inputPricePerMillion = old?.inputPricePerMillion,
                 outputPricePerMillion = old?.outputPricePerMillion,
-                currency = old?.currency ?: model.currency
+                currency = old?.currency ?: model.currency,
+                supportsReasoningEffort = old?.supportsReasoningEffort ?: model.supportsReasoningEffort
             )
         }
         return ModelRegistry(
@@ -195,7 +199,16 @@ data class ModelRegistry(
             apiKeys.map { it.id }.toSet().size != apiKeys.size) return "API Key 标识为空或重复"
         if (models.map { it.id }.any(String::isBlank) ||
             models.map { it.id }.toSet().size != models.size) return "模型标识为空或重复"
-        if (providers.any { it.name.isBlank() || !it.baseUrl.startsWith("https://", true) }) return "服务商名称或 HTTPS 地址无效"
+        if (providers.any { provider ->
+                provider.name.isBlank() || runCatching {
+                    val uri = URI(provider.baseUrl)
+                    !uri.scheme.equals("https", ignoreCase = true) ||
+                        uri.host.isNullOrBlank() ||
+                        uri.userInfo != null ||
+                        uri.query != null ||
+                        uri.fragment != null
+                }.getOrDefault(true)
+            }) return "服务商名称或 HTTPS 地址无效"
         if (apiKeys.any { key -> providers.none { it.id == key.providerId } }) return "API Key 关联的服务商不存在"
         if (models.any { model -> providers.none { it.id == model.providerId } }) return "模型关联的服务商不存在"
         if (models.any { model -> model.apiKeyIds.any { keyId -> apiKeys.none { it.id == keyId && it.providerId == model.providerId } } }) {
@@ -235,13 +248,14 @@ object ModelRegistryCodec {
                         .put("enabled", item.enabled)
                         .put("inputPricePerMillion", item.inputPricePerMillion ?: JSONObject.NULL)
                         .put("outputPricePerMillion", item.outputPricePerMillion ?: JSONObject.NULL)
-                        .put("currency", item.currency))
+                        .put("currency", item.currency)
+                        .put("supportsReasoningEffort", item.supportsReasoningEffort))
                 }
             })
         }.toString()
     }
 
-    fun decode(raw: String): ModelRegistry = runCatching {
+    fun decodeOrNull(raw: String): ModelRegistry? = runCatching {
         val root = JSONObject(raw)
         require(root.optInt("version") == 1)
         val providers = root.getJSONArray("providers").let { array ->
@@ -271,12 +285,16 @@ object ModelRegistryCodec {
                     enabled = item.optBoolean("enabled", true),
                     inputPricePerMillion = if (item.isNull("inputPricePerMillion")) null else item.optDouble("inputPricePerMillion"),
                     outputPricePerMillion = if (item.isNull("outputPricePerMillion")) null else item.optDouble("outputPricePerMillion"),
-                    currency = item.optString("currency", "USD")
+                    currency = item.optString("currency", "USD"),
+                    supportsReasoningEffort = item.optBoolean("supportsReasoningEffort", false)
                 )
             }
         }
         ModelRegistry(providers, keys, models).also { require(it.validate() == null) }
-    }.getOrDefault(ModelRegistry())
+    }.getOrNull()
+
+    /** Backward-compatible tolerant decoder for non-destructive read-only callers. */
+    fun decode(raw: String): ModelRegistry = decodeOrNull(raw) ?: ModelRegistry()
 
     /**
      * Lossless metadata migration from the legacy one-profile/one-key catalog.

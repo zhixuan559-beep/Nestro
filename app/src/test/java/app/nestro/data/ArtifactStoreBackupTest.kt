@@ -42,6 +42,17 @@ class ArtifactStoreBackupTest {
     }
 
     @Test
+    fun acceptsMoreThanTwoHundredArtifactsAcrossMultipleProjects() {
+        val rows = JSONArray()
+        repeat(201) { index ->
+            val id = "00000000-0000-0000-0000-" + index.toString().padStart(12, '0')
+            val projectId = if (index % 2 == 0) "project-a" else "project-b"
+            rows.put(row(id, projectId).put("title", "Draft $index"))
+        }
+        assertEquals(201, ArtifactStore.validateBackup(rows, setOf("project-a", "project-b")).length())
+    }
+
+    @Test
     fun rejectsArtifactOverSizeLimit() {
         val content = "x".repeat(1_500_001)
         val rows = JSONArray().put(row("123e4567-e89b-12d3-a456-426614174000").put("content", content))
@@ -49,4 +60,24 @@ class ArtifactStoreBackupTest {
             ArtifactStore.validateBackup(rows, setOf("project-a"))
         }
     }
+    @Test
+    fun rejectsStringVersionInsteadOfCoercingItToAnInteger() {
+        val rows = JSONArray().put(
+            row("123e4567-e89b-12d3-a456-426614174000").put("version", "3")
+        )
+        assertThrows(IllegalStateException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
+    @Test
+    fun rejectsWhitespacePaddedTitleInsteadOfSilentlyTrimmingIt() {
+        val rows = JSONArray().put(
+            row("123e4567-e89b-12d3-a456-426614174000").put("title", " 设计稿 ")
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
 }

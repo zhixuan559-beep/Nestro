@@ -9,6 +9,61 @@ import org.junit.Test
 
 class ModelRegistryTest {
     @Test
+    fun providerValidationRejectsInvalidHttpsEndpoints() {
+        val invalidUrls = listOf(
+            "http://api.example.com",
+            "https://",
+            "https:///missing-host",
+            "https://user:password@api.example.com/v1",
+            "https://api.example.com/v1?token=secret",
+            "https://api.example.com/v1#fragment"
+        )
+        invalidUrls.forEachIndexed { index, url ->
+            val registry = ModelRegistry(
+                providers = listOf(ModelProvider("provider-$index", "Provider", url))
+            )
+            assertFalse("should reject $url", registry.validate().isNullOrBlank())
+        }
+    }
+
+    @Test
+    fun providerEditKeepsStableIdentityAndExistingKeysAndModels() {
+        val original = ModelRegistry(
+            providers = listOf(ModelProvider("provider", "Before", "https://before.example.com")),
+            apiKeys = listOf(ModelApiKey("key", "provider", "Primary")),
+            models = listOf(ModelDefinition("model", "provider", "Model", "model-code", listOf("key")))
+        )
+
+        val edited = original.upsertProvider(
+            original.providers.single().copy(name = "After", baseUrl = "https://after.example.com")
+        )
+
+        assertEquals(listOf("provider"), edited.providers.map { it.id })
+        assertEquals("After", edited.providers.single().name)
+        assertEquals("https://after.example.com", edited.providers.single().baseUrl)
+        assertEquals(original.apiKeys, edited.apiKeys)
+        assertEquals(original.models, edited.models)
+        assertNull(edited.validate())
+    }
+
+    @Test
+    fun disabledProviderMakesItsModelsUnselectableWithoutDeletingMetadata() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            apiKeys = listOf(ModelApiKey("k", "p", "Primary")),
+            models = listOf(ModelDefinition("m", "p", "Model", "model-code", listOf("k")))
+        )
+
+        val disabled = registry.upsertProvider(registry.providers.single().copy(enabled = false))
+
+        assertTrue(disabled.selectableModels().isEmpty())
+        assertEquals(1, disabled.apiKeys.size)
+        assertEquals(1, disabled.models.size)
+        assertTrue(disabled.apiKeys.single().enabled)
+        assertNull(disabled.validate())
+    }
+
+    @Test
     fun legacyProfilesMigrateIntoIndependentProviderKeyAndModelEntities() {
         val legacy = listOf(
             ModelProfileMetadata("one", "主模型", "https://api.example.com/v1", "model-a"),
@@ -41,6 +96,14 @@ class ModelRegistryTest {
         assertEquals(2, updated.models.size)
         assertTrue(updated.models.first { it.id == "m1" }.apiKeyIds.isEmpty())
         assertNull(updated.validate())
+    }
+
+    @Test
+    fun strictDecoderDistinguishesMalformedRegistryFromAnEmptyRegistry() {
+        assertEquals(null, ModelRegistryCodec.decodeOrNull("{not-json"))
+        assertEquals(ModelRegistry(), ModelRegistryCodec.decodeOrNull(
+            ModelRegistryCodec.encode(ModelRegistry())
+        ))
     }
 
     @Test
@@ -211,5 +274,57 @@ class ModelRegistryTest {
         )
 
         assertFalse(registry.validate().isNullOrBlank())
+    }
+
+
+    @Test
+    fun editingRegistryModelPreservesIndependentMetadataAndStableIdentity() {
+        val original = ModelDefinition(
+            id = "model-id",
+            providerId = "provider-id",
+            name = "Original",
+            modelCode = "model-v1",
+            apiKeyIds = listOf("key-a", "key-b"),
+            enabled = false,
+            inputPricePerMillion = 0.75,
+            outputPricePerMillion = 1.5,
+            currency = "CNY"
+        )
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("provider-id", "Provider", "https://api.example.com")),
+            apiKeys = listOf(
+                ModelApiKey("key-a", "provider-id", "A"),
+                ModelApiKey("key-b", "provider-id", "B")
+            ),
+            models = listOf(original)
+        )
+
+        val edited = registry.upsertModel(original.copy(name = "Renamed", modelCode = "model-v2"))
+
+        val saved = edited.models.single()
+        assertEquals("model-id", saved.id)
+        assertEquals("Renamed", saved.name)
+        assertEquals("model-v2", saved.modelCode)
+        assertEquals(listOf("key-a", "key-b"), saved.apiKeyIds)
+        assertFalse(saved.enabled)
+        assertEquals(0.75, saved.inputPricePerMillion!!, 0.0)
+        assertEquals(1.5, saved.outputPricePerMillion!!, 0.0)
+        assertEquals("CNY", saved.currency)
+        assertNull(edited.validate())
+    }
+
+    @Test
+    fun reasoningCapabilityRoundTripsAndDefaultsOffForOlderRegistryPayloads() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            apiKeys = listOf(ModelApiKey("k", "p", "Key")),
+            models = listOf(ModelDefinition("m", "p", "Model", "model", listOf("k"), supportsReasoningEffort = true))
+        )
+        val encoded = ModelRegistryCodec.encode(registry)
+        val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
+        assertTrue(decoded.models.single().supportsReasoningEffort)
+        val oldPayload = encoded.replace(",\"supportsReasoningEffort\":true", "")
+        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
+        assertFalse(oldDecoded.models.single().supportsReasoningEffort)
     }
 }

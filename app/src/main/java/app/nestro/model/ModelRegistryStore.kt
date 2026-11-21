@@ -12,10 +12,9 @@ class ModelRegistryStore(context: Context) {
     ): ModelRegistry {
         val saved = preferences.getString(KEY, null)
         if (!saved.isNullOrBlank()) {
-            val decoded = ModelRegistryCodec.decode(saved)
-            if (decoded.validate() == null && (decoded.providers.isNotEmpty() || legacyProfiles.isEmpty())) {
-                return decoded
-            }
+            val decoded = ModelRegistryCodec.decodeOrNull(saved)
+            if (decoded != null && (decoded.providers.isNotEmpty() || legacyProfiles.isEmpty())) return decoded
+            preserveUnreadableRegistry(saved)
         }
 
         val migrated = ModelRegistryCodec.migrateLegacy(legacyProfiles)
@@ -35,10 +34,10 @@ class ModelRegistryStore(context: Context) {
         legacyProfiles: List<ModelProfileMetadata>,
         hasSecret: (profileId: String) -> Boolean
     ): ModelRegistry {
-        val previous = preferences.getString(KEY, null)
-            ?.takeIf { it.isNotBlank() }
-            ?.let(ModelRegistryCodec::decode)
-            ?: ModelRegistry()
+        val saved = preferences.getString(KEY, null)?.takeIf { it.isNotBlank() }
+        val previous = saved?.let(ModelRegistryCodec::decodeOrNull) ?: ModelRegistry().also {
+            if (saved != null) preserveUnreadableRegistry(saved)
+        }
         return previous.reconcileLegacyProfiles(legacyProfiles, hasSecret).also(::save)
     }
 
@@ -47,7 +46,20 @@ class ModelRegistryStore(context: Context) {
         preferences.edit().putString(KEY, ModelRegistryCodec.encode(registry)).apply()
     }
 
+    private fun preserveUnreadableRegistry(raw: String) {
+        // Preserve the original payload before migration overwrites the primary key.
+        // Keep the first quarantined copy until an explicit recovery/cleanup flow exists.
+        if (!preferences.contains(CORRUPT_BACKUP_KEY)) {
+            preferences.edit()
+                .putString(CORRUPT_BACKUP_KEY, raw)
+                .putLong(CORRUPT_BACKUP_TIME_KEY, System.currentTimeMillis())
+                .apply()
+        }
+    }
+
     companion object {
         private const val KEY = "model_registry_v1"
+        private const val CORRUPT_BACKUP_KEY = "model_registry_v1_unreadable_backup"
+        private const val CORRUPT_BACKUP_TIME_KEY = "model_registry_v1_unreadable_backup_at"
     }
 }

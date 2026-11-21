@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
@@ -13,6 +14,24 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class AgentTaskCoordinatorTest {
+    @Test
+    fun checkpointTracePropagatesCoroutineCancellation() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        states.put(AgentTaskState("trace-cancel", "test"))
+        val traces = object : AgentTaskTraceStore {
+            override suspend fun append(trace: AgentTaskTrace) {
+                throw CancellationException("trace write cancelled")
+            }
+            override suspend fun recent(taskId: String, limit: Int): List<AgentTaskTrace> = emptyList()
+        }
+        val context = AgentTaskExecutionContext("trace-cancel", states, traces)
+
+        val result = runCatching { context.checkpoint("persisted-checkpoint") }
+
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertEquals("persisted-checkpoint", states.get("trace-cancel")?.checkpoint)
+    }
+
     @Test
     fun duplicateTaskIdDoesNotStartASecondExecution() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
@@ -196,4 +215,76 @@ class AgentTaskCoordinatorTest {
         assertEquals("saved", states.get("interrupted")?.checkpoint)
         coordinator.close()
     }
+
+    @Test
+    fun recoveryLeavesWorkManagerOwnedPhoneTasksQueuedForTheirDurableScheduler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("phone_agent") { calls.incrementAndGet() }
+        states.put(AgentTaskState("workmanager-owned", "phone_agent", AgentTaskStatus.QUEUED))
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val recovered = coordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+
+        assertEquals(AgentTaskStatus.QUEUED, recovered.single().status)
+        assertEquals(AgentTaskStatus.QUEUED, states.get("workmanager-owned")?.status)
+        delay(50)
+        assertEquals(0, calls.get())
+        coordinator.close()
+    }
+
+
+    @Test
+    fun externallyScheduledRunningTaskIsReattachedByWorkerInsteadOfPausedDuringRecovery() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        registry.register("phone_agent") {
+            started.complete(Unit)
+            release.await()
+        }
+        states.put(AgentTaskState("workmanager-running", "phone_agent", AgentTaskStatus.RUNNING, checkpoint = "saved"))
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val recovered = coordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+        assertEquals(AgentTaskStatus.RUNNING, recovered.single().status)
+        assertEquals(AgentTaskStatus.RUNNING, states.get("workmanager-running")?.status)
+
+        coordinator.requeueRunningTaskIfIdle("workmanager-running")
+        started.await()
+        assertEquals(AgentTaskStatus.RUNNING, states.get("workmanager-running")?.status)
+        release.complete(Unit)
+        withTimeout(2_000) {
+            while (states.get("workmanager-running")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        coordinator.close()
+    }
+
+    @Test
+    fun reattachingAlreadyActiveRunningTaskDoesNotDuplicateItsHandler() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        registry.register("phone_agent") {
+            calls.incrementAndGet()
+            started.complete(Unit)
+            release.await()
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        coordinator.enqueue("already-active", "phone_agent")
+        started.await()
+
+        coordinator.requeueRunningTaskIfIdle("already-active")
+        release.complete(Unit)
+        withTimeout(2_000) {
+            while (states.get("already-active")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals(1, calls.get())
+        coordinator.close()
+    }
+
 }

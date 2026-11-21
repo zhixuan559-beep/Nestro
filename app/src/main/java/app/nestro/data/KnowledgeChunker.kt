@@ -1,8 +1,8 @@
 package app.nestro.data
 
 /**
- * Splits imported text into overlapping retrieval chunks.
- * Fails rather than silently dropping the tail when the safety cap is reached.
+ * Splits imported text into overlapping retrieval chunks without trimming or
+ * dropping source characters. Chunk boundaries never split UTF-16 surrogate pairs.
  */
 object KnowledgeChunker {
     fun split(
@@ -11,9 +11,11 @@ object KnowledgeChunker {
         overlap: Int = 120,
         maxChunks: Int = 600
     ): List<String> {
-        require(chunkSize > 0) { "chunkSize must be positive" }
-        require(overlap >= 0 && overlap < chunkSize) { "overlap must be smaller than chunkSize" }
+        require(chunkSize >= 2) { "chunkSize must be at least 2 to preserve UTF-16 surrogate pairs" }
+        require(overlap >= 0 && overlap < chunkSize && overlap % 2 == 0) { "overlap must be an even value smaller than chunkSize to preserve UTF-16 surrogate pairs" }
+        require(chunkSize - overlap >= 2) { "chunkSize must exceed overlap by at least 2 characters" }
         require(maxChunks > 0) { "maxChunks must be positive" }
+        if (text.isEmpty()) return emptyList()
 
         val result = ArrayList<String>()
         var start = 0
@@ -24,21 +26,47 @@ object KnowledgeChunker {
                     charArrayOf('\n', '。', '！', '？', '.', '!', '?'),
                     end - 1
                 )
-                if (boundary > start + chunkSize / 2) end = boundary + 1
+                if (boundary > start + chunkSize / 2 && boundary - start > overlap + 1) {
+                    end = boundary + 1
+                }
             }
+            // Keep the end on a Unicode code-point boundary. Since overlap is even,
+            // end - overlap is also a safe boundary and every adjacent chunk overlaps
+            // by exactly the configured number of UTF-16 code units.
+            if (end < text.length && end > 0 &&
+                text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()
+            ) end--
 
-            val part = text.substring(start, end).trim()
-            if (part.isNotBlank()) result += part
+            result += text.substring(start, end)
             if (end >= text.length) {
                 start = text.length
                 break
             }
-            start = maxOf(start + 1, end - overlap)
+
+            val nextStart = end - overlap
+            check(nextStart > start) { "chunkSize must leave new content after applying overlap" }
+            start = nextStart
         }
 
         require(start >= text.length) {
             "文档切分超过 $maxChunks 个片段，请缩短文档或减少过密的段落换行后重新导入。"
         }
         return result
+    }
+
+    /** Reassembles overlapping chunks for a full-document preview. */
+    fun reassemble(chunks: List<String>, maxOverlap: Int = 120): String {
+        require(maxOverlap >= 0) { "maxOverlap must not be negative" }
+        if (chunks.isEmpty()) return ""
+        val output = StringBuilder(chunks.first())
+        for (chunk in chunks.drop(1)) {
+            val upperBound = minOf(maxOverlap, output.length, chunk.length)
+            var overlap = upperBound
+            while (overlap > 0 &&
+                output.substring(output.length - overlap) != chunk.substring(0, overlap)
+            ) overlap--
+            output.append(chunk.substring(overlap))
+        }
+        return output.toString()
     }
 }

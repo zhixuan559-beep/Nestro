@@ -15,10 +15,11 @@ class ChatExecutionService {
         readTimeoutMillis: Int = 90_000,
         temperature: Double? = null,
         maxTokens: Int? = null,
-        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> }
+        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> }
     ): String = OpenAiClient.completeWithFallback(
         configs, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis,
-        temperature, maxTokens, onUsage
+        temperature, maxTokens, onUsage, onProviderUsage
     )
 
     internal suspend fun streamWithFallback(
@@ -28,10 +29,13 @@ class ChatExecutionService {
         temperature: Double? = null,
         maxTokens: Int? = null,
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
+        onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String = UUID.randomUUID().toString(),
+        shouldStop: () -> Boolean = { false },
         onChunk: suspend (String) -> Unit
     ): String = OpenAiClient.streamWithFallback(
-        configs, history, systemPrompt, temperature, maxTokens, onUsage, requestId,
+        configs, history, systemPrompt, temperature, maxTokens, onUsage, onProviderUsage, requestId,
+        shouldStop = shouldStop,
         onChunk = onChunk
     )
 

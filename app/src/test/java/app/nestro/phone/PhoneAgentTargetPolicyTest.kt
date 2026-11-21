@@ -1,0 +1,26 @@
+package app.nestro.phone
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PhoneAgentTargetPolicyTest {
+    @Test
+    fun onlyOneVisibleEnabledMatchCanBeClicked() {
+        assertTrue(PhoneAgentTargetPolicy.canClick(1, targetVisible = true, targetEnabled = true))
+        assertFalse(PhoneAgentTargetPolicy.canClick(0, targetVisible = true, targetEnabled = true))
+        assertFalse(PhoneAgentTargetPolicy.canClick(2, targetVisible = true, targetEnabled = true))
+        assertFalse(PhoneAgentTargetPolicy.canClick(1, targetVisible = false, targetEnabled = true))
+        assertFalse(PhoneAgentTargetPolicy.canClick(1, targetVisible = true, targetEnabled = false))
+    }
+
+    @Test
+    fun textEntryRequiresOneVisibleEnabledNonPasswordField() {
+        assertTrue(PhoneAgentTargetPolicy.canFillField(1, true, true, false))
+        assertFalse(PhoneAgentTargetPolicy.canFillField(0, true, true, false))
+        assertFalse(PhoneAgentTargetPolicy.canFillField(2, true, true, false))
+        assertFalse(PhoneAgentTargetPolicy.canFillField(1, false, true, false))
+        assertFalse(PhoneAgentTargetPolicy.canFillField(1, true, false, false))
+        assertFalse(PhoneAgentTargetPolicy.canFillField(1, true, true, true))
+    }
+}

@@ -1,8 +1,13 @@
 package app.nestro.data
 
+import kotlin.math.ln
+
 /**
- * Deterministic lexical retrieval for the on-device project knowledge base.
- * It intentionally has no network or model dependency.
+ * Deterministic, on-device lexical retrieval.
+ *
+ * Candidate selection remains project-scoped in Room. Ranking uses a BM25-style
+ * term-frequency and document-length normalization over the candidate set; it
+ * has no network or model dependency.
  */
 object KnowledgeSearchEngine {
     data class Match(
@@ -17,15 +22,16 @@ object KnowledgeSearchEngine {
         "我们", "你们", "他们", "一个", "没有", "不是", "需要"
     )
 
-    fun extractTerms(prompt: String, limit: Int = 24): List<String> {
+    fun extractTerms(prompt: String, limit: Int = 32): List<String> {
         if (limit <= 0) return emptyList()
-        val terms = linkedSetOf<String>()
+        val latinTerms = linkedSetOf<String>()
         val normalized = prompt.lowercase()
         Regex("[a-z0-9][a-z0-9_-]{1,31}").findAll(normalized).forEach {
             val term = it.value
-            if (term !in ignoredTerms) terms += term
+            if (term !in ignoredTerms) latinTerms += term
         }
 
+        val cjkTerms = linkedSetOf<String>()
         val cjkSearchText = ignoredTerms
             .sortedByDescending { it.length }
             .fold(normalized) { text, ignored -> text.replace(ignored, " ") }
@@ -33,40 +39,74 @@ object KnowledgeSearchEngine {
             .findAll(cjkSearchText)
             .map { it.value }
         cjkRuns.forEach { run ->
-            // Longer n-grams are inserted first, then overlapping bigrams preserve recall.
             for (size in listOf(3, 2)) {
                 if (run.length < size) continue
                 for (index in 0..(run.length - size)) {
                     val term = run.substring(index, index + size)
-                    if (term !in ignoredTerms) terms += term
+                    if (term !in ignoredTerms) cjkTerms += term
                 }
             }
         }
-        return terms.take(limit)
+
+        if (latinTerms.size >= limit) return latinTerms.take(limit)
+        val selected = latinTerms.toMutableList()
+        val remaining = limit - selected.size
+        if (cjkTerms.size <= remaining) return selected + cjkTerms
+        if (remaining == 1) {
+            selected += cjkTerms.first()
+        } else if (remaining > 1) {
+            val candidates = cjkTerms.toList()
+            for (slot in 0 until remaining) {
+                val index = slot * (candidates.size - 1) / (remaining - 1)
+                selected += candidates[index]
+            }
+        }
+        return selected.distinct().take(limit)
     }
 
     fun rank(
         prompt: String,
         chunks: List<KnowledgeChunkEntity>,
-        limit: Int = 6
+        limit: Int = 6,
+        corpusSize: Int = chunks.size,
+        documentFrequencies: Map<String, Int> = emptyMap(),
+        averageDocumentLength: Double? = null
     ): List<Match> {
         if (limit <= 0 || chunks.isEmpty()) return emptyList()
         val terms = extractTerms(prompt)
         if (terms.isEmpty()) return emptyList()
 
-        return chunks.mapNotNull { chunk ->
+        val tokenized = chunks.map { chunk ->
             val content = chunk.content.lowercase()
-            val matched = terms.filter { content.contains(it) }
+            val frequencies = terms.associateWith { term ->
+                Regex(Regex.escape(term)).findAll(content).count()
+            }
+            Triple(chunk, frequencies, content.length.coerceAtLeast(1))
+        }
+        val averageLength = (averageDocumentLength ?: tokenized.map { it.third }.average()).coerceAtLeast(1.0)
+        val documentFrequency = terms.associateWith { term ->
+            documentFrequencies[term]
+                ?.coerceIn(0, corpusSize.coerceAtLeast(0))
+                ?: tokenized.count { (_, frequencies, _) -> (frequencies[term] ?: 0) > 0 }
+        }
+        val totalDocuments = corpusSize.coerceAtLeast(tokenized.size).toDouble()
+
+        return tokenized.mapNotNull { (chunk, frequencies, length) ->
+            val matched = terms.filter { (frequencies[it] ?: 0) > 0 }
             if (matched.isEmpty()) return@mapNotNull null
 
-            val frequency = matched.sumOf { term ->
-                Regex(Regex.escape(term)).findAll(content).count().coerceAtMost(5)
+            val normalizedLength = length / averageLength
+            val score = matched.sumOf { term ->
+                val tf = (frequencies[term] ?: 0).toDouble()
+                val df = (documentFrequency[term] ?: 0).toDouble()
+                val idf = ln(1.0 + (totalDocuments - df + 0.5) / (df + 0.5))
+                val k1 = 1.2
+                val b = 0.75
+                idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * normalizedLength))
             }
-            val longerTermBonus = matched.count { term -> term.length >= 3 } * 2
-            // Coverage dominates frequency so a chunk answering several parts wins
-            // over one that repeats a single keyword many times.
-            val score = matched.size * 100 + frequency * 3 + longerTermBonus
-            Match(chunk, score, matched)
+            // A small coverage bonus rewards chunks that address more query terms.
+            val coverageBonus = matched.size.toDouble() / terms.size.coerceAtLeast(1)
+            Match(chunk, ((score + coverageBonus) * 10_000).toInt(), matched)
         }.sortedWith(
             compareByDescending<Match> { it.score }
                 .thenBy { it.chunk.position }
