@@ -48,6 +48,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val item=items.optJSONObject(i)?:continue;val name=item.optString("name")
     require(name.isNotBlank()&&name.length<=128&&name.none{it.isISOControl()}){"MCP 返回了无效工具名称"}
     val schema=item.optJSONObject("inputSchema")?:JSONObject().put("type","object").put("properties",JSONObject())
+    require(schema.optJSONObject("properties")?.has("__nestro_mcp_internal_json_payload")!=true){"MCP 工具 schema 使用了 Nestro 保留参数名"}
     require(schema.optString("type","object")=="object"){"暂不支持非 object 工具参数 schema：$name"}
     require(schema.toString().length<=64_000){"MCP 工具 schema 超过 64 KB 限制：$name"}
     all+=McpRemoteTool(name,item.optString("description").take(500),schema,item.optJSONObject("annotations")?.optBoolean("readOnlyHint",false)==true)
@@ -179,7 +180,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val key=keys.next();val property=properties.optJSONObject(key)?:continue;val value=values.opt(key)
     val header=property.optString("x-mcp-header")
     if(header.isNotBlank()&&!values.isNull(key)){
-     require(header.matches(Regex("[A-Za-z0-9-]{1,48}"))){"MCP 工具 schema 含无效 x-mcp-header"}
+     require(header.matches(Regex("[A-Za-z0-9!#$%&\'*+.^_\`|~-]{1,48}"))){"MCP 工具 schema 含无效 x-mcp-header"}
      builder.header("Mcp-Param-$header",McpHeaderValueEncoder.encode(value.toString()))
     }
     if(value is JSONObject)walk(property.optJSONObject("properties"),value)
