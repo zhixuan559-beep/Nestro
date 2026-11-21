@@ -49,6 +49,7 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
     var review by remember { mutableStateOf<CoworkbenchReview?>(null) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
     var snapshotHistory by remember { mutableStateOf<List<CoworkbenchSnapshot>>(emptyList()) }
+    var analysisReport by remember { mutableStateOf<CoworkbenchAnalysisReport?>(null) }
     LaunchedEffect(selectedRepoId) { if (selectedRepoId.isNotBlank()) snapshotHistory = runCatching { service.listSnapshots(selectedRepoId) }.getOrDefault(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
@@ -73,6 +74,8 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                         selectedRepoId = repo.id
                         review = null
                         snapshot = null
+                        patchJson = ""
+                        analysisReport = null
                         repoMenu = false
                     })
                 }
@@ -94,6 +97,39 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                 onUseChatPrompt(prompt)
             }, enabled = task.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
                 Text("交给当前模型生成补丁方案")
+            }
+            OutlinedButton(onClick = {
+                busy = true
+                status = ""
+                scope.launch {
+                    try {
+                        analysisReport = service.analyzeRepository(selectedRepoId)
+                        val report = analysisReport!!
+                        status = "仓库扫描完成：检查 " + report.scannedFiles + " 个文件，发现 " +
+                            report.findings.size + " 条风险/影响线索。"
+                    } catch (error: Exception) {
+                        status = error.message ?: "仓库静态分析失败"
+                    } finally { busy = false }
+                }
+            }, enabled = !busy && selectedRepoId.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text("扫描整个仓库：依赖、权限、敏感 API 与脚本")
+            }
+            analysisReport?.let { report ->
+                Divider()
+                Text("仓库静态影响分析", style = MaterialTheme.typography.titleMedium)
+                Text("已扫描 ${report.scannedFiles} 个文件 · 跳过 ${report.skippedFiles} 个文件 · 依赖声明 ${report.dependencyDeclarations.size} 项",
+                    style = MaterialTheme.typography.bodySmall)
+                if (report.truncated) Text("扫描达到安全上限，结果不完整；请缩小仓库范围后分批检查。", color = MaterialTheme.colorScheme.error)
+                report.dependencyDeclarations.take(40).forEach { Text("依赖：$it", style = MaterialTheme.typography.bodySmall) }
+                report.findings.take(100).forEach { finding ->
+                    Text("${finding.level} · ${finding.category} · ${finding.path}" +
+                        (finding.line?.let { ":$it" } ?: ""), style = MaterialTheme.typography.labelMedium)
+                    Text(finding.message + "（" + finding.evidence.take(180) + "）",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (report.findings.size > 100) Text("另有 ${report.findings.size - 100} 条线索未在页面展开。")
+                Text("说明：这是有扫描上限的源码/配置规则分析，不等同于 Gradle 完整解析依赖图、编译器分析或安全审计。",
+                    style = MaterialTheme.typography.bodySmall)
             }
             OutlinedTextField(value = patchJson, onValueChange = { patchJson = it; review = null },
                 modifier = Modifier.fillMaxWidth(), label = { Text("粘贴模型返回的补丁 JSON") }, minLines = 8, enabled = !busy)
