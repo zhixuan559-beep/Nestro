@@ -6,8 +6,6 @@ internal object ChatContextRetrievalPolicy {
     private val userMemorySignals = listOf("我的偏好", "我的习惯", "你记得我", "关于我", "我之前告诉", "我之前说", "根据我的记忆", "个人记忆", "我的情况", "我的背景")
 
     fun shouldRetrieveConversation(prompt: String): Boolean = conversationSignals.any(prompt::contains)
-    /** Knowledge lookup is a model-selected tool; never prefetch it by keyword before routing. */
-    fun shouldRetrieveKnowledge(prompt: String): Boolean = false
     fun shouldRetrieveUserMemory(prompt: String): Boolean = userMemorySignals.any(prompt::contains)
 
     /** A saved team selection is not authorization; team execution requires explicit task mode. */
