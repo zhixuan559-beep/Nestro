@@ -85,38 +85,7 @@ object SkillCommunityClient {
     }
 
     /** Returns true only when candidate has a strictly higher semantic version. */
-    fun isNewerVersion(candidate: String, installed: String): Boolean {
-        fun parse(raw: String): Pair<List<Long>, String?> {
-            require(raw.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本格式无效" }
-            val withoutBuild = raw.substringBefore("+")
-            val coreParts = withoutBuild.substringBefore("-").split(".")
-            require(coreParts.all { it.length <= 18 }) { "技能版本数字过长" }
-            val core = coreParts.map { it.toLong() }
-            val preRelease = withoutBuild.substringAfter("-", "").takeIf { it.isNotEmpty() }
-            return core to preRelease
-        }
-        val (nextCore, nextPre) = parse(candidate)
-        val (currentCore, currentPre) = parse(installed)
-        for (index in 0..2) {
-            if (nextCore[index] != currentCore[index]) return nextCore[index] > currentCore[index]
-        }
-        if (nextPre == null) return currentPre != null
-        if (currentPre == null) return false
-        val nextParts = nextPre.split(".")
-        val currentParts = currentPre.split(".")
-        for (index in 0 until minOf(nextParts.size, currentParts.size)) {
-            val nextNumber = nextParts[index].toLongOrNull()
-            val currentNumber = currentParts[index].toLongOrNull()
-            val comparison = when {
-                nextNumber != null && currentNumber != null -> nextNumber.compareTo(currentNumber)
-                nextNumber != null -> -1
-                currentNumber != null -> 1
-                else -> nextParts[index].compareTo(currentParts[index])
-            }
-            if (comparison != 0) return comparison > 0
-        }
-        return nextParts.size > currentParts.size
-    }
+    fun isNewerVersion(candidate: String, installed: String): Boolean = SkillSemVer.compare(candidate, installed) > 0
 
     fun fingerprint(trustedPublicKeyBase64: String): String {
         val keyBytes = Base64.getDecoder().decode(trustedPublicKeyBase64.filterNot(Char::isWhitespace))
