@@ -42,6 +42,8 @@ fun CapabilityDirectoryPage() {
     var pendingBundle by remember { mutableStateOf<SkillBundle?>(null) }
     var pendingPlan by remember { mutableStateOf<app.nestro.data.SkillDependencyResolver.InstallPlan?>(null) }
     var authorityKey by remember { mutableStateOf(prefs.getString("skill_trust_authority_key_v1", "") ?: "") }
+    var pendingAuthorityKey by remember { mutableStateOf("") }
+    var showAuthorityPinConfirm by remember { mutableStateOf(false) }
     var revocationUrl by remember { mutableStateOf(prefs.getString("skill_trust_revocation_url_v1", "") ?: "") }
     val trustStore=remember(prefs) { app.nestro.data.SkillTrustStore(prefs) }
     var installStatus by remember { mutableStateOf("") }
@@ -105,7 +107,7 @@ fun CapabilityDirectoryPage() {
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedTextField(trustedKey,{trustedKey=it},label={Text("受信任 RSA 公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
         OutlinedTextField(authorityKey,{authorityKey=it},label={Text("独立信任根公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
-        OutlinedButton(enabled=authorityKey.isNotBlank(),onClick={ val result=runCatching { trustStore.pinAuthorityKey(authorityKey.trim()) }; status=result.fold({ "独立信任根已固定：SHA-256 "+trustStore.authorityFingerprint() },{ "信任根固定失败："+(it.message ?: "无效公钥") }) },modifier=Modifier.fillMaxWidth()) { Text("固定独立信任根") }
+        OutlinedButton(enabled=authorityKey.isNotBlank(),onClick={ pendingAuthorityKey=authorityKey.trim(); showAuthorityPinConfirm=true },modifier=Modifier.fillMaxWidth()) { Text("固定独立信任根") }
         OutlinedTextField(revocationUrl,{revocationUrl=it},label={Text("签名密钥撤销清单 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedButton(enabled=revocationUrl.startsWith("https://") && trustStore.authorityFingerprint().isNotBlank() && !loading,onClick={ loading=true; scope.launch { val result=withContext(Dispatchers.IO) { runCatching { trustStore.refreshRevocations(revocationUrl.trim()) } }; status=result.fold({ count ->
                 val metadata=JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}")
