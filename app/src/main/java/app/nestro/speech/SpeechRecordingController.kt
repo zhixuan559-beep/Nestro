@@ -85,7 +85,12 @@ class SpeechRecordingController : AutoCloseable {
         check(!closed.get()) { "录音控制器已关闭" }
         running.set(false)
         runCatching { recorder?.stop() }
-        runCatching { captureThread?.join(1_500) }
+        val thread = captureThread
+        runCatching { thread?.join(1_500) }
+        if (thread?.isAlive == true) {
+            close()
+            error("录音设备停止超时")
+        }
         recorder?.release()
         recorder = null
         captureThread = null
