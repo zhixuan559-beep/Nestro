@@ -7,6 +7,8 @@ class SkillSemVerTest {
     @Test fun comparesNumericCoreAndIgnoresBuildMetadata() {
         assertTrue(SkillSemVer.compare("1.10.0","1.9.9")>0)
         assertEquals(0,SkillSemVer.compare("2.1.0+build.7","2.1.0+build.8"))
+        assertTrue(SkillSemVer.compare("1.999999999999999999999.0","1.10.0")>0)
+        assertFalse(runCatching { SkillSemVer.compare("1.0.0+build..x","1.0.0") }.isSuccess)
     }
     @Test fun followsPrereleasePrecedence() {
         assertTrue(SkillSemVer.compare("1.0.0-alpha","1.0.0")<0)
