@@ -283,4 +283,26 @@ class ModelRequestConfigurationSelectorTest {
         )
     }
 
+    @Test
+    fun selectedProviderProtocolFlowsIntoRequestConfiguration() {
+        val provider = ModelProvider(
+            "claude", "Anthropic Claude", "https://api.anthropic.com",
+            presetId = "anthropic",
+            protocol = ModelApiProtocol.ANTHROPIC_MESSAGES
+        )
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("claude-key", "claude", "Primary")),
+            models = listOf(ModelDefinition("claude-model", "claude", "Claude", "claude-sonnet", listOf("claude-key")))
+        )
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry = registry,
+            activeModelId = "claude-model",
+            failoverEnabled = false,
+            readKey = { "secret" }
+        )
+        assertEquals(1, configs.size)
+        assertEquals(ModelApiProtocol.ANTHROPIC_MESSAGES, configs.single().protocol)
+    }
+
 }
