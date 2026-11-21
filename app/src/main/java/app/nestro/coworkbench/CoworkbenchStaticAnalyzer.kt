@@ -13,6 +13,14 @@ data class CoworkbenchFinding(
     val message: String
 )
 
+data class CoworkbenchChangeImpact(
+    val findings: List<CoworkbenchFinding>,
+    val permissionsAdded: List<String>,
+    val permissionsRemoved: List<String>,
+    val dependenciesAdded: List<String>,
+    val dependenciesRemoved: List<String>
+)
+
 data class CoworkbenchAnalysisReport(
     val scannedFiles: Int,
     val skippedFiles: Int,
@@ -88,6 +96,179 @@ object CoworkbenchStaticAnalyzer {
                 .sortedWith(compareByDescending<CoworkbenchFinding> { it.level.ordinal }.thenBy { it.path }.thenBy { it.line ?: 0 }),
             truncated = truncated
         )
+    }
+
+    fun analyzeProposals(proposals: List<CoworkbenchProposal>): CoworkbenchChangeImpact {
+        val findings = mutableListOf<CoworkbenchFinding>()
+        val dependenciesAdded = linkedSetOf<String>()
+        val dependenciesRemoved = linkedSetOf<String>()
+        val permissionsAdded = linkedSetOf<String>()
+        val permissionsRemoved = linkedSetOf<String>()
+        proposals.forEach { proposal ->
+            val path = CoworkbenchPolicy.safePath(proposal.path)
+            val before = proposalBeforeText(proposal)
+            val after = proposal.content
+            if (path.lowercase().endsWith("androidmanifest.xml")) {
+                val oldPermissions = manifestPermissions(before)
+                val newPermissions = manifestPermissions(after.orEmpty())
+                permissionsAdded += newPermissions - oldPermissions
+                permissionsRemoved += oldPermissions - newPermissions
+                (newPermissions - oldPermissions).forEach { permission ->
+                    val level = if (permission.substringAfterLast('.').matches(
+                            Regex("READ_SMS|SEND_SMS|RECEIVE_SMS|CALL_PHONE|READ_CONTACTS|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|RECORD_AUDIO|CAMERA")
+                        )) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING
+                    findings += finding("新增 Manifest 权限", level, path, null, permission,
+                        "该权限由本次补丁新增；必须核对必要性、运行时授权、隐私披露和数据用途")
+                }
+                val oldExported = exportedComponents(before)
+                val newExported = exportedComponents(after.orEmpty())
+                (newExported - oldExported).forEach { component ->
+                    findings += finding("新增导出组件", CoworkbenchFindingLevel.HIGH, path, null, component,
+                        "本次补丁新增对外可访问组件；核验入口参数、权限保护和身份校验")
+                }
+                if (!containsTrueAttribute(before, "debuggable") && containsTrueAttribute(after.orEmpty(), "debuggable")) {
+                    findings += finding("启用调试模式", CoworkbenchFindingLevel.HIGH, path, null, "android:debuggable=true",
+                        "本次补丁启用了调试模式，发布构建必须阻止该配置")
+                }
+            }
+            if (isBuildConfiguration(path)) {
+                val oldDeps = dependencyTokens(path, before)
+                val newDeps = dependencyTokens(path, after.orEmpty())
+                dependenciesAdded += newDeps - oldDeps
+                dependenciesRemoved += oldDeps - newDeps
+                (newDeps - oldDeps).forEach { dependency ->
+                    val dynamic = dependency.contains("+") || dependency.contains("SNAPSHOT", true) ||
+                        dependency.contains("latest.", true)
+                    findings += finding("新增构建依赖", if (dynamic) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
+                        path, null, dependency, if (dynamic) "新增依赖使用动态/快照版本，构建不可稳定复现" else
+                            "本次补丁新增依赖；需核验来源、版本、许可证、传递依赖与供应链风险")
+                }
+                (oldDeps - newDeps).forEach { dependency ->
+                    findings += finding("移除构建依赖", CoworkbenchFindingLevel.INFO, path, null, dependency,
+                        "本次补丁移除了依赖；确认没有遗留引用和运行时缺失")
+                }
+            }
+            if (after != null) inspect(path, after, findings, linkedSetOf())
+        }
+        return CoworkbenchChangeImpact(
+            findings.distinctBy { listOf(it.category, it.path, it.evidence, it.message) }
+                .sortedWith(compareByDescending<CoworkbenchFinding> { it.level.ordinal }.thenBy { it.path }),
+            permissionsAdded.sorted(), permissionsRemoved.sorted(),
+            dependenciesAdded.sorted(), dependenciesRemoved.sorted()
+        )
+    }
+
+    private fun proposalBeforeText(proposal: CoworkbenchProposal): String {
+        // The caller supplies repository-aware before content in the overload below.
+        return ""
+    }
+
+    fun analyzeProposalsWithBaseline(
+        repository: File,
+        proposals: List<CoworkbenchProposal>
+    ): CoworkbenchChangeImpact {
+        val enriched = proposals.map { proposal ->
+            val file = File(repository.canonicalFile, CoworkbenchPolicy.safePath(proposal.path))
+            val before = runCatching { file.canonicalFile.takeIf {
+                it.toPath().startsWith(repository.canonicalFile.toPath()) && it.isFile &&
+                    !java.nio.file.Files.isSymbolicLink(it.toPath())
+            }?.readText(Charsets.UTF_8) }.getOrNull()
+            proposal.copy(content = proposal.content).let { it to before }
+        }
+        val findings = mutableListOf<CoworkbenchFinding>()
+        val dependenciesAdded = linkedSetOf<String>()
+        val dependenciesRemoved = linkedSetOf<String>()
+        val permissionsAdded = linkedSetOf<String>()
+        val permissionsRemoved = linkedSetOf<String>()
+        enriched.forEach { (proposal, before) ->
+            val path = CoworkbenchPolicy.safePath(proposal.path)
+            val after = proposal.content
+            if (path.lowercase().endsWith("androidmanifest.xml")) {
+                val oldPermissions = manifestPermissions(before.orEmpty())
+                val newPermissions = manifestPermissions(after.orEmpty())
+                permissionsAdded += newPermissions - oldPermissions
+                permissionsRemoved += oldPermissions - newPermissions
+                (newPermissions - oldPermissions).forEach { permission ->
+                    val high = permission.substringAfterLast('.').matches(
+                        Regex("READ_SMS|SEND_SMS|RECEIVE_SMS|CALL_PHONE|READ_CONTACTS|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|RECORD_AUDIO|CAMERA")
+                    )
+                    findings += finding("新增 Manifest 权限", if (high) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
+                        path, null, permission, "本次补丁新增权限；核对必要性、授权、隐私披露与数据用途")
+                }
+                (exportedComponents(after.orEmpty()) - exportedComponents(before.orEmpty())).forEach { component ->
+                    findings += finding("新增导出组件", CoworkbenchFindingLevel.HIGH, path, null, component,
+                        "本次补丁新增对外组件；核验输入校验、权限保护和身份校验")
+                }
+                if (!containsTrueAttribute(before.orEmpty(), "debuggable") && containsTrueAttribute(after.orEmpty(), "debuggable")) {
+                    findings += finding("启用调试模式", CoworkbenchFindingLevel.HIGH, path, null, "android:debuggable=true",
+                        "本次补丁启用了调试模式，发布构建必须阻止该配置")
+                }
+            }
+            if (isBuildConfiguration(path)) {
+                val oldDeps = dependencyTokens(path, before.orEmpty())
+                val newDeps = dependencyTokens(path, after.orEmpty())
+                dependenciesAdded += newDeps - oldDeps
+                dependenciesRemoved += oldDeps - newDeps
+                (newDeps - oldDeps).forEach { dependency ->
+                    val dynamic = dependency.contains("+") || dependency.contains("SNAPSHOT", true) || dependency.contains("latest.", true)
+                    findings += finding("新增构建依赖", if (dynamic) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
+                        path, null, dependency, "新增依赖需核验来源、版本、许可证和传递依赖" +
+                            if (dynamic) "；当前使用动态/快照版本" else "")
+                }
+                (oldDeps - newDeps).forEach { dependency ->
+                    findings += finding("移除构建依赖", CoworkbenchFindingLevel.INFO, path, null, dependency,
+                        "确认移除后没有遗留引用和运行时缺失")
+                }
+            }
+            if (after != null) inspect(path, after, findings, linkedSetOf())
+        }
+        return CoworkbenchChangeImpact(
+            findings.distinctBy { listOf(it.category, it.path, it.evidence, it.message) }
+                .sortedWith(compareByDescending<CoworkbenchFinding> { it.level.ordinal }.thenBy { it.path }),
+            permissionsAdded.sorted(), permissionsRemoved.sorted(),
+            dependenciesAdded.sorted(), dependenciesRemoved.sorted()
+        )
+    }
+
+    private fun manifestPermissions(text: String): Set<String> =
+        Regex("""<uses-permission(?:-sdk-\d+)?\\b[^>]*android:name\\s*=\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+            .findAll(text).map { it.groupValues[1] }.toSet()
+
+    private fun exportedComponents(text: String): Set<String> =
+        Regex("""<(activity|activity-alias|service|receiver|provider)\\b([^>]*)>""", RegexOption.IGNORE_CASE)
+            .findAll(text).filter { match ->
+                Regex("""android:exported\\s*=\\s*["']true["']""", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(match.groupValues[2])
+            }.map { it.groupValues[1] + ":" + Regex("""android:name\\s*=\\s*["']([^"']+)["']""")
+                .find(match.groupValues[2])?.groupValues?.get(1).orEmpty() }.toSet()
+
+    private fun containsTrueAttribute(text: String, attribute: String): Boolean =
+        Regex("""android:$attribute\\s*=\\s*["']true["']""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+
+    private fun isBuildConfiguration(path: String): Boolean {
+        val name = path.substringAfterLast('/').lowercase()
+        return name.endsWith(".gradle") || name.endsWith(".gradle.kts") ||
+            name == "libs.versions.toml" || name == "gradle.properties"
+    }
+
+    private fun dependencyTokens(path: String, text: String): Set<String> {
+        val result = linkedSetOf<String>()
+        val lower = path.lowercase()
+        if (lower.endsWith(".toml")) {
+            Regex("""(?m)^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*(?:\\{[^}]*module\\s*=\\s*["']([^"']+)["'][^}]*}|["']([^"']+)["'])""")
+                .findAll(text).forEach { match ->
+                    result += "catalog:" + match.groupValues[1] + ":" +
+                        (match.groupValues[2].ifBlank { match.groupValues[3] })
+                }
+        } else {
+            Regex("""\\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation|classpath)\\s*\\(?\\s*["']([^"']+)["']""")
+                .findAll(text).forEach { result += it.groupValues[1] }
+            Regex("""\\b(?:id|alias)\\s*\\(?\\s*["']([^"']+)["']\\s*\\)?\\s*(?:version\\s*["']([^"']+)["'])?""")
+                .findAll(text).forEach { result += "plugin:" + it.groupValues[1] + ":" + it.groupValues[2] }
+            Regex("""\\blibs(?:\\.[A-Za-z0-9_-]+){1,8}\\b""")
+                .findAll(text).forEach { result += "catalog-alias:" + it.value }
+        }
+        return result
     }
 
     private fun inspect(
