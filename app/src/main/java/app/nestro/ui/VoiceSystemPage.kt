@@ -164,6 +164,7 @@ fun VoiceSystemPage() {
             return
         }
         try {
+            controller.stop()
             status = "正在连接实时语音服务…"
             realtimeConnecting = true
             val session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
@@ -403,6 +404,7 @@ fun VoiceSystemPage() {
             onClick = {
                 scope.launch {
                     remoteBusy = true
+                    controller.stop()
                     status = "正在请求远程语音合成…"
                     try {
                         val config = providerStore.read() ?: error("请先保存远程语音服务配置")
