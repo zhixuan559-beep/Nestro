@@ -381,8 +381,8 @@ fun AiCoworkbenchPage(
                                 "Workflow 虽返回成功，但测试报告记录 ${result.reportedTestFailures} 项失败/错误；不得视为验收通过：" + result.url
                             result.completed && result.conclusion == "success" && result.testReports.none { it.total > 0 } ->
                                 "Workflow 虽返回成功，但没有取得包含实际测试用例的 JUnit 报告；验收状态未确认：" + result.url
-                            result.completed && result.conclusion == "success" && result.sbomComponents.isEmpty() ->
-                                "Workflow 虽返回成功，但没有取得可解析的 CycloneDX SBOM；验收状态未确认：" + result.url
+                            result.completed && result.conclusion == "success" && !result.sbomComplete ->
+                                "Workflow 虽返回成功，但没有取得包含 Debug/Release 完整依赖清单的 Nestro CycloneDX SBOM；验收状态未确认：" + result.url
                             result.completed && result.conclusion == "success" && result.hasTruncatedReports ->
                                 "Workflow 虽返回成功，但部分构建产物下载失败或被截断；验收状态未确认：" + result.url
                             else -> "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
