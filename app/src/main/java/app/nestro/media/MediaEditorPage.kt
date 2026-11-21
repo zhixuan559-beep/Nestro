@@ -62,6 +62,7 @@ import org.json.JSONObject
 fun MediaEditorPage(
     context: Context,
     projectId: String,
+    initialAssetId: String = "",
     onUseChatPrompt: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -174,6 +175,13 @@ fun MediaEditorPage(
         }
     }
 
+
+    LaunchedEffect(initialAssetId, assets) {
+        if (initialAssetId.isNotBlank() && assets.any { it.id == initialAssetId }) {
+            selectedAssetId = initialAssetId
+            status = "已从对话打开生成视频，可预览或加入时间线。"
+        }
+    }
 
     LaunchedEffect(mediaAiTasks, activeMediaAiTaskId) {
         if (activeMediaAiTaskId.isBlank()) {
