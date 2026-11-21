@@ -45,13 +45,18 @@ object CoworkbenchReportParser {
         val application = metadata.optJSONObject("component") ?: return false
         if (application.optString("name") != "Nestro" || application.optString("version").isBlank()) return false
         val properties = metadata.optJSONArray("properties") ?: return false
-        val source = (0 until properties.length()).mapNotNull { properties.optJSONObject(it) }
-            .firstOrNull { it.optString("name") == "nestro:sbom:source" }
-            ?.optString("value").orEmpty()
+        val metadataProperties = (0 until properties.length()).mapNotNull { properties.optJSONObject(it) }
+            .associate { it.optString("name") to it.optString("value") }
+        val expectedConfigurations = setOf("debugRuntimeClasspath", "releaseRuntimeClasspath")
+        if (metadataProperties["nestro:sbom:configuration:debugRuntimeClasspath"] != "resolved" ||
+            metadataProperties["nestro:sbom:configuration:releaseRuntimeClasspath"] != "resolved"
+        ) return false
+        val source = metadataProperties["nestro:sbom:source"].orEmpty()
         if (!source.contains("debugRuntimeClasspath") || !source.contains("releaseRuntimeClasspath")) return false
         val components = json.optJSONArray("components") ?: return false
         if (components.length() == 0 || components.length() > MAX_COMPONENTS) return false
         val refs = mutableSetOf<String>()
+        val coveredConfigurations = mutableSetOf<String>()
         for (index in 0 until components.length()) {
             val item = components.optJSONObject(index) ?: return false
             val purl = item.optString("purl")
@@ -63,8 +68,16 @@ object CoworkbenchReportParser {
                 !purl.startsWith("pkg:maven/") || purl != expectedPurl || item.optString("bom-ref") != purl ||
                 group.isBlank() || name.isBlank() || version.isBlank() || !refs.add(purl)
             ) return false
+            val componentProperties = item.optJSONArray("properties") ?: return false
+            val configurations = (0 until componentProperties.length()).mapNotNull { propertyIndex ->
+                componentProperties.optJSONObject(propertyIndex)?.takeIf {
+                    it.optString("name") == "nestro:gradle:configurations"
+                }?.optString("value")
+            }.flatMap { it.split(",") }.map { it.trim() }.filter { it in expectedConfigurations }.toSet()
+            if (configurations.isEmpty()) return false
+            coveredConfigurations += configurations
         }
-        return true
+        return coveredConfigurations.containsAll(expectedConfigurations)
     }
 
     fun parseSbom(path: String, content: String): List<CoworkbenchSbomComponent> {
@@ -186,40 +199,53 @@ object CoworkbenchReportParser {
             val document = builder.parse(InputSource(StringReader(content)))
             val root = document.documentElement ?: return null
             if (root.tagName !in setOf("testsuite", "testsuites")) return null
-            fun count(attribute: String): Int {
-                if (!root.hasAttribute(attribute)) return 0
-                val parsed = root.getAttribute(attribute).toIntOrNull()
-                    ?: error("JUnit 报告计数不是整数：$attribute")
-                require(parsed >= 0) { "JUnit 报告计数不能为负数：$attribute" }
-                return parsed
+
+            fun checkedCount(value: String, label: String): Int {
+                val parsed = value.toLongOrNull() ?: error("JUnit 报告计数不是整数：$label")
+                require(parsed in 0..Int.MAX_VALUE.toLong()) { "JUnit 报告计数越界或为负数：$label" }
+                return parsed.toInt()
             }
-            val hasRootCounts = root.hasAttribute("tests")
+            fun rootCount(attribute: String): Int =
+                if (root.hasAttribute(attribute)) checkedCount(root.getAttribute(attribute), attribute) else 0
+            fun suiteCount(element: org.w3c.dom.Element, attribute: String): Long {
+                if (!element.hasAttribute(attribute)) return 0L
+                return checkedCount(element.getAttribute(attribute), "testsuite.$attribute").toLong()
+            }
+
+            // Validate every nested suite even when the root provides aggregate counters.
+            // Otherwise a malformed child (including a negative value) could be hidden by valid root totals.
+            val suites = root.getElementsByTagName("testsuite")
+            for (index in 0 until suites.length()) {
+                val suite = suites.item(index) as org.w3c.dom.Element
+                listOf("tests", "failures", "errors", "skipped").forEach { suiteCount(suite, it) }
+            }
+
             val total: Int
             val failures: Int
             val errors: Int
             val skipped: Int
-            if (hasRootCounts) {
-                total = count("tests")
-                failures = count("failures")
-                errors = count("errors")
-                skipped = count("skipped")
+            if (root.hasAttribute("tests")) {
+                total = rootCount("tests")
+                failures = rootCount("failures")
+                errors = rootCount("errors")
+                skipped = rootCount("skipped")
             } else {
-                val suites = root.getElementsByTagName("testsuite")
-                fun suiteCount(element: org.w3c.dom.Element, attribute: String): Int {
-                    if (!element.hasAttribute(attribute)) return 0
-                    val parsed = element.getAttribute(attribute).toIntOrNull()
-                        ?: error("JUnit 子测试套件计数不是整数：$attribute")
-                    require(parsed >= 0) { "JUnit 子测试套件计数不能为负数：$attribute" }
-                    return parsed
+                fun aggregate(attribute: String): Int {
+                    val value = (0 until suites.length()).sumOf {
+                        suiteCount(suites.item(it) as org.w3c.dom.Element, attribute)
+                    }
+                    require(value <= Int.MAX_VALUE.toLong()) { "JUnit 子测试套件计数总和越界：$attribute" }
+                    return value.toInt()
                 }
-                total = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "tests") }
-                failures = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "failures") }
-                errors = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "errors") }
-                skipped = (0 until suites.length()).sumOf { suiteCount(suites.item(it) as org.w3c.dom.Element, "skipped") }
+                total = aggregate("tests")
+                failures = aggregate("failures")
+                errors = aggregate("errors")
+                skipped = aggregate("skipped")
             }
-            require(total >= 0 && failures + errors + skipped <= total) { "JUnit 测试报告计数不一致" }
+            require(failures.toLong() + errors + skipped <= total) { "JUnit 测试报告计数不一致" }
             CoworkbenchTestReport(path, total, total - failures - errors - skipped,
                 failures, errors, skipped)
         }.getOrNull()
     }
+
 }

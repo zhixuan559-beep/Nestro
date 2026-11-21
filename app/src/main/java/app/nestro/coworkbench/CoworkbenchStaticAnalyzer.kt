@@ -49,7 +49,7 @@ object CoworkbenchStaticAnalyzer {
         val dependencies = linkedSetOf<String>()
         var scanned = 0
         var skipped = 0
-        var visited = 0
+        var visitedEntries = 0
         var totalBytes = 0L
         var truncated = false
 
@@ -61,13 +61,15 @@ object CoworkbenchStaticAnalyzer {
                         !java.nio.file.Files.isSymbolicLink(dir.toPath())
                 }
             }
+            .take(MAX_FILES * 4)
+            .onEach { visitedEntries++ }
             .filter { file ->
                 file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
                     file.extension.lowercase() in extensions
             }
 
         for (file in files) {
-            if (visited++ >= MAX_FILES * 4 || scanned >= MAX_FILES || totalBytes >= MAX_TOTAL_BYTES) {
+            if (scanned >= MAX_FILES || totalBytes >= MAX_TOTAL_BYTES) {
                 truncated = true
                 break
             }
@@ -89,14 +91,18 @@ object CoworkbenchStaticAnalyzer {
             scanned++
             totalBytes += size
             val relative = root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
-            if (text.count { it == '\n' } + 1 > MAX_LINES_PER_FILE) truncated = true
-            inspect(relative, text, findings, dependencies)
+            val exceedsLineLimit = text.count { it == '\n' } + 1 > MAX_LINES_PER_FILE
+            if (exceedsLineLimit) truncated = true
+            val boundedText = if (exceedsLineLimit) {
+                text.lineSequence().take(MAX_LINES_PER_FILE).joinToString("\n")
+            } else text
+            inspect(relative, boundedText, findings, dependencies)
             val remainingFindings = (MAX_FINDINGS - findings.size).coerceAtLeast(0)
-            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text).take(remainingFindings).map { finding ->
+            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, boundedText).take(remainingFindings).map { finding ->
                 finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
             }
             if (relative.lowercase().endsWith(".toml") && dependencies.size < MAX_DEPENDENCIES) {
-                dependencyTokens(relative, text).forEach { declaration ->
+                dependencyTokens(relative, boundedText).forEach { declaration ->
                     if (dependencies.size < MAX_DEPENDENCIES) dependencies += "$relative:$declaration"
                     if (findings.size < MAX_FINDINGS &&
                         (declaration.contains("+") || declaration.contains("SNAPSHOT", true) ||
@@ -112,6 +118,7 @@ object CoworkbenchStaticAnalyzer {
             }
         }
 
+        if (visitedEntries >= MAX_FILES * 4) truncated = true
         return CoworkbenchAnalysisReport(
             scannedFiles = scanned,
             skippedFiles = skipped,
@@ -205,8 +212,11 @@ object CoworkbenchStaticAnalyzer {
                         "文件超过 " + MAX_LINES_PER_FILE + " 行",
                         "静态规则与同文件数据流仅检查前 " + MAX_LINES_PER_FILE + " 行；请拆分补丁并分阶段审查"))
                 }
-                inspect(path, after, findings, linkedSetOf())
-                CoworkbenchDataFlowAnalyzer.analyze(path, after)
+                val boundedAfter = if (after.count { it == '\n' } + 1 > MAX_LINES_PER_FILE) {
+                    after.lineSequence().take(MAX_LINES_PER_FILE).joinToString("\n")
+                } else after
+                inspect(path, boundedAfter, findings, linkedSetOf())
+                CoworkbenchDataFlowAnalyzer.analyze(path, boundedAfter)
                     .take((MAX_FINDINGS - findings.size).coerceAtLeast(0))
                     .map { finding -> finding.copy(evidence = redactSensitiveEvidence(finding.evidence)) }
                     .forEach(::addFinding)

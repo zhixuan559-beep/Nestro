@@ -30,12 +30,17 @@ class CoworkbenchReportParserTest {
             "specVersion":"1.5",
             "metadata":{
                 "component":{"type":"application","name":"Nestro","version":"0.3.1"},
-                "properties":[{"name":"nestro:sbom:source","value":"Gradle debugRuntimeClasspath and releaseRuntimeClasspath dependency reports"}]
+                "properties":[
+                    {"name":"nestro:sbom:source","value":"Gradle debugRuntimeClasspath and releaseRuntimeClasspath dependency reports"},
+                    {"name":"nestro:sbom:configuration:debugRuntimeClasspath","value":"resolved"},
+                    {"name":"nestro:sbom:configuration:releaseRuntimeClasspath","value":"resolved"}
+                ]
             },
             "components":[{
                 "type":"library","bom-ref":"pkg:maven/org.example/core@1.2.3",
                 "group":"org.example","name":"core","version":"1.2.3",
-                "purl":"pkg:maven/org.example/core@1.2.3"
+                "purl":"pkg:maven/org.example/core@1.2.3",
+                "properties":[{"name":"nestro:gradle:configurations","value":"debugRuntimeClasspath,releaseRuntimeClasspath"}]
             }]
         }"""
         assertTrue(CoworkbenchReportParser.isCompleteCoworkbenchSbom("app/build/reports/coworkbench/bom.cdx.json", report))
@@ -48,6 +53,14 @@ class CoworkbenchReportParserTest {
         ))
         assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
             "app/build/reports/coworkbench/bom.cdx.json", report.replace("\"version\":\"0.3.1\"", "\"version\":\"\"")
+        ))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
+            "app/build/reports/coworkbench/bom.cdx.json",
+            report.replace("nestro:sbom:configuration:releaseRuntimeClasspath", "nestro:sbom:configuration:testRuntimeClasspath")
+        ))
+        assertFalse(CoworkbenchReportParser.isCompleteCoworkbenchSbom(
+            "app/build/reports/coworkbench/bom.cdx.json",
+            report.replace("debugRuntimeClasspath,releaseRuntimeClasspath", "debugRuntimeClasspath")
         ))
     }
 
@@ -175,6 +188,9 @@ class CoworkbenchReportParserTest {
         ))
         assertNull(CoworkbenchReportParser.parseJunitXml(
             "report.xml", """<testsuites><testsuite tests="-1" failures="0"/></testsuites>"""
+        ))
+        assertNull(CoworkbenchReportParser.parseJunitXml(
+            "report.xml", """<testsuites tests="1" failures="0"><testsuite tests="-1" failures="0"/></testsuites>"""
         ))
     }
 

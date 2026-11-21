@@ -14,18 +14,41 @@ class GenerateSbomTests(unittest.TestCase):
 +--- org.example:core:1.0
 |    \\--- org.example:shared:2.0 -> 2.3
 \\--- org.example:core:1.0
+releaseRuntimeClasspath - Runtime classpath
++--- org.example:core:1.0
+\\--- org.example:release-only:3.0
 """
         components = MODULE.parse_components(report)
         by_name = {item["name"]: item for item in components}
         self.assertEqual("1.0", by_name["core"]["version"])
         self.assertEqual("2.3", by_name["shared"]["version"])
-        self.assertEqual("2.0", by_name["shared"]["properties"][0]["value"])
+        self.assertEqual("2.0", by_name["shared"]["properties"][1]["value"])
+        core_configurations = next(
+            prop["value"] for prop in by_name["core"]["properties"]
+            if prop["name"] == "nestro:gradle:configurations"
+        )
+        self.assertEqual("debugRuntimeClasspath,releaseRuntimeClasspath", core_configurations)
+        self.assertEqual("releaseRuntimeClasspath", next(
+            prop["value"] for prop in by_name["release-only"]["properties"]
+            if prop["name"] == "nestro:gradle:configurations"
+        ))
 
     def test_deduplicates_same_resolved_coordinate(self):
-        report = """+--- org.example:core:1.0
+        report = """debugRuntimeClasspath - Runtime classpath
++--- org.example:core:1.0
+\\--- org.example:core:1.0
+releaseRuntimeClasspath - Runtime classpath
 \\--- org.example:core:1.0
 """
         self.assertEqual(1, len(MODULE.parse_components(report)))
+
+    def test_rejects_a_report_missing_one_configuration_graph(self):
+        report = """debugRuntimeClasspath - Runtime classpath
++--- org.example:core:1.0
+releaseRuntimeClasspath - Runtime classpath
+"""
+        with self.assertRaises(ValueError):
+            MODULE.require_configuration_coverage(MODULE.parse_components(report))
 
     def test_rejects_empty_or_unbounded_reports(self):
         self.assertEqual([], MODULE.parse_components("No dependencies"))
