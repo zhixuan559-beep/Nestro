@@ -50,12 +50,31 @@ fun GitWorkbenchPage(context: Context) {
     var pendingDeleteFile by remember { mutableStateOf("") }
     var pendingDeleteRepo by remember { mutableStateOf("") }
     var pendingDeleteAccount by remember { mutableStateOf<GitAccount?>(null) }
+    var pendingClone by remember { mutableStateOf<GitRemoteRepository?>(null) }
     var revertTarget by remember { mutableStateOf<GitCommitRecord?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     val selectedAccount = accounts.firstOrNull { it.id == accountId }
     val selectedLocal = locals.firstOrNull { it.id == localId }
 
+    suspend fun cloneRepository(item: GitRemoteRepository) {
+        if (file.isNotBlank() && editor != originalEditor) {
+            status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
+            return
+        }
+        val account = selectedAccount ?: run { status = "请先选择已授权账号"; return }
+        loading = true
+        try {
+            val cloned = repo.clone(account, item)
+            refreshLocals()
+            localId = cloned.id
+            status = "已克隆 " + item.fullName
+        } catch (error: Exception) {
+            status = "克隆失败：" + (error.message ?: "未知错误")
+        } finally {
+            loading = false
+        }
+    }
     suspend fun refreshLocals() {
         locals = withContext(Dispatchers.IO) { repo.localRepositories() }
         if (locals.none { it.id == localId }) localId = locals.firstOrNull()?.id.orEmpty()
@@ -155,20 +174,12 @@ fun GitWorkbenchPage(context: Context) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(Modifier.weight(1f)) {
                             Text(item.fullName)
-                            Text((if (item.isPrivate) "私有" else "公开") + " · " + item.defaultBranch, style = MaterialTheme.typography.labelSmall)
+                            val sizeLabel = if (item.sizeKb <= 0L) "大小未知" else if (item.sizeKb >= 1024L) (item.sizeKb / 1024L).toString() + " MB" else item.sizeKb.toString() + " KB"
+                            Text((if (item.isPrivate) "私有" else "公开") + " · " + item.defaultBranch + " · " + sizeLabel, style = MaterialTheme.typography.labelSmall)
                         }
                         TextButton(enabled = !loading && selectedAccount != null && (file.isBlank() || editor == originalEditor), onClick = {
-                            scope.launch {
-                                if (file.isNotBlank() && editor != originalEditor) {
-                                    status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
-                                    return@launch
-                                }
-                                loading = true
-                                runCatching { repo.clone(selectedAccount!!, item) }
-                                    .onSuccess { cloned -> refreshLocals(); localId = cloned.id; status = "已克隆 " + item.fullName }
-                                    .onFailure { status = "克隆失败：" + (it.message ?: "未知错误") }
-                                loading = false
-                            }
+                            if (item.sizeKb <= 0L || item.sizeKb >= 250L * 1024L) pendingClone = item
+                            else scope.launch { cloneRepository(item) }
                         }) { Text("克隆") }
                     }
                 }
@@ -356,6 +367,24 @@ fun GitWorkbenchPage(context: Context) {
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+    }
+
+    pendingClone?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingClone = null },
+            title = { Text("确认克隆仓库？") },
+            text = {
+                val size = if (item.sizeKb > 0L) (item.sizeKb / 1024L).toString() + " MB（平台估算）" else "平台未提供仓库大小"
+                Text("仓库：" + item.fullName + "；" + size + "。本工作台会克隆完整历史和远程分支，可能占用较多手机存储与流量。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingClone = null
+                    scope.launch { cloneRepository(item) }
+                }) { Text("继续克隆") }
+            },
+            dismissButton = { TextButton(onClick = { pendingClone = null }) { Text("取消") } }
+        )
     }
 
     pendingDeleteAccount?.let { account ->
