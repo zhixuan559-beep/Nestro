@@ -370,6 +370,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         require(file.isFile && file.length() in 1..uploadLimit) { "媒体文件不存在或超过 ${uploadLimit / (1024 * 1024)} MB 上传限制" }
         require(mimeType.matches(Regex("[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+"))) { "媒体 MIME 类型无效" }
         val boundary = "NestroMedia-${UUID.randomUUID()}"
+        val uploadName = file.name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100).ifBlank { "media.bin" }
         val url = URL(config.baseUrl.trimEnd('/') + "/" + path.trimStart('/'))
         val connection = url.openConnection() as? HttpURLConnection ?: error("无法建立媒体服务连接")
         activeConnections.add(connection)
