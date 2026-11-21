@@ -4,7 +4,7 @@ import java.math.BigInteger
 
 /** SemVer 2.0 precedence and a bounded range matcher for community skill dependencies. */
 object SkillSemVer {
-    private data class Version(val major: Long, val minor: Long, val patch: Long, val pre: List<String>)
+    private data class Version(val major: BigInteger, val minor: BigInteger, val patch: BigInteger, val pre: List<String>)
 
     private fun parse(raw: String): Version {
         require(raw.length <= 128) { "技能版本过长" }
@@ -13,7 +13,9 @@ object SkillSemVer {
         val pre = match.groupValues[4].takeIf { it.isNotEmpty() }?.split('.') ?: emptyList()
         require(pre.none { it.isBlank() }) { "预发布版本标识无效" }
         require(pre.none { it.length > 1 && it.all(Char::isDigit) && it.startsWith('0') }) { "预发布数字标识不能包含前导零" }
-        return Version(match.groupValues[1].toLong(), match.groupValues[2].toLong(), match.groupValues[3].toLong(), pre)
+        val build = raw.substringAfter('+', "").takeIf { it.isNotEmpty() }?.split('.') ?: emptyList()
+        require(build.none { it.isBlank() }) { "构建元数据标识无效" }
+        return Version(BigInteger(match.groupValues[1]), BigInteger(match.groupValues[2]), BigInteger(match.groupValues[3]), pre)
     }
 
     fun compare(left: String, right: String): Int {
@@ -28,7 +30,8 @@ object SkillSemVer {
         }
         for (i in 0 until minOf(a.pre.size, b.pre.size)) {
             val x=a.pre[i]; val y=b.pre[i]
-            val xn=x.toLongOrNull(); val yn=y.toLongOrNull()
+            val xn=x.takeIf { it.all(Char::isDigit) }?.let(::BigInteger)
+            val yn=y.takeIf { it.all(Char::isDigit) }?.let(::BigInteger)
             val c=when {
                 xn!=null && yn!=null -> xn.compareTo(yn)
                 xn!=null -> -1
@@ -62,9 +65,9 @@ object SkillSemVer {
                     ">" -> comparison>0
                     "<" -> comparison<0
                     "^" -> comparison>=0 && when {
-                        expected.major>0 -> candidate.major==expected.major
-                        expected.minor>0 -> candidate.major==0L && candidate.minor==expected.minor
-                        else -> candidate.major==0L && candidate.minor==0L && candidate.patch==expected.patch
+                        expected.major>BigInteger.ZERO -> candidate.major==expected.major
+                        expected.minor>BigInteger.ZERO -> candidate.major==BigInteger.ZERO && candidate.minor==expected.minor
+                        else -> candidate.major==BigInteger.ZERO && candidate.minor==BigInteger.ZERO && candidate.patch==expected.patch
                     }
                     "~" -> comparison>=0 && candidate.major==expected.major && candidate.minor==expected.minor
                     else -> false
