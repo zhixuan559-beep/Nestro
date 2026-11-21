@@ -50,7 +50,7 @@ class MediaProviderConfigStore(context: Context) {
 
     fun save(config: MediaProviderConfig) {
         config.validate()
-        val oldKey = prefs.getString(KEY_ID, null)
+        val oldKey = runCatching { JSONObject(prefs.getString(METADATA, null) ?: "{}").optString("keyId") }.getOrNull()
         val nextKey = "media-provider-${UUID.randomUUID()}"
         LocalVault.writeApiKey(app, nextKey, config.apiKey)
         val metadata = JSONObject()
