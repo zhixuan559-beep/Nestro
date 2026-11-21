@@ -294,6 +294,31 @@ object CoworkbenchStaticAnalyzer {
                 findings += finding("CI 权限", CoworkbenchFindingLevel.HIGH, path, number, line,
                     "Workflow 使用 write-all；应改为逐项最小权限")
             }
+
+            if (lowerPath.startsWith(".github/workflows/") &&
+                Regex("""\bpull_request_target\b""").containsMatchIn(line)) {
+                findings += finding("CI 触发边界", CoworkbenchFindingLevel.HIGH, path, number, line,
+                    "Workflow 使用 pull_request_target；必须核验是否执行不可信 PR 代码及是否暴露写权限/密钥")
+            }
+            if (lowerPath.startsWith(".github/workflows/")) {
+                Regex("""\buses\s*:\s*[^@\s]+@([^\s#]+)""").find(line)?.let { match ->
+                    val version = match.groupValues[1]
+                    if (!Regex("^[0-9a-fA-F]{40}$").matches(version)) {
+                        findings += finding("CI Action 未固定摘要", CoworkbenchFindingLevel.WARNING, path, number, match.value,
+                            "第三方 Action 使用可变标签/分支；优先固定到完整 40 位提交 SHA")
+                    }
+                }
+            }
+            if (Regex("""\bcurl\b[^|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b|\bwget\b[^|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b""",
+                    RegexOption.IGNORE_CASE).containsMatchIn(line)) {
+                findings += finding("远程脚本执行", CoworkbenchFindingLevel.HIGH, path, number, line,
+                    "检测到下载内容直接交给 Shell 执行；核验来源、校验和并避免管道直执行")
+            }
+            if (Regex("""\bdebuggable\s*=\s*true\b|isDebuggable\s*=\s*true\b""", RegexOption.IGNORE_CASE).containsMatchIn(line) &&
+                (lowerPath.endsWith(".gradle") || lowerPath.endsWith(".gradle.kts"))) {
+                findings += finding("构建调试配置", CoworkbenchFindingLevel.HIGH, path, number, line,
+                    "构建脚本可能启用 debuggable；确认仅限 debug variant，release 必须关闭")
+            }
         }
     }
 
