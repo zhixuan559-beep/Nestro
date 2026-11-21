@@ -212,8 +212,10 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     private fun isSensitiveContextPath(path: String): Boolean {
         val normalized = path.lowercase().replace('\\', '/')
         val name = normalized.substringAfterLast('/')
-        return name == "local.properties" || name == "credentials" || name.startsWith(".env") ||
-            listOf("secret", "credential", "keystore", "signing", "private-key", "private_key")
+        return name in setOf("local.properties", "gradle.properties", "credentials", "google-services.json",
+            "service-account.json", ".npmrc", ".pypirc", ".netrc", "id_rsa", "id_ed25519") ||
+            name.startsWith(".env") ||
+            listOf("secret", "credential", "keystore", "signing", "private-key", "private_key", "service-account")
                 .any { it in normalized }
     }
 
@@ -223,7 +225,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
             Regex("(?i)\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\\b"),
             Regex("(?i)(authorization\\s*[:=]\\s*bearer\\s+)[A-Za-z0-9._~+/-]{16,}"),
-            Regex("(?i)(\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|secret)\\s*[:=]\\s*[\\\"']?)[A-Za-z0-9_./+=-]{12,}")
+            Regex("(?i)(\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|secret)\\s*[:=]\\s*[\\\"']?)[A-Za-z0-9_./+=-]{4,}")
         )
         patterns.forEach { pattern ->
             text = pattern.replace(text) { match ->
