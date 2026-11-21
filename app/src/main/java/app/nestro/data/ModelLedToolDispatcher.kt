@@ -14,8 +14,6 @@ import app.nestro.agent.RoomAgentTaskStateStore
 import app.nestro.data.NestroDatabase
 import app.nestro.model.ChatExecutionService
 import org.json.JSONObject
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.util.UUID
 
 internal data class ModelToolDispatchResult(
@@ -85,19 +83,21 @@ $toolList
                 }
                 if (round == MAX_TOOL_ROUNDS - 1) append("\n这是最后一轮；必须直接回复，不得再调用工具。")
             }
-            val raw = withContext(Dispatchers.IO) {
-                chat.completeWithFallback(
-                    configs = configs,
-                    history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = maxTokens ?: 2048),
-                    systemPrompt = roundSystem,
-                    connectTimeoutMillis = 15_000,
-                    readTimeoutMillis = 45_000,
-                    temperature = 0.0,
-                    maxTokens = 1_200,
-                    onUsage = onUsage,
-                    onProviderUsage = onProviderUsage
-                )
+            val decisionText = StringBuilder()
+            chat.streamWithFallback(
+                configs = configs,
+                history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = maxTokens ?: 2048),
+                systemPrompt = roundSystem,
+                temperature = 0.0,
+                maxTokens = 1_200,
+                onUsage = onUsage,
+                onProviderUsage = onProviderUsage,
+                requestId = "${requestId}-tool-decision-${round}".take(120),
+                shouldStop = shouldStop
+            ) { chunk ->
+                decisionText.append(chunk)
             }
+            val raw = decisionText.toString()
             val decision = parseDecision(raw) ?: return ModelToolDispatchResult(directReply = raw)
             if (decision.action == "reply") {
                 val answer = decision.text.ifBlank { raw }.take(24_000)
@@ -107,6 +107,9 @@ $toolList
                 )
             }
             if (decision.action != "tool") return ModelToolDispatchResult(directReply = raw)
+            if (round == MAX_TOOL_ROUNDS - 1) {
+                return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
+            }
             val spec = catalog.find(decision.toolId)
                 ?: return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
