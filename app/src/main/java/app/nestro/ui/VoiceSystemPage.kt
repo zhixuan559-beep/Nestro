@@ -127,7 +127,7 @@ fun VoiceSystemPage() {
     fun startRemoteRecording() {
         try {
             controller.stop()
-            val recorder = SpeechRecordingController()
+            val recorder = SpeechRecordingController(context)
             recorder.start()
             speechRecorder = recorder
             remoteRecording = true
