@@ -133,6 +133,7 @@ internal fun NavigationDrawerContent(
         DrawerItem("⌁", "手机自动化") { onNavigate("phone") }
         DrawerItem("麦", "语音输入") { onNavigate("voice") }
         DrawerItem("▣", "产物库") { onNavigate("artifacts") }
+        DrawerItem("✂", "智能剪辑") { onNavigate("media-editor") }
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
         DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
         DrawerItem("⑂", "Git 工作台") { onNavigate("git") }

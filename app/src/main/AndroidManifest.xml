@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -24,7 +25,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <receiver android:name=".phone.PhoneAgentNotificationReceiver" android:exported="false" />
-        <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="specialUse" tools:node="merge">
+        <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="specialUse|mediaProcessing" tools:node="merge">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-initiated accessibility automation task" />
         </service>
         <service

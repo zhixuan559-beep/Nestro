@@ -48,6 +48,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    val media3Version = "1.9.0"
+    implementation("androidx.media3:media3-common:$media3Version")
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-transformer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.animation:animation")

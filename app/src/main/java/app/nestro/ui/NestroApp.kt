@@ -24,6 +24,8 @@ import app.nestro.data.ProjectAccessControlStore
 import app.nestro.data.ProjectResourceKind
 import app.nestro.data.ProjectMemorySettingsStore
 import app.nestro.data.ArtifactStore
+import app.nestro.media.MediaProjectStore
+import app.nestro.media.MediaEditorPage
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
 import app.nestro.data.ConversationRecallSource
@@ -2588,10 +2590,15 @@ fun NestroApp() {
                                                                 val artifactCopy = runCatching {
                                                                     withContext(Dispatchers.IO) {
                                                                         ArtifactStore.duplicateProject(context, project.id, copyId)
+                                                                        MediaProjectStore.duplicateProject(context, project.id, copyId)
                                                                     }
                                                                 }
                                                                 if (artifactCopy.isFailure) {
-                                                                    status = "项目复制中止：产物复制失败，未创建新项目。"
+                                                                    withContext(Dispatchers.IO) {
+                                                                        runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                        runCatching { MediaProjectStore.deleteProject(context, copyId) }
+                                                                    }
+                                                                    status = "项目复制中止：项目产物或媒体素材复制失败，未创建新项目。"
                                                                     return@launch
                                                                 }
                                                                 val copyAttempt = runCatching {
@@ -2605,6 +2612,7 @@ fun NestroApp() {
                                                                 if (!copied) {
                                                                     withContext(Dispatchers.IO) {
                                                                         runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                        runCatching { MediaProjectStore.deleteProject(context, copyId) }
                                                                     }
                                                                 }
                                                                 if (copied) {
@@ -2624,11 +2632,12 @@ fun NestroApp() {
                                                                     finalizeCopy.onSuccess { restored ->
                                                                         projects = restored.projects
                                                                         conversations = restored.conversations
-                                                                        status = "已复制「${project.name}」及其会话、知识库和项目记忆。"
+                                                                        status = "已复制「${project.name}」及其会话、知识库、项目记忆和媒体素材。"
                                                                     }.onFailure { error ->
                                                                         withContext(Dispatchers.IO) {
                                                                             runCatching { appRuntime.projectSpaceRepository.rollbackDuplicate(copyId) }
                                                                             runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                            runCatching { MediaProjectStore.deleteProject(context, copyId) }
                                                                         }
                                                                         runCatching { ProjectResourceScopeStore.save(prefs, originalScopes) }
                                                                         projectResourceScopes = originalScopes
@@ -2676,6 +2685,9 @@ fun NestroApp() {
                                                                             check(ArtifactStore.deleteProjectIfEmpty(context, project.id)) {
                                                                                 "该空间还有项目产物或未登记文件，请先导出、清理后再删除项目"
                                                                             }
+                                                                            check(!MediaProjectStore.hasProjectMedia(context, project.id)) {
+                                                                                "该空间还有媒体素材、时间线或导出文件，请先导出并清理媒体项目后再删除"
+                                                                            }
                                                                             check(ProjectResourceScopeStore.resourcesOwnedOnlyByProject(projectResourceScopes, project.id).isEmpty()) {
                                                                                 "该空间仍有专属专家、团队、技能或工作流，请先转为全局共享或删除这些资源"
                                                                             }
@@ -2690,6 +2702,7 @@ fun NestroApp() {
                                                                                 project.id, latestActiveProjectId,
                                                                                 if (hasLinkedData) setOf(project.id) else emptySet()
                                                                             )) { "默认空间、当前空间或含有关联数据的空间不可删除" }
+                                                                            MediaProjectStore.deleteProject(context, project.id)
                                                                             check(appRuntime.projectSpaceRepository.deleteIfEmpty(project.id, latestActiveProjectId)) {
                                                                                 "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
@@ -2790,6 +2803,10 @@ fun NestroApp() {
                         }
                         "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
+                        "media-editor" -> MediaEditorPage(context, activeProjectId) { prompt ->
+                            draft = prompt
+                            page = "home"
+                        }
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "git" -> GitWorkbenchPage(context)
