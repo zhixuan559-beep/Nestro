@@ -91,8 +91,6 @@ object GitWorkbenchPolicy {
             uri.rawQuery == null && uri.rawFragment == null
     }
 
-    fun safePathAccepted(value: String): Boolean = runCatching { safeRelativePath(value) }.isSuccess
-
     fun safeRelativePath(value: String): String {
         require(value.isNotBlank() && value.length <= 1024) { "文件路径不能为空且不能超过 1024 个字符" }
         require(!value.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(value)) { "必须使用仓库内的相对路径" }
