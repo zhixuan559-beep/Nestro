@@ -217,7 +217,7 @@ object CoworkbenchStaticAnalyzer {
         val lower = path.lowercase()
         if (lower.endsWith(".toml")) {
             fun quoted(value: String): String? =
-                Regex("""^[\\s]*["']([^"']+)["'][\\s]*$""").matchEntire(value)?.groupValues?.get(1)
+                Regex("""^[\s]*["']([^"']+)["'][\s]*$""").matchEntire(value)?.groupValues?.get(1)
             fun recordLibrary(alias: String, fields: Map<String, String>) {
                 val module = fields["module"]?.let(::quoted)
                 val group = fields["group"]?.let(::quoted)
@@ -229,8 +229,8 @@ object CoworkbenchStaticAnalyzer {
             }
 
             // Inline Gradle version-catalog entries.
-            Regex("""(?m)^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*\\{([^}]*)}""").findAll(text).forEach { match ->
-                val fields = Regex("""([A-Za-z0-9_.-]+)\\s*=\\s*("[^"]*"|'[^']*')""")
+            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*\{([^}]*)}""").findAll(text).forEach { match ->
+                val fields = Regex("""([A-Za-z0-9_.-]+)\s*=\s*("[^"]*"|'[^']*')""")
                     .findAll(match.groupValues[2]).associate { it.groupValues[1] to it.groupValues[2] }
                 recordLibrary(match.groupValues[1], fields)
             }
@@ -246,19 +246,19 @@ object CoworkbenchStaticAnalyzer {
                 tableFields.clear()
             }
             text.lineSequence().forEach { line ->
-                val header = Regex("""^\\s*\\[([^]]+)]\\s*(?:#.*)?$""").find(line)
+                val header = Regex("""^\s*\[([^]]+)]\s*(?:#.*)?$""").find(line)
                 if (header != null) {
                     flushTable()
                     section = header.groupValues[1].trim()
                 } else if (section?.startsWith("libraries.") == true) {
-                    val field = Regex("""^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*(.+?)\\s*(?:#.*)?$""").find(line)
+                    val field = Regex("""^\s*([A-Za-z0-9_.-]+)\s*=\s*(.+?)\s*(?:#.*)?$""").find(line)
                     if (field != null) tableFields[field.groupValues[1]] = field.groupValues[2]
                 }
             }
             flushTable()
 
             // Version aliases and plugin aliases are useful change evidence too.
-            Regex("""(?m)^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*["']([^"']+)["']""").findAll(text).forEach { match ->
+            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']""").findAll(text).forEach { match ->
                 result += "catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2]
             }
         } else {
