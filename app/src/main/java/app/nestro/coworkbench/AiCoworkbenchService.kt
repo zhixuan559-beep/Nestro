@@ -207,7 +207,7 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
     }
 
     private fun isSensitiveContextPath(path: String): Boolean {
-        val normalized = path.lowercase().replace('\\\\', '/')
+        val normalized = path.lowercase().replace('\\', '/')
         val name = normalized.substringAfterLast('/')
         return name == "local.properties" || name == "credentials" || name.startsWith(".env") ||
             listOf("secret", "credential", "keystore", "signing", "private-key", "private_key")
