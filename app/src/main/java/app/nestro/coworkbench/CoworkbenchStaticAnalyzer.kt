@@ -37,6 +37,9 @@ object CoworkbenchStaticAnalyzer {
     private const val MAX_FILES = 4_000
     private const val MAX_FILE_BYTES = 1_000_000L
     private const val MAX_TOTAL_BYTES = 24_000_000L
+    private const val MAX_LINES_PER_FILE = 10_000
+    private const val MAX_FINDINGS = 5_000
+    private const val MAX_DEPENDENCIES = 10_000
     private val extensions = setOf("kt", "kts", "java", "xml", "gradle", "toml", "properties", "yml", "yaml", "sh", "json")
 
     fun analyze(repository: File): CoworkbenchAnalysisReport {
@@ -86,19 +89,26 @@ object CoworkbenchStaticAnalyzer {
             scanned++
             totalBytes += size
             val relative = root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
+            if (text.count { it == '\n' } + 1 > MAX_LINES_PER_FILE) truncated = true
             inspect(relative, text, findings, dependencies)
-            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text).map { finding ->
+            val remainingFindings = (MAX_FINDINGS - findings.size).coerceAtLeast(0)
+            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text).take(remainingFindings).map { finding ->
                 finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
             }
-            if (relative.lowercase().endsWith(".toml")) {
+            if (relative.lowercase().endsWith(".toml") && dependencies.size < MAX_DEPENDENCIES) {
                 dependencyTokens(relative, text).forEach { declaration ->
-                    dependencies += "$relative:$declaration"
-                    if (declaration.contains("+") || declaration.contains("SNAPSHOT", true) ||
-                        declaration.contains("latest.", true)) {
+                    if (dependencies.size < MAX_DEPENDENCIES) dependencies += "$relative:$declaration"
+                    if (findings.size < MAX_FINDINGS &&
+                        (declaration.contains("+") || declaration.contains("SNAPSHOT", true) ||
+                            declaration.contains("latest.", true))) {
                         findings += finding("依赖版本", CoworkbenchFindingLevel.WARNING, relative, null,
                             declaration, "版本目录包含动态/快照依赖信息，构建结果可能不可复现")
                     }
                 }
+            }
+            if (findings.size >= MAX_FINDINGS || dependencies.size >= MAX_DEPENDENCIES) {
+                truncated = true
+                break
             }
         }
 
@@ -222,6 +232,7 @@ object CoworkbenchStaticAnalyzer {
 
     private fun dependencyTokens(path: String, text: String): Set<String> {
         val result = linkedSetOf<String>()
+        fun add(value: String) { if (result.size < MAX_DEPENDENCIES) add(value }
         val lower = path.lowercase()
         if (lower.endsWith(".toml")) {
             fun quoted(value: String): String? =
@@ -233,7 +244,7 @@ object CoworkbenchStaticAnalyzer {
                 val coordinate = module ?: if (!group.isNullOrBlank() && !name.isNullOrBlank()) "$group:$name" else null
                 val version = fields["version"]?.let(::quoted)
                     ?: fields["version.ref"]?.let(::quoted)?.let { "version-ref:$it" }
-                if (coordinate != null) result += "catalog:$alias:$coordinate" + (version?.let { ":$it" } ?: "")
+                if (coordinate != null) add("catalog:$alias:$coordinate" + (version?.let { ":$it" } ?: ""))
             }
 
             // Inline Gradle version-catalog entries.
@@ -267,15 +278,15 @@ object CoworkbenchStaticAnalyzer {
 
             // Version aliases and plugin aliases are useful change evidence too.
             Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']""").findAll(text).forEach { match ->
-                result += "catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2]
+                add("catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2])
             }
         } else {
             Regex("""\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation|classpath)\s*\(?\s*["']([^"']+)["']""")
-                .findAll(text).forEach { result += it.groupValues[1] }
+                .findAll(text).forEach { add(it.groupValues[1] }
             Regex("""\b(?:id|alias)\s*\(?\s*["']([^"']+)["']\s*\)?\s*(?:version\s*["']([^"']+)["'])?""")
-                .findAll(text).forEach { result += "plugin:" + it.groupValues[1] + ":" + it.groupValues[2] }
+                .findAll(text).forEach { add("plugin:" + it.groupValues[1] + ":" + it.groupValues[2] }
             Regex("""\blibs(?:\.[A-Za-z0-9_-]+){1,8}\b""")
-                .findAll(text).forEach { result += "catalog-alias:" + it.value }
+                .findAll(text).forEach { add("catalog-alias:" + it.value }
         }
         return result
     }
@@ -287,7 +298,7 @@ object CoworkbenchStaticAnalyzer {
         dependencies: MutableSet<String>
     ) {
         val lowerPath = path.lowercase()
-        val lines = text.lines()
+        val lines = text.lines().take(MAX_LINES_PER_FILE)
         if (lowerPath.endsWith(".gradle") || lowerPath.endsWith(".gradle.kts")) {
             Regex("""(?is)maven\s*\{[\s\S]{0,2000}?https?://""").find(text)?.let { match ->
                 findings += finding("依赖仓库", CoworkbenchFindingLevel.WARNING, path, null,
@@ -295,6 +306,7 @@ object CoworkbenchStaticAnalyzer {
             }
         }
         lines.forEachIndexed { index, raw ->
+            if (findings.size >= MAX_FINDINGS) return@forEachIndexed
             val rawLine = raw.take(500)
             val line = redactSensitiveEvidence(rawLine)
             val number = index + 1
@@ -307,7 +319,7 @@ object CoworkbenchStaticAnalyzer {
                 Regex("""\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation)\s*\(?\s*["']([^"']+)["']""")
                     .findAll(line).forEach { match ->
                         val declaration = match.groupValues[1]
-                        dependencies += "$path:$number:$declaration"
+                        if (dependencies.size < MAX_DEPENDENCIES) dependencies += "$path:$number:$declaration"
                         if (declaration.contains("+") || declaration.contains("SNAPSHOT", true) || declaration.contains("latest.", true)) {
                             findings += finding("依赖版本", CoworkbenchFindingLevel.WARNING, path, number, declaration,
                                 "发现动态或快照依赖版本，构建结果可能不可复现")
