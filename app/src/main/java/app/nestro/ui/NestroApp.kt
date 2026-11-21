@@ -157,6 +157,7 @@ fun NestroApp(initialPage: String = "home") {
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember(initialPage) { mutableStateOf(initialPage) }
+    var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
@@ -1435,6 +1436,10 @@ fun NestroApp(initialPage: String = "home") {
                             messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions, activeVersion = chosen) }
                             conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                         }
+                    },
+                    onOpenVideo = { assetId ->
+                        pendingOpenMediaAssetId = assetId
+                        page = "media-editor"
                     },
                     onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
@@ -3000,7 +3005,7 @@ fun NestroApp(initialPage: String = "home") {
                         "calendar" -> CalendarPage(appRuntime.calendarRepository)
                         "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
-                        "media-editor" -> MediaEditorPage(context, activeProjectId) { prompt ->
+                        "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
                             draft = prompt
                             page = "home"
                         }
