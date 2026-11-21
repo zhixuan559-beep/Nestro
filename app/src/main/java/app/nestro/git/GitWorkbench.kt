@@ -607,8 +607,8 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun removeLocal(id: String, deleteFiles: Boolean) = withContext(Dispatchers.IO) {
         val local = requireLocal(id)
         val next = localRepositories().filterNot { it.id == id }
+        if (deleteFiles) check(File(local.localPath).deleteRecursively()) { "本地仓库文件删除失败" }
         saveLocals(next)
-        if (deleteFiles) File(local.localPath).deleteRecursively()
     }
 
     private suspend fun <T> withRepo(id: String, block: (Git) -> T): T = withContext(Dispatchers.IO) {
