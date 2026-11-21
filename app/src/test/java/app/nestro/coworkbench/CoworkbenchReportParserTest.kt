@@ -79,8 +79,8 @@ class CoworkbenchReportParserTest {
     fun parsesResolvedGradleDependencyTreeAndVersionConflicts() {
         val report = """debugRuntimeClasspath - Runtime classpath of source set 'main'.
 +--- org.example:alpha:1.0
-|    \\--- org.example:transitive:2.0
-\\--- org.example:beta:1.2 -> 1.3
+|    \--- org.example:transitive:2.0
+\--- org.example:beta:1.2 -> 1.3
 """
         val dependencies = CoworkbenchReportParser.parseGradleDependencyReport("gradle-dependencies.txt", report)
         assertEquals(3, dependencies.size)
