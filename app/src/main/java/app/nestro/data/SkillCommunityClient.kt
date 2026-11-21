@@ -56,7 +56,7 @@ object SkillCommunityClient {
             val bundleUrl = row.optString("bundle_url").trim()
             val hash = row.optString("sha256").lowercase()
             require(name.isNotBlank() && name.length <= 40) { "社区技能名称无效" }
-            require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "社区技能版本无效" }
+            require(runCatching { SkillSemVer.compare(version, version) }.isSuccess) { "社区技能版本无效（需要 SemVer 2.0）" }
             require(description.length <= 300) { "社区技能描述过长" }
             require(hash.matches(Regex("[a-f0-9]{64}"))) { "社区技能 SHA-256 无效" }
             val bundleUri = runCatching { URI(bundleUrl) }.getOrNull()
