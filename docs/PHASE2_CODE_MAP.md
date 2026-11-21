@@ -46,7 +46,7 @@
 | 14 | GitHub 工作台 | `git/GitWorkbench.kt`（GitHub/GitLab/Gitee API、Android Keystore 凭据、JGit 本地仓库操作）、`git/GitWorkbenchPage.kt`、NestroApp 路由与抽屉入口；JGit 6.10.1 | PR #10 已合并；2026-11-21 二次复核补强本地仓库索引并发锁、删除隔离/进程中断恢复、凭据回滚失败显式处理、Push 空结果防误报，并扩充路径/URL/分支/账号策略测试源码；源码最终静态复核提交 `716a8861`；未运行编译/JVM/设备测试，按十九模块统一验收 |
 | 15 | AI 共建工作台 | WorkflowEngine、专家、产物、Agent 底座可复用；未见独立共建工作台 | 只有可复用基础，不算模块完成 |
 | 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
-| 17 | 智能剪辑 | 本轮已形成 MediaProjectStore、MediaTimeline/Policy/Codec、MediaEditorPage、MediaRenderEngine/Worker/TaskStore、SRT Codec、MediaIntelligenceProvider 等源码对象；含 SAF 素材库、项目隔离、单视频/音频轨、编辑历史、CompositionPlayer 预览、Transformer/WorkManager 导出和 SRT 编辑。依赖 Media3 1.9.0。已提交至 feature/module-17-smart-editing，commit c0ecabee；源码已回读核验，尚未编译/测试/设备验收 | 功能代码补齐中；未编译/未测试 |
+| 17 | 智能剪辑 | 本轮已形成 MediaProjectStore、MediaTimeline/Policy/Codec、MediaEditorPage、MediaRenderEngine/Worker/TaskStore、SRT Codec、MediaIntelligenceProvider 等源码对象；含 SAF 素材库、项目隔离、单视频/音频轨、编辑历史、CompositionPlayer 预览、Transformer/WorkManager 导出和 SRT 编辑。依赖 Media3 1.9.0。已提交至 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；源码已回读核验，尚未编译/测试/设备验收 | 功能代码补齐中；未编译/未测试 |
 | 18 | 日历 | 当前主源码树未发现日历数据/页面/调度实现 | 未发现实现，后续再核验 |
 | 19 | 多模态服务与社区生态 | SpeechProviders、SkillCommunityClient、ArtifactStore | 局部基础已有；不能等同完整多模态服务生态 |
 
@@ -547,5 +547,5 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - 从已有 Blob 对象恢复模块17素材仓库、编辑页面、渲染引擎、WorkManager Worker、任务存储、Provider 接口和测试源码；补建 MediaModels、MediaTimelinePolicy、MediaProjectCodec。
 - 新增主导航入口、Media3 依赖（1.9.0）、后台导出前台通知、Android 15 mediaProcessing FGS / Android 14 specialUse 兼容、任务与导出文件联动清理、SRT 导入大小限制和字幕编辑分页。
 - 静态复核发现并修正 Media3 EditedMediaItem.durationUs 应使用原始素材时长而非剪辑后片段时长；图片素材单独设置帧率。Media3 官方 API 文档说明 CompositionPlayer 要求 Composition 中媒体项具备明确时长，且视频/音频 setDurationUs 指向裁剪前源媒体时长。
-- 上述源码已写入 feature/module-17-smart-editing，commit c0ecabee；已回读分支 tree 与文件 SHA。尚未编译、测试、模拟器/真机验收，不能标记模块完成。
+- 上述源码已写入 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；已回读分支 tree 与文件 SHA。尚未编译、测试、模拟器/真机验收，不能标记模块完成。
 - 未运行构建、单元测试、模拟器或真机测试，遵守“功能代码全部补齐后再统一验收”的顺序。
