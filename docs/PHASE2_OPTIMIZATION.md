@@ -70,3 +70,4 @@ Finish all feature code and architecture integration first. Only then run the ag
 - MCP calls are allowed only while the persisted tool grant and server-enabled state remain valid; the MCP handler rechecks authorization at execution time.
 - `knowledge.search` is available to the model and can only query the project ID injected by the dispatcher, not an ID supplied by the model.
 - `phone_agent.plan` is exposed only when the user explicitly enabled task mode; its planning/scheduling callback is no longer run before the model decision. The model must select this capability before a Phone Agent task can be created.
+- `expert_team.run` is exposed only when the user explicitly selected an enabled team in task mode. Expert-team execution is deferred until the model selects that capability; it no longer runs automatically before the model decision.
