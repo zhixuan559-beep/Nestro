@@ -68,7 +68,11 @@ object MediaAiTaskStore {
     }
     fun list(context: Context, projectId: String): List<MediaAiTask> =
         directory(context,projectId).listFiles { f -> f.isFile && f.extension=="json" }.orEmpty()
-            .mapNotNull { read(context,projectId,it.nameWithoutExtension) }.sortedByDescending { it.createdAt }
+            .mapNotNull { file ->
+                val taskId = file.nameWithoutExtension
+                if (!taskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) null
+                else read(context,projectId,taskId)
+            }.sortedByDescending { it.createdAt }
 
     @Synchronized fun update(context: Context, projectId: String, taskId: String, status: MediaAiTaskStatus?=null,
         progress: Int?=null, resultJson: String?=null, resultConsumed: Boolean?=null, errorMessage: String?=null): MediaAiTask {
