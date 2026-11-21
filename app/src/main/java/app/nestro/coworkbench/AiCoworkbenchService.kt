@@ -431,7 +431,9 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
                             restoreBeforeIfUnchanged(snapshot)
                             writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERED", detail = "检测到未完成事务，已按快照恢复；未覆盖外部修改")))
                         }
-                    } catch (failure: Throwable) {
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
                         writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERY_REQUIRED",
                             detail = "检测到未完成事务，自动恢复失败：" + (failure.message ?: "未知错误"))))
                     }
