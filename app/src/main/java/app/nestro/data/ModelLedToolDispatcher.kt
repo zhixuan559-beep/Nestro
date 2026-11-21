@@ -238,7 +238,11 @@ ${prompt.take(8_000)}
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
                     when (toolId) {
                         "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
-                        "expert_team.run" -> AgentToolResult(success = true, output = runExpertTeam(systemContext).take(8_000))
+                        "expert_team.run" -> {
+                            val output = runExpertTeam(systemContext).take(8_000)
+                            if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
+                            else AgentToolResult(true, output = output)
+                        }
                         else -> lease.access.invoke(
                             toolId,
                             if (toolId.startsWith("mcp_")) arguments
