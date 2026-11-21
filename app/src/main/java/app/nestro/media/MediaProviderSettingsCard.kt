@@ -36,9 +36,10 @@ fun MediaProviderSettingsCard() {
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
+    var transcriptionModel by remember { mutableStateOf("gpt-transcribe") }
     var transcriptionPath by remember { mutableStateOf("audio/transcriptions") }
-    var scenePath by remember { mutableStateOf("media/scenes") }
-    var audioPath by remember { mutableStateOf("audio/process") }
+    var scenePath by remember { mutableStateOf("") }
+    var audioPath by remember { mutableStateOf("") }
     var configured by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("服务配置保存在本机；API Key 使用 Android Keystore 加密。") }
     var busy by remember { mutableStateOf(false) }
@@ -51,6 +52,7 @@ fun MediaProviderSettingsCard() {
             displayName = existing.displayName
             baseUrl = existing.baseUrl
             model = existing.model
+            transcriptionModel = existing.transcriptionModel
             transcriptionPath = existing.transcriptionPath
             scenePath = existing.scenePath
             audioPath = existing.audioProcessPath
@@ -64,15 +66,17 @@ fun MediaProviderSettingsCard() {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
-            Text("仅在你主动确认媒体分析时，才会把素材发送到这里。转写接口使用 OpenAI 兼容格式；场景识别和音频处理接口路径可按服务商文档调整。", style = MaterialTheme.typography.bodySmall)
+            Text("支持 OpenAI 官方音频转写与 OpenAI-compatible 图像理解。场景识别、音频处理只有填写真实服务商端点后才会启用；空路径表示不支持。", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
             OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(apiKey, { apiKey = it }, label = { Text(if (configured) "新 API Key（留空不允许覆盖）" else "API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
-            OutlinedTextField(model, { model = it }, label = { Text("模型名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(model, { model = it }, label = { Text("图像理解聊天模型 ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(transcriptionModel, { transcriptionModel = it }, label = { Text("音频转写模型 ID（OpenAI 官方默认 gpt-transcribe）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedButton(
                 enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank(),
                 onClick = {
@@ -87,6 +91,7 @@ fun MediaProviderSettingsCard() {
                                         baseUrl = baseUrl,
                                         apiKey = apiKey,
                                         model = model,
+                                        transcriptionModel = transcriptionModel,
                                         transcriptionPath = transcriptionPath,
                                         scenePath = scenePath,
                                         audioProcessPath = audioPath
@@ -113,6 +118,7 @@ fun MediaProviderSettingsCard() {
                                     baseUrl = baseUrl,
                                     apiKey = apiKey,
                                     model = model,
+                                    transcriptionModel = transcriptionModel,
                                     transcriptionPath = transcriptionPath,
                                     scenePath = scenePath,
                                     audioProcessPath = audioPath
@@ -161,6 +167,7 @@ fun MediaProviderSettingsCard() {
                                     displayName = config.displayName
                                     baseUrl = config.baseUrl
                                     model = config.model
+                                    transcriptionModel = config.transcriptionModel
                                     transcriptionPath = config.transcriptionPath
                                     scenePath = config.scenePath
                                     audioPath = config.audioProcessPath
