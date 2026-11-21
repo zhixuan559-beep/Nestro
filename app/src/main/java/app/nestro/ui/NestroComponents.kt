@@ -45,8 +45,11 @@ internal fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null) {
+internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null) {
     val user = message.role == "user"
+    val videoMarker = Regex("""\\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\\]""")
+    val videoAssetId = videoMarker.find(message.content)?.groupValues?.getOrNull(1)
+    val visibleContent = message.content.replace(videoMarker, "").trim()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
             Surface(
@@ -54,7 +57,17 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
-                Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+                Text(visibleContent, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!user && videoAssetId != null && onOpenVideo != null) {
+                TextButton(
+                    onClick = { onOpenVideo(videoAssetId) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Outlined.PlayCircle, contentDescription = null, tint = Mint, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("查看生成视频", color = Mint, style = MaterialTheme.typography.labelMedium)
+                }
             }
             if (!user && message.content.isNotBlank() && onSaveArtifact != null) {
                 TextButton(onClick = { onSaveArtifact.invoke(message.content) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
