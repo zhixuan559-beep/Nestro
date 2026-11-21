@@ -41,6 +41,7 @@ object CoworkbenchReportParser {
                         val license = licenses?.optJSONObject(0)?.let { row ->
                             row.optJSONObject("license")?.optString("id")?.takeIf { it.isNotBlank() }
                                 ?: row.optJSONObject("license")?.optString("name")?.takeIf { it.isNotBlank() }
+                                ?: row.optString("expression").takeIf { it.isNotBlank() }
                         }
                         result += CoworkbenchSbomComponent(
                             item.optString("group").takeIf { it.isNotBlank() }?.let { "$it:$name" } ?: name,
@@ -62,7 +63,8 @@ object CoworkbenchReportParser {
                     var purl: String? = null
                     if (refs != null) for (refIndex in 0 until refs.length()) {
                         val ref = refs.optJSONObject(refIndex) ?: continue
-                        if (ref.optString("referenceType").contains("purl", true)) {
+                        if (ref.optString("referenceType").contains("purl", true) ||
+                            ref.optString("referenceLocator").startsWith("pkg:")) {
                             purl = ref.optString("referenceLocator").takeIf { it.isNotBlank() }
                             if (purl != null) break
                         }
