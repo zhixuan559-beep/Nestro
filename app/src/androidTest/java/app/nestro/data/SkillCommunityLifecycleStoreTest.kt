@@ -64,6 +64,19 @@ class SkillCommunityLifecycleStoreTest {
         assertEquals("local prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
     }
 
+    @Test fun atomicallyInstallsCompleteDependencyPlanAndBlocksUninstallOfUsedDependency() {
+        val base = SkillBundle("BaseSkill", "1.2.0", "base", "base prompt", "已验证签名社区目录", emptyList(), emptyList())
+        val dependent = bundle("1.0.0", "dependent prompt").copy(
+            dependencies = listOf(SkillDependency("BaseSkill", "^1.0.0"))
+        )
+        store.installAll(listOf(base, dependent))
+        val installed = org.json.JSONObject(preferences.getString("skills", "{}")!!)
+        assertTrue(installed.has("BaseSkill"))
+        assertTrue(installed.has("CommunitySkill"))
+        assertFalse(runCatching { store.uninstall("BaseSkill") }.isSuccess)
+        assertEquals("base prompt", installed.getString("BaseSkill"))
+    }
+
     @Test fun acceptsInstalledDependencyWhenVersionSatisfiesRange() {
         val base = SkillBundle("BaseSkill", "1.2.0", "base", "base prompt", "local", emptyList(), emptyList())
         preferences.edit()
