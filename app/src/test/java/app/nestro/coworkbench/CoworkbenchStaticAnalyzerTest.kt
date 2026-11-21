@@ -59,7 +59,7 @@ class CoworkbenchStaticAnalyzerTest {
         try {
             root.resolve("src/main/Large.kt").apply {
                 parentFile.mkdirs()
-                writeText((1..2_100).joinToString("\\n") { "val label$it = \\"value\\"" })
+                writeText((1..2_100).joinToString("\n") { "val label$it = \"value\"" })
             }
             val report = CoworkbenchStaticAnalyzer.analyze(root)
             assertEquals(1, report.scannedFiles)
