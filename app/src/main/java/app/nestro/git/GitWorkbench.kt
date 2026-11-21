@@ -261,7 +261,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
             val path = when (account.provider) {
                 GitProvider.GITHUB -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
-                GitProvider.GITLAB -> "/projects?membership=true&per_page=100&order_by=last_activity_at&statistics=true" +
+                GitProvider.GITLAB -> "/projects?membership=true&per_page=100&order_by=last_activity_at" +
                     if (query.isBlank()) "" else "&search=" + enc(query)
                 GitProvider.GITEE -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
