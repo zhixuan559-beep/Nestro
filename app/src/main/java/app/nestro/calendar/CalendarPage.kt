@@ -173,9 +173,28 @@ fun CalendarPage(repository: CalendarRepository) {
             Button(onClick = { editing = null; showEditor = true }) { Text("新建") }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { visibleMonth = visibleMonth.minusMonths(1) }) { Text("‹") }
             Text(visibleMonth.format(DateTimeFormatter.ofPattern("yyyy年M月")), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = { visibleMonth = visibleMonth.plusMonths(1) }) { Text("›") }
+            TextButton(onClick = { calendarView = if (calendarView == "MONTH") "WEEK" else "MONTH" }) {
+                Text(if (calendarView == "MONTH") "周视图" else "月视图")
+            }
+            TextButton(onClick = {
+                if (calendarView == "WEEK") {
+                    selectedDate = selectedDate.minusWeeks(1)
+                    visibleMonth = YearMonth.from(selectedDate)
+                } else {
+                    visibleMonth = visibleMonth.minusMonths(1)
+                    selectedDate = visibleMonth.atDay(1)
+                }
+            }) { Text("‹") }
+            TextButton(onClick = {
+                if (calendarView == "WEEK") {
+                    selectedDate = selectedDate.plusWeeks(1)
+                    visibleMonth = YearMonth.from(selectedDate)
+                } else {
+                    visibleMonth = visibleMonth.plusMonths(1)
+                    selectedDate = visibleMonth.atDay(1)
+                }
+            }) { Text("›") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { requestSystemCalendarAction("import") }, modifier = Modifier.weight(1f)) { Text("导入系统日程") }
@@ -199,7 +218,7 @@ fun CalendarPage(repository: CalendarRepository) {
                     Instant.ofEpochMilli(it.startAt).atZone(zone).toLocalDate() == date
                 }
                 Surface(
-                    onClick = { if (date != null) selectedDate = date },
+                    onClick = { if (date != null) { selectedDate = date; visibleMonth = YearMonth.from(date) } },
                     modifier = Modifier.size(42.dp),
                     shape = RoundedCornerShape(10.dp),
                     color = when {
@@ -275,9 +294,9 @@ fun CalendarPage(repository: CalendarRepository) {
                 TextButton(onClick = {
                     pendingDelete = null
                     scope.launch {
-                        withContext(Dispatchers.IO) { repository.delete(target.id) }
-                        status = "日程已删除"
-                        refresh()
+                        val result = withContext(Dispatchers.IO) { runCatching { repository.delete(target.id) } }
+                        status = result.fold({ "日程已删除" }, { it.message ?: "删除失败" })
+                        if (result.isSuccess) refresh()
                     }
                 }) { Text("确认删除") }
             },
