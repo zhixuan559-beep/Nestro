@@ -17,7 +17,7 @@ object McpHeaderValueEncoder {
   return if(plainAscii)value else "=?base64?"+Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))+"?="
  }
 }
-class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) {
+class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : AutoCloseable {
  private val url=McpEndpointPolicy.requireValid(endpoint)
  private val client=OkHttpClient.Builder().connectTimeout(12,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(20,TimeUnit.SECONDS).callTimeout(75,TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
  private val ids=AtomicLong(0)
@@ -107,6 +107,18 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) {
    lastError=json?.optJSONObject("error")?.optString("message")?:"MCP 初始化 HTTP "+reply.code
   }
   error(lastError)
+ }
+
+ override fun close() {
+  val id=sessionId ?: return
+  if(legacyMode) runCatching {
+   val builder=Request.Builder().url(url).delete().header("Accept","application/json, text/event-stream")
+   if(protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
+   builder.header("Mcp-Session-Id",id)
+   if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
+   client.newCall(builder.build()).execute().close()
+  }
+  sessionId=null
  }
 
  private fun clientMeta()=JSONObject()
