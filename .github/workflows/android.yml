@@ -69,7 +69,7 @@ jobs:
 
   instrumented:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: macos-26-intel
     # The full 70-test suite on the software-rendered emulator needs ~40+ minutes
     # including SDK setup and both APK builds; 35 minutes killed run #1094 at
     # test 68/70 even though the suite itself was still making progress.
@@ -106,7 +106,7 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none -memory 4096 -cores 4
           disable-animations: true
-          emulator-boot-timeout: 600000
+          emulator-boot-timeout: 600
           script: bash .github/scripts/run-android-instrumentation.sh
 
       - name: Upload Android instrumentation reports
