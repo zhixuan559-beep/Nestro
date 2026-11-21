@@ -119,6 +119,7 @@ class GitAccountStore(context: Context) {
     }
 
     private fun decode(raw: String): List<GitAccount>? = runCatching {
+        require(raw.length <= 200_000)
         val array = JSONArray(raw)
         require(array.length() <= 20)
         (0 until array.length()).map { index ->
@@ -369,7 +370,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     fun localRepositories(): List<GitLocalRepository> {
         val prefs = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val raw = prefs.getString(LOCAL_KEY, "[]").orEmpty()
-        val array = runCatching { JSONArray(raw).also { require(it.length() <= 100) } }.getOrElse {
+        val array = runCatching { JSONArray(raw).also { require(raw.length <= 1_000_000 && it.length() <= 100) } }.getOrElse {
             if (!prefs.contains(LOCAL_CORRUPT_KEY)) {
                 check(prefs.edit().putString(LOCAL_CORRUPT_KEY, raw)
                     .putLong(LOCAL_CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的本地仓库索引" }
