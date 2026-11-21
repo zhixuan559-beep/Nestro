@@ -437,6 +437,8 @@ fun AiCoworkbenchPage(
                     style = MaterialTheme.typography.titleSmall)
                 artifact.files.forEach { report ->
                     Text(report.path, style = MaterialTheme.typography.labelMedium)
+                    if (report.truncated) Text("报告文件已达到 256 KB 读取上限，以下内容不完整。",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     Text(report.content.take(12_000), style = MaterialTheme.typography.bodySmall)
                 }
             }
