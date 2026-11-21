@@ -99,7 +99,8 @@ object GitWorkbenchPolicy {
         require(normalized.isNotBlank() && normalized.split('/').none { it.isBlank() || it == "." || it == ".." }) {
             "文件路径无效"
         }
-        require(!normalized.startsWith(".git/") && normalized != ".git") { "不能直接修改 Git 内部元数据" }
+        require(normalized.split('/').none { it == ".git" }) { "不能直接修改 Git 内部元数据" }
+        require(normalized.none { it.isISOControl() }) { "文件路径包含非法控制字符" }
         return normalized
     }
 }
@@ -141,7 +142,7 @@ class GitAccountStore(context: Context) {
     fun save(account: GitAccount, token: String) {
         require(account.id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
         require(GitWorkbenchPolicy.validAccountName(account.username))
-        require(token.isNotBlank() && token.length <= 4096) { "访问令牌不能为空且不能超过 4096 个字符" }
+        require(token.isNotBlank() && token.length <= 4096 && token.none { it.isISOControl() }) { "访问令牌不能为空、不能超过 4096 个字符且不能包含控制字符" }
         val existing = list()
         require(existing.any { it.id == account.id } || existing.size < 20) { "最多保存 20 个代码托管账号" }
         val previousToken = existing.firstOrNull { it.id == account.id }?.let { GitCredentialVault.read(app, account.id) }.orEmpty()
@@ -427,6 +428,15 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             .getOrElse { throw IllegalArgumentException("文件不是有效的 UTF-8 文本，已阻止编辑", it) }
     }
 
+    suspend fun deleteFile(id: String, relativePath: String) = withContext(Dispatchers.IO) {
+        val local = requireLocal(id)
+        val rootPath = File(local.localPath).canonicalFile.toPath()
+        val path = resolveSafe(rootPath, relativePath)
+        require(path.toFile().canonicalFile.toPath().startsWith(rootPath)) { "文件路径越界" }
+        require(Files.isRegularFile(path) && !Files.isSymbolicLink(path)) { "只能删除普通文件" }
+        Files.delete(path)
+    }
+
     suspend fun writeFile(id: String, relativePath: String, content: String) = withContext(Dispatchers.IO) {
         require(content.toByteArray(Charsets.UTF_8).size <= MAX_FILE_BYTES) { "文件内容超过 2 MB" }
         val local = requireLocal(id)
@@ -602,6 +612,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     private fun saveLocals(items: List<GitLocalRepository>) {
+        require(items.size <= 100 && items.map { it.id }.distinct().size == items.size) { "本地仓库数量或索引重复" }
         val json = JSONArray().apply {
             items.forEach {
                 put(JSONObject().put("id", it.id).put("accountId", it.accountId)
