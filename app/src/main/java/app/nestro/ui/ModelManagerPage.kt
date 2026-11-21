@@ -154,7 +154,12 @@ internal fun ModelManager(
                 onClick = { preset.accountUrl?.let(uriHandler::openUri) },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("打开魔搭账号 · 获取访问令牌") }
-            Text("魔搭官方 OAuth 需要应用登记与安全的服务端换取 Token；当前版本先提供官方令牌页直达，不会把账号密码交给 Nestro。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
+                onClick = { uriHandler.openUri("https://modelscope.cn/magicube/usage") },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("查看魔搭当前免费额度与魔粒") }
+            Text("免费额度、可用模型和并发限制由魔搭账户实时决定；Nestro 不承诺永久免费或固定调用次数。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("魔搭官方 OAuth 需要登记 Nestro 应用，并通过安全服务端完成授权码换 Token；当前先提供官方令牌页直达，不会把账号密码交给 Nestro。", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
 
         Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
