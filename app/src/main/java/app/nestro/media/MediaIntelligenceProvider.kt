@@ -13,6 +13,8 @@ interface MediaIntelligenceProvider {
     suspend fun transcribe(asset: MediaAsset, sourceFile: File, languageTag: String, onProgress: (Float) -> Unit = {}): List<MediaSubtitleCue>
     suspend fun detectScenes(asset: MediaAsset, sourceFile: File, onProgress: (Float) -> Unit = {}): List<MediaScene>
     suspend fun processAudio(asset: MediaAsset, sourceFile: File, operation: String, onProgress: (Float) -> Unit = {}): File
+    suspend fun analyzeImage(asset: MediaAsset, sourceFile: File, prompt: String, onProgress: (Float) -> Unit = {}): String =
+        error("当前媒体 AI Provider 不支持图片理解")
 }
 
 object MediaIntelligenceRegistry {
