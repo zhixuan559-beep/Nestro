@@ -130,7 +130,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     "audio-clean" -> {
                         val output=provider.processAudio(asset,file,"noise_reduction",progress)
                         try {
-                            val imported=MediaProjectStore.importGeneratedFile(applicationContext,projectId,output,MediaAssetKind.AUDIO)
+                            val imported=MediaProjectStore.importGeneratedFile(applicationContext,projectId,output,MediaAssetKind.AUDIO,stableAssetId=task.id)
                             JSONObject().put("type","audio").put("assetId",imported.id).put("displayName",imported.displayName).toString()
                         } finally { output.delete() }
                     }
