@@ -1226,6 +1226,7 @@ fun NestroApp() {
                                 }
                             }
                         }
+                        TextButton(onClick = { page = "comparison" }) { Text("双模型", color = Mint, style = MaterialTheme.typography.labelMedium) }
                         IconButton(onClick = { page = "models" }) {
                             Icon(Icons.Outlined.Tune, contentDescription = "模型设置", tint = Mint)
                         }
@@ -1382,6 +1383,13 @@ fun NestroApp() {
                                 Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
+                        "comparison" -> ModelComparisonPage(
+                            registry = modelRegistry,
+                            repository = modelRepository,
+                            reasoningEffort = reasoningEffort,
+                            onBack = { page = "home" },
+                            onManageModels = { page = "models" }
+                        )
                         "models" -> ModelManager(
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,

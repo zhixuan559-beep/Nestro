@@ -41,7 +41,7 @@
 | 9 | 语音系统 | AndroidSpeechRecognitionController、SpeechProviders、VoiceInputButton | 输入已有；输出/实时会话未形成闭环 |
 | 10 | 我的作品 | ArtifactStore、ArtifactLibraryPage、聊天保存入口 | 主体已有；需核对项目隔离、版本与备份 |
 | 11 | 专家模板 | ExpertTemplateCatalog、ExpertRevisionAndTemplate、NestroApp 模板流程 | 主体已有；对应测试已有，完整 UI 回归仍需核验 |
-| 12 | 双模型对比 | 当前命中 compare 的主要代码是专家版本差异比较 | 未找到并行双模型请求与并排结果的明确实现 |
+| 12 | 双模型对比 | ModelComparisonPage、ModelComparisonCoordinator、ModelComparisonPolicy；复用 ModelRegistry、加密 Key 仓库与 ChatExecutionService | 功能代码已补齐并完成静态源码/结构复核；Kotlin 编译与 JVM 测试尚未执行，模拟器/真机留待统一验收 |
 | 13 | MCP 工具中心 | Agent 工具目录/权限契约可复用；未找到 MCP transport/server discovery 实现 | 尚未形成 MCP 模块 |
 | 14 | GitHub 工作台 | 仓库未见 GitHub 工作台专属 package、页面或 Git 操作服务 | 尚未形成模块 |
 | 15 | AI 共建工作台 | WorkflowEngine、专家、产物、Agent 底座可复用；未见独立共建工作台 | 只有可复用基础，不算模块完成 |

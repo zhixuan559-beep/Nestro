@@ -379,3 +379,13 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - Agent execution, WorkManager availability checks, and UI stop requests use one active-environment provider. Detaching the selected environment leaves no implicit fallback to the user's real screen.
 - Phase 2 provides the architecture seam only. A concrete isolated VirtualDisplay adapter is a Phone Agent feature implementation; reuse from Mika requires the exact repository and license to be checked before copying code.
 - This does not change the unified final-acceptance rule: no APK build or device acceptance until all 19 modules' feature code is complete.
+
+
+## 2026-11-21 模块12：双模型对比开发记录
+
+- 新增双模型对比页面：从统一模型目录选择两个不同且可用的模型，共享同一条用户指令与可选系统指令。
+- 新增并行请求协调器：两个模型独立发起流式请求，独立显示增量结果；仅在所选模型自身的多个 Key 之间按既有策略尝试，不跨模型静默切换。
+- 一侧请求失败时保留另一侧结果；停止操作会取消协程并主动断开两侧活动 HTTP 连接。
+- 宽屏并排展示、手机纵向展示；支持单侧回答复制、清空和重新发起对比。
+- 新增模型选择/重复选择/不可用模型/空提示词/长度限制 JVM 测试源；尚未执行测试。
+- 当前状态：功能代码已补齐并完成静态源码/结构复核；Kotlin 编译与 JVM 测试尚未执行；不启动模拟器或真机验收，按十九模块统一验收安排执行。
