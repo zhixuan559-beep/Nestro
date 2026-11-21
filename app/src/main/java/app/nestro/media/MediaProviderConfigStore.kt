@@ -62,6 +62,7 @@ data class MediaProviderConfig(
             videoStatusPath.count { it == '{' } == 1 && videoStatusPath.count { it == '}' } == 1 &&
             videoStatusPath.contains("{job_id}")) { "视频任务状态路径必须包含且只包含 {job_id}" }
         if (videoGenerationModel.isNotBlank()) require(videoGenerationModel.length <= 120 && videoGenerationModel.none { it.isISOControl() }) { "视频生成模型名称无效" }
+        if (videoGenerationModel.isNotBlank()) require(videoSubmitPath.isNotBlank()) { "已配置视频模型时必须填写任务提交路径" }
         require(videoAuthHeader.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "视频 API 认证请求头名称无效" }
         require(videoAuthPrefix.length <= 40 && videoAuthPrefix.none { it.isISOControl() }) { "视频 API 认证前缀无效" }
         require(videoExtraRequestJson.length <= 12_000 && runCatching { JSONObject(videoExtraRequestJson) }.isSuccess) {
