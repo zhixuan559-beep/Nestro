@@ -121,6 +121,19 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             val state = JSONObject(body).optString("state")
             require(state == "active") { "目标 Workflow 当前状态为 ${state.ifBlank { "未知" }}，必须先启用。" }
         }
+        val previousRunsRequest = Request.Builder()
+            .url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        val previousRunIds = executeCancellable(previousRunsRequest).use { response ->
+            require(response.isSuccessful) { "读取既有 Workflow 运行记录失败（HTTP ${response.code}）" }
+            val rows = JSONObject(response.body?.string().orEmpty()).optJSONArray("workflow_runs")
+                ?: org.json.JSONArray()
+            (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optLong("id")?.takeIf { id -> id > 0 } }.toSet()
+        }
         val startedAt = System.currentTimeMillis()
         val dispatch = Request.Builder().url(base + "/dispatches")
             .header("Accept", "application/vnd.github+json")
@@ -160,7 +173,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                     val created = row.optString("created_at")
                     val createdMs = runCatching { Instant.parse(created).toEpochMilli() }.getOrDefault(0L)
                     if (row.optString("head_branch") != branch || row.optString("event") != "workflow_dispatch" ||
-                        createdMs < startedAt - 30_000L) null
+                        row.optLong("id") in previousRunIds || createdMs < startedAt - 5_000L) null
                     else CoworkbenchValidationResult(
                         row.optLong("id"), row.optString("status"), row.optString("conclusion").ifBlank { null },
                         row.optString("html_url"), created
