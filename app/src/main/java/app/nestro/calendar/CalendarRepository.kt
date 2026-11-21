@@ -39,6 +39,10 @@ class CalendarRepository(context: Context) {
     }
 
     suspend fun delete(id: String) {
+        val event = dao.event(id)
+        if (event != null && event.sourceSystemEventId != null && !event.sourceSystemImported) {
+            CalendarProviderBridge.deleteExportedEvent(appContext, event)
+        }
         dao.delete(id)
         CalendarReminderScheduler.cancel(appContext, id)
     }
