@@ -37,6 +37,13 @@ class CoworkbenchDataFlowAnalyzerTest {
         """.trimIndent()
         assertTrue(CoworkbenchDataFlowAnalyzer.analyze("src/Legacy.java", javaSource)
             .any { it.category == "潜在数据流：文件路径" })
+        val typedKotlinSource = """
+            val supplied: String = intent.getStringExtra("path") ?: ""
+            val forwarded: String = supplied
+            Files.readString(Path.of(forwarded))
+        """.trimIndent()
+        assertTrue(CoworkbenchDataFlowAnalyzer.analyze("src/Typed.kt", typedKotlinSource)
+            .any { it.category == "潜在数据流：文件路径" })
     }
 
     @Test
