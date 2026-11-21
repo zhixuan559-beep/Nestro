@@ -54,6 +54,10 @@ internal class ModelLedToolDispatcher(
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
         stateStore.put(AgentTaskState(taskId = taskId, owner = "chat", status = AgentTaskStatus.RUNNING))
+        suspend fun markTerminal(status: AgentTaskStatus, error: String = "") {
+            val current = stateStore.get(taskId) ?: AgentTaskState(taskId = taskId, owner = "chat")
+            stateStore.put(current.copy(status = status, lastError = error.take(2_000), updatedAt = System.currentTimeMillis()))
+        }
         val toolList = available.joinToString("\n") {
             val definition = toolDefinitionProvider(it.id)?.take(2_000) ?: it.description
             "- id: ${it.id}; permission: ${it.permission}; confirmation: ${it.requiresConfirmation}; definition: ${definition}"
@@ -103,20 +107,31 @@ $toolList
                 decisionText.append(chunk)
             }
             val raw = decisionText.toString()
-            val decision = parseDecision(raw) ?: return ModelToolDispatchResult(directReply = raw)
+            val decision = parseDecision(raw) ?: run {
+                markTerminal(AgentTaskStatus.COMPLETED)
+                return ModelToolDispatchResult(directReply = raw)
+            }
             if (decision.action == "reply") {
                 val answer = decision.text.ifBlank { raw }.take(24_000)
+                markTerminal(AgentTaskStatus.COMPLETED)
                 return ModelToolDispatchResult(
-                    directReply = if (toolContext.isEmpty()) answer else answer,
+                    directReply = answer,
                     toolContext = toolContext.toString()
                 )
             }
-            if (decision.action != "tool") return ModelToolDispatchResult(directReply = raw)
-            if (round == MAX_TOOL_ROUNDS - 1) {
-                return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
+            if (decision.action != "tool") {
+                markTerminal(AgentTaskStatus.COMPLETED)
+                return ModelToolDispatchResult(directReply = raw)
             }
-            val spec = catalog.find(decision.toolId)
-                ?: return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
+            if (round == MAX_TOOL_ROUNDS - 1) {
+                markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
+                markTerminal(AgentTaskStatus.FAILED, "工具调度达到本轮安全上限")
+        return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
+            }
+            val spec = catalog.find(decision.toolId) ?: run {
+                markTerminal(AgentTaskStatus.FAILED, "模型选择了未注册的工具：${decision.toolId}")
+                return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
+            }
             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
             val runtime: AgentRuntime = DefaultAgentRuntime(
                 catalog = lease.access,
