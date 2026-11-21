@@ -17,6 +17,7 @@ class RealtimeVoiceAudioController(
     private val onError: (String) -> Unit = {}
 ) : AutoCloseable {
     private val running = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var player: AudioTrack? = null
     @Volatile private var captureThread: Thread? = null
@@ -113,7 +114,8 @@ class RealtimeVoiceAudioController(
     }
 
     override fun close() {
-        if (!running.getAndSet(false)) return
+        if (!closed.compareAndSet(false, true)) return
+        running.set(false)
         runCatching { recorder?.stop() }
         runCatching { captureThread?.join(1_000) }
         runCatching { player?.pause() }
