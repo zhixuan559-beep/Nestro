@@ -45,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.CompositionPlayer
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +92,8 @@ fun MediaEditorPage(
     var isSaving by remember(projectId) { mutableStateOf(false) }
     val player = remember(context) { CompositionPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
+    val assetPreviewPlayer = remember(context) { ExoPlayer.Builder(context).build() }
+    DisposableEffect(assetPreviewPlayer) { onDispose { assetPreviewPlayer.release() } }
 
     suspend fun reload() {
         val result = withContext(Dispatchers.IO) {
@@ -180,6 +183,24 @@ fun MediaEditorPage(
         if (initialAssetId.isNotBlank() && assets.any { it.id == initialAssetId }) {
             selectedAssetId = initialAssetId
             status = "已从对话打开生成视频，可预览或加入时间线。"
+        }
+    }
+
+    LaunchedEffect(selectedAssetId, assets) {
+        val selectedAsset = assets.firstOrNull { it.id == selectedAssetId }
+        if (selectedAsset != null && selectedAsset.kind != MediaAssetKind.IMAGE) {
+            val source = withContext(Dispatchers.IO) {
+                runCatching { MediaProjectStore.assetFile(context, selectedAsset) }.getOrNull()
+            }
+            if (source != null && source.isFile) {
+                assetPreviewPlayer.stop()
+                assetPreviewPlayer.clearMediaItems()
+                assetPreviewPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(Uri.fromFile(source)))
+                assetPreviewPlayer.prepare()
+            }
+        } else {
+            assetPreviewPlayer.stop()
+            assetPreviewPlayer.clearMediaItems()
         }
     }
 
@@ -468,7 +489,18 @@ fun MediaEditorPage(
                     factory = { viewContext -> PlayerView(viewContext).apply { this.player = previewPlayer; useController = true } },
                     modifier = Modifier.fillMaxWidth().height(190.dp)
                 )
-                Text("预览当前时间线；剪辑调整后自动刷新，原始素材不会被修改。", style = MaterialTheme.typography.bodySmall)
+                Text("时间线预览", style = MaterialTheme.typography.labelMedium)
+                val selectedPreviewAsset = assets.firstOrNull { it.id == selectedAssetId }
+                if (selectedPreviewAsset != null && selectedPreviewAsset.kind != MediaAssetKind.IMAGE) {
+                    AndroidView(
+                        factory = { viewContext -> PlayerView(viewContext).apply { this.player = assetPreviewPlayer; useController = true } },
+                        modifier = Modifier.fillMaxWidth().height(190.dp)
+                    )
+                    Text("素材预览：${selectedPreviewAsset.displayName}", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("选择视频或音频素材即可单独预览。", style = MaterialTheme.typography.bodySmall)
+                }
+                Text("时间线剪辑调整不会修改原始素材。", style = MaterialTheme.typography.bodySmall)
             }
         }
         Text("素材库 · " + assets.size, style = MaterialTheme.typography.titleMedium)
