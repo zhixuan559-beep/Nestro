@@ -77,6 +77,37 @@ class SkillCommunityLifecycleStoreTest {
         assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
     }
 
+    @Test fun rejectsDependencyCycleBeforeInstall() {
+        val other = SkillBundle(
+            "OtherSkill", "1.0.0", "other", "other prompt", "local", emptyList(),
+            listOf(SkillDependency("CommunitySkill", "*"))
+        )
+        preferences.edit()
+            .putString("skills", org.json.JSONObject().put("OtherSkill", "other prompt").toString())
+            .putString("skill_metadata_v1", org.json.JSONObject().put("OtherSkill", SkillBundleParser.metadataJson(other)).toString())
+            .commit()
+        val cyclic = bundle("1.0.0", "community prompt").copy(
+            dependencies = listOf(SkillDependency("OtherSkill", "*"))
+        )
+        assertFalse(runCatching { store.install(cyclic) }.isSuccess)
+        assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
+    }
+
+    @Test fun refusesCommunityUpdateThatBreaksAnInstalledDependent() {
+        store.install(bundle("1.0.0", "base prompt"))
+        val dependent = SkillBundle(
+            "DependentSkill", "1.0.0", "dependent", "dependent prompt", "local", emptyList(),
+            listOf(SkillDependency("CommunitySkill", "1.0.0"))
+        )
+        val skills = org.json.JSONObject(preferences.getString("skills", "{}")!!)
+            .put("DependentSkill", "dependent prompt")
+        val metadata = org.json.JSONObject(preferences.getString("skill_metadata_v1", "{}")!!)
+            .put("DependentSkill", SkillBundleParser.metadataJson(dependent))
+        preferences.edit().putString("skills", skills.toString()).putString("skill_metadata_v1", metadata.toString()).commit()
+        assertFalse(runCatching { store.install(bundle("1.1.0", "updated prompt")) }.isSuccess)
+        assertEquals("base prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
+    }
+
     @Test fun rejectsMissingDependenciesBeforeMutation() {
         val dependent = bundle("1.0.0", "prompt").copy(
             dependencies = listOf(SkillDependency("MissingDependency", "1.0.0"))
