@@ -290,12 +290,6 @@ class GeneratedPluginStore(context: Context) {
             .commit()) { "插件版本变更写入失败" }
     }
 
-    private fun persistHistory(pluginId: String, versions: List<GeneratedPluginPackage>) {
-        check(prefs.edit().putString(historyKey(pluginId), GeneratedPluginPackageCodec.encode(versions)).commit()) {
-            "插件版本历史写入失败"
-        }
-    }
-
     private fun historyKey(pluginId: String) = "history_${pluginId}"
 
     private fun persist(packages: List<GeneratedPluginPackage>) {
