@@ -25,7 +25,7 @@ data class SpeechProviderConfig(
         require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.code < 0x20 || it.code == 0x7f }) { "API Key 不能为空、不能包含控制字符且不能超过 4096 字符" }
         require(uri.rawQuery == null && uri.rawFragment == null) { "语音服务地址不能包含查询参数或片段" }
         require(uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "语音服务地址不能包含路径回退片段" }
-        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "实时语音模型名称无效" }
+        require(model.length <= 120 && model.none { it.isISOControl() }) { "实时语音模型名称无效" }
         require(inputModel.isNotBlank() && inputModel.length <= 120 && inputModel.none { it.isISOControl() }) { "语音识别模型名称无效" }
         require(outputModel.isNotBlank() && outputModel.length <= 120 && outputModel.none { it.isISOControl() }) { "语音合成模型名称无效" }
         require(voice == null || (voice.length <= 120 && voice.none { it.isISOControl() })) { "音色标识无效或超出长度限制" }
