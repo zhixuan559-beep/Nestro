@@ -181,7 +181,11 @@ fun MediaProviderSettingsCard() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text(summary.displayName, style = MaterialTheme.typography.bodyMedium)
-                            Text(summary.providerId+" · "+summary.model, style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                summary.providerId + " · 聊天：" + summary.model +
+                                    (summary.videoGenerationModel.takeIf { it.isNotBlank() }?.let { " · 视频：$it" } ?: " · 未配置视频模型"),
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                         OutlinedButton(enabled = !busy, onClick = {
                             busy = true
