@@ -3,7 +3,7 @@
 ## 当前模块状态（2026-11-20）
 
 - **模块7「我的记忆」**：PR #7 已合并到 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`；对应 CI 完整通过。该锁定状态目前属于架构分支，尚未合入默认分支 `main`。
-- **模块8「Phone Agent」**：PR #8 仍开放，现以 `refactor/phase-2-architecture` 为目标分支；分支已纳入模块7锁定提交作为父提交（新 head `435a51473822886ae4e1177d195316817cbf9d3d`）。旧 head 的 verify 已通过；切换合并基线后新 CI 正在重新验证，尚未完成模拟器验收与真机验收。
+- **模块8「Phone Agent」**：PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`；对应 verify 与 instrumentation 通过。该代码尚未合入默认分支 `main`，真机验收仍待完成。
 - **模块5/6 与阶段2架构**：相关分支及 PR 仍有未合并差异，不得因分支名称含有模块号或 staging/WIP 就视为已锁定。
 - **PR #1/#2/#3**：仍为开放草稿。PR #1 暴露的主分支 TTS Comparator 编译错误已在 `main` 修复（提交 `c6d8046`），新 CI 已越过 Kotlin 编译并进入 JVM 单元测试；PR #2/#3 仍需各自完成验收。
 - **分支清理原则**：只清理已被明确证明无独有提交、无开放 PR 引用、无后续依赖的分支；保留仍含独有功能或测试的 WIP/staging 分支，禁止按名称批量删除。
