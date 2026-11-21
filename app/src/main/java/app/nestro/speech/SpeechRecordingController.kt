@@ -4,8 +4,6 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
@@ -111,10 +109,26 @@ class SpeechRecordingController : AutoCloseable {
         synchronized(pcm) { pcm.reset() }
     }
 
-    private fun wav(data: ByteArray): ByteArray {
-        val header = ByteBuffer.allocate(WAV_HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+    private fun wav(data: ByteArray): ByteArray = SpeechWavCodec.encode(data)
+
+    companion object {
+        const val SAMPLE_RATE = 16_000
+        const val READ_BUFFER_BYTES = 4_096
+        const val MAX_PCM_BYTES = SAMPLE_RATE * 2 * 120
+        const val WAV_HEADER_BYTES = 44
+    }
+}
+
+internal object SpeechWavCodec {
+    const val SAMPLE_RATE = 16_000
+    const val WAV_HEADER_BYTES = 44
+
+    fun encode(pcm: ByteArray): ByteArray {
+        require(pcm.isNotEmpty() && pcm.size % 2 == 0) { "PCM16 数据必须非空且为偶数字节" }
+        val header = java.nio.ByteBuffer.allocate(WAV_HEADER_BYTES)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
         header.put("RIFF".toByteArray(Charsets.US_ASCII))
-        header.putInt(data.size + 36)
+        header.putInt(pcm.size + 36)
         header.put("WAVE".toByteArray(Charsets.US_ASCII))
         header.put("fmt ".toByteArray(Charsets.US_ASCII))
         header.putInt(16)
@@ -125,14 +139,7 @@ class SpeechRecordingController : AutoCloseable {
         header.putShort(2)
         header.putShort(16)
         header.put("data".toByteArray(Charsets.US_ASCII))
-        header.putInt(data.size)
-        return header.array() + data
-    }
-
-    companion object {
-        const val SAMPLE_RATE = 16_000
-        const val READ_BUFFER_BYTES = 4_096
-        const val MAX_PCM_BYTES = SAMPLE_RATE * 2 * 120
-        const val WAV_HEADER_BYTES = 44
+        header.putInt(pcm.size)
+        return header.array() + pcm
     }
 }
