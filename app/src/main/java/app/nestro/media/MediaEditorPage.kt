@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.ByteArrayOutputStream
+import org.json.JSONObject
 
 @OptIn(UnstableApi::class, ExperimentalApi::class)
 @Composable
@@ -81,6 +82,8 @@ fun MediaEditorPage(
     var detectedScenes by remember(projectId) { mutableStateOf(emptyList<MediaScene>()) }
     var imageAnalysis by remember(projectId) { mutableStateOf("") }
     var mediaAiJob by remember(projectId) { mutableStateOf<Job?>(null) }
+    var activeMediaAiTaskId by remember(projectId) { mutableStateOf("") }
+    var mediaAiTasks by remember(projectId) { mutableStateOf(emptyList<MediaAiTask>()) }
     var mediaAiProgress by remember(projectId) { mutableStateOf(0f) }
     var mediaAiRunning by remember(projectId) { mutableStateOf(false) }
     var isSaving by remember(projectId) { mutableStateOf(false) }
@@ -102,9 +105,64 @@ fun MediaEditorPage(
 
     LaunchedEffect(projectId) {
         runCatching { reload() }.onFailure { status = "读取媒体项目失败：" + (it.message ?: "索引损坏") }
+        withContext(Dispatchers.IO) { MediaAiTaskScheduler.recover(context, projectId) }
         while (isActive) {
             tasks = withContext(Dispatchers.IO) { MediaRenderTaskStore.list(context, projectId) }
+            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
             delay(1_000)
+        }
+    }
+
+    LaunchedEffect(projectId, activeMediaAiTaskId) {
+        if (activeMediaAiTaskId.isNotBlank()) {
+            while (isActive && activeMediaAiTaskId.isNotBlank()) {
+                val task = withContext(Dispatchers.IO) { MediaAiTaskStore.read(context, projectId, activeMediaAiTaskId) }
+                if (task == null) {
+                    status = "媒体 AI 任务记录丢失。"
+                    mediaAiRunning = false
+                    activeMediaAiTaskId = ""
+                    break
+                }
+                mediaAiProgress = task.progress / 100f
+                if (task.status == MediaAiTaskStatus.COMPLETED) {
+                    runCatching {
+                        val result = JSONObject(task.resultJson)
+                        when (result.optString("type")) {
+                            "transcribe" -> {
+                                val rows = result.optJSONArray("cues") ?: error("转写结果缺少字幕")
+                                val cues = (0 until rows.length()).map { index ->
+                                    val row = rows.getJSONObject(index)
+                                    MediaSubtitleCue(row.getString("id"), row.getLong("startMs"), row.getLong("endMs"), row.getString("text"))
+                                }
+                                persist(timeline.copy(subtitles = (timeline.subtitles + cues).sortedBy { it.startMs }))
+                                status = "AI 字幕已生成："+cues.size+" 条。"
+                            }
+                            "scenes" -> {
+                                val rows = result.optJSONArray("scenes") ?: error("场景结果缺少 scenes")
+                                detectedScenes = (0 until rows.length()).map { index ->
+                                    val row = rows.getJSONObject(index)
+                                    MediaScene(row.getLong("startMs"),row.getLong("endMs"),row.optString("title"),row.optString("description"),row.optString("caption"))
+                                }
+                                status = "场景分析完成："+detectedScenes.size+" 个场景。"
+                            }
+                            "audio" -> { reload(); status = "音频处理结果已作为新素材保存，原始音频未修改。" }
+                            "image" -> { imageAnalysis = result.optString("text"); status = "图片理解完成。" }
+                            else -> error("媒体 AI 任务返回未知结果类型")
+                        }
+                    }.onFailure { status = "读取媒体 AI 结果失败："+(it.message ?: "结果格式无效") }
+                    mediaAiRunning = false
+                    activeMediaAiTaskId = ""
+                    break
+                }
+                if (task.status == MediaAiTaskStatus.FAILED || task.status == MediaAiTaskStatus.CANCELLED) {
+                    status = if (task.status == MediaAiTaskStatus.CANCELLED) "媒体 AI 任务已取消。" else "媒体 AI 处理失败："+task.error
+                    mediaAiRunning = false
+                    activeMediaAiTaskId = ""
+                    break
+                }
+                mediaAiRunning = true
+                delay(500)
+            }
         }
     }
 
@@ -275,59 +333,15 @@ fun MediaEditorPage(
                     showAiConsent = false
                     val provider = MediaIntelligenceRegistry.current() ?: return@TextButton
                     val asset = assets.firstOrNull { it.id == selectedAssetId } ?: return@TextButton
+                    val created = withContext(Dispatchers.IO) {
+                        MediaAiTaskStore.create(context, projectId, asset.id, provider.providerId, aiAction,
+                            "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
+                    }
+                    activeMediaAiTaskId = created.id
                     mediaAiRunning = true
                     mediaAiProgress = 0f
-                    mediaAiJob = scope.launch {
-                        status = "媒体 AI 正在分析素材…"
-                        val result = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val file = MediaProjectStore.assetFile(context, asset)
-                                val progress: (Float) -> Unit = { value -> scope.launch { mediaAiProgress = value.coerceIn(0f, 1f) } }
-                                when (aiAction) {
-                                    "transcribe" -> provider.transcribe(asset, file, "zh-CN", progress)
-                                    "scenes" -> provider.detectScenes(asset, file, progress)
-                                    "audio-clean" -> {
-                                        val processed = provider.processAudio(asset, file, "noise_reduction", progress)
-                                        try {
-                                            MediaProjectStore.importGeneratedFile(context, projectId, processed, MediaAssetKind.AUDIO)
-                                        } finally {
-                                            processed.delete()
-                                        }
-                                    }
-                                    "image" -> provider.analyzeImage(asset, file, "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。", progress)
-                                    else -> error("不支持的媒体 AI 操作")
-                                }
-                            }
-                        }
-                        result.onSuccess { value ->
-                            when (aiAction) {
-                                "transcribe" -> {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val cues = value as List<MediaSubtitleCue>
-                                    persist(timeline.copy(subtitles = (timeline.subtitles + cues).sortedBy { it.startMs }))
-                                    status = "AI 字幕已生成：" + cues.size + " 条。"
-                                }
-                                "scenes" -> {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val scenes = value as List<MediaScene>
-                                    detectedScenes = scenes
-                                    status = "场景分析完成：" + scenes.size + " 个场景。"
-                                }
-                                "audio-clean" -> {
-                                    reload()
-                                    status = "音频处理结果已作为新素材保存，原始音频未修改。"
-                                }
-                                "image" -> {
-                                    imageAnalysis = value as String
-                                    status = "图片理解完成。"
-                                }
-                            }
-                        }.onFailure {
-                            status = if (it is CancellationException) "媒体 AI 任务已取消。" else "媒体 AI 处理失败：" + (it.message ?: "未知错误")
-                        }
-                        mediaAiRunning = false
-                        mediaAiJob = null
-                    }
+                    withContext(Dispatchers.IO) { MediaAiTaskScheduler.enqueue(context, projectId, created.id) }
+                    status = "媒体 AI 任务已加入后台队列；应用关闭或进程被回收后会自动恢复。"
                 }) { Text("确认处理") }
             },
             dismissButton = { TextButton(onClick = { showAiConsent = false }) { Text("取消") } }
@@ -554,10 +568,13 @@ fun MediaEditorPage(
         if (mediaAiRunning) {
             LinearProgressIndicator(progress = mediaAiProgress, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = {
-                MediaIntelligenceRegistry.current()?.cancelActiveRequests()
-                mediaAiJob?.cancel()
-                mediaAiRunning = false
-                status = "已请求取消媒体 AI 任务。"
+                val taskId = activeMediaAiTaskId
+                if (taskId.isNotBlank()) scope.launch {
+                    runCatching { withContext(Dispatchers.IO) { MediaAiTaskScheduler.cancel(context, projectId, taskId) } }
+                    mediaAiRunning = false
+                    activeMediaAiTaskId = ""
+                    status = "已取消媒体 AI 任务。"
+                }
             }) { Text("取消媒体 AI 任务") }
         }
         if (imageAnalysis.isNotBlank()) {
