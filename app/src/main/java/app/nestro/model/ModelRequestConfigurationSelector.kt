@@ -76,7 +76,11 @@ internal object ModelRequestConfigurationSelector {
                 val key = keys[keyId] ?: return@mapNotNull null
                 if (!key.enabled || key.providerId != provider.id) return@mapNotNull null
                 val secret = readKey(keyId).takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                ModelConfig(provider.baseUrl, model.modelCode, secret, reasoningEffort.takeIf { model.supportsReasoningEffort })
+                ModelConfig(
+                    provider.baseUrl, model.modelCode, secret,
+                    reasoningEffort.takeIf { model.supportsReasoningEffort },
+                    provider.protocol
+                )
             }
         }
 
