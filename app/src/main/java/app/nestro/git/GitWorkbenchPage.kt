@@ -338,7 +338,8 @@ fun GitWorkbenchPage(context: Context) {
                     history.forEach { item ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Text(item.shortMessage, style = MaterialTheme.typography.bodySmall)
-                            Text(item.id.take(10) + " · " + item.author, style = MaterialTheme.typography.labelSmall)
+                            val dateLabel = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(item.timestamp))
+                            Text(item.id.take(10) + " · " + item.author + " · " + dateLabel, style = MaterialTheme.typography.labelSmall)
                             if (item.parentCount == 1) {
                                 TextButton(enabled = file.isBlank() || editor == originalEditor, onClick = { revertTarget = item }) { Text("反向回滚") }
                             } else {
