@@ -412,6 +412,22 @@ fun AiCoworkbenchPage(
                     Text(report.content.take(12_000), style = MaterialTheme.typography.bodySmall)
                 }
             }
+            result.testReports.forEach { report ->
+                Text("测试报告：${report.path}", style = MaterialTheme.typography.titleSmall)
+                Text("总计 ${report.total} · 通过 ${report.passed} · 失败 ${report.failures} · 错误 ${report.errors} · 跳过 ${report.skipped}",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            if (result.sbomComponents.isNotEmpty()) {
+                Text("SBOM 组件：${result.sbomComponents.size} 项", style = MaterialTheme.typography.titleSmall)
+                result.sbomComponents.take(100).forEach { component ->
+                    Text(
+                        component.name + (component.version?.let { " · $it" } ?: "") +
+                            (component.license?.let { " · License: $it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (result.sbomComponents.size > 100) Text("另有 ${result.sbomComponents.size - 100} 项组件未展开。")
+            }
         }
         if (busy) CircularProgressIndicator()
         if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
