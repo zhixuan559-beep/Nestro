@@ -37,7 +37,7 @@ object CoworkbenchStaticAnalyzer {
     private const val MAX_FILES = 4_000
     private const val MAX_FILE_BYTES = 1_000_000L
     private const val MAX_TOTAL_BYTES = 24_000_000L
-    private const val MAX_LINES_PER_FILE = 10_000
+    private const val MAX_LINES_PER_FILE = 2_000
     private const val MAX_FINDINGS = 5_000
     private const val MAX_DEPENDENCIES = 10_000
     private val extensions = setOf("kt", "kts", "java", "xml", "gradle", "toml", "properties", "yml", "yaml", "sh", "json")
