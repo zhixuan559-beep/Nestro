@@ -175,7 +175,7 @@ ${prompt.take(8_000)}
                             val firstBody = decisionText.substring(newline + 1)
                             if (firstBody.isNotEmpty()) {
                                 directAnswer.append(firstBody)
-                                if (directAnswer.length >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\\n") >= 0) {
+                                if (directAnswer.length >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\n") >= 0) {
                                     onDirectAnswer(directAnswer.toString())
                                     lastDirectUiLength = directAnswer.length
                                 }
@@ -184,7 +184,7 @@ ${prompt.take(8_000)}
                     }
                 } else if (directMode) {
                     directAnswer.append(chunk)
-                    if (directAnswer.length - lastDirectUiLength >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\\n") >= 0) {
+                    if (directAnswer.length - lastDirectUiLength >= DIRECT_UI_UPDATE_CHARS || directAnswer.indexOf("\n") >= 0) {
                         onDirectAnswer(directAnswer.toString())
                         lastDirectUiLength = directAnswer.length
                     }
