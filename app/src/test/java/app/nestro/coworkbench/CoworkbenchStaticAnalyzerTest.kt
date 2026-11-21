@@ -128,6 +128,31 @@ class CoworkbenchStaticAnalyzerTest {
     }
 
     @Test
+    fun detectsDynamicLoadingUnsafeDeserializationWeakCryptoAndWebViewExposure() {
+        val root = Files.createTempDirectory("nestro-coworkbench-dangerous-apis").toFile()
+        try {
+            root.resolve("src/main/Dangerous.kt").apply {
+                parentFile.mkdirs()
+                writeText("""
+                    val loader = DexClassLoader(path, optimizedDir, null, classLoader)
+                    val value = ObjectInputStream(input).readObject()
+                    val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+                    webSettings.setAllowUniversalAccessFromFileURLs(true)
+                    val pending = PendingIntent.FLAG_MUTABLE
+                """.trimIndent())
+            }
+            val report = CoworkbenchStaticAnalyzer.analyze(root)
+            assertTrue(report.findings.any { it.category == "动态代码加载" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(report.findings.any { it.category == "不安全反序列化" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(report.findings.any { it.category == "弱加密配置" })
+            assertTrue(report.findings.any { it.category == "WebView 文件/混合内容访问" && it.level == CoworkbenchFindingLevel.HIGH })
+            assertTrue(report.findings.any { it.category == "可变 PendingIntent" })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun detectsCredentialsWithoutCopyingSecretValuesIntoEvidence() {
         val root = Files.createTempDirectory("nestro-coworkbench-secret-scan").toFile()
         try {
