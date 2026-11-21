@@ -253,7 +253,10 @@ object ArtifactStore {
         require(removed == 1) { "产物索引状态已变化，请刷新后重试" }
         writeIndex(context, kept)
         val file = File(root(context), indexed.fileName)
-        if (file.exists() && !file.delete()) error("产物索引已移除，但文件清理失败；请检查本机存储")
+        if (file.exists() && !file.delete()) {
+            runCatching { writeIndex(context, all) }
+            error("产物文件清理失败，已尝试恢复索引；请刷新后重试")
+        }
     }
 
     fun export(context: Context, record: ArtifactRecord, destination: Uri) {
