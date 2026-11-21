@@ -180,7 +180,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val key=keys.next();val property=properties.optJSONObject(key)?:continue;val value=values.opt(key)
     val header=property.optString("x-mcp-header")
     if(header.isNotBlank()&&!values.isNull(key)){
-     require(header.matches(Regex("[A-Za-z0-9!#$%&\'*+.^_\`|~-]{1,48}"))){"MCP 工具 schema 含无效 x-mcp-header"}
+     require(header.matches(Regex("[A-Za-z0-9!#$%&'*+.^_|~-]{1,48}"))){"MCP 工具 schema 含无效 x-mcp-header"}
      builder.header("Mcp-Param-$header",McpHeaderValueEncoder.encode(value.toString()))
     }
     if(value is JSONObject)walk(property.optJSONObject("properties"),value)
