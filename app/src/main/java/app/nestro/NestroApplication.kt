@@ -149,8 +149,27 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
+                    id = "media.provider.list",
+                    description = "列出当前用户已配置的媒体服务商及聊天/视频模型能力。无需参数。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) {
+                val providers = MediaProviderConfigStore(this@NestroApplication).list()
+                if (providers.isEmpty()) {
+                    app.nestro.agent.AgentToolResult(true, output = "当前尚未配置媒体服务商。")
+                } else {
+                    app.nestro.agent.AgentToolResult(
+                        true,
+                        output = providers.joinToString("\\n") {
+                            "provider_id=${it.providerId}; name=${it.displayName}; chat_model=${it.model}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
+                        }
+                    )
+                }
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
                     id = "media.video.generate",
-                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填，完整视频生成提示词）；previous_task_id（可选，用户要求修改上一版时填写）。异步提交视频任务并等待结果；若超出等待窗口则返回任务 ID，用户可继续查询。会产生第三方 API 费用。",
+                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填）；provider_id（可选，指定已配置服务商）；previous_task_id（可选，用户要求修改上一版时填写）。异步提交视频任务并等待结果；若超出等待窗口则返回任务 ID，用户可继续查询。会产生第三方 API 费用。",
                     permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
                     requiresConfirmation = true
                 )
@@ -159,8 +178,11 @@ class NestroApplication : Application() {
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，无法保存生成视频")
                 val prompt = arguments["prompt"]?.trim()?.takeIf(String::isNotBlank)
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "视频生成缺少 prompt")
-                val config = MediaProviderConfigStore(this@NestroApplication).read()
-                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "尚未配置媒体服务商，请先在媒体服务设置中接入视频模型")
+                val providerStore = MediaProviderConfigStore(this@NestroApplication)
+                val selectedProviderId = arguments["provider_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: providerStore.activeProviderId()
+                val config = providerStore.read(selectedProviderId)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "指定媒体服务商不存在或 API Key 无法读取；请先配置服务商或调用 media.provider.list 查看可用项")
                 if (config.videoGenerationModel.isBlank()) {
                     return@register app.nestro.agent.AgentToolResult(false, error = "当前媒体服务商没有配置视频生成模型 ID")
                 }
