@@ -36,6 +36,7 @@ data class MediaProviderConfig(
     val videoPromptField: String = "prompt",
     val videoAuthHeader: String = "Authorization",
     val videoAuthPrefix: String = "Bearer ",
+    val videoExtraRequestJson: String = "{}",
     val videoJobIdField: String = "id",
     val videoStatusField: String = "status",
     val videoResultUrlField: String = "video_url"
@@ -63,6 +64,9 @@ data class MediaProviderConfig(
         if (videoGenerationModel.isNotBlank()) require(videoGenerationModel.length <= 120 && videoGenerationModel.none { it.isISOControl() }) { "视频生成模型名称无效" }
         require(videoAuthHeader.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "视频 API 认证请求头名称无效" }
         require(videoAuthPrefix.length <= 40 && videoAuthPrefix.none { it.isISOControl() }) { "视频 API 认证前缀无效" }
+        require(videoExtraRequestJson.length <= 12_000 && runCatching { JSONObject(videoExtraRequestJson) }.isSuccess) {
+            "视频 API 扩展请求参数必须是有效 JSON 对象且不超过 12 KB"
+        }
         listOf(videoModelField, videoPromptField, videoJobIdField, videoStatusField, videoResultUrlField).forEach {
             require(it.matches(Regex("[A-Za-z0-9_.]{1,100}"))) { "视频任务响应字段无效" }
         }
@@ -195,6 +199,7 @@ class MediaProviderConfigStore(context: Context) {
                 videoPromptField = json.optString("videoPromptField", "prompt"),
                 videoAuthHeader = json.optString("videoAuthHeader", "Authorization"),
                 videoAuthPrefix = json.optString("videoAuthPrefix", "Bearer "),
+                videoExtraRequestJson = json.optString("videoExtraRequestJson", "{}"),
                 videoJobIdField = json.optString("videoJobIdField", "id"),
                 videoStatusField = json.optString("videoStatusField", "status"),
                 videoResultUrlField = json.optString("videoResultUrlField", "video_url")
@@ -246,6 +251,7 @@ class MediaProviderConfigStore(context: Context) {
         .put("videoPromptField", config.videoPromptField.trim())
         .put("videoAuthHeader", config.videoAuthHeader.trim())
         .put("videoAuthPrefix", config.videoAuthPrefix)
+        .put("videoExtraRequestJson", config.videoExtraRequestJson)
         .put("videoJobIdField", config.videoJobIdField.trim())
         .put("videoStatusField", config.videoStatusField.trim())
         .put("videoResultUrlField", config.videoResultUrlField.trim())
