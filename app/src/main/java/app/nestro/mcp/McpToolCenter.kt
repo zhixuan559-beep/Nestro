@@ -99,9 +99,9 @@ class McpToolCenterRepository(context:Context) {
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(v.map{if(it.id==id)it.copy(enabled=on)else it})).commit()){"MCP 服务状态保存失败"}
  }
  fun deleteServer(id:String){
-  McpCredentialVault.delete(app,id)
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(listServers().filterNot{it.id==id}))
    .putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(listTools().filterNot{it.serverId==id})).commit()){"MCP 服务删除失败"}
+  McpCredentialVault.delete(app,id)
  }
  fun saveCredential(id:String,token:String)=McpCredentialVault.write(app,id,token)
  fun readCredential(id:String)=McpCredentialVault.read(app,id)
