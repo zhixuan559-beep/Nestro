@@ -351,6 +351,13 @@ fun NestroApp(initialPage: String = "home") {
     var teamExportJson by expertWorkspaceUiState.teamExportJson
     var teamRunStatus by expertWorkspaceUiState.teamRunStatus
     var expertTeamRunHistory by expertWorkspaceUiState.expertTeamRunHistory
+    var expertTeamEvents by remember(prefs, activeProjectId) {
+        mutableStateOf(
+            app.nestro.data.ExpertTeamCollaborationEventCodec.decode(
+                prefs.getString("expert_team_events_v1", "[]") ?: "[]"
+            ).filter { it.projectId == activeProjectId }.takeLast(100)
+        )
+    }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
     var workflowHistory by workflowUiState.workflowHistory
@@ -1167,6 +1174,11 @@ fun NestroApp(initialPage: String = "home") {
                                     eventPrefsKey,
                                     app.nestro.data.ExpertTeamCollaborationEventCodec.encode(existing + event)
                                 ).commit()) { "专家协作事件保存失败" }
+                                withContext(Dispatchers.Main) {
+                                    if (activeProjectId == requestProjectId) {
+                                        expertTeamEvents = (expertTeamEvents + event).takeLast(100)
+                                    }
+                                }
                             }
                         },
                         onPackage = { packageId, state, detail ->
@@ -2115,6 +2127,23 @@ fun NestroApp(initialPage: String = "home") {
                                                     color=if(run.status=="success") Mint else ColorStop,
                                                     style=MaterialTheme.typography.bodySmall
                                                 )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (expertTeamEvents.isNotEmpty()) {
+                                    Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text("最近协作过程", color = Ink, style = MaterialTheme.typography.titleSmall)
+                                            expertTeamEvents.takeLast(16).asReversed().forEach { event ->
+                                                val who = listOf(event.memberName, event.relatedMemberName).filter { it.isNotBlank() }.joinToString(" → ")
+                                                Text(
+                                                    "${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(event.createdAt))} · ${event.type} · $who · ${event.status}",
+                                                    color = Mint, style = MaterialTheme.typography.labelSmall
+                                                )
+                                                if (event.message.isNotBlank()) {
+                                                    Text(event.message.take(240), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                }
                                             }
                                         }
                                     }
