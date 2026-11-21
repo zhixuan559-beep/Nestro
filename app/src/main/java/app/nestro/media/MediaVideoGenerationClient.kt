@@ -38,8 +38,8 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
         onProgress(3)
 
         val submit = JSONObject()
-            .put("model", config.videoGenerationModel)
-            .put("prompt", prompt)
+            .put(config.videoModelField, config.videoGenerationModel)
+            .put(config.videoPromptField, prompt)
         val created = requestJson("POST", config.videoSubmitPath, submit.toString(), 30_000)
         val jobId = readPath(created, config.videoJobIdField)?.toString()?.trim().orEmpty()
         require(jobId.matches(Regex("[A-Za-z0-9._~-]{1,240}")) && jobId != "." && jobId != "..") {
