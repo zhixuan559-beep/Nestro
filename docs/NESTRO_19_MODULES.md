@@ -98,3 +98,4 @@
 - readOnlyHint 仅作为界面提示；所有 MCP 工具在 AgentRuntime 路径中均要求用户确认。手动调用必须经过逐次参数预览和确认。
 - 工具目录按任务现有 AgentToolSession/AgentCapabilityRegistry 最小权限机制加载；普通聊天不自动加载 MCP 工具定义。
 - 当前版本提供 MCP 工具中心和受控手动调用；模型原生 tool-call schema 适配不在本模块内擅自宣称完成。
+- 当前认证方式支持可选 Bearer Token 的加密保存与轮换；OAuth 2.1 交互式授权流程、stdio 子进程传输及服务端主动推送订阅不在本次实现范围。
