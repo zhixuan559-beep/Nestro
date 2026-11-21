@@ -1051,6 +1051,7 @@ fun NestroApp(initialPage: String = "home") {
                         } else {
                             val phonePlan = PhoneAgentPlanner.plan(prompt)
                             if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
+                                val canSchedule = app.nestro.phone.PhoneAgentService.activeService?.hasValidGrant() == true
                                 val created = withContext(Dispatchers.IO) {
                                     appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
                                         requestProjectId,
@@ -1058,7 +1059,11 @@ fun NestroApp(initialPage: String = "home") {
                                         phonePlan
                                     )
                                 }
-                                "已创建 Phone Agent 任务（${created.id}），当前状态：${created.status}。实际设备操作仍按任务权限与风险步骤执行。"
+                                if (canSchedule) {
+                                    "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。实际设备操作仍按任务权限与风险步骤执行。"
+                                } else {
+                                    "已创建 Phone Agent 任务（${created.id}），但设备服务尚未处于有效授权状态，暂未加入后台队列；实际设备操作尚未开始。"
+                                }
                             } else {
                                 "当前目标不需要 Phone Agent 后台设备任务，未创建任务。"
                             }
