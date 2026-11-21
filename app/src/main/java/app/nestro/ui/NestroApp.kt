@@ -1105,11 +1105,13 @@ fun NestroApp(initialPage: String = "home") {
                     val selectedTeam = requestExpertTeams.firstOrNull {
                         it.id == requestExecutionAuthorization.selectedTeamId
                     }
-                    val requestedMembers = toolArguments["member_names"]
-                        ?.split(Regex("[,，、;；]"))
-                        ?.map { it.trim() }
-                        ?.filter { it.isNotBlank() }
-                        .orEmpty()
+                    val memberSelection = toolArguments["member_names"].orEmpty()
+                    val requestedMembers = runCatching {
+                        val array = JSONArray(memberSelection)
+                        (0 until array.length()).map { array.getString(it).trim() }.filter { it.isNotBlank() }
+                    }.getOrElse {
+                        memberSelection.split(Regex("[,，、;；]")).map { it.trim() }.filter { it.isNotBlank() }
+                    }
                     val chosenNames = (selectedTeam?.members
                         ?: manualExpertSelection.takeIf { it.size in 2..4 }?.toList()
                         ?: requestedMembers)
