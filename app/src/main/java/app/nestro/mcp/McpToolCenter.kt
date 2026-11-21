@@ -129,17 +129,29 @@ class McpToolCenterRepository(context:Context) {
   check(prefs.edit().putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(v.map{if(it.id==id)it.copy(granted=on)else it})).commit()){"MCP 工具授权保存失败"}
  }
  fun isToolGranted(id:String)=findTool(id)?.let{it.granted&&findServer(it.serverId)?.enabled==true}==true
- fun listAudits():List<McpToolAuditRecord> = runCatching {
-  val a=JSONArray(prefs.getString(AUDIT_KEY,"[]").orEmpty())
-  (0 until a.length()).map{i->val o=a.getJSONObject(i);McpToolAuditRecord(o.getString("id"),o.getString("serverName"),o.getString("toolName"),o.optBoolean("succeeded"),o.optLong("createdAt"))}
- }.getOrDefault(emptyList())
+ fun listAudits():List<McpToolAuditRecord> {
+  val raw=prefs.getString(AUDIT_KEY,"[]").orEmpty()
+  return McpAuditCodec.decodeOrNull(raw) ?: run {
+   if(!prefs.contains(CORRUPT_AUDIT_KEY)) {
+    check(prefs.edit().putString(CORRUPT_AUDIT_KEY,raw).putLong(CORRUPT_AUDIT_AT,System.currentTimeMillis()).commit()){"无法隔离损坏的 MCP 调用审计"}
+   }
+   emptyList()
+  }
+ }
  fun recordAudit(toolId:String,succeeded:Boolean) {
   val tool=findTool(toolId) ?: return
   val rows=(listOf(McpToolAuditRecord(UUID.randomUUID().toString(),tool.serverName,tool.name,succeeded,System.currentTimeMillis()))+listAudits()).take(100)
-  val encoded=JSONArray().apply{rows.forEach{put(JSONObject().put("id",it.id).put("serverName",it.serverName).put("toolName",it.toolName).put("succeeded",it.succeeded).put("createdAt",it.createdAt))}}.toString()
-  check(prefs.edit().putString(AUDIT_KEY,encoded).commit()){"MCP 调用审计保存失败"}
+  check(prefs.edit().putString(AUDIT_KEY,McpAuditCodec.encode(rows)).commit()){"MCP 调用审计保存失败"}
  }
  companion object{private const val SERVERS_KEY="mcp_servers_v1";private const val TOOLS_KEY="mcp_tools_v1";private const val AUDIT_KEY="mcp_tool_audit_v1";private const val CORRUPT_SERVERS_KEY="mcp_servers_v1_unreadable_backup";private const val CORRUPT_SERVERS_AT="mcp_servers_v1_unreadable_backup_at";private const val CORRUPT_TOOLS_KEY="mcp_tools_v1_unreadable_backup";private const val CORRUPT_TOOLS_AT="mcp_tools_v1_unreadable_backup_at";private const val CORRUPT_AUDIT_KEY="mcp_tool_audit_v1_unreadable_backup";private const val CORRUPT_AUDIT_AT="mcp_tool_audit_v1_unreadable_backup_at"}
+}
+object McpAuditCodec {
+ fun encode(items:List<McpToolAuditRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("serverName",it.serverName).put("toolName",it.toolName).put("succeeded",it.succeeded).put("createdAt",it.createdAt))}}.toString()
+ fun decodeOrNull(raw:String):List<McpToolAuditRecord>? = runCatching {
+  require(raw.length<=256_000)
+  val a=JSONArray(raw);require(a.length()<=100)
+  (0 until a.length()).map{i->val o=a.getJSONObject(i);McpToolAuditRecord(o.getString("id"),o.getString("serverName"),o.getString("toolName"),o.getBoolean("succeeded"),o.getLong("createdAt"))}
+ }.getOrNull()
 }
 object McpToolCenterCodec {
  fun encodeServers(items:List<McpServerRecord>)=JSONArray().apply{items.forEach{put(JSONObject().put("id",it.id).put("name",it.name).put("endpoint",it.endpoint).put("enabled",it.enabled))}}.toString()
