@@ -154,56 +154,62 @@ object CoworkbenchStaticAnalyzer {
         val dependenciesRemoved = linkedSetOf<String>()
         val permissionsAdded = linkedSetOf<String>()
         val permissionsRemoved = linkedSetOf<String>()
+        fun addFinding(value: CoworkbenchFinding) {
+            if (findings.size < MAX_FINDINGS) findings.add(value)
+        }
         enriched.forEach { (proposal, before) ->
+            if (findings.size >= MAX_FINDINGS) return@forEach
             val path = CoworkbenchPolicy.safePath(proposal.path)
             val after = proposal.content
             if (path.lowercase().endsWith("androidmanifest.xml")) {
                 val oldPermissions = manifestPermissions(before.orEmpty())
                 val newPermissions = manifestPermissions(after.orEmpty())
-                permissionsAdded += newPermissions - oldPermissions
-                permissionsRemoved += oldPermissions - newPermissions
-                (newPermissions - oldPermissions).forEach { permission ->
+                permissionsAdded += (newPermissions - oldPermissions).take((MAX_DEPENDENCIES - permissionsAdded.size).coerceAtLeast(0))
+                permissionsRemoved += (oldPermissions - newPermissions).take((MAX_DEPENDENCIES - permissionsRemoved.size).coerceAtLeast(0))
+                (newPermissions - oldPermissions).take((MAX_FINDINGS - findings.size).coerceAtLeast(0)).forEach { permission ->
                     val high = permission.substringAfterLast('.').matches(
                         Regex("READ_SMS|SEND_SMS|RECEIVE_SMS|CALL_PHONE|READ_CONTACTS|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|RECORD_AUDIO|CAMERA")
                     )
-                    findings += finding("新增 Manifest 权限", if (high) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
-                        path, null, permission, "本次补丁新增权限；核对必要性、授权、隐私披露与数据用途")
+                    addFinding(finding("新增 Manifest 权限", if (high) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
+                        path, null, permission, "本次补丁新增权限；核对必要性、授权、隐私披露与数据用途"))
                 }
-                (exportedComponents(after.orEmpty()) - exportedComponents(before.orEmpty())).forEach { component ->
-                    findings += finding("新增导出组件", CoworkbenchFindingLevel.HIGH, path, null, component,
-                        "本次补丁新增对外组件；核验输入校验、权限保护和身份校验")
+                (exportedComponents(after.orEmpty()) - exportedComponents(before.orEmpty()))
+                    .take((MAX_FINDINGS - findings.size).coerceAtLeast(0)).forEach { component ->
+                    addFinding(finding("新增导出组件", CoworkbenchFindingLevel.HIGH, path, null, component,
+                        "本次补丁新增对外组件；核验输入校验、权限保护和身份校验"))
                 }
                 if (!containsTrueAttribute(before.orEmpty(), "debuggable") && containsTrueAttribute(after.orEmpty(), "debuggable")) {
-                    findings += finding("启用调试模式", CoworkbenchFindingLevel.HIGH, path, null, "android:debuggable=true",
-                        "本次补丁启用了调试模式，发布构建必须阻止该配置")
+                    addFinding(finding("启用调试模式", CoworkbenchFindingLevel.HIGH, path, null, "android:debuggable=true",
+                        "本次补丁启用了调试模式，发布构建必须阻止该配置"))
                 }
             }
             if (isBuildConfiguration(path)) {
                 val oldDeps = dependencyTokens(path, before.orEmpty())
                 val newDeps = dependencyTokens(path, after.orEmpty())
-                dependenciesAdded += newDeps - oldDeps
-                dependenciesRemoved += oldDeps - newDeps
-                (newDeps - oldDeps).forEach { dependency ->
+                dependenciesAdded += (newDeps - oldDeps).take((MAX_DEPENDENCIES - dependenciesAdded.size).coerceAtLeast(0))
+                dependenciesRemoved += (oldDeps - newDeps).take((MAX_DEPENDENCIES - dependenciesRemoved.size).coerceAtLeast(0))
+                (newDeps - oldDeps).take((MAX_FINDINGS - findings.size).coerceAtLeast(0)).forEach { dependency ->
                     val dynamic = dependency.contains("+") || dependency.contains("SNAPSHOT", true) || dependency.contains("latest.", true)
-                    findings += finding("新增构建依赖", if (dynamic) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
+                    addFinding(finding("新增构建依赖", if (dynamic) CoworkbenchFindingLevel.HIGH else CoworkbenchFindingLevel.WARNING,
                         path, null, dependency, "新增依赖需核验来源、版本、许可证和传递依赖" +
-                            if (dynamic) "；当前使用动态/快照版本" else "")
+                            if (dynamic) "；当前使用动态/快照版本" else ""))
                 }
-                (oldDeps - newDeps).forEach { dependency ->
-                    findings += finding("移除构建依赖", CoworkbenchFindingLevel.INFO, path, null, dependency,
-                        "确认移除后没有遗留引用和运行时缺失")
+                (oldDeps - newDeps).take((MAX_FINDINGS - findings.size).coerceAtLeast(0)).forEach { dependency ->
+                    addFinding(finding("移除构建依赖", CoworkbenchFindingLevel.INFO, path, null, dependency,
+                        "确认移除后没有遗留引用和运行时缺失"))
                 }
             }
             if (after != null) {
                 if (after.count { it == '\n' } + 1 > MAX_LINES_PER_FILE) {
-                    findings += finding("补丁影响分析受限", CoworkbenchFindingLevel.WARNING, path, null,
+                    addFinding(finding("补丁影响分析受限", CoworkbenchFindingLevel.WARNING, path, null,
                         "文件超过 " + MAX_LINES_PER_FILE + " 行",
-                        "静态规则与同文件数据流仅检查前 " + MAX_LINES_PER_FILE + " 行；请拆分补丁并分阶段审查")
+                        "静态规则与同文件数据流仅检查前 " + MAX_LINES_PER_FILE + " 行；请拆分补丁并分阶段审查"))
                 }
                 inspect(path, after, findings, linkedSetOf())
-                findings += CoworkbenchDataFlowAnalyzer.analyze(path, after).map { finding ->
-                    finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
-                }
+                CoworkbenchDataFlowAnalyzer.analyze(path, after)
+                    .take((MAX_FINDINGS - findings.size).coerceAtLeast(0))
+                    .map { finding -> finding.copy(evidence = redactSensitiveEvidence(finding.evidence)) }
+                    .forEach(::addFinding)
             }
         }
         return CoworkbenchChangeImpact(
