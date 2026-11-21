@@ -100,7 +100,7 @@ class NestroApplication : Application() {
     /** One process-wide tool catalog shared by Phone Agent, experts, and workflows. */
     val agentToolCatalog: AgentToolCatalog by lazy { InMemoryAgentToolCatalog() }
     val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
-    val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog) }
+    val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao())) }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
