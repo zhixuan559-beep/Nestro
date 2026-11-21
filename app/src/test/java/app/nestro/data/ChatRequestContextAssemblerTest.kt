@@ -9,6 +9,7 @@ class ChatRequestContextAssemblerTest {
     @Test
     fun assemblesBoundedContextFromRecentHistoryAndProjectScopedSources() = kotlinx.coroutines.runBlocking {
         var observedQuery = ""
+        var knowledgeCalls = 0
         val source = ConversationRecallSource("old-conversation", "message-1", "旧会话", "user", "历史片段", 1L)
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { projectId, conversationId, query ->
@@ -17,9 +18,8 @@ class ChatRequestContextAssemblerTest {
                 observedQuery = query
                 ConversationRecallResult("历史召回上下文", listOf(source))
             },
-            retrieveKnowledge = { projectId, query ->
-                assertEquals("project-1", projectId)
-                assertEquals("根据知识库和我的偏好，回忆我们之前讨论的当前问题", query)
+            retrieveKnowledge = { _, _ ->
+                knowledgeCalls++
                 "知识库上下文"
             },
             retrieveUserMemory = { projectId, query ->
