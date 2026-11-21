@@ -213,7 +213,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(asset.kind == MediaAssetKind.AUDIO || asset.kind == MediaAssetKind.VIDEO) { "当前素材不含可处理音频" }
             require(operation.matches(Regex("[A-Za-z0-9_-]{1,40}"))) { "音频处理操作名称无效" }
             onProgress(0.05f)
-            val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation))
+            val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation), expectedContentTypePrefix = "audio/")
             onProgress(0.9f)
             require(bytes.isNotEmpty() && bytes.size <= MAX_RESPONSE_BYTES) { "服务商返回的音频为空或超过 100 MB" }
             val output = File.createTempFile("nestro-media-ai-", ".audio")
@@ -285,7 +285,13 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             }
         }
 
-    private fun multipart(path: String, file: File, mimeType: String, fields: Map<String, String>): ByteArray {
+    private fun multipart(
+        path: String,
+        file: File,
+        mimeType: String,
+        fields: Map<String, String>,
+        expectedContentTypePrefix: String? = null
+    ): ByteArray {
         require(file.isFile && file.length() in 1..MAX_UPLOAD_BYTES) { "媒体文件不存在或超过 100 MB 上传限制" }
         require(mimeType.matches(Regex("[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+"))) { "媒体 MIME 类型无效" }
         val boundary = "NestroMedia-${UUID.randomUUID()}"
@@ -312,7 +318,12 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             }
             val status = connection.responseCode
             require(status in 200..299) { "媒体服务请求失败（HTTP $status）" }
-            val stream = if (connection.contentType.orEmpty().startsWith("audio/")) connection.inputStream else connection.inputStream
+            expectedContentTypePrefix?.let { prefix ->
+                require(connection.contentType.orEmpty().substringBefore(';').startsWith(prefix, ignoreCase = true)) {
+                    "媒体服务返回格式不正确，预期 $prefix"
+                }
+            }
+            val stream = connection.inputStream
             val output = ByteArrayOutputStream()
             stream.use { input ->
                 val buffer = ByteArray(8192)
