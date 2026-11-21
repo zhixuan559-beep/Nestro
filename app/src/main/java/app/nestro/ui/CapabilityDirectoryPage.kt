@@ -40,6 +40,10 @@ fun CapabilityDirectoryPage() {
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var pendingBundle by remember { mutableStateOf<SkillBundle?>(null) }
+    var pendingPlan by remember { mutableStateOf<app.nestro.data.SkillDependencyResolver.InstallPlan?>(null) }
+    var authorityKey by remember { mutableStateOf(prefs.getString("skill_trust_authority_key_v1", "") ?: "") }
+    var revocationUrl by remember { mutableStateOf(prefs.getString("skill_trust_revocation_url_v1", "") ?: "") }
+    val trustStore=remember(prefs) { app.nestro.data.SkillTrustStore(prefs) }
     var installStatus by remember { mutableStateOf("") }
     val rawSkills=prefs.getString("skills","{}") ?: "{}"
     val rawMetadata=prefs.getString("skill_metadata_v1","{}") ?: "{}"
@@ -79,7 +83,7 @@ fun CapabilityDirectoryPage() {
     fun refreshSignedCatalog(url: String, key: String) {
         loading=true
         scope.launch {
-            val result=withContext(Dispatchers.IO) { runCatching { SkillCommunityClient.fetchCatalog(url,key) } }
+            val result=withContext(Dispatchers.IO) { runCatching { require(!trustStore.isSignerRevoked(key)) { "当前目录签名公钥已被独立信任根撤销" }; SkillCommunityClient.fetchCatalog(url,key) } }
             result.fold({ verified ->
                 val fingerprint=runCatching { SkillCommunityClient.fingerprint(key) }.getOrDefault("不可用")
                 val saved=prefs.edit().putString("skill_catalog_url_v1",url).putString("skill_catalog_key_v1",key).commit()
@@ -100,6 +104,10 @@ fun CapabilityDirectoryPage() {
         Text("社区目录必须由固定 RSA 公钥验签；技能包必须匹配签名目录中的 SHA-256。安装前展示权限声明，不会自动授予 Android 权限。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         OutlinedTextField(trustedKey,{trustedKey=it},label={Text("受信任 RSA 公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
+        OutlinedTextField(authorityKey,{authorityKey=it},label={Text("独立信任根公钥（Base64 X.509）")},modifier=Modifier.fillMaxWidth(),minLines=2)
+        OutlinedButton(enabled=authorityKey.isNotBlank(),onClick={ val result=runCatching { trustStore.pinAuthorityKey(authorityKey.trim()) }; status=result.fold({ "独立信任根已固定：SHA-256 "+trustStore.authorityFingerprint() },{ "信任根固定失败："+(it.message ?: "无效公钥") }) },modifier=Modifier.fillMaxWidth()) { Text("固定独立信任根") }
+        OutlinedTextField(revocationUrl,{revocationUrl=it},label={Text("签名密钥撤销清单 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+        OutlinedButton(enabled=revocationUrl.startsWith("https://") && trustStore.authorityFingerprint().isNotBlank() && !loading,onClick={ loading=true; scope.launch { val result=withContext(Dispatchers.IO) { runCatching { trustStore.refreshRevocations(revocationUrl.trim()) } }; status=result.fold({ count -> prefs.edit().putString("skill_trust_revocation_url_v1",revocationUrl.trim()).commit(); "撤销清单已验签并更新，累计撤销 $count 个签名者。" },{ "撤销清单更新失败："+(it.message ?: "验证失败") }); loading=false } },modifier=Modifier.fillMaxWidth()) { Text("验证并更新撤销清单") }
         Button(enabled=!loading && catalogUrl.startsWith("https://") && trustedKey.isNotBlank(),onClick={
             val candidateKey=trustedKey.trim()
             val pinned=pinnedTrustedKey.trim()
