@@ -158,7 +158,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
     }
 
     private fun fail(projectId:String,taskId:String,message:String):Result {
-        runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.FAILED,error=message) }
+        runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.FAILED,errorMessage=message) }
         return Result.failure()
     }
 
