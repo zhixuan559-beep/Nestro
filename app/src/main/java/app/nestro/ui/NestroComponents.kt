@@ -45,11 +45,12 @@ internal fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null) {
+internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null, onOpenMediaSetup: (() -> Unit)? = null) {
     val user = message.role == "user"
     val videoMarker = Regex("""\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\]""")
+    val setupMarker = "[NESTRO_MEDIA_PROVIDER_SETUP]"
     val videoAssetId = videoMarker.find(message.content)?.groupValues?.getOrNull(1)
-    val visibleContent = message.content.replace(videoMarker, "").trim()
+    val visibleContent = message.content.replace(videoMarker, "").replace(setupMarker, "").trim()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
             Surface(
@@ -58,6 +59,16 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
                 Text(visibleContent, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!user && setupMarker in message.content && onOpenMediaSetup != null) {
+                TextButton(
+                    onClick = onOpenMediaSetup,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Outlined.Settings, contentDescription = null, tint = Mint, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("配置视频模型 API", color = Mint, style = MaterialTheme.typography.labelMedium)
+                }
             }
             if (!user && videoAssetId != null && onOpenVideo != null) {
                 TextButton(
