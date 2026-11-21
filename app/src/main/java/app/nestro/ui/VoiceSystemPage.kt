@@ -342,8 +342,10 @@ fun VoiceSystemPage() {
                         mediaPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }
                         audioFile?.delete()
                         val file = File.createTempFile("nestro-voice-", ".audio", context.cacheDir)
+                        audioFile = file
                         file.writeBytes(audio.bytes)
                         val player = MediaPlayer()
+                        mediaPlayer = player
                         player.setDataSource(file.absolutePath)
                         player.setOnPreparedListener {
                             it.start()
@@ -364,8 +366,6 @@ fun VoiceSystemPage() {
                             status = "远程音频播放失败"
                             true
                         }
-                        mediaPlayer = player
-                        audioFile = file
                         player.prepareAsync()
                     } catch (error: Exception) {
                         runCatching { mediaPlayer?.release() }
