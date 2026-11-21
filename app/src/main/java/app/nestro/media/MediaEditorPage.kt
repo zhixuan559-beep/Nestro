@@ -76,6 +76,7 @@ fun MediaEditorPage(
     var aiAction by remember(projectId) { mutableStateOf("") }
     var showAiConsent by remember(projectId) { mutableStateOf(false) }
     var detectedScenes by remember(projectId) { mutableStateOf(emptyList<MediaScene>()) }
+    var imageAnalysis by remember(projectId) { mutableStateOf("") }
     var isSaving by remember(projectId) { mutableStateOf(false) }
     val player = remember(context) { CompositionPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
@@ -242,6 +243,7 @@ fun MediaEditorPage(
             "transcribe" -> MediaIntelligenceCapability.TRANSCRIPTION
             "scenes" -> MediaIntelligenceCapability.SCENE_DETECTION
             "audio-clean" -> MediaIntelligenceCapability.AUDIO_PROCESSING
+            "image" -> MediaIntelligenceCapability.IMAGE_UNDERSTANDING
             else -> null
         }
         if (requiredCapability == null || requiredCapability !in provider.capabilities) {
@@ -278,6 +280,7 @@ fun MediaEditorPage(
                                     "audio-clean" -> MediaProjectStore.importGeneratedFile(
                                         context, projectId, provider.processAudio(asset, file, "noise_reduction"), MediaAssetKind.AUDIO
                                     )
+                                    "image" -> provider.analyzeImage(asset, file, "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
                                     else -> error("不支持的媒体 AI 操作")
                                 }
                             }
@@ -298,7 +301,11 @@ fun MediaEditorPage(
                                 }
                                 "audio-clean" -> {
                                     reload()
-                                    status = "音频降噪结果已作为新素材保存，原始音频未修改。"
+                                    status = "音频处理结果已作为新素材保存，原始音频未修改。"
+                                }
+                                "image" -> {
+                                    imageAnalysis = value as String
+                                    status = "图片理解完成。"
                                 }
                             }
                         }.onFailure { status = "媒体 AI 处理失败：" + (it.message ?: "未知错误") }
@@ -522,7 +529,13 @@ fun MediaEditorPage(
             OutlinedButton(enabled = selected?.kind == MediaAssetKind.VIDEO,
                 onClick = { aiAction = "scenes"; performAiAction() }) { Text("识别场景") }
             OutlinedButton(enabled = selected?.kind == MediaAssetKind.AUDIO,
-                onClick = { aiAction = "audio-clean"; performAiAction() }) { Text("音频降噪") }
+                onClick = { aiAction = "audio-clean"; performAiAction() }) { Text("音频处理") }
+            OutlinedButton(enabled = selected?.kind == MediaAssetKind.IMAGE,
+                onClick = { aiAction = "image"; performAiAction() }) { Text("理解图片") }
+        }
+        if (imageAnalysis.isNotBlank()) {
+            Text("图片理解结果", style = MaterialTheme.typography.titleSmall)
+            Text(imageAnalysis, style = MaterialTheme.typography.bodySmall)
         }
         detectedScenes.forEach { scene ->
             Text(formatDuration(scene.startMs) + " - " + formatDuration(scene.endMs) + " · " + scene.title,
