@@ -63,6 +63,8 @@ fun CalendarPage(repository: CalendarRepository) {
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showEditor by remember { mutableStateOf(false) }
     var showCompleted by remember { mutableStateOf(false) }
+    var calendarView by remember { mutableStateOf("MONTH") }
+    var pendingDelete by remember { mutableStateOf<CalendarEvent?>(null) }
     var editing by remember { mutableStateOf<CalendarEvent?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
@@ -148,9 +150,14 @@ fun CalendarPage(repository: CalendarRepository) {
     }
     val firstWeekdayOffset = visibleMonth.atDay(1).dayOfWeek.value - 1
     val dayCount = visibleMonth.lengthOfMonth()
-    val cells = (0 until 42).map { index ->
-        val day = index - firstWeekdayOffset + 1
-        if (day in 1..dayCount) visibleMonth.atDay(day) else null
+    val cells: List<LocalDate?> = if (calendarView == "WEEK") {
+        val monday = selectedDate.minusDays((selectedDate.dayOfWeek.value - 1).toLong())
+        (0..6).map { monday.plusDays(it.toLong()) }
+    } else {
+        (0 until 42).map { index ->
+            val day = index - firstWeekdayOffset + 1
+            if (day in 1..dayCount) visibleMonth.atDay(day) else null
+        }
     }
 
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -181,7 +188,7 @@ fun CalendarPage(repository: CalendarRepository) {
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
-            modifier = Modifier.fillMaxWidth().height(252.dp),
+            modifier = Modifier.fillMaxWidth().height(if (calendarView == "WEEK") 46.dp else 270.dp),
             userScrollEnabled = false,
             verticalArrangement = Arrangement.spacedBy(3.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -239,12 +246,7 @@ fun CalendarPage(repository: CalendarRepository) {
                                     refresh()
                                 }
                             }) { Text(if (event.completed) "恢复" else "完成") }
-                            TextButton(onClick = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) { repository.delete(event.id) }
-                                    refresh()
-                                }
-                            }) { Text("删除") }
+                            TextButton(onClick = { pendingDelete = event }) { Text("删除") }
                         }
                         val start = Instant.ofEpochMilli(occurrence.startAt).atZone(zone)
                         val end = Instant.ofEpochMilli(occurrence.endAt).atZone(zone)
@@ -261,6 +263,26 @@ fun CalendarPage(repository: CalendarRepository) {
             }
         }
         if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (pendingDelete != null) {
+        val target = pendingDelete!!
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除日程？") },
+            text = { Text("删除「${target.title}」后，关联的本机提醒也会取消。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    scope.launch {
+                        withContext(Dispatchers.IO) { repository.delete(target.id) }
+                        status = "日程已删除"
+                        refresh()
+                    }
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
+        )
     }
 
     if (showEditor) {
@@ -353,11 +375,22 @@ private fun CalendarEventEditor(
                 }
                 OutlinedTextField(location, { location = it.take(300) }, label = { Text("地点（可选）" ) }, singleLine = true)
                 OutlinedTextField(description, { description = it.take(4000) }, label = { Text("备注（可选）") }, minLines = 2)
-                OutlinedTextField(
-                    recurrence, { value ->
-                        recurrence = value.uppercase(Locale.ROOT).take(8)
-                    }, label = { Text("重复规则：NONE / DAILY / WEEKLY / MONTHLY / YEARLY") }, singleLine = true
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("重复")
+                    Spacer(Modifier.size(8.dp))
+                    TextButton(onClick = {
+                        val values = listOf(CalendarRules.NONE, CalendarRules.DAILY, CalendarRules.WEEKLY, CalendarRules.MONTHLY, CalendarRules.YEARLY)
+                        recurrence = values[(values.indexOf(recurrence).coerceAtLeast(0) + 1) % values.size]
+                    }) {
+                        Text(when (recurrence) {
+                            CalendarRules.DAILY -> "每天"
+                            CalendarRules.WEEKLY -> "每周"
+                            CalendarRules.MONTHLY -> "每月"
+                            CalendarRules.YEARLY -> "每年"
+                            else -> "不重复"
+                        })
+                    }
+                }
                 OutlinedTextField(
                     reminder, { reminder = it.filter { ch -> ch.isDigit() || ch == '-' }.take(5) },
                     label = { Text("提前提醒分钟（-1 表示关闭；0/5/10/15/30/60/1440）") }, singleLine = true
