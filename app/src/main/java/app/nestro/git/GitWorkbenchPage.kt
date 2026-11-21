@@ -42,6 +42,8 @@ fun GitWorkbenchPage(context: Context) {
     var email by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var newBranch by remember { mutableStateOf("") }
+    var newFilePath by remember { mutableStateOf("") }
+    var pendingDeleteFile by remember { mutableStateOf("") }
     var revertTarget by remember { mutableStateOf<GitCommitRecord?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -239,18 +241,34 @@ fun GitWorkbenchPage(context: Context) {
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text((if (entry.directory) "▸ " else "· ") + entry.path) }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(newFilePath, { newFilePath = it }, label = { Text("新建文件相对路径") }, modifier = Modifier.weight(1f), singleLine = true)
+                        TextButton(enabled = !loading && newFilePath.isNotBlank(), onClick = {
+                            val target = if (folder.isBlank()) newFilePath.trim() else folder + "/" + newFilePath.trim()
+                            scope.launch {
+                                loading = true
+                                runCatching { repo.writeFile(selectedLocal.id, target, "") }
+                                    .onSuccess { file = target; editor = ""; newFilePath = ""; status = "空白文件已创建"; refreshWorkspace(selectedLocal.id) }
+                                    .onFailure { status = it.message ?: "新建文件失败" }
+                                loading = false
+                            }
+                        }) { Text("新建") }
+                    }
                     if (file.isNotBlank()) {
                         Text("编辑：" + file, style = MaterialTheme.typography.titleSmall)
                         OutlinedTextField(editor, { editor = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp), minLines = 8, maxLines = 24)
-                        Button(enabled = !loading, onClick = {
-                            scope.launch {
-                                loading = true
-                                runCatching { repo.writeFile(selectedLocal.id, file, editor) }
-                                    .onSuccess { status = "本地文件已保存"; refreshWorkspace(selectedLocal.id) }
-                                    .onFailure { status = it.message ?: "保存失败" }
-                                loading = false
-                            }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("保存文件") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(enabled = !loading, onClick = {
+                                scope.launch {
+                                    loading = true
+                                    runCatching { repo.writeFile(selectedLocal.id, file, editor) }
+                                        .onSuccess { status = "本地文件已保存"; refreshWorkspace(selectedLocal.id) }
+                                        .onFailure { status = it.message ?: "保存失败" }
+                                    loading = false
+                                }
+                            }, modifier = Modifier.weight(1f)) { Text("保存文件") }
+                            TextButton(enabled = !loading, onClick = { pendingDeleteFile = file }) { Text("删除文件") }
+                        }
                     }
                     HorizontalDivider()
                     Text("提交", style = MaterialTheme.typography.titleSmall)
@@ -290,6 +308,29 @@ fun GitWorkbenchPage(context: Context) {
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (pendingDeleteFile.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteFile = "" },
+            title = { Text("删除本地文件？") },
+            text = { Text("将从本地工作区删除 " + pendingDeleteFile + "。该变更尚未提交，可以通过 Git 恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = selectedLocal
+                    val path = pendingDeleteFile
+                    pendingDeleteFile = ""
+                    if (target != null) scope.launch {
+                        loading = true
+                        runCatching { repo.deleteFile(target.id, path) }
+                            .onSuccess { file = ""; editor = ""; status = "文件已删除"; refreshWorkspace(target.id) }
+                            .onFailure { status = it.message ?: "删除失败" }
+                        loading = false
+                    }
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteFile = "" }) { Text("取消") } }
+        )
     }
 
     revertTarget?.let { target ->
