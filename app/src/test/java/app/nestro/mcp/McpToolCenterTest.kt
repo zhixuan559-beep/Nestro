@@ -56,4 +56,27 @@ class McpToolCenterTest {
  @Test fun auditCodecRejectsMissingRequiredFields(){
   assertNull(McpAuditCodec.decodeOrNull("""[{"id":"a","serverName":"Docs","toolName":"search","createdAt":123}]"""))
  }
+ @Test fun damagedAuditIsPreservedBeforeRecoveryAndNotOverwritten(){
+  val damaged="""[{"id":"broken","serverName":"Docs"}]"""
+  var preserved:String?=null
+  assertTrue(McpAuditRecovery.decodeOrPreserve(damaged,false){preserved=it}.isEmpty())
+  assertEquals(damaged,preserved)
+  preserved="existing-backup"
+  assertTrue(McpAuditRecovery.decodeOrPreserve(damaged,true){preserved=it}.also{assertTrue(it.isEmpty())}.isEmpty())
+  assertEquals("existing-backup",preserved)
+ }
+ @Test fun validAuditDoesNotTriggerQuarantine(){
+  var quarantined=false
+  val rows=listOf(McpToolAuditRecord("a","Docs","search",true,123L))
+  assertEquals(rows,McpAuditRecovery.decodeOrPreserve(McpAuditCodec.encode(rows),false){quarantined=true})
+  assertFalse(quarantined)
+ }
+ @Test fun failedAuditQuarantinePersistenceIsNotSilentlyIgnored(){
+  var threw=false
+  try {
+   McpAuditRecovery.decodeOrPreserve("not-json",false){error("disk write failed")}
+  } catch(e:IllegalStateException) { threw=e.message=="disk write failed" }
+  assertTrue(threw)
+ }
+
 }
