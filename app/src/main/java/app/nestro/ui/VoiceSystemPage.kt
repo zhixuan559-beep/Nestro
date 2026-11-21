@@ -5,6 +5,15 @@ import app.nestro.speech.AndroidTextToSpeechController
 import app.nestro.speech.OpenAiCompatibleSpeechOutputProvider
 import app.nestro.speech.SpeechProviderConfig
 import app.nestro.speech.SpeechProviderConfigStore
+import app.nestro.speech.OpenAiRealtimeVoiceProvider
+import app.nestro.speech.RealtimeVoiceAudioController
+import app.nestro.speech.RealtimeVoiceListener
+import app.nestro.speech.RealtimeVoiceSession
+import app.nestro.speech.SpeechAudio
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.media.MediaPlayer
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -47,6 +56,9 @@ fun VoiceSystemPage() {
     var remoteBusy by remember { mutableStateOf(false) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
+    var realtimeSession by remember { mutableStateOf<RealtimeVoiceSession?>(null) }
+    var realtimeAudio by remember { mutableStateOf<RealtimeVoiceAudioController?>(null) }
+    var realtimeTranscript by remember { mutableStateOf("") }
     val voicePrefs = remember(context) {
         context.getSharedPreferences("nestro_voice_settings", Context.MODE_PRIVATE)
     }
@@ -92,9 +104,67 @@ fun VoiceSystemPage() {
             }
         })
     }
+    fun connectRealtime() {
+        val config = providerStore.read()
+        if (config == null) {
+            status = "请先保存远程语音服务配置"
+            return
+        }
+        try {
+            lateinit var session: RealtimeVoiceSession
+            session = OpenAiRealtimeVoiceProvider().connect(config, object : RealtimeVoiceListener {
+                override fun onConnected() {
+                    try {
+                        val audio = RealtimeVoiceAudioController(session) { message -> status = message }
+                        audio.start()
+                        realtimeAudio = audio
+                        realtimeSession = session
+                        status = "实时双向语音已连接，可以直接说话"
+                    } catch (error: Throwable) {
+                        session.close()
+                        status = error.message ?: "实时音频设备启动失败"
+                    }
+                }
+
+                override fun onTranscript(text: String, isFinal: Boolean) {
+                    if (isFinal) realtimeTranscript = (realtimeTranscript + text + "\\n").takeLast(2_000)
+                    status = if (isFinal) "识别完成：$text" else "实时转写：$text"
+                }
+
+                override fun onAudio(audio: SpeechAudio) {
+                    runCatching { realtimeAudio?.play(audio) }
+                        .onFailure { status = it.message ?: "实时音频播放失败" }
+                }
+
+                override fun onError(message: String) {
+                    status = message
+                }
+
+                override fun onClosed() {
+                    realtimeAudio?.close()
+                    realtimeAudio = null
+                    realtimeSession = null
+                    status = "实时语音连接已断开"
+                }
+            })
+            realtimeSession = session
+            status = "正在连接实时语音服务…"
+        } catch (error: Throwable) {
+            status = error.message ?: "实时语音连接失败"
+        }
+    }
+
+    val realtimePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) connectRealtime() else status = "需要麦克风权限才能使用实时语音"
+    }
+
     DisposableEffect(controller) {
         onDispose {
             controller.close()
+            realtimeAudio?.close()
+            realtimeSession?.close()
             runCatching { mediaPlayer?.stop() }
             runCatching { mediaPlayer?.release() }
             mediaPlayer = null
@@ -267,6 +337,44 @@ fun VoiceSystemPage() {
                 }
             }
         ) { Text(if (remoteBusy) "正在合成…" else "远程朗读预览") }
+        Text("实时双向语音")
+        Text(
+            "通过加密保存的服务配置建立实时连接；音频将直接发送到你选择的服务商。麦克风权限仅在启动时请求。",
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = providerConfigured && providerModel.isNotBlank() && realtimeSession == null,
+                onClick = {
+                    if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        connectRealtime()
+                    } else {
+                        realtimePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+            ) { Text("开启实时语音") }
+            OutlinedButton(
+                enabled = realtimeSession != null,
+                onClick = {
+                    realtimeAudio?.close()
+                    realtimeAudio = null
+                    realtimeSession?.close()
+                    realtimeSession = null
+                    status = "已结束实时语音"
+                }
+            ) { Text("结束连接") }
+        }
+        OutlinedButton(
+            enabled = realtimeSession != null && speechText.isNotBlank(),
+            onClick = {
+                runCatching { realtimeSession?.sendText(speechText) }
+                    .onFailure { status = it.message ?: "文本发送失败" }
+            }
+        ) { Text("向实时语音发送文本") }
+        if (realtimeTranscript.isNotBlank()) {
+            Text("实时转写记录", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+            Text(realtimeTranscript, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+        }
         Text(status)
     }
 }
