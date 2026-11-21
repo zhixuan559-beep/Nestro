@@ -1,6 +1,7 @@
 package app.nestro
 
 import android.app.Application
+import app.nestro.calendar.CalendarRepository
 import app.nestro.mcp.McpToolCenterRepository
 import app.nestro.mcp.McpToolCenterService
 import app.nestro.agent.AgentTaskCoordinator
@@ -59,6 +60,7 @@ import kotlinx.coroutines.sync.withLock
  */
 class NestroApplication : Application() {
     val database: NestroDatabase by lazy { NestroDatabase.get(this) }
+    val calendarRepository: CalendarRepository by lazy { CalendarRepository(this) }
     val conversationPersistenceService: ConversationPersistenceService by lazy {
         ConversationPersistenceService(database, applicationContext)
     }
