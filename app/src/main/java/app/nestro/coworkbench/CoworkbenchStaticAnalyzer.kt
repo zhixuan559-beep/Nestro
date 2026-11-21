@@ -195,6 +195,11 @@ object CoworkbenchStaticAnalyzer {
                 }
             }
             if (after != null) {
+                if (after.count { it == '\n' } + 1 > MAX_LINES_PER_FILE) {
+                    findings += finding("补丁影响分析受限", CoworkbenchFindingLevel.WARNING, path, null,
+                        "文件超过 " + MAX_LINES_PER_FILE + " 行",
+                        "静态规则与同文件数据流仅检查前 " + MAX_LINES_PER_FILE + " 行；请拆分补丁并分阶段审查")
+                }
                 inspect(path, after, findings, linkedSetOf())
                 findings += CoworkbenchDataFlowAnalyzer.analyze(path, after).map { finding ->
                     finding.copy(evidence = redactSensitiveEvidence(finding.evidence))
