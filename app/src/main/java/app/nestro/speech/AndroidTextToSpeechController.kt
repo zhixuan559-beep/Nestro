@@ -25,10 +25,10 @@ class AndroidTextToSpeechController(
     }
 
     private val appContext = context.applicationContext
-    private var engine: TextToSpeech? = null
-    private var initialized = false
+    @Volatile private var engine: TextToSpeech? = null
+    @Volatile private var initialized = false
     @Volatile private var closed = false
-    private var currentUtteranceId: String? = null
+    @Volatile private var currentUtteranceId: String? = null
 
     init {
         engine = TextToSpeech(appContext) { status ->
