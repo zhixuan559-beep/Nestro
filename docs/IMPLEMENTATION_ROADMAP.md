@@ -253,6 +253,7 @@
 - [x] Android 端仅连接用户配置的 HTTPS 远程服务，不承诺启动任意本地 MCP Server；stdio 与模型原生 tool-call schema 适配不在本模块范围内。
 
 #### 2B. Git 工作台
+> **2026-11-21 模块14开发记录：** 已建立 `feature/module-14-github-workbench` 分支；GitHub/GitLab/Gitee PAT 授权、Keystore 凭据加密、远程仓库搜索/克隆、JGit 本地仓库分支/Pull/Push/Commit、手机文件浏览编辑/新建删除、Diff/提交历史/反向回滚与冲突处理主体代码已落地。当前仍在静态复核与异常恢复补齐阶段；Kotlin 编译/JVM 测试、模拟器与真机验收均未执行。
 - [ ] GitHub/GitLab/Gitee 授权与凭据安全存储。
 - [ ] 仓库浏览、搜索、clone、pull、push、commit、branch、历史和回滚。
 - [ ] 手机端代码查看/编辑、diff、冲突处理和变更审查。
