@@ -61,4 +61,18 @@ class CoworkbenchReportParserTest {
         assertTrue(CoworkbenchReportParser.parseSbom("report.json", "x".repeat(1_000_001)).isEmpty())
         assertFalse(CoworkbenchReportParser.parseJunitXml("report.txt", "<testsuite tests=\"1\"/>") != null)
     }
+    @Test
+    fun failedTestReportPreventsSuccessfulValidationClassification() {
+        val result = CoworkbenchValidationResult(
+            runId = 7L,
+            status = "completed",
+            conclusion = "success",
+            url = "https://github.com/example/repo/actions/runs/7",
+            createdAt = "2026-11-22T00:00:00Z",
+            testReports = listOf(CoworkbenchTestReport("TEST-sample.xml", 3, 2, 1, 0, 0))
+        )
+        assertFalse(result.successful)
+        assertEquals(1, result.reportedTestFailures)
+    }
+
 }
