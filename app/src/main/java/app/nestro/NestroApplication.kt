@@ -170,10 +170,10 @@ class NestroApplication : Application() {
                     return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "视频任务提交失败")
                 }
                 var latest = task
-                repeat(75) {
+                for (attempt in 0 until 75) {
                     delay(2_000)
                     latest = MediaAiTaskStore.read(this@NestroApplication, projectId, task.id) ?: latest
-                    if (latest.status in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED)) return@repeat
+                    if (latest.status in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED)) break
                 }
                 when (latest.status) {
                     MediaAiTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
