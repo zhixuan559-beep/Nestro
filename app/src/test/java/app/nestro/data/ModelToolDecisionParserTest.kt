@@ -31,12 +31,12 @@ class ModelToolDecisionParserTest {
 
     @Test
     fun parsesStreamableDirectAndToolPrefixes() {
-        val direct = ModelToolDecisionParser.parse("DIRECT\\n答案正文")
+        val direct = ModelToolDecisionParser.parse("DIRECT\n答案正文")
         assertEquals("reply", direct?.action)
         assertEquals("答案正文", direct?.text)
 
         val tool = ModelToolDecisionParser.parse(
-            "TOOL\\n" + """{"tool_id":"knowledge.search","arguments":{"query":"项目文档"}}"""
+            "TOOL\n" + """{"tool_id":"knowledge.search","arguments":{"query":"项目文档"}}"""
         )
         assertEquals("tool", tool?.action)
         assertEquals("knowledge.search", tool?.toolId)
