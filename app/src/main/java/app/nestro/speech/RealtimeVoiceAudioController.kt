@@ -35,13 +35,18 @@ class RealtimeVoiceAudioController(
             running.set(false)
             error("当前设备不支持 24 kHz PCM 音频")
         }
-        val input = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            max(minInput * 2, FRAME_BYTES * 2)
-        )
+        val input = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                max(minInput * 2, FRAME_BYTES * 2)
+            )
+        } catch (error: Throwable) {
+            running.set(false)
+            throw error
+        }
         if (input.state != AudioRecord.STATE_INITIALIZED) {
             input.release()
             running.set(false)
