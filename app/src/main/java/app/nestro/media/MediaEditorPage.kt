@@ -193,6 +193,11 @@ fun MediaEditorPage(
                     break
                 }
                 mediaAiProgress = task.progress / 100f
+                if (task.status == MediaAiTaskStatus.COMPLETED && task.resultConsumed) {
+                    mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                    activeMediaAiTaskId = ""
+                    break
+                }
                 if (task.status == MediaAiTaskStatus.COMPLETED) {
                     val applyResult = runCatching {
                         val result = JSONObject(task.resultJson)
@@ -228,6 +233,7 @@ fun MediaEditorPage(
                     withContext(Dispatchers.IO) {
                         MediaAiTaskStore.update(context = context, projectId = projectId, taskId = task.id,
                             status = MediaAiTaskStatus.COMPLETED, resultConsumed = true, errorMessage = applyError)
+                        mediaAiTasks = MediaAiTaskStore.list(context, projectId)
                     }
                     mediaAiRunning = false
                     activeMediaAiTaskId = ""
