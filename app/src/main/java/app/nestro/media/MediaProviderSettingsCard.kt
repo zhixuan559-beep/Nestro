@@ -66,6 +66,32 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedButton(
+                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank(),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                MediaProviderConnectionTest.run(
+                                    MediaProviderConfig(
+                                        displayName = displayName,
+                                        baseUrl = baseUrl,
+                                        apiKey = apiKey,
+                                        model = model,
+                                        transcriptionPath = transcriptionPath,
+                                        scenePath = scenePath,
+                                        audioProcessPath = audioPath
+                                    )
+                                )
+                            }
+                        }
+                        status = result.fold({ it }, { "连接测试失败："+(it.message ?: "服务不可用") })
+                        busy = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (busy) "测试中…" else "测试服务连接") }
             Button(
                 enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank(),
                 onClick = {
