@@ -35,6 +35,7 @@ fun GitWorkbenchPage(context: Context) {
     var folder by remember { mutableStateOf("") }
     var file by remember { mutableStateOf("") }
     var editor by remember { mutableStateOf("") }
+    var originalEditor by remember { mutableStateOf("") }
     var changes by remember { mutableStateOf(emptyList<GitChangeRecord>()) }
     var patch by remember { mutableStateOf("") }
     var branches by remember { mutableStateOf(emptyList<String>()) }
@@ -256,9 +257,13 @@ fun GitWorkbenchPage(context: Context) {
                         TextButton(onClick = {
                             if (entry.directory) folder = entry.path
                             else scope.launch {
+                                if (file.isNotBlank() && editor != originalEditor) {
+                                    status = "当前文件有未保存修改，请先保存后再切换。"
+                                    return@launch
+                                }
                                 loading = true
                                 runCatching { repo.readFile(selectedLocal.id, entry.path) }
-                                    .onSuccess { file = entry.path; editor = it; status = "已打开 " + file }
+                                    .onSuccess { file = entry.path; editor = it; originalEditor = it; status = "已打开 " + file }
                                     .onFailure { status = it.message ?: "读取失败" }
                                 loading = false
                             }
@@ -270,8 +275,13 @@ fun GitWorkbenchPage(context: Context) {
                             val target = if (folder.isBlank()) newFilePath.trim() else folder + "/" + newFilePath.trim()
                             scope.launch {
                                 loading = true
+                                if (file.isNotBlank() && editor != originalEditor) {
+                                    status = "当前文件有未保存修改，请先保存后再新建文件。"
+                                    loading = false
+                                    return@launch
+                                }
                                 runCatching { repo.writeFile(selectedLocal.id, target, "") }
-                                    .onSuccess { file = target; editor = ""; newFilePath = ""; status = "空白文件已创建"; refreshWorkspace(selectedLocal.id) }
+                                    .onSuccess { file = target; editor = ""; originalEditor = ""; newFilePath = ""; status = "空白文件已创建"; refreshWorkspace(selectedLocal.id) }
                                     .onFailure { status = it.message ?: "新建文件失败" }
                                 loading = false
                             }
@@ -285,7 +295,7 @@ fun GitWorkbenchPage(context: Context) {
                                 scope.launch {
                                     loading = true
                                     runCatching { repo.writeFile(selectedLocal.id, file, editor) }
-                                        .onSuccess { status = "本地文件已保存"; refreshWorkspace(selectedLocal.id) }
+                                        .onSuccess { originalEditor = editor; status = "本地文件已保存"; refreshWorkspace(selectedLocal.id) }
                                         .onFailure { status = it.message ?: "保存失败" }
                                     loading = false
                                 }
@@ -385,7 +395,7 @@ fun GitWorkbenchPage(context: Context) {
                     if (target != null) scope.launch {
                         loading = true
                         runCatching { repo.deleteFile(target.id, path) }
-                            .onSuccess { file = ""; editor = ""; status = "文件已删除"; refreshWorkspace(target.id) }
+                            .onSuccess { file = ""; editor = ""; originalEditor = ""; status = "文件已删除"; refreshWorkspace(target.id) }
                             .onFailure { status = it.message ?: "删除失败" }
                         loading = false
                     }
