@@ -34,7 +34,12 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 @Composable
-fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
+fun AiCoworkbenchPage(
+    onBack: () -> Unit,
+    initialPatchJson: String,
+    onPatchConsumed: () -> Unit,
+    onUseChatPrompt: (String) -> Unit
+) {
     val context = LocalContext.current
     val git = remember { GitWorkbenchRepository(context) }
     val service = remember { AiCoworkbenchService(context, git) }
@@ -53,6 +58,14 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
     LaunchedEffect(selectedRepoId) { if (selectedRepoId.isNotBlank()) snapshotHistory = runCatching { service.listSnapshots(selectedRepoId) }.getOrDefault(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    LaunchedEffect(initialPatchJson) {
+        if (initialPatchJson.isNotBlank()) {
+            patchJson = initialPatchJson
+            review = null
+            status = "已自动接收当前模型生成的补丁，尚未应用；请先解析并逐文件审查。"
+            onPatchConsumed()
+        }
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
