@@ -331,7 +331,7 @@ object CoworkbenchStaticAnalyzer {
         category: String,
         level: CoworkbenchFindingLevel,
         path: String,
-        line: Int,
+        line: Int?,
         evidence: String,
         message: String
     ) = CoworkbenchFinding(category, level, path, line, evidence, message)
