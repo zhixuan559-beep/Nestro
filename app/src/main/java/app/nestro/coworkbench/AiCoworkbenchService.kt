@@ -341,14 +341,22 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             .filter { it.isFile && it.extension == "json" && it.length() in 1..256_000 }
             .forEach { eventFile ->
                 val event = runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull() ?: return@forEach
-                if (event.status == "PENDING") {
+                if (event.status == "PENDING" || event.status == "RECOVERY_REQUIRED") {
                     val snapshotFile = File(snapshots, event.id + ".json")
                     try {
                         require(snapshotFile.isFile && snapshotFile.length() in 1..5_000_000) { "事务快照缺失或无效" }
                         val snapshot = decodeSnapshot(JSONObject(snapshotFile.readText(Charsets.UTF_8)))
                         require(snapshot.id == event.id && snapshot.repositoryId == event.repositoryId) { "事务快照与审批记录不匹配" }
-                        restoreBefore(snapshot)
-                        writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERED", detail = "检测到进程中断，已按预写快照自动恢复")))
+                        withContext(NonCancellable) {
+                            snapshot.files.forEach { item ->
+                                val current = readOrNull(snapshot.repositoryId, item.path)
+                                require(current == item.before || current == item.applied) {
+                                    "文件 ${item.path} 在进程中断后被外部修改；为保护新内容，停止自动覆盖"
+                                }
+                            }
+                            restoreBefore(snapshot)
+                            writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERED", detail = "检测到未完成事务，已按快照恢复；未覆盖外部修改")))
+                        }
                     } catch (failure: Throwable) {
                         writeJson(eventFile, encodeApproval(event.copy(status = "RECOVERY_REQUIRED",
                             detail = "检测到未完成事务，自动恢复失败：" + (failure.message ?: "未知错误"))))
