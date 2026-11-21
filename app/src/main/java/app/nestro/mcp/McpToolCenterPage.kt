@@ -61,7 +61,6 @@ fun McpToolCenterPage(app: NestroApplication) {
     }
 
     LaunchedEffect(Unit) {
-        service.restoreEnabledTools()
         reload()
     }
 
