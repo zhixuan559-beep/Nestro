@@ -183,6 +183,14 @@ class ExpertTeamExecutionCoordinator(
                 }
                 emit(eventType, member = packageInfo?.memberName.orEmpty(), status = status,
                     message = "工作包 $packageId：$detail")
+            },
+            onHandoff = { fromPackage, toPackage, fromMember, toMember, artifact ->
+                emit(
+                    "member_handoff",
+                    member = fromMember,
+                    status = "delivered",
+                    message = "交接至 $toMember（$toPackage），来源工作包 $fromPackage：\n$artifact"
+                )
             }
         )
         emit("team_completed", status = if (result.isSuccessful) "success" else "partial",
