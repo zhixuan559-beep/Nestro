@@ -131,8 +131,8 @@ fun CalendarPage(repository: CalendarRepository) {
     ) { grants ->
         val action = pendingSystemAction
         pendingSystemAction = ""
-        val granted = grants[Manifest.permission.READ_CALENDAR] == true &&
-            (action == "import" || grants[Manifest.permission.WRITE_CALENDAR] == true)
+        val granted = CalendarProviderBridge.canRead(context) &&
+            (action == "import" || CalendarProviderBridge.canWrite(context))
         if (granted) runSystemCalendarAction(action)
         else status = "系统日历权限未授予，未执行读写操作"
     }
