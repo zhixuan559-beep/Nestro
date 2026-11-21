@@ -193,12 +193,6 @@ class NestroApplication : Application() {
         }
         ChatRequestContextAssembler(
             retrieveMemory = conversationContextRepository::retrieveMemory,
-            retrieveKnowledge = { projectId, prompt ->
-                readableProjectsFor(projectId).mapNotNull { sourceProjectId ->
-                    conversationContextRepository.retrieveKnowledge(sourceProjectId, prompt)
-                        .takeIf { it.isNotBlank() }
-                }.joinToString("\n\n")
-            },
             retrieveUserMemory = { projectId, prompt ->
                 readableProjectsFor(projectId).mapNotNull { sourceProjectId ->
                     userMemoryRepository.recall(sourceProjectId, prompt).context.takeIf { it.isNotBlank() }
