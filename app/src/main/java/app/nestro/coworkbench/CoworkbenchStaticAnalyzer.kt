@@ -196,7 +196,7 @@ object CoworkbenchStaticAnalyzer {
             .findAll(text).map { it.groupValues[1] }.toSet()
 
     private fun exportedComponents(text: String): Set<String> =
-        Regex("""<(activity|activity-alias|service|receiver|provider)\b([^>]*)>""", RegexOption.IGNORE_CASE)
+        Regex("""<(activity-alias|activity|service|receiver|provider)\b([^>]*)>""", RegexOption.IGNORE_CASE)
             .findAll(text).filter { match ->
                 Regex("""android:exported\s*=\s*["']true["']""", RegexOption.IGNORE_CASE)
                     .containsMatchIn(match.groupValues[2])
