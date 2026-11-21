@@ -42,7 +42,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
             .put("prompt", prompt)
         val created = requestJson("POST", config.videoSubmitPath, submit.toString(), 30_000)
         val jobId = readPath(created, config.videoJobIdField)?.toString()?.trim().orEmpty()
-        require(jobId.isNotBlank() && jobId.length <= 240 && !jobId.any { it.isISOControl() }) {
+        require(jobId.matches(Regex("[A-Za-z0-9._~-]{1,240}")) && jobId != "." && jobId != "..") {
             "视频服务没有返回有效任务 ID（字段：${config.videoJobIdField}）"
         }
 
@@ -114,6 +114,13 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
         val uri = URI(rawUrl)
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() &&
             uri.userInfo == null && uri.rawFragment == null) { "视频成品地址必须是有效 HTTPS URL" }
+        val host = uri.host.lowercase()
+        require(host !in setOf("localhost", "localhost.localdomain")) { "视频成品地址不能指向本机地址" }
+        val resolved = java.net.InetAddress.getAllByName(host)
+        require(resolved.isNotEmpty() && resolved.none {
+            it.isAnyLocalAddress || it.isLoopbackAddress || it.isLinkLocalAddress ||
+                it.isSiteLocalAddress || it.isMulticastAddress
+        }) { "视频成品地址不能指向本地或内网地址" }
         val connection = (URL(rawUrl).openConnection() as? HttpURLConnection) ?: error("无法下载视频成品")
         active.add(connection)
         try {
