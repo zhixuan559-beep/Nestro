@@ -97,6 +97,7 @@ class McpToolCenterRepository(context:Context) {
  fun findTool(id:String)=listTools().firstOrNull{it.id==id}
  fun replaceServerTools(id:String,items:List<McpToolDescriptor>){
   require(items.size<=200&&items.all{it.serverId==id})
+  require(items.all{it.inputSchemaJson.length<=64_000}){"单个 MCP 工具 schema 超过 64 KB 限制"}
   val merged=listTools().filterNot{it.serverId==id}+items
   require(merged.map{it.id}.distinct().size==merged.size){"MCP 工具 ID 冲突"}
   require(McpToolCenterCodec.encodeTools(merged).length<=2_000_000){"MCP 工具目录超过 2 MB 限制"}
@@ -168,7 +169,7 @@ private object McpCredentialVault {
  }
 }
 class McpToolCenterService(private val repository:McpToolCenterRepository,private val catalog:AgentToolCatalog,private val traces:AgentTaskTraceStore?=null){
- fun restoreEnabledTools(){repository.listTools().filter{it.granted&&repository.findServer(it.serverId)?.enabled==true}.forEach(::registerTool)}
+ fun restoreEnabledTools(){val enabled=repository.listServers().filter{it.enabled}.map{it.id}.toSet();repository.listTools().filter{it.granted&&it.serverId in enabled}.forEach(::registerTool)}
  suspend fun discover(serverId:String):List<McpToolDescriptor>{
   val server=requireNotNull(repository.findServer(serverId)){"MCP 服务不存在"};require(server.enabled){"MCP 服务已停用"}
   val remote=withContext(Dispatchers.IO){McpStreamableHttpClient(server.endpoint,repository.readCredential(serverId)).use { it.listTools() }}
