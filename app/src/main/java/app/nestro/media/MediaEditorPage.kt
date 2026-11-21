@@ -226,7 +226,7 @@ fun MediaEditorPage(
                     val applyError = applyResult.exceptionOrNull()?.message.orEmpty()
                     if (applyError.isNotBlank()) status = "读取/保存媒体 AI 结果失败："+applyError
                     withContext(Dispatchers.IO) {
-                        MediaAiTaskStore.update(applicationContext = context, projectId = projectId, taskId = task.id,
+                        MediaAiTaskStore.update(context = context, projectId = projectId, taskId = task.id,
                             status = MediaAiTaskStatus.COMPLETED, resultConsumed = true, errorMessage = applyError)
                     }
                     mediaAiRunning = false
