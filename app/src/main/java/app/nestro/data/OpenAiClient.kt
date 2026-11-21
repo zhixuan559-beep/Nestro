@@ -127,6 +127,9 @@ internal object OpenAiClient {
     }
 
     fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null, onProviderUsage: (ProviderTokenUsage?) -> Unit = {}): String {
+        if (config.protocol != app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS) {
+            return completeNative(config, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, maxTokens, onProviderUsage)
+        }
         val connection = ChatHttpTransport.open(config.baseUrl).also {
             ChatHttpTransport.configure(it, config.apiKey, connectTimeoutMillis, readTimeoutMillis, streaming = false)
         }
@@ -164,6 +167,9 @@ internal object OpenAiClient {
     }
 
     suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onProviderUsage: (ProviderTokenUsage?) -> Unit = {}, onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
+        if (config.protocol != app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS) {
+            return@withContext streamNative(config, history, systemPrompt, maxTokens, requestId, onProviderUsage, onChunk)
+        }
         val connection = ChatHttpTransport.open(config.baseUrl).also {
             ChatHttpTransport.configure(it, config.apiKey, 20_000, 90_000, streaming = true)
         }
@@ -231,4 +237,187 @@ internal object OpenAiClient {
             connection.disconnect()
         }
     }
+    private fun nativeEndpoint(config: ModelConfig, streaming: Boolean): java.net.URL {
+        val base = config.baseUrl.trimEnd('/')
+        val path = when (config.protocol) {
+            app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES -> "/v1/messages"
+            app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT ->
+                "/models/${config.model}:" + if (streaming) "streamGenerateContent?alt=sse" else "generateContent"
+            else -> error("不支持的原生协议")
+        }
+        return java.net.URL(base + path)
+    }
+
+    private fun nativeBody(
+        config: ModelConfig,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        maxTokens: Int?
+    ): JSONObject {
+        val messages = boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048)
+        return when (config.protocol) {
+            app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES -> JSONObject().apply {
+                put("model", config.model)
+                put("max_tokens", (maxTokens ?: 2048).coerceIn(1, 32768))
+                if (systemPrompt.isNotBlank()) put("system", systemPrompt)
+                put("messages", JSONArray().apply {
+                    messages.filter { it.role == "user" || it.role == "assistant" }.forEach { message ->
+                        put(JSONObject().put("role", message.role).put("content", message.content))
+                    }
+                })
+                put("stream", false)
+            }
+            app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT -> JSONObject().apply {
+                if (systemPrompt.isNotBlank()) {
+                    put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
+                }
+                put("contents", JSONArray().apply {
+                    messages.filter { it.role == "user" || it.role == "assistant" }.forEach { message ->
+                        put(JSONObject().put("role", if (message.role == "assistant") "model" else "user")
+                            .put("parts", JSONArray().put(JSONObject().put("text", message.content))))
+                    }
+                })
+                put("generationConfig", JSONObject().put("maxOutputTokens", (maxTokens ?: 2048).coerceIn(1, 32768)))
+            }
+            else -> error("不支持的原生协议")
+        }
+    }
+
+    private fun configureNative(
+        connection: HttpURLConnection,
+        config: ModelConfig,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        streaming: Boolean
+    ) {
+        connection.requestMethod = "POST"
+        connection.connectTimeout = connectTimeoutMillis.coerceIn(5_000, 60_000)
+        connection.readTimeout = readTimeoutMillis.coerceIn(5_000, 180_000)
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("Accept", if (streaming) "text/event-stream" else "application/json")
+        when (config.protocol) {
+            app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES -> {
+                connection.setRequestProperty("x-api-key", config.apiKey)
+                connection.setRequestProperty("anthropic-version", "2023-06-01")
+            }
+            app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT ->
+                connection.setRequestProperty("x-goog-api-key", config.apiKey)
+            else -> error("不支持的原生协议")
+        }
+    }
+
+    private fun completeNative(
+        config: ModelConfig,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        maxTokens: Int?,
+        onProviderUsage: (ProviderTokenUsage?) -> Unit
+    ): String {
+        val connection = nativeEndpoint(config, false).openConnection() as HttpURLConnection
+        configureNative(connection, config, connectTimeoutMillis, readTimeoutMillis, false)
+        activeConnections.add(connection)
+        try {
+            connection.outputStream.use {
+                it.write(nativeBody(config, history, systemPrompt, maxTokens).toString().toByteArray(Charsets.UTF_8))
+            }
+            val code = connection.responseCode
+            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException("HTTP $code: " + nativeError(config, response))
+            val payload = JSONObject(response)
+            val text = when (config.protocol) {
+                app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
+                    payload.optJSONArray("content")?.let { blocks ->
+                        (0 until blocks.length()).mapNotNull { blocks.optJSONObject(it)?.optString("text") }
+                            .joinToString("")
+                    }.orEmpty()
+                app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT ->
+                    payload.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
+                        ?.optJSONArray("parts")?.let { parts ->
+                            (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("text") }
+                                .joinToString("")
+                        }.orEmpty()
+                else -> ""
+            }
+            val usage = payload.optJSONObject("usage")
+            val geminiUsage = payload.optJSONObject("usageMetadata")
+            val input = usage?.optInt("input_tokens", -1) ?: geminiUsage?.optInt("promptTokenCount", -1) ?: -1
+            val output = usage?.optInt("output_tokens", -1) ?: geminiUsage?.optInt("candidatesTokenCount", -1) ?: -1
+            onProviderUsage(if (input >= 0 && output >= 0) ProviderTokenUsage(input, output) else null)
+            return text
+        } finally {
+            activeConnections.remove(connection)
+            connection.disconnect()
+        }
+    }
+
+    private fun nativeError(config: ModelConfig, response: String): String = runCatching {
+        val root = JSONObject(response)
+        when (config.protocol) {
+            app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
+                root.optJSONObject("error")?.optString("message")
+            app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT ->
+                root.optJSONObject("error")?.optString("message")
+            else -> null
+        }?.takeIf { it.isNotBlank() } ?: response.take(400)
+    }.getOrDefault(response.take(400))
+
+    private suspend fun streamNative(
+        config: ModelConfig,
+        history: List<ChatMessage>,
+        systemPrompt: String,
+        maxTokens: Int?,
+        requestId: String,
+        onProviderUsage: (ProviderTokenUsage?) -> Unit,
+        onChunk: suspend (String) -> Unit
+    ): String {
+        val connection = nativeEndpoint(config, true).openConnection() as HttpURLConnection
+        configureNative(connection, config, 20_000, 180_000, true)
+        activeConnections.add(connection)
+        requestConnections[requestId] = connection
+        val answer = StringBuilder()
+        try {
+            val body = nativeBody(config, history, systemPrompt, maxTokens).put("stream", true)
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val error = (connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }).orEmpty()
+                throw IllegalStateException("HTTP $code: " + nativeError(config, error))
+            }
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    val data = line.removePrefix("data:").trim()
+                    if (data.isBlank() || data == "[DONE]") continue
+                    val json = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    val delta = when (config.protocol) {
+                        app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
+                            if (json.optString("type") == "content_block_delta") json.optJSONObject("delta")?.optString("text").orEmpty() else ""
+                        app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT ->
+                            json.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
+                                ?.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+                        else -> ""
+                    }
+                    if (delta.isNotEmpty()) {
+                        answer.append(delta)
+                        onChunk(delta)
+                    }
+                    val usage = json.optJSONObject("usage")
+                    val geminiUsage = json.optJSONObject("usageMetadata")
+                    val input = usage?.optInt("input_tokens", -1) ?: geminiUsage?.optInt("promptTokenCount", -1) ?: -1
+                    val output = usage?.optInt("output_tokens", -1) ?: geminiUsage?.optInt("candidatesTokenCount", -1) ?: -1
+                    if (input >= 0 && output >= 0) onProviderUsage(ProviderTokenUsage(input, output))
+                }
+            }
+            return answer.toString()
+        } finally {
+            activeConnections.remove(connection)
+            requestConnections.remove(requestId, connection)
+            connection.disconnect()
+        }
+    }
+
 }
