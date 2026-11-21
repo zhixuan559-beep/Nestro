@@ -223,6 +223,9 @@ class NestroApplication : Application() {
                     mcpToolCenterRepository.findTool(toolId)?.let { descriptor ->
                         "name=${descriptor.name}; description=${descriptor.description}; input_schema=${descriptor.inputSchemaJson}"
                     }
+                },
+                visibleToolFilter = { tool ->
+                    !tool.id.startsWith("mcp_") || mcpToolCenterRepository.isToolGranted(tool.id)
                 }
             )
         )
