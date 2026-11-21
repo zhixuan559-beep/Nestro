@@ -30,7 +30,7 @@ object CoworkbenchReleaseGate {
 
 data class CoworkbenchJobStep(val name: String, val status: String, val conclusion: String?)
 data class CoworkbenchArtifactFile(val path: String, val content: String, val truncated: Boolean = false)
-data class CoworkbenchArtifactReport(val id: Long, val name: String, val sizeBytes: Long, val files: List<CoworkbenchArtifactFile>)
+data class CoworkbenchArtifactReport(val id: Long, val name: String, val sizeBytes: Long, val files: List<CoworkbenchArtifactFile>, val diagnostic: String? = null)
 data class CoworkbenchJobResult(
     val id: Long,
     val name: String,
@@ -55,7 +55,11 @@ data class CoworkbenchValidationResult(
 ) {
     val completed: Boolean get() = status == "completed"
     val reportedTestFailures: Int get() = testReports.sumOf { it.failures + it.errors }
-    val successful: Boolean get() = completed && conclusion == "success" && reportedTestFailures == 0
+    val hasTruncatedReports: Boolean get() = artifacts.any { artifact ->
+        artifact.diagnostic != null || artifact.files.any { it.truncated }
+    }
+    val successful: Boolean get() = completed && conclusion == "success" &&
+        testReports.isNotEmpty() && reportedTestFailures == 0 && !hasTruncatedReports
 }
 
 /**
@@ -337,14 +341,14 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             val id = row.optLong("id")
             val name = row.optString("name")
             val size = row.optLong("size_in_bytes")
-            val files = try {
-                downloadArtifactFiles(repository, token, id)
+            try {
+                CoworkbenchArtifactReport(id, name, size, downloadArtifactFiles(repository, token, id))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                emptyList()
+            } catch (error: Exception) {
+                CoworkbenchArtifactReport(id, name, size, emptyList(),
+                    "产物下载或 ZIP 解析失败：" + (error.message ?: "未知错误"))
             }
-            CoworkbenchArtifactReport(id, name, size, files)
         }
     }
 
