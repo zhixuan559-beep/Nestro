@@ -2763,13 +2763,7 @@ fun NestroApp() {
                         "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "capabilities" -> CapabilityDirectoryPage()
-                        "voice" -> {
-                            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("语音输入", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("在聊天输入框按住麦克风说话，松开后由 Android 系统识别服务转成文字并发送。识别服务是否联网、数据如何处理，取决于设备当前启用的系统语音服务。", color = Muted)
-                                Text("当前不内置语音合成或第三方语音插件。后续可通过独立 Provider 接口接入用户自行选择的 API 服务。", color = Muted)
-                            }
-                        }
+                        "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
