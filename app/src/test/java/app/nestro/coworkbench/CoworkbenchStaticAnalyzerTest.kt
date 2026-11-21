@@ -143,4 +143,35 @@ jobs:
         }
     }
 
+    @Test
+    fun comparesGradleVersionCatalogAliasesAndVersionRefs() {
+        val root = Files.createTempDirectory("nestro-coworkbench-catalog-diff").toFile()
+        try {
+            root.resolve("gradle/libs.versions.toml").apply {
+                parentFile.mkdirs()
+                writeText("""[versions]
+core = "1.0"
+
+[libraries]
+core-lib = { group = "org.example", name = "core", version.ref = "core" }
+""".trimIndent())
+            }
+            val after = """[versions]
+core = "2.0"
+
+[libraries]
+core-lib = { group = "org.example", name = "core", version.ref = "core" }
+""".trimIndent()
+            val impact = CoworkbenchStaticAnalyzer.analyzeProposalsWithBaseline(
+                root,
+                listOf(CoworkbenchProposal("gradle/libs.versions.toml", after))
+            )
+            assertTrue(impact.dependenciesAdded.any { it.contains("catalog-value:core:2.0") })
+            assertTrue(impact.dependenciesRemoved.any { it.contains("catalog-value:core:1.0") })
+            assertTrue(impact.dependenciesAdded.any { it.contains("catalog:core-lib:org.example:core:core") })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }
