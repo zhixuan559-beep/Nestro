@@ -60,6 +60,7 @@ fun VoiceSystemPage() {
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val realtimeAudioRef = remember { AtomicReference<RealtimeVoiceAudioController?>(null) }
+    val realtimeSessionRef = remember { AtomicReference<RealtimeVoiceSession?>(null) }
     val realtimeConnectCancelled = remember { AtomicReference<AtomicBoolean?>(null) }
     var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
     var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
@@ -177,6 +178,7 @@ fun VoiceSystemPage() {
                         activeSession.close()
                         return
                     }
+                    realtimeSessionRef.set(activeSession)
                     try {
                         val audio = RealtimeVoiceAudioController(activeSession) { message ->
                             activeSession.close()
@@ -212,8 +214,7 @@ fun VoiceSystemPage() {
                 override fun onAudio(audio: SpeechAudio) {
                     runCatching { realtimeAudioRef.get()?.play(audio) }
                         .onFailure { error ->
-                            pendingRealtimeSession?.close()
-                            realtimeSession?.close()
+                            realtimeSessionRef.get()?.close()
                             mainHandler.post { status = error.message ?: "实时音频播放失败" }
                         }
                 }
@@ -224,6 +225,7 @@ fun VoiceSystemPage() {
 
                 override fun onClosed() {
                     realtimeConnectCancelled.compareAndSet(cancelled, null)
+                    realtimeSessionRef.compareAndSet(realtimeSessionRef.get(), null)
                     realtimeAudioRef.getAndSet(null)?.close()
                     mainHandler.post {
                         realtimeAudio = null
@@ -260,6 +262,7 @@ fun VoiceSystemPage() {
             speechRecorder?.close()
             realtimeConnectCancelled.getAndSet(null)?.set(true)
             realtimeAudioRef.getAndSet(null)?.close()
+            realtimeSessionRef.getAndSet(null)?.close()
             realtimeSession?.close()
             pendingRealtimeSession?.close()
             runCatching { mediaPlayer?.stop() }
@@ -496,6 +499,7 @@ fun VoiceSystemPage() {
                 onClick = {
                     realtimeConnectCancelled.getAndSet(null)?.set(true)
                     realtimeAudioRef.getAndSet(null)?.close()
+                    realtimeSessionRef.getAndSet(null)?.close()
                     realtimeAudio = null
                     realtimeSession?.close()
                     pendingRealtimeSession?.close()
