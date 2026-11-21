@@ -225,7 +225,9 @@ private object GitCredentialVault {
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        val existing = runCatching { store.getKey(ALIAS, null) as? SecretKey }.getOrNull()
+        if (existing != null) return existing
+        runCatching { store.deleteEntry(ALIAS) }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(KeyGenParameterSpec.Builder(
             ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
