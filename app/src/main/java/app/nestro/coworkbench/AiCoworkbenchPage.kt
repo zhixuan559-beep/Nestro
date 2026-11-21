@@ -389,8 +389,12 @@ fun AiCoworkbenchPage(
                         val branch = git.currentBranch(selected.id)
                         val result = validationRunner.dispatchAndWait(selected, workflowFile, branch)
                         validationResult = result
-                        status = if (result.successful) "隔离构建与测试通过：" + result.url
-                            else "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
+                        status = when {
+                            result.successful -> "隔离构建与已解析测试报告均通过：" + result.url
+                            result.completed && result.conclusion == "success" && result.reportedTestFailures > 0 ->
+                                "Workflow 虽返回成功，但测试报告记录 ${result.reportedTestFailures} 项失败/错误；不得视为验收通过：" + result.url
+                            else -> "隔离构建结束，结论：" + (result.conclusion ?: result.status) + "；" + result.url
+                        }
                     } catch (cancelled: CancellationException) {
                         status = cancelled.message ?: "已取消隔离构建等待；请到 GitHub Actions 页面确认远端状态。"
                     } catch (error: Exception) {
