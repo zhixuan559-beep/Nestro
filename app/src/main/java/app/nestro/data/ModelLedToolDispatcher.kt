@@ -96,7 +96,7 @@ internal class ModelLedToolDispatcher(
         taskModeEnabled: Boolean,
         expertTeamEnabled: Boolean,
         planPhoneAgent: suspend () -> String,
-        runExpertTeam: suspend (String) -> String,
+        runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         onDirectAnswer: suspend (String) -> Unit = {}
@@ -251,7 +251,7 @@ ${prompt.take(8_000)}
                     when (toolId) {
                         "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
                         "expert_team.run" -> {
-                            val output = runExpertTeam(systemContext).take(8_000)
+                            val output = runExpertTeam(systemContext, arguments).take(8_000)
                             if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
                             else AgentToolResult(true, output = output)
                         }
