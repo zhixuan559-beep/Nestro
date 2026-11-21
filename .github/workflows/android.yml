@@ -47,8 +47,8 @@ jobs:
         if: always() && steps.setup_gradle.outcome == 'success'
         continue-on-error: true
         run: |
-          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt 2>&1
-          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt 2>&1
+          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt 2>&1 || true
+          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt 2>&1 || true
 
       - name: Run Android lint
         if: always() && steps.setup_gradle.outcome == 'success'
