@@ -1,5 +1,43 @@
 package app.nestro.data
 
+internal data class ModelToolDecision(
+    val action: String,
+    val text: String,
+    val toolId: String,
+    val arguments: Map<String, String>
+)
+
+internal object ModelToolDecisionParser {
+    fun parse(raw: String): ModelToolDecision? {
+        val candidate = raw.trim()
+            .removePrefix("```json").removePrefix("```")
+            .removeSuffix("```").trim()
+        val start = candidate.indexOf('{')
+        val end = candidate.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val json = runCatching { JSONObject(candidate.substring(start, end + 1)) }.getOrNull() ?: return null
+        val action = json.optString("action")
+        if (action !in setOf("reply", "tool")) return null
+        val args = json.optJSONObject("arguments")
+        val mapped = buildMap {
+            if (args != null) {
+                val keys = args.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val value = args.opt(key)
+                    put(key.take(100), (value?.toString() ?: "").take(2_000))
+                }
+            }
+        }
+        return ModelToolDecision(
+            action = action,
+            text = json.optString("text").take(24_000),
+            toolId = json.optString("tool_id").take(100),
+            arguments = mapped
+        )
+    }
+}
+
 import app.nestro.agent.AgentTaskState
 import app.nestro.agent.AgentPermissionRouter
 import app.nestro.agent.AgentTaskStateStore
@@ -117,7 +155,7 @@ $prompt
                 decisionText.append(chunk)
             }
             val raw = decisionText.toString()
-            val decision = parseDecision(raw) ?: run {
+            val decision = ModelToolDecisionParser.parse(raw) ?: run {
                 markTerminal(AgentTaskStatus.COMPLETED)
                 return ModelToolDispatchResult(directReply = raw)
             }
@@ -179,42 +217,6 @@ $prompt
             workingHistory = (workingHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", "已请求工具：${spec.id}")).takeLast(40)
         }
         return ModelToolDispatchResult(directReply = "工具调度已达到本轮安全上限，未继续执行更多操作。")
-    }
-
-    private data class Decision(
-        val action: String,
-        val text: String,
-        val toolId: String,
-        val arguments: Map<String, String>
-    )
-
-    private fun parseDecision(raw: String): Decision? {
-        val candidate = raw.trim()
-            .removePrefix("```json").removePrefix("```")
-            .removeSuffix("```").trim()
-        val start = candidate.indexOf('{')
-        val end = candidate.lastIndexOf('}')
-        if (start < 0 || end <= start) return null
-        val json = runCatching { JSONObject(candidate.substring(start, end + 1)) }.getOrNull() ?: return null
-        val action = json.optString("action")
-        if (action !in setOf("reply", "tool")) return null
-        val args = json.optJSONObject("arguments")
-        val mapped = buildMap {
-            if (args != null) {
-                val keys = args.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    val value = args.opt(key)
-                    put(key.take(100), (value?.toString() ?: "").take(2_000))
-                }
-            }
-        }
-        return Decision(
-            action = action,
-            text = json.optString("text").take(24_000),
-            toolId = json.optString("tool_id").take(100),
-            arguments = mapped
-        )
     }
 
     private companion object {
