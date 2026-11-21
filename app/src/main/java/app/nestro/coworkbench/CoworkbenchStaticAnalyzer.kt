@@ -46,6 +46,7 @@ object CoworkbenchStaticAnalyzer {
         val dependencies = linkedSetOf<String>()
         var scanned = 0
         var skipped = 0
+        var visited = 0
         var totalBytes = 0L
         var truncated = false
 
@@ -63,7 +64,7 @@ object CoworkbenchStaticAnalyzer {
             }
 
         for (file in files) {
-            if (scanned >= MAX_FILES || totalBytes >= MAX_TOTAL_BYTES) {
+            if (visited++ >= MAX_FILES * 4 || scanned >= MAX_FILES || totalBytes >= MAX_TOTAL_BYTES) {
                 truncated = true
                 break
             }
