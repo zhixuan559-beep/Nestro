@@ -234,8 +234,90 @@ class NestroApplication : Application() {
                     output = "任务 ID：${task.id}；状态：${task.status}；进度：${task.progress}%；素材 ID：${resultAssetId.ifBlank { "尚未生成" }}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}；提示词：${task.prompt}；错误：${task.error}"
                 )
             }
+            registerInstalledGeneratedPlugins(this)
         }
     }
+
+    fun refreshGeneratedPluginTools() {
+        val catalog = agentToolCatalog
+        catalog.list().filter { it.id.startsWith("plugin.") }.forEach { catalog.remove(it.id) }
+        registerInstalledGeneratedPlugins(catalog)
+    }
+
+    private fun registerInstalledGeneratedPlugins(catalog: AgentToolCatalog) {
+        val store = GeneratedPluginStore(this@NestroApplication)
+        val installed = store.list(catalog).filter { it.enabled }
+        installed.forEach { plugin ->
+            val toolId = "plugin.${plugin.id}"
+            if (catalog.find(toolId) != null) return@forEach
+            catalog.register(
+                app.nestro.agent.AgentToolSpec(
+                    id = toolId,
+                    description = "执行本地插件「${plugin.name}」v${plugin.version}：${plugin.description}".take(500),
+                    permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
+                    requiresConfirmation = true
+                )
+            ) { rawArguments ->
+                val projectId = rawArguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，插件执行已阻止")
+                val inputNames = plugin.inputs.map { it.name }.toSet()
+                val inputs = rawArguments.filterKeys { it in inputNames }
+                val taskId = "plugin-${java.util.UUID.randomUUID()}".take(120)
+                val states = RoomAgentTaskStateStore(database.dao())
+                states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.RUNNING))
+                val execution = try {
+                    GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
+                        val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
+                        val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
+                            if (tool.id.startsWith("mcp_")) {
+                                if (mcpToolCenterRepository.isToolGranted(tool.id)) app.nestro.agent.AgentAuthorization.Allow
+                                else app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
+                            } else app.nestro.agent.DefaultAgentPermissionRouter().authorize(task, tool)
+                        }
+                        val runtime = DefaultAgentRuntime(
+                            catalog = lease.access,
+                            permissions = permissionRouter,
+                            states = states,
+                            traces = RoomAgentTaskTraceStore(database.dao())
+                        )
+                        try {
+                            runtime.execute(
+                                app.nestro.agent.AgentToolRequest(
+                                    taskId,
+                                    stepToolId,
+                                    if (stepToolId.startsWith("mcp_")) stepArguments
+                                    else stepArguments + ("__nestro_project_id" to projectId)
+                                )
+                            )
+                        } finally {
+                            AgentToolLeaseRegistry.release(lease.id)
+                        }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.PAUSED))
+                    throw cancelled
+                } catch (error: Exception) {
+                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.FAILED, lastError = error.message.orEmpty().take(2_000)))
+                    return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
+                }
+                states.put(app.nestro.agent.AgentTaskState(
+                    taskId = taskId,
+                    owner = "generated-plugin",
+                    status = if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
+                        else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
+                        else app.nestro.agent.AgentTaskStatus.FAILED,
+                    lastError = if (execution.success) "" else execution.output.take(2_000)
+                ))
+                app.nestro.agent.AgentToolResult(
+                    success = execution.success,
+                    output = execution.output,
+                    error = if (execution.success) "" else execution.output,
+                    requiresUser = execution.requiresUser
+                )
+            }
+        }
+    }
+
     val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
     val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao())) }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
