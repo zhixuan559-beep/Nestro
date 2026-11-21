@@ -152,6 +152,10 @@ fun GitWorkbenchPage(context: Context) {
                         }
                         TextButton(enabled = !loading && selectedAccount != null, onClick = {
                             scope.launch {
+                                if (file.isNotBlank() && editor != originalEditor) {
+                                    status = "当前文件有未保存修改，请先保存后再克隆并切换仓库。"
+                                    return@launch
+                                }
                                 loading = true
                                 runCatching { repo.clone(selectedAccount!!, item) }
                                     .onSuccess { cloned -> refreshLocals(); localId = cloned.id; status = "已克隆 " + item.fullName }
