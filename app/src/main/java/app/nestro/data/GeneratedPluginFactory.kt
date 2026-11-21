@@ -104,6 +104,69 @@ object GeneratedPluginPackageValidator {
     internal val TEMPLATE = Regex("""\$\{([^}]{1,100})\}""")
 }
 
+
+object GeneratedPluginPackageCodec {
+    fun encode(packages: List<GeneratedPluginPackage>): String =
+        JSONArray().apply {
+            packages.takeLast(100).forEach { plugin ->
+                put(JSONObject()
+                    .put("id", plugin.id)
+                    .put("name", plugin.name)
+                    .put("version", plugin.version)
+                    .put("description", plugin.description)
+                    .put("outputDescription", plugin.outputDescription)
+                    .put("createdAt", plugin.createdAt)
+                    .put("enabled", plugin.enabled)
+                    .put("inputs", JSONArray().apply {
+                        plugin.inputs.forEach { input ->
+                            put(JSONObject().put("name", input.name).put("required", input.required).put("description", input.description))
+                        }
+                    })
+                    .put("steps", JSONArray().apply {
+                        plugin.steps.forEach { step ->
+                            put(JSONObject()
+                                .put("id", step.id)
+                                .put("toolId", step.toolId)
+                                .put("resultKey", step.resultKey)
+                                .put("arguments", JSONObject(step.arguments)))
+                        }
+                    }))
+            }
+        }.toString()
+
+    fun decode(raw: String): List<GeneratedPluginPackage> = runCatching {
+        require(raw.length <= 2_000_000) { "插件包数据过大" }
+        val array = JSONArray(raw)
+        (0 until minOf(array.length(), 100)).mapNotNull { index ->
+            val root = array.optJSONObject(index) ?: return@mapNotNull null
+            val inputsJson = root.optJSONArray("inputs") ?: JSONArray()
+            val stepsJson = root.optJSONArray("steps") ?: JSONArray()
+            val inputs = (0 until minOf(inputsJson.length(), 24)).mapNotNull { itemIndex ->
+                val item = inputsJson.optJSONObject(itemIndex) ?: return@mapNotNull null
+                GeneratedPluginInput(item.optString("name"), item.optBoolean("required"), item.optString("description").take(500))
+            }
+            val steps = (0 until minOf(stepsJson.length(), 12)).mapNotNull { itemIndex ->
+                val item = stepsJson.optJSONObject(itemIndex) ?: return@mapNotNull null
+                val args = item.optJSONObject("arguments") ?: JSONObject()
+                val mapped = buildMap {
+                    val keys = args.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        put(key, args.optString(key).take(2_000))
+                    }
+                }
+                GeneratedPluginStep(item.optString("id"), item.optString("toolId"), mapped, item.optString("resultKey"))
+            }
+            GeneratedPluginPackage(
+                id = root.optString("id"), name = root.optString("name"),
+                version = root.optString("version"), description = root.optString("description").take(1_000),
+                inputs = inputs, steps = steps, outputDescription = root.optString("outputDescription").take(1_000),
+                createdAt = root.optLong("createdAt").coerceAtLeast(0), enabled = root.optBoolean("enabled", false)
+            ).takeIf { it.id.isNotBlank() && it.steps.isNotEmpty() }
+        }
+    }.getOrDefault(emptyList())
+}
+
 internal fun parseGeneratedPluginPackage(raw: String): GeneratedPluginPackage {
     val start = raw.indexOf('{')
     val end = raw.lastIndexOf('}')
