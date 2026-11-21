@@ -50,7 +50,8 @@ class McpToolCenterTest {
   val rows=listOf(McpToolAuditRecord("a","Docs","search",true,123L))
   assertEquals(rows,McpAuditCodec.decodeOrNull(McpAuditCodec.encode(rows)))
   assertNull(McpAuditCodec.decodeOrNull("not-json"))
-  assertNull(McpAuditCodec.decodeOrNull("["+"{}".repeat(101)+"]"))
+  val oversized = "[" + List(101) { """{"id":"$it","serverName":"Docs","toolName":"search","succeeded":true,"createdAt":123}""" }.joinToString(",") + "]"
+  assertNull(McpAuditCodec.decodeOrNull(oversized))
  }
  @Test fun auditCodecRejectsMissingRequiredFields(){
   assertNull(McpAuditCodec.decodeOrNull("""[{"id":"a","serverName":"Docs","toolName":"search","createdAt":123}]"""))
