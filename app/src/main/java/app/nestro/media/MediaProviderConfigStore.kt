@@ -24,7 +24,7 @@ data class MediaProviderConfig(
     val displayName: String,
     val baseUrl: String,
     val apiKey: String,
-    val model: String,
+    val model: String = "",
     val transcriptionModel: String = model,
     val transcriptionPath: String = "audio/transcriptions",
     val scenePath: String = "media/scenes",
@@ -42,8 +42,11 @@ data class MediaProviderConfig(
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "媒体服务商标识无效" }
         require(displayName.isNotBlank() && displayName.length <= 80) { "服务商名称无效" }
         require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.isISOControl() }) { "API Key 无效" }
-        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "视觉/聊天模型名称无效" }
-        require(transcriptionModel.isNotBlank() && transcriptionModel.length <= 120 && transcriptionModel.none { it.isISOControl() }) { "转写模型名称无效" }
+        require(model.isBlank() || (model.length <= 120 && model.none { it.isISOControl() })) { "视觉/聊天模型名称无效" }
+        require(transcriptionModel.isBlank() || (transcriptionModel.length <= 120 && transcriptionModel.none { it.isISOControl() })) { "转写模型名称无效" }
+        require(model.isNotBlank() || transcriptionModel.isNotBlank() || videoGenerationModel.isNotBlank()) {
+            "至少配置一个聊天、转写或视频生成模型"
+        }
         val uri = URI(baseUrl.trim().trimEnd('/'))
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "媒体服务地址必须使用 HTTPS，且不能包含 URL 凭据" }
         require(uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "媒体服务地址包含不允许的路径参数" }
@@ -67,6 +70,7 @@ data class MediaProviderConfig(
 object MediaProviderConnectionTest {
     suspend fun run(config: MediaProviderConfig): String = withContext(Dispatchers.IO) {
         config.validate()
+        require(config.model.isNotBlank()) { "当前服务商未配置聊天/视觉模型，无法执行聊天接口连通测试" }
         val payload = JSONObject()
             .put("model", config.model)
             .put("messages", org.json.JSONArray().put(JSONObject()
@@ -259,10 +263,10 @@ class OpenAiCompatibleMediaIntelligenceProvider(
     }
 
     override val capabilities: Set<MediaIntelligenceCapability> = buildSet {
-        add(MediaIntelligenceCapability.TRANSCRIPTION)
-        add(MediaIntelligenceCapability.IMAGE_UNDERSTANDING)
-        if (config.scenePath.isNotBlank() && config.scenePath != "media/scenes") add(MediaIntelligenceCapability.SCENE_DETECTION)
-        if (config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process") add(MediaIntelligenceCapability.AUDIO_PROCESSING)
+        if (config.transcriptionModel.isNotBlank()) add(MediaIntelligenceCapability.TRANSCRIPTION)
+        if (config.model.isNotBlank()) add(MediaIntelligenceCapability.IMAGE_UNDERSTANDING)
+        if (config.model.isNotBlank() && config.scenePath.isNotBlank() && config.scenePath != "media/scenes") add(MediaIntelligenceCapability.SCENE_DETECTION)
+        if (config.model.isNotBlank() && config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process") add(MediaIntelligenceCapability.AUDIO_PROCESSING)
     }
 
     override suspend fun transcribe(asset: MediaAsset, sourceFile: File, languageTag: String, onProgress: (Float) -> Unit): List<MediaSubtitleCue> =
