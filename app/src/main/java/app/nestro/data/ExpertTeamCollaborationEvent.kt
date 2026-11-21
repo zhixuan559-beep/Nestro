@@ -26,7 +26,7 @@ data class ExpertTeamCollaborationEvent(
         require(sequence >= 0)
         require(type in TYPES)
         require(memberName.length <= 80 && relatedMemberName.length <= 80)
-        require(status.length <= 40 && message.length <= 8_000)
+        require(status.length <= 40 && message.length <= 3_000)
         require(createdAt >= 0)
     }
 
@@ -46,7 +46,7 @@ fun interface ExpertTeamEventSink {
 }
 
 object ExpertTeamCollaborationEventCodec {
-    private const val MAX_EVENTS = 500
+    private const val MAX_EVENTS = 300
     private const val MAX_BYTES = 2_000_000
 
     fun encode(events: List<ExpertTeamCollaborationEvent>): String =
@@ -83,7 +83,7 @@ object ExpertTeamCollaborationEventCodec {
                 memberName = item.optString("memberName").take(80),
                 relatedMemberName = item.optString("relatedMemberName").take(80),
                 status = item.optString("status").take(40),
-                message = item.optString("message").take(8_000),
+                message = item.optString("message").take(3_000),
                 createdAt = item.optLong("createdAt", -1)
             )
             runCatching { event.validate() }.getOrNull()?.let { event }
