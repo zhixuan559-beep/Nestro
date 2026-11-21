@@ -1,0 +1,204 @@
+package app.nestro.data
+
+import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
+data class CapabilityDescriptor(
+    val id: String,
+    val title: String,
+    val category: String,
+    val description: String,
+    val version: String = "1.0",
+    val source: String = "builtin",
+    val status: String = "已接入",
+    val detail: String = "",
+    val route: String? = null,
+    val available: Boolean = true,
+    val projectScoped: Boolean = true,
+    val requiresConfirmation: Boolean = true,
+    val defaultGranted: Boolean = true
+)
+
+
+data class CapabilityToolAuditRecord(
+    val serviceId: String, val toolName: String, val projectId: String,
+    val action: String, val outcome: String, val parameterNames: List<String>, val createdAt: Long
+)
+
+object CapabilityToolPolicy {
+    fun grantKey(serviceId: String, toolName: String): String {
+        require(serviceId.matches(Regex("[a-zA-Z0-9_.-]{1,80}"))) { "MCP 服务标识无效" }
+        require(toolName.matches(Regex("[a-zA-Z0-9_.-]{1,100}"))) { "MCP 工具标识无效" }
+        return "$serviceId::$toolName"
+    }
+
+    fun safeParameterNames(names: List<String>): List<String> = names.asSequence()
+        .filter { it.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) }
+        .filterNot { it.lowercase() in setOf("token", "access_token", "api_key", "password", "secret", "authorization") }
+        .distinct().take(20).toList()
+}
+
+data class CapabilityAuditRecord(
+    val capabilityId: String, val capabilityName: String, val projectId: String,
+    val action: String, val outcome: String, val createdAt: Long
+)
+
+object CapabilityRegistryStore {
+    private const val REGISTRY_KEY = "capability_registry_v1"
+    private const val GRANTS_KEY = "capability_grants_v1"
+    private const val AUDIT_KEY = "capability_audit_v1"
+    private const val TOOL_GRANTS_KEY = "capability_tool_grants_v1"
+    private const val TOOL_AUDIT_KEY = "capability_tool_audit_v1"
+    private const val MAX_RECORDS = 200
+    private const val MAX_CAPABILITIES = 100
+
+    fun encodeDescriptor(item: CapabilityDescriptor): JSONObject = JSONObject()
+        .put("id", item.id).put("title", item.title).put("category", item.category)
+        .put("description", item.description).put("version", item.version).put("source", item.source)
+        .put("status", item.status).put("detail", item.detail).put("route", item.route)
+        .put("available", item.available).put("project_scoped", item.projectScoped)
+        .put("requires_confirmation", item.requiresConfirmation).put("default_granted", item.defaultGranted)
+
+    fun decodeDescriptor(item: JSONObject): CapabilityDescriptor? {
+        val id = item.optString("id").trim()
+        val title = item.optString("title").trim()
+        if (!id.matches(Regex("[a-zA-Z0-9_.-]{1,80}")) || title.isBlank()) return null
+        return CapabilityDescriptor(
+            id=id, title=title.take(80), category=item.optString("category").take(60),
+            description=item.optString("description").take(500), version=item.optString("version","1.0").take(40),
+            source=item.optString("source","builtin").take(80), status=item.optString("status","已接入").take(30),
+            detail=item.optString("detail").take(200), route=item.optString("route").takeIf { it.isNotBlank() },
+            available=item.optBoolean("available",true), projectScoped=item.optBoolean("project_scoped",true),
+            requiresConfirmation=item.optBoolean("requires_confirmation",true), defaultGranted=item.optBoolean("default_granted",false)
+        )
+    }
+
+    @Synchronized fun register(prefs: SharedPreferences, descriptor: CapabilityDescriptor) {
+        val normalized = decodeDescriptor(encodeDescriptor(descriptor)) ?: return
+        val existing = runCatching { JSONArray(prefs.getString(REGISTRY_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
+        val next = JSONArray()
+        var replaced = false
+        for (i in 0 until existing.length()) {
+            val raw = existing.optJSONObject(i) ?: continue
+            if (raw.optString("id") == normalized.id) {
+                if (!replaced) { next.put(encodeDescriptor(normalized)); replaced = true }
+            } else next.put(raw)
+        }
+        if (!replaced && next.length() < MAX_CAPABILITIES) next.put(encodeDescriptor(normalized))
+        prefs.edit().putString(REGISTRY_KEY,next.toString()).apply()
+    }
+
+    @Synchronized fun registerAll(prefs: SharedPreferences, descriptors: List<CapabilityDescriptor>) {
+        descriptors.forEach { register(prefs,it) }
+    }
+
+    fun list(prefs: SharedPreferences): List<CapabilityDescriptor> {
+        val data = runCatching { JSONArray(prefs.getString(REGISTRY_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
+        return (0 until data.length()).mapNotNull { data.optJSONObject(it)?.let(::decodeDescriptor) }
+    }
+
+    @Synchronized fun unregister(prefs: SharedPreferences, id: String) {
+        val old = runCatching { JSONArray(prefs.getString(REGISTRY_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
+        val next = JSONArray()
+        for (i in 0 until old.length()) {
+            val item = old.optJSONObject(i) ?: continue
+            if (item.optString("id") != id) next.put(item)
+        }
+        prefs.edit().putString(REGISTRY_KEY,next.toString()).apply()
+    }
+
+    fun isGranted(prefs: SharedPreferences, projectId: String, id: String, default: Boolean): Boolean {
+        val root = runCatching { JSONObject(prefs.getString(GRANTS_KEY,"{}") ?: "{}") }.getOrDefault(JSONObject())
+        val project = root.optJSONObject(projectId) ?: return default
+        return if (project.has(id)) project.optBoolean(id,false) else default
+    }
+
+    @Synchronized fun setGranted(prefs: SharedPreferences, projectId: String, id: String, granted: Boolean) {
+        val root = runCatching { JSONObject(prefs.getString(GRANTS_KEY,"{}") ?: "{}") }.getOrDefault(JSONObject())
+        val project = root.optJSONObject(projectId) ?: JSONObject()
+        project.put(id,granted); root.put(projectId,project)
+        prefs.edit().putString(GRANTS_KEY,root.toString()).apply()
+    }
+
+    @Synchronized fun record(prefs: SharedPreferences, projectId: String, id: String, name: String, action: String, outcome: String) {
+        val old = runCatching { JSONArray(prefs.getString(AUDIT_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
+        val next = JSONArray().put(JSONObject().put("id",UUID.randomUUID().toString())
+            .put("capability_id",id).put("capability_name",name).put("project_id",projectId)
+            .put("action",action).put("outcome",outcome).put("created_at",System.currentTimeMillis()))
+        for (i in 0 until minOf(old.length(),MAX_RECORDS-1)) old.optJSONObject(i)?.let(next::put)
+        prefs.edit().putString(AUDIT_KEY,next.toString()).apply()
+    }
+
+    fun recentAudit(prefs: SharedPreferences, projectId: String, limit: Int = 30): List<CapabilityAuditRecord> {
+        val data = runCatching { JSONArray(prefs.getString(AUDIT_KEY,"[]") ?: "[]") }.getOrDefault(JSONArray())
+        return (0 until data.length()).mapNotNull { i ->
+            val o=data.optJSONObject(i) ?: return@mapNotNull null
+            if(o.optString("project_id")!=projectId) return@mapNotNull null
+            CapabilityAuditRecord(o.optString("capability_id"),o.optString("capability_name"),o.optString("project_id"),
+                o.optString("action"),o.optString("outcome"),o.optLong("created_at"))
+        }.take(limit)
+    }
+    fun isToolGranted(prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String): Boolean {
+        val key = CapabilityToolPolicy.grantKey(serviceId, toolName)
+        val root = runCatching { JSONObject(prefs.getString(TOOL_GRANTS_KEY, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        return root.optJSONObject(projectId)?.optBoolean(key, false) ?: false
+    }
+
+    @Synchronized fun setToolGranted(prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String, granted: Boolean) {
+        require(projectId.isNotBlank() && projectId.length <= 120)
+        val key = CapabilityToolPolicy.grantKey(serviceId, toolName)
+        val root = runCatching { JSONObject(prefs.getString(TOOL_GRANTS_KEY, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val project = root.optJSONObject(projectId) ?: JSONObject()
+        project.put(key, granted)
+        root.put(projectId, project)
+        prefs.edit().putString(TOOL_GRANTS_KEY, root.toString()).apply()
+    }
+
+    @Synchronized fun recordToolAudit(
+        prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
+        action: String, outcome: String, parameterNames: List<String> = emptyList()
+    ) {
+        CapabilityToolPolicy.grantKey(serviceId, toolName)
+        require(projectId.isNotBlank() && projectId.length <= 120)
+        val old = runCatching { JSONArray(prefs.getString(TOOL_AUDIT_KEY, "[]") ?: "[]") }.getOrDefault(JSONArray())
+        val safeNames = CapabilityToolPolicy.safeParameterNames(parameterNames)
+        val next = JSONArray().put(JSONObject()
+            .put("service_id", serviceId).put("tool_name", toolName).put("project_id", projectId)
+            .put("action", action.take(40)).put("outcome", outcome.take(40))
+            .put("parameter_names", JSONArray(safeNames)).put("created_at", System.currentTimeMillis()))
+        for (i in 0 until minOf(old.length(), MAX_RECORDS - 1)) old.optJSONObject(i)?.let(next::put)
+        prefs.edit().putString(TOOL_AUDIT_KEY, next.toString()).apply()
+    }
+
+    fun authorizeToolCall(
+        prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
+        parameterNames: List<String> = emptyList()
+    ): Boolean {
+        val granted = isToolGranted(prefs, projectId, serviceId, toolName)
+        recordToolAudit(
+            prefs, projectId, serviceId, toolName, "invoke",
+            if (granted) "authorized" else "denied", parameterNames
+        )
+        return granted
+    }
+
+    fun recentToolAudit(prefs: SharedPreferences, projectId: String, limit: Int = 30): List<CapabilityToolAuditRecord> {
+        val data = runCatching { JSONArray(prefs.getString(TOOL_AUDIT_KEY, "[]") ?: "[]") }.getOrDefault(JSONArray())
+        return (0 until data.length()).mapNotNull { index ->
+            val item = data.optJSONObject(index) ?: return@mapNotNull null
+            if (item.optString("project_id") != projectId) return@mapNotNull null
+            val names = item.optJSONArray("parameter_names") ?: JSONArray()
+            CapabilityToolAuditRecord(
+                item.optString("service_id"), item.optString("tool_name"), projectId,
+                item.optString("action"), item.optString("outcome"),
+                (0 until names.length()).map { names.optString(it) }
+                    .filter { it.matches(Regex("[a-zA-Z0-9_.-]{1,60}")) }.take(20),
+                item.optLong("created_at")
+            )
+        }.take(limit.coerceIn(0, MAX_RECORDS))
+    }
+
+
+}

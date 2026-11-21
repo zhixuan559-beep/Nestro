@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 object PhoneAgentExecutor {
     sealed class Action {
         data class OpenUrl(val url: String) : Action()
+        data class SearchWeb(val query: String) : Action()
         data class LaunchApp(val packageName: String) : Action()
         data class ClickText(val exactText: String, val expectedAfter: String? = null) : Action()
         data class EnterText(val fieldLabel: String, val value: String) : Action()
@@ -29,9 +30,9 @@ object PhoneAgentExecutor {
     }
 
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
-    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, markTaskCompleted: Boolean = true, onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
-        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < runCatching { PhoneAgentTaskStore.decodeActions(task.planJson).size }.getOrDefault(0) && !allowRetryCurrentAction) {
+        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_INTERRUPTED) && task.currentStep < runCatching { PhoneAgentTaskStore.decodeActions(task.planJson).size }.getOrDefault(0) && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
         }
@@ -39,26 +40,30 @@ object PhoneAgentExecutor {
             .getOrElse { return ExecutionResult(Outcome.FAILED, 0, emptyList(), it.message ?: "动作计划无法恢复") }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
             actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
-        return runFrom(dao, taskId, actions, start, true, onProgress)
+        return runFrom(dao, taskId, actions, start, markTaskCompleted, onProgress)
     }
 
     private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val service = PhoneAgentService.activeService ?: return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "无障碍服务尚未连接")
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
-        if (!service.hasValidGrant()) {
+        if (!service.hasValidGrant(task.projectId)) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
-            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
+            return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
         }
         val results = mutableListOf<ActionResult>()
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         for (index in startIndex until actions.size) {
-            if (service.isTaskStopped()) {
+            val currentTask = dao.phoneAgentTask(taskId)
+            if (currentTask == null || currentTask.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "任务已取消或不存在")
+            }
+            if (service.isTaskStopped(taskId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
             }
-            if (!service.hasValidGrant()) {
+            if (!service.hasValidGrant(task.projectId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
+                return ExecutionResult(Outcome.PAUSED, results.size, results, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
             }
             val action = actions[index]
             if (action is Action.ConfirmSensitive) {
@@ -70,30 +75,36 @@ object PhoneAgentExecutor {
                 when (action) {
                     is Action.OpenUrl -> {
                         val before = service.captureVisibleText()
-                        val opened = service.openUrl(action.url)
+                        val opened = service.openUrl(task.projectId, action.url)
                         delay(1200)
+                        opened && service.screenTextChanged(before)
+                    }
+                    is Action.SearchWeb -> {
+                        val before = service.captureVisibleText()
+                        val opened = service.searchWeb(task.projectId, action.query)
+                        delay(1400)
                         opened && service.screenTextChanged(before)
                     }
                     is Action.LaunchApp -> {
                         val beforePackage = service.activePackageName()
                         val beforeText = service.captureVisibleText()
-                        val launched = service.launchPackage(action.packageName)
+                        val launched = service.launchPackage(task.projectId, action.packageName)
                         delay(1000)
                         launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
                     }
                     is Action.ClickText -> {
                         val before = service.captureVisibleText()
-                        val clicked = service.clickVisibleText(action.exactText)
+                        val clicked = service.clickVisibleText(task.projectId, action.exactText)
                         if (clicked) {
                             delay(500)
                             if (action.expectedAfter != null) service.verifyVisibleText(action.expectedAfter)
                             else service.screenTextChanged(before)
                         } else false
                     }
-                    is Action.EnterText -> service.setTextOnVisibleField(action.fieldLabel, action.value)
+                    is Action.EnterText -> service.setTextOnVisibleField(task.projectId, action.fieldLabel, action.value)
                     is Action.Scroll -> {
                         val before = service.captureVisibleText()
-                        val scrolled = service.scroll(action.direction)
+                        val scrolled = service.scroll(task.projectId, action.direction)
                         if (scrolled) { delay(350); service.screenTextChanged(before) } else false
                     }
                     is Action.Wait -> { delay(action.millis.coerceIn(0, 10_000)); true }
@@ -101,7 +112,7 @@ object PhoneAgentExecutor {
                     Action.Back -> {
                         val beforePackage = service.activePackageName()
                         val beforeText = service.captureVisibleText()
-                        val backed = service.pressBack()
+                        val backed = service.pressBack(task.projectId)
                         if (backed) { delay(350); service.activePackageName() != beforePackage || service.screenTextChanged(beforeText) } else false
                     }
                     is Action.ConfirmSensitive -> false
@@ -115,6 +126,21 @@ object PhoneAgentExecutor {
             results += result
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
+            val latestTask = dao.phoneAgentTask(taskId)
+            if (latestTask?.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
+                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, "用户已取消任务")
+            }
+            if (service.isTaskStopped(taskId)) {
+                val stopStatus = PhoneAgentTaskStore.stopStatusAfterAction(success)
+                val stopStep = PhoneAgentTaskStore.stopStepAfterAction(index, success)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, stopStatus, stopStep)
+                val stopMessage = if (success) {
+                    "用户已请求停止；已完成的动作不会重复执行"
+                } else {
+                    "用户已请求停止；当前动作结果未能确认，请核对页面后再继续"
+                }
+                return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, stopMessage)
+            }
             if (!success) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
                 return ExecutionResult(Outcome.PAUSED, results.count { it.success }, results, detail)

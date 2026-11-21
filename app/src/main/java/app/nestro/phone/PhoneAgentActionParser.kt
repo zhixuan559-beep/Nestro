@@ -2,6 +2,7 @@ package app.nestro.phone
 
 import java.net.URI
 import org.json.JSONObject
+import app.nestro.data.PhoneAgentTaskStore
 
 object PhoneAgentActionParser {
     data class ParsedPlan(
@@ -21,10 +22,15 @@ object PhoneAgentActionParser {
         val actions = (0 until rows.length()).map { index ->
             val item = rows.getJSONObject(index)
             when (item.getString("type")) {
+                "search_web" -> {
+                    val query = item.getString("query").trim()
+                    require(query.length in 2..300 && !PhoneAgentTaskStore.containsSensitiveText(query)) { "网页搜索词无效或包含敏感信息" }
+                    PhoneAgentExecutor.Action.SearchWeb(query)
+                }
                 "open_url" -> {
                     val url = item.getString("url").trim()
                     val uri = runCatching { URI(url) }.getOrElse { error("模型生成的网址无效") }
-                    require((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "模型生成了不安全的网址" }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "模型生成了不安全的网址" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {
@@ -38,7 +44,9 @@ object PhoneAgentActionParser {
                     if (isHighRisk(label)) {
                         PhoneAgentExecutor.Action.ConfirmSensitive("页面出现高风险操作“$label”，请核对页面后由你本人处理。")
                     } else {
-                        PhoneAgentExecutor.Action.ClickText(label, item.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
+                        val expectedAfter = item.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(expectedAfter == null || expectedAfter.length <= 100) { "动作后的验证文字过长" }
+                    PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
                     }
                 }
                 "enter_text" -> {
@@ -73,29 +81,25 @@ object PhoneAgentActionParser {
         }
         return ParsedPlan(
             done = root.optBoolean("done", false),
-            completionEvidence = root.optString("completionEvidence").take(120),
+            completionEvidence = PhoneAgentTaskStore.redactSensitiveText(root.optString("completionEvidence")).take(120),
             summary = sanitizeMessage(root.optString("summary").take(600)),
             actions = actions
         )
     }
 
-    private fun sanitizeMessage(value: String): String = value
-        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
-        .replace(Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)"), "[手机号已隐藏]")
-        .replace(Regex("(?<!\\d)\\d{6,19}(?!\\d)"), "[数字信息已隐藏]")
+    private fun sanitizeMessage(value: String): String =
+        PhoneAgentTaskStore.redactSensitiveText(value)
 
     private fun isHighRisk(value: String): Boolean =
-        listOf("付款", "支付", "转账", "购买", "预约", "确认", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交", "提交", "下单", "购买", "预约", "确认")
-            .any { value.contains(it, true) }
+        listOf("付款", "支付", "转账", "提现", "充值", "退款", "购买", "抢购", "预约", "预订", "预定", "订位", "订座", "订票", "订房", "抢票", "确认", "立即购买", "确认购买", "提交订单", "立即下单", "确认支付", "删除账号", "确认提交", "最终提交", "预约提交", "提交", "下单", "发送", "发布", "分享", "拨打电话", "打电话", "呼叫", "登录", "注册", "身份验证", "人机验证", "安全验证", "授权", "允许", "同意", "接受", "删除", "注销", "清空", "清除数据", "永久删除", "恢复出厂设置", "重置", "卸载", "安装", "导出", "上传", "绑定", "解绑", "签约", "开通会员", "订阅", "续费")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:pay|payment|transfer|withdraw|refund|top up|buy|purchase|place order|checkout|book|reserve|confirm|submit|send|post|publish|share|call|dial|login|log in|logout|log out|sign in|sign out|sign up|register|authorize|grant|allow|agree|accept|delete|remove|clear|subscribe|unsubscribe|renew|cancel|wipe|reset|factory reset|uninstall|install|export|upload|link|unlink|disable|deactivate|delete account|remove account)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun isSensitiveLabel(value: String): Boolean =
-        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "地址", "联系人", "收货人", "姓名", "账号")
-            .any { value.contains(it, true) }
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "电子邮件", "地址", "联系人", "收货人", "姓名", "账号")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:password|passcode|otp|verification code|security code|cvv|pin|card number|phone number|email|address|full name|recipient|username|account number)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun isSensitiveValue(value: String): Boolean =
-        Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE).containsMatchIn(value) ||
-            Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
-            Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
-            Regex("(?<!\\d)\\d{6}(?!\\d)").containsMatchIn(value) ||
-            Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])").containsMatchIn(value)
+        PhoneAgentTaskStore.containsSensitiveText(value)
 }

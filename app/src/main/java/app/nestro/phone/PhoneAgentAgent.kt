@@ -4,7 +4,9 @@ import android.content.Context
 import app.nestro.data.NestroDao
 import app.nestro.data.PhoneAgentTaskStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 object PhoneAgentAgent {
     data class Result(val outcome: PhoneAgentExecutor.Outcome, val message: String)
@@ -16,23 +18,27 @@ object PhoneAgentAgent {
         afterUserHandoff: Boolean = false,
         allowRetryCurrentAction: Boolean = false
     ): Result {
-        val service = PhoneAgentService.activeService
-            ?: return pause(dao, taskId, "无障碍服务尚未连接")
-        if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
-
         var task = dao.phoneAgentTask(taskId)
             ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+        val service = PhoneAgentService.activeService
+            ?: return pause(dao, taskId, "无障碍服务尚未连接")
+        if (!service.hasValidGrant(task.projectId)) {
+            return pause(dao, taskId, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
+        }
         val existingActions = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.getOrNull()
         if (existingActions != null) {
             val resumed = PhoneAgentExecutor.resume(
                 dao = dao,
                 taskId = taskId,
                 afterUserHandoff = afterUserHandoff,
-                allowRetryCurrentAction = allowRetryCurrentAction
+                allowRetryCurrentAction = allowRetryCurrentAction,
+                markTaskCompleted = false
             )
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
             }
+            // Continue below: the model must re-evaluate the current screen and plan
+            // the next batch, or provide completion evidence for the overall goal.
         } else if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             return Result(PhoneAgentExecutor.Outcome.PAUSED, "任务曾在规划期间中断，请核对当前页面后重新启动。")
@@ -46,26 +52,30 @@ object PhoneAgentAgent {
         }
         var loop = 0
         while (loop < 8) {
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
-            if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
             task = dao.phoneAgentTask(taskId)
                 ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+            if (!service.hasValidGrant(task.projectId)) {
+                return pause(dao, taskId, "设备授权已失效，或当前项目已撤销 Phone Agent 权限")
+            }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
             val plan = try {
-                PhoneAgentModelClient.planNext(
-                    context = context,
-                    goal = task.goal,
-                    category = task.category,
-                    visibleScreen = screen,
-                    recentActions = actionHistory.toString()
-                )
+                withContext(Dispatchers.IO) {
+                    PhoneAgentModelClient.planNext(
+                        context = context,
+                        goal = task.goal,
+                        category = task.category,
+                        visibleScreen = screen,
+                        recentActions = actionHistory.toString()
+                    )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 return pause(dao, taskId, error.message ?: "动作规划失败")
             }
-            if (service.isTaskStopped()) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
 
             if (plan.actions.isEmpty()) {
                 if (plan.done && plan.completionEvidence.isNotBlank() &&
@@ -114,16 +124,15 @@ object PhoneAgentAgent {
                 PhoneAgentTaskStore.STATUS_COMPLETED,
                 PhoneAgentTaskStore.STATUS_CANCELLED,
                 PhoneAgentTaskStore.STATUS_WAITING_USER,
-                PhoneAgentTaskStore.STATUS_FAILED
+                PhoneAgentTaskStore.STATUS_FAILED,
+                PhoneAgentTaskStore.STATUS_INTERRUPTED
             )
         ) {
-            if (task.status == PhoneAgentTaskStore.STATUS_RUNNING) {
-                PhoneAgentTaskStore.markInterrupted(dao, taskId)
-            } else {
-                PhoneAgentTaskStore.updateProgress(
-                    dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
-                )
-            }
+            // This path is a cooperative pause between actions, not process-death recovery.
+            // Preserve the next action index without marking it as ambiguously interrupted.
+            PhoneAgentTaskStore.updateProgress(
+                dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep
+            )
         }
         if (task != null) {
             runCatching {

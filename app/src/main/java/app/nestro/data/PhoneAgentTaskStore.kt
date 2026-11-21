@@ -5,6 +5,7 @@ import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
 import java.util.UUID
+import java.net.URI
 
 object PhoneAgentTaskStore {
     const val STATUS_PLANNED = "planned"
@@ -13,7 +14,20 @@ object PhoneAgentTaskStore {
     const val STATUS_PAUSED = "paused"
     const val STATUS_COMPLETED = "completed"
     const val STATUS_FAILED = "failed"
+    const val STATUS_INTERRUPTED = "interrupted"
     const val STATUS_CANCELLED = "cancelled"
+
+    fun statusLabel(status: String): String = when (status) {
+        STATUS_PLANNED -> "待执行"
+        STATUS_RUNNING -> "执行中"
+        STATUS_WAITING_USER -> "等待你处理"
+        STATUS_PAUSED -> "已暂停"
+        STATUS_INTERRUPTED -> "中断待核对"
+        STATUS_COMPLETED -> "已完成"
+        STATUS_FAILED -> "执行异常"
+        STATUS_CANCELLED -> "已取消"
+        else -> "未知状态"
+    }
 
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
         val now = System.currentTimeMillis()
@@ -33,6 +47,7 @@ object PhoneAgentTaskStore {
             val row = JSONObject()
             when (action) {
                 is PhoneAgentExecutor.Action.OpenUrl -> row.put("type", "open_url").put("url", action.url)
+                is PhoneAgentExecutor.Action.SearchWeb -> row.put("type", "search_web").put("query", action.query)
                 is PhoneAgentExecutor.Action.LaunchApp -> row.put("type", "launch_app").put("package", action.packageName)
                 is PhoneAgentExecutor.Action.ClickText -> row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 is PhoneAgentExecutor.Action.EnterText -> row.put("type", "enter_text").put("label", action.fieldLabel).put("value", action.value)
@@ -46,6 +61,7 @@ object PhoneAgentTaskStore {
         }
         val encoded = JSONObject().put("format", "phone_agent_actions_v1").put("actions", rows).toString()
         require(encoded.length <= 120_000) { "任务动作数据过大" }
+        decodeActions(encoded)
         check(dao.phoneAgentTask(taskId) != null) { "任务不存在" }
         dao.updatePhoneAgentTaskPlan(taskId, encoded, System.currentTimeMillis())
     }
@@ -78,15 +94,52 @@ object PhoneAgentTaskStore {
         return (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             when (row.getString("type")) {
-                "open_url" -> PhoneAgentExecutor.Action.OpenUrl(row.getString("url"))
-                "launch_app" -> PhoneAgentExecutor.Action.LaunchApp(row.getString("package"))
-                "click" -> PhoneAgentExecutor.Action.ClickText(row.getString("text"), row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" })
-                "enter_text" -> PhoneAgentExecutor.Action.EnterText(row.getString("label"), row.getString("value"))
-                "scroll" -> PhoneAgentExecutor.Action.Scroll(row.getString("direction"))
-                "wait" -> PhoneAgentExecutor.Action.Wait(row.getLong("millis"))
-                "verify" -> PhoneAgentExecutor.Action.VerifyText(row.getString("text"))
+                "search_web" -> {
+                    val query = row.getString("query").trim()
+                    require(query.length in 2..300 && !containsSensitiveText(query)) { "恢复的网页搜索词无效或包含敏感信息" }
+                    PhoneAgentExecutor.Action.SearchWeb(query)
+                }
+                "open_url" -> {
+                    val url = row.getString("url").trim()
+                    val uri = runCatching { URI(url) }.getOrElse { error("恢复的网页地址无效") }
+                    require(url.length <= 2048 && (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "恢复的网页地址不安全" }
+                    PhoneAgentExecutor.Action.OpenUrl(url)
+                }
+                "launch_app" -> {
+                    val packageName = row.getString("package").trim()
+                    require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "恢复的应用包名无效" }
+                    PhoneAgentExecutor.Action.LaunchApp(packageName)
+                }
+                "click" -> {
+                    val label = row.getString("text").trim()
+                    val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(label.isNotBlank() && label.length <= 80 && (expectedAfter == null || expectedAfter.length <= 100)) { "恢复的点击目标无效" }
+                    PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
+                }
+                "enter_text" -> {
+                    val label = row.getString("label").trim()
+                    val value = row.getString("value")
+                    require(label.isNotBlank() && label.length <= 80 && value.length <= 1000) { "恢复的输入字段无效" }
+                    require(!containsSensitiveLabel(label) && !containsSensitiveText(value)) { "恢复的动作包含个人敏感信息，必须由用户本人填写" }
+                    PhoneAgentExecutor.Action.EnterText(label, value)
+                }
+                "scroll" -> {
+                    val direction = row.getString("direction")
+                    require(direction == "forward" || direction == "backward") { "恢复的滚动方向无效" }
+                    PhoneAgentExecutor.Action.Scroll(direction)
+                }
+                "wait" -> {
+                    val millis = row.getLong("millis")
+                    require(millis in 0..10_000) { "恢复的等待时间无效" }
+                    PhoneAgentExecutor.Action.Wait(millis)
+                }
+                "verify" -> {
+                    val expected = row.getString("text").trim()
+                    require(expected.isNotBlank() && expected.length <= 100) { "恢复的验证目标无效" }
+                    PhoneAgentExecutor.Action.VerifyText(expected)
+                }
                 "back" -> PhoneAgentExecutor.Action.Back
-                "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(row.getString("description"))
+                "confirm_sensitive" -> PhoneAgentExecutor.Action.ConfirmSensitive(redactSensitiveText(row.getString("description")).take(240))
                 else -> error("任务包含未知动作类型")
             }
         }
@@ -107,7 +160,7 @@ object PhoneAgentTaskStore {
                 actionIndex = index,
                 action = action.take(60),
                 success = success,
-                detail = detail.take(240),
+                detail = redactSensitiveText(detail).take(240),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -127,10 +180,11 @@ object PhoneAgentTaskStore {
         val now = System.currentTimeMillis()
         dao.updatePhoneAgentTaskGoal(taskId, updatedGoal, now)
         dao.updatePhoneAgentTaskPlan(taskId, "[]", now)
+        // updatePhoneAgentTaskPlan resets status and currentStep atomically.
     }
 
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
-        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
+        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val actionCount = runCatching { JSONObject(task.planJson).getJSONArray("actions").length() }.getOrNull()
         val planCount = actionCount ?: runCatching { JSONArray(task.planJson).length() }.getOrDefault(0)
@@ -138,20 +192,67 @@ object PhoneAgentTaskStore {
         dao.updatePhoneAgentTaskProgress(taskId, status, currentStep, System.currentTimeMillis())
     }
 
+    suspend fun pauseForUser(dao: NestroDao, taskId: String) {
+        val task = dao.phoneAgentTask(taskId) ?: return
+        val actionCount = runCatching { decodeActions(task.planJson).size }.getOrDefault(0)
+        val ambiguousActionPending = task.status in setOf(STATUS_RUNNING, STATUS_INTERRUPTED) &&
+            task.currentStep < actionCount
+        val nextStatus = userPauseStatus(task.status, ambiguousActionPending)
+        if (nextStatus != task.status) {
+            updateProgress(dao, taskId, nextStatus, task.currentStep)
+        }
+    }
+
+    fun stopStatusAfterAction(actionSucceeded: Boolean): String =
+        if (actionSucceeded) STATUS_PAUSED else STATUS_INTERRUPTED
+
+    fun stopStepAfterAction(currentStep: Int, actionSucceeded: Boolean): Int =
+        if (actionSucceeded) currentStep + 1 else currentStep
+
+    fun userPauseStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_WAITING_USER)) {
+            return currentStatus
+        }
+        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
+    }
+
     suspend fun markInterrupted(dao: NestroDao, taskId: String) {
         val task = dao.phoneAgentTask(taskId) ?: return
         val actionCount = runCatching { decodeActions(task.planJson).size }.getOrDefault(0)
-        val ambiguousActionPending = task.status == STATUS_RUNNING && task.currentStep < actionCount
+        val ambiguousActionPending = task.status in setOf(STATUS_RUNNING, STATUS_INTERRUPTED) && task.currentStep < actionCount
         updateProgress(
             dao,
             taskId,
-            if (ambiguousActionPending) STATUS_RUNNING else STATUS_PAUSED,
+            interruptedStatus(task.status, ambiguousActionPending),
             task.currentStep
         )
     }
 
+    fun interruptedStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_INTERRUPTED)) return currentStatus
+        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
+    }
+
     suspend fun resumeCandidates(dao: NestroDao, projectId: String): List<PhoneAgentTaskEntity> =
-        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED) }
+        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED) }
+
+    /** Remove common personal identifiers before any task context is sent to a model provider. */
+    fun redactSensitiveText(value: String): String = value
+        .replace(Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE), "[邮箱已隐藏]")
+        .replace(Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)"), "[手机号已隐藏]")
+        .replace(Regex("(?<!\\d)\\d{16,19}(?!\\d)"), "[疑似卡号已隐藏]")
+        .replace(Regex("(?<!\\d)\\d{6}(?!\\d)"), "[六位数字已隐藏]")
+        .replace(Regex("(?<![0-9Xx])[0-9]{17}[0-9Xx](?![0-9Xx])"), "[身份证号已隐藏]")
+        .replace(Regex("(收货地址|详细地址|家庭地址|住址|地址|收货地点|邮寄地址)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[地址已隐藏]" }
+        .replace(Regex("(收货人|联系人|姓名)[:：]?\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "：[姓名已隐藏]" }
+        .replace(Regex("(送到|寄到|住在|地址是)\\s*[^，,；;。]+")) { match -> match.groupValues[1] + "[地址已隐藏]" }
+
+    fun containsSensitiveText(value: String): Boolean = redactSensitiveText(value) != value
+
+    private fun containsSensitiveLabel(value: String): Boolean =
+        listOf("密码", "验证码", "短信码", "支付码", "银行卡", "身份证", "安全码", "cvv", "pin", "手机号", "电话", "邮箱", "电子邮件", "地址", "联系人", "收货人", "姓名", "账号")
+            .any { value.contains(it, true) } ||
+            Regex("""\b(?:password|passcode|otp|verification code|security code|cvv|pin|card number|phone number|email|address|full name|recipient|username|account number)\b""", RegexOption.IGNORE_CASE).containsMatchIn(value)
 
     private fun containsSensitiveClarification(value: String): Boolean =
         Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE).containsMatchIn(value) ||

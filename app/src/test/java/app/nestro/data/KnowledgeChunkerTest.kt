@@ -43,6 +43,31 @@ class KnowledgeChunkerTest {
     }
 
     @Test
+    fun preservesWhitespaceAndCanReassembleOverlappingChunks() {
+        val source = (1..2_500).joinToString("") { "第${it}段 内容。\n" }
+        val chunks = KnowledgeChunker.split(source)
+        assertEquals(source, KnowledgeChunker.reassemble(chunks))
+    }
+
+    @Test
+    fun neverSplitsEmojiSurrogatePairs() {
+        val source = "a".repeat(999) + "😀" + "b".repeat(1_500)
+        val chunks = KnowledgeChunker.split(source)
+        assertTrue(chunks.all { chunk ->
+            chunk.indices.none { index ->
+                chunk[index].isHighSurrogate() &&
+                    (index == chunk.lastIndex || !chunk[index + 1].isLowSurrogate())
+            }
+        })
+        assertTrue(chunks.all { chunk ->
+            chunk.indices.none { index ->
+                chunk[index].isLowSurrogate() &&
+                    (index == 0 || !chunk[index - 1].isHighSurrogate())
+            }
+        })
+    }
+
+    @Test
     fun rejectsInvalidChunkConfiguration() {
         assertTrue(runCatching { KnowledgeChunker.split("abc", chunkSize = 10, overlap = 10) }.isFailure)
     }

@@ -2,21 +2,39 @@ package app.nestro.phone
 
 /** Goal-driven task planning contract. Planning never grants permission or performs actions. */
 object PhoneAgentPlanner {
-    enum class Category { SHOPPING, FOOD_ORDER, BOOKING, WEB_RESEARCH, FORM, GENERAL }
+    enum class Category { SHOPPING, FOOD_ORDER, BOOKING, WEB_RESEARCH, FORM, DEVICE_TASK, GENERAL }
     enum class Risk { LOW, MEDIUM, HIGH }
     enum class StepKind { CLARIFY_REQUIREMENTS, DISCOVER_OPTIONS, COMPARE_TOTAL_COST, SELECT_CANDIDATE, OPEN_DESTINATION, VERIFY_PAGE, FILL_NON_SENSITIVE_DETAILS, REVIEW_ORDER, REQUEST_USER_CONFIRMATION, HANDOFF_TO_USER, VERIFY_COMPLETION }
+
+    fun categoryLabel(category: String): String = when (category) {
+        Category.SHOPPING.name -> "购物"
+        Category.FOOD_ORDER.name -> "外卖/点餐"
+        Category.BOOKING.name -> "预约/预订"
+        Category.WEB_RESEARCH.name -> "网页检索"
+        Category.FORM.name -> "表单处理"
+        Category.DEVICE_TASK.name -> "手机操作"
+        Category.GENERAL.name -> "通用任务"
+        else -> "其他任务"
+    }
     data class Step(val kind: StepKind, val title: String, val risk: Risk = Risk.LOW, val requiresUserConfirmation: Boolean = false)
     data class Plan(val category: Category, val goal: String, val steps: List<Step>, val requiresHumanAtCommit: Boolean = true)
 
     fun plan(prompt: String): Plan {
         val text = prompt.trim()
         val normalized = text.lowercase()
+        val diningReservation = Regex("(预约|预订|预定|订位|订座|订桌|订餐厅|订).{0,8}(餐厅|饭店|座位|餐位|包间)|餐厅.{0,6}(预约|预订|预定|订位|订座|订)")
+            .containsMatchIn(normalized)
+        val deviceTask = listOf("帮我打开", "请帮我打开", "帮我启动", "帮我关闭", "帮我退出", "帮我设置", "打开微信", "打开抖音", "打开小红书", "打开支付宝", "打开淘宝", "打开京东", "打开QQ", "打开微博", "打开知乎", "打开百度", "打开美团", "打开饿了么", "打开快手", "打开B站", "打开钉钉", "打开飞书", "打开设置", "打开相机", "打开浏览器", "打开应用", "启动应用", "帮我点击", "帮我操作", "开启蓝牙", "关闭蓝牙", "开启定位", "关闭定位", "发消息给", "发短信给", "发邮件给", "拨打电话", "打电话给").any { normalized.contains(it) } ||
+            Regex("(帮我|请帮我).{0,8}(打开|启动|关闭|退出|切换|开启|关掉|点击|操作|设置).{0,12}(应用|软件|微信|抖音|小红书|设置|相机|浏览器|计算器|蓝牙|定位|热点|手电筒|闹钟|支付宝|淘宝|京东|QQ|微博|知乎|百度|美团|饿了么|快手|B站|钉钉|飞书)").containsMatchIn(normalized) ||
+            Regex("(帮我|请帮我)?给.{1,12}(发消息|发短信|发邮件|打电话)").containsMatchIn(normalized) ||
+            (listOf("在手机上", "手机上", "手机里").any { normalized.contains(it) } && listOf("打开", "启动", "点击", "操作", "发消息", "发短信", "发邮件", "拨打", "打电话", "开启", "关闭", "切换").any { normalized.contains(it) })
         val category = when {
+            diningReservation || listOf("预约", "预订", "预定", "订票", "买票", "订位", "订座", "订桌", "酒店", "机票", "火车票", "电影票", "演出票", "门票", "挂号").any { normalized.contains(it) } -> Category.BOOKING
+            listOf("外卖", "点餐", "订餐", "奶茶", "吃饭", "点一份").any { normalized.contains(it) } -> Category.FOOD_ORDER
             listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any { normalized.contains(it) } -> Category.SHOPPING
-            listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any { normalized.contains(it) } -> Category.BOOKING
-            listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any { normalized.contains(it) } -> Category.FOOD_ORDER
             listOf("搜索", "查找", "调查", "对比", "资料", "网页").any { normalized.contains(it) } -> Category.WEB_RESEARCH
             listOf("填写", "提交表单", "申请", "报名").any { normalized.contains(it) } -> Category.FORM
+            deviceTask -> Category.DEVICE_TASK
             else -> Category.GENERAL
         }
         val steps = when (category) {
@@ -55,6 +73,13 @@ object PhoneAgentPlanner {
                 Step(StepKind.VERIFY_PAGE, "核对表单主体与字段"),
                 Step(StepKind.FILL_NON_SENSITIVE_DETAILS, "仅填写已确认的非敏感信息"),
                 Step(StepKind.HANDOFF_TO_USER, "敏感字段或最终提交由用户接手", Risk.HIGH, true)
+            )
+            Category.DEVICE_TASK -> listOf(
+                Step(StepKind.CLARIFY_REQUIREMENTS, "明确目标应用、操作对象与完成标准"),
+                Step(StepKind.OPEN_DESTINATION, "打开目标应用或页面"),
+                Step(StepKind.VERIFY_PAGE, "核对当前页面与操作对象"),
+                Step(StepKind.FILL_NON_SENSITIVE_DETAILS, "仅填写已确认的非敏感内容"),
+                Step(StepKind.VERIFY_COMPLETION, "根据页面证据核验目标是否完成")
             )
             Category.GENERAL -> listOf(
                 Step(StepKind.CLARIFY_REQUIREMENTS, "理解目标、边界和完成标准"),
