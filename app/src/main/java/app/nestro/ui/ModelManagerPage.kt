@@ -49,7 +49,8 @@ internal fun ModelManager(
     onDeleteRegistryApiKey: (String) -> Unit,
     onDeleteRegistryModel: (String) -> Unit,
     onActivateRegistryModel: (String) -> Unit,
-    onTestConnection: suspend (ModelConfig) -> String
+    onTestConnection: suspend (ModelConfig) -> String,
+    onDiscoverModels: suspend (ModelProvider, String) -> List<String>
 ) {
     val scope = rememberCoroutineScope()
     var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
@@ -82,6 +83,9 @@ internal fun ModelManager(
     var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
     var replacingApiKeyId by remember { mutableStateOf("") }
     var registryMessage by remember { mutableStateOf("") }
+    var discoveringModels by remember { mutableStateOf(false) }
+    var discoveredModelCodes by remember { mutableStateOf(emptyList<String>()) }
+    var discoveryStatus by remember { mutableStateOf("") }
 
     fun beginNew() {
         editingId = java.util.UUID.randomUUID().toString()
@@ -301,6 +305,39 @@ internal fun ModelManager(
                 enabled = apiKeyLabelDraft.isNotBlank() && apiKeyDraft.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (replacingApiKeyId.isBlank()) "添加 API Key" else "保存替换后的 API Key") }
+
+            val selectedProvider = registry.providers.firstOrNull { it.id == selectedProviderId }
+            OutlinedButton(
+                onClick = {
+                    val provider = selectedProvider
+                    val apiKey = registry.apiKeys.firstOrNull { it.providerId == selectedProviderId && it.enabled }
+                        ?.let { loadApiKey(it.id) }.orEmpty()
+                    if (provider == null || apiKey.isBlank()) {
+                        discoveryStatus = "请先为该服务商添加并启用 API Key。"
+                    } else {
+                        discoveringModels = true
+                        discoveryStatus = "正在从服务商获取模型目录…"
+                        scope.launch {
+                            runCatching { onDiscoverModels(provider, apiKey) }
+                                .onSuccess { models ->
+                                    discoveredModelCodes = models
+                                    discoveryStatus = if (models.isEmpty()) "服务商没有返回可用模型。" else "已获取 ${models.size} 个模型，选择后可填入模型 ID。"
+                                }
+                                .onFailure { discoveryStatus = "获取失败：" + (it.message ?: "未知错误") }
+                            discoveringModels = false
+                        }
+                    }
+                },
+                enabled = !discoveringModels && selectedProvider != null,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (discoveringModels) "正在获取模型…" else "自动获取模型列表") }
+            if (discoveryStatus.isNotBlank()) Text(discoveryStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+            discoveredModelCodes.forEach { discovered ->
+                TextButton(onClick = {
+                    modelCodeDraft = discovered
+                    if (modelNameDraft.isBlank()) modelNameDraft = discovered
+                }) { Text("使用模型：$discovered", color = Mint) }
+            }
 
             Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
             registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
