@@ -89,7 +89,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(taskMode = true),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { planCalls++ },
+            planPhoneAgent = { planCalls++; "planned" },
             onPartialAnswer = { }
         )
         assertEquals(0, planCalls)
