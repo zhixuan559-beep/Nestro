@@ -30,6 +30,7 @@ class OpenAiRealtimeVoiceProvider(
         listener: RealtimeVoiceListener
     ): RealtimeVoiceSession {
         config.validateForRemoteProvider()
+        require(config.model.isNotBlank()) { "请先配置实时语音模型名称" }
         require(config.providerId == providerId) { "语音服务商标识不匹配" }
         val request = Request.Builder()
             .url(realtimeUrl(config.baseUrl, config.model))
