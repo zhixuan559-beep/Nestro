@@ -88,8 +88,7 @@ fun VoiceSystemPage() {
             value = speechText,
             onValueChange = { speechText = it.take(4_000) },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("朗读内容（最多 4000 字符）"),
-            },
+            label = { Text("朗读内容（最多 4000 字符）") },
             minLines = 3
         )
         Text("文本长度：${speechText.length}/4000")
