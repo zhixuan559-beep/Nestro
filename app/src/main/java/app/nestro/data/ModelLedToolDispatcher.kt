@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentAuthorization
 import app.nestro.agent.AgentPermissionRouter
 import app.nestro.agent.AgentTaskStateStore
 import app.nestro.agent.AgentTaskStatus
@@ -261,9 +262,13 @@ ${prompt.take(8_000)}
                         )
                     }
             }
+            val requestPermissionRouter = AgentPermissionRouter { task, tool ->
+                if (tool.id == "phone_agent.plan" && taskModeEnabled) AgentAuthorization.Allow
+                else permissionRouter.authorize(task, tool)
+            }
             val runtime: AgentRuntime = DefaultAgentRuntime(
                 catalog = scopedAccess,
-                permissions = permissionRouter,
+                permissions = requestPermissionRouter,
                 states = stateStore,
                 traces = RoomAgentTaskTraceStore(database.dao())
             )
