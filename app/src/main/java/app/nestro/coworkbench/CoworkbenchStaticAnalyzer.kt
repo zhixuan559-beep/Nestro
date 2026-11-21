@@ -216,18 +216,49 @@ object CoworkbenchStaticAnalyzer {
         val result = linkedSetOf<String>()
         val lower = path.lowercase()
         if (lower.endsWith(".toml")) {
-            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*\{([^}]*)}""").findAll(text).forEach { match ->
-                val alias = match.groupValues[1]
-                val body = match.groupValues[2]
-                val module = Regex("""module\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
-                val group = Regex("""group\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
-                val name = Regex("""name\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
+            fun quoted(value: String): String? =
+                Regex("""^[\\s]*["']([^"']+)["'][\\s]*$""").matchEntire(value)?.groupValues?.get(1)
+            fun recordLibrary(alias: String, fields: Map<String, String>) {
+                val module = fields["module"]?.let(::quoted)
+                val group = fields["group"]?.let(::quoted)
+                val name = fields["name"]?.let(::quoted)
                 val coordinate = module ?: if (!group.isNullOrBlank() && !name.isNullOrBlank()) "$group:$name" else null
-                val version = Regex("""version(?:\.ref)?\s*=\s*["']([^"']+)["']""")
-                    .find(body)?.groupValues?.get(1)
+                val version = fields["version"]?.let(::quoted)
+                    ?: fields["version.ref"]?.let(::quoted)?.let { "version-ref:$it" }
                 if (coordinate != null) result += "catalog:$alias:$coordinate" + (version?.let { ":$it" } ?: "")
             }
-            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']""").findAll(text).forEach { match ->
+
+            // Inline Gradle version-catalog entries.
+            Regex("""(?m)^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*\\{([^}]*)}""").findAll(text).forEach { match ->
+                val fields = Regex("""([A-Za-z0-9_.-]+)\\s*=\\s*("[^"]*"|'[^']*')""")
+                    .findAll(match.groupValues[2]).associate { it.groupValues[1] to it.groupValues[2] }
+                recordLibrary(match.groupValues[1], fields)
+            }
+
+            // Dotted TOML tables such as [libraries.androidx-core].
+            var section: String? = null
+            val tableFields = linkedMapOf<String, String>()
+            fun flushTable() {
+                val current = section ?: return
+                if (current.startsWith("libraries.")) {
+                    recordLibrary(current.removePrefix("libraries."), tableFields)
+                }
+                tableFields.clear()
+            }
+            text.lineSequence().forEach { line ->
+                val header = Regex("""^\\s*\\[([^]]+)]\\s*(?:#.*)?$""").find(line)
+                if (header != null) {
+                    flushTable()
+                    section = header.groupValues[1].trim()
+                } else if (section?.startsWith("libraries.") == true) {
+                    val field = Regex("""^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*(.+?)\\s*(?:#.*)?$""").find(line)
+                    if (field != null) tableFields[field.groupValues[1]] = field.groupValues[2]
+                }
+            }
+            flushTable()
+
+            // Version aliases and plugin aliases are useful change evidence too.
+            Regex("""(?m)^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*["']([^"']+)["']""").findAll(text).forEach { match ->
                 result += "catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2]
             }
         } else {
