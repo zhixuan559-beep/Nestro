@@ -3,6 +3,7 @@ package app.nestro.media
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
@@ -29,6 +30,10 @@ class MediaProviderConfigStoreTest {
         try {
             store.save(config("media-test-a", "test-secret-a"))
             store.save(config("media-test-b", "test-secret-b"))
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val persisted = context.getSharedPreferences("nestro_media_provider_v1", Context.MODE_PRIVATE)
+                .getString("provider_metadata", "{}").orEmpty()
+            assertFalse(persisted.contains("test-secret-a") || persisted.contains("test-secret-b"))
             assertEquals("media-test-a", store.activeProviderId())
             store.activate("media-test-b")
             assertEquals("media-test-b", store.read()?.providerId)
