@@ -1,5 +1,8 @@
 package app.nestro.speech
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -8,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
 /** Bounded 16 kHz mono PCM16 recording for an explicitly requested remote transcription. */
-class SpeechRecordingController : AutoCloseable {
+class SpeechRecordingController(private val context: Context) : AutoCloseable {
     private val running = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val finished = AtomicBoolean(false)
@@ -19,6 +22,9 @@ class SpeechRecordingController : AutoCloseable {
 
     fun start() {
         check(!closed.get()) { "录音控制器已关闭" }
+        check(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            "尚未获得麦克风权限"
+        }
         check(!finished.get()) { "本次录音已经结束" }
         check(running.compareAndSet(false, true)) { "录音已经开始" }
         val minBuffer = AudioRecord.getMinBufferSize(
