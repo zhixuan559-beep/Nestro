@@ -87,6 +87,7 @@ object CoworkbenchStaticAnalyzer {
             totalBytes += size
             val relative = root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
             inspect(relative, text, findings, dependencies)
+            findings += CoworkbenchDataFlowAnalyzer.analyze(relative, text)
             if (relative.lowercase().endsWith(".toml")) {
                 dependencyTokens(relative, text).forEach { declaration ->
                     dependencies += "$relative:$declaration"
@@ -181,7 +182,10 @@ object CoworkbenchStaticAnalyzer {
                         "确认移除后没有遗留引用和运行时缺失")
                 }
             }
-            if (after != null) inspect(path, after, findings, linkedSetOf())
+            if (after != null) {
+                inspect(path, after, findings, linkedSetOf())
+                findings += CoworkbenchDataFlowAnalyzer.analyze(path, after)
+            }
         }
         return CoworkbenchChangeImpact(
             findings.distinctBy { listOf(it.category, it.path, it.evidence, it.message) }
