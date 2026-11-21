@@ -164,7 +164,15 @@ class NestroApplication : Application() {
         )
     }
     internal val chatRequestExecutionCoordinator: ChatRequestExecutionCoordinator by lazy {
-        ChatRequestExecutionCoordinator(chatRequestContextAssembler, chatStreamingCoordinator)
+        ChatRequestExecutionCoordinator(
+            contextAssembler = chatRequestContextAssembler,
+            streamingCoordinator = chatStreamingCoordinator,
+            modelToolDispatcher = ModelLedToolDispatcher(
+                chat = chatExecutionService,
+                catalog = agentToolCatalog,
+                database = database
+            )
+        )
     }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
