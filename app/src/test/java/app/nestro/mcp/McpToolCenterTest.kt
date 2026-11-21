@@ -45,4 +45,14 @@ class McpToolCenterTest {
   assertEquals(tool,McpToolCenterCodec.decodeTools(McpToolCenterCodec.encodeTools(listOf(tool))).single())
   assertEquals(tool.id,McpToolCenterCodec.toolId("srv-1","search"))
  }
+
+ @Test fun auditCodecRoundTripsBoundedHistory(){
+  val rows=listOf(McpToolAuditRecord("a","Docs","search",true,123L))
+  assertEquals(rows,McpAuditCodec.decodeOrNull(McpAuditCodec.encode(rows)))
+  assertNull(McpAuditCodec.decodeOrNull("not-json"))
+  assertNull(McpAuditCodec.decodeOrNull("["+"{}".repeat(101)+"]"))
+ }
+ @Test fun auditCodecRejectsMissingRequiredFields(){
+  assertNull(McpAuditCodec.decodeOrNull("""[{"id":"a","serverName":"Docs","toolName":"search","createdAt":123}]"""))
+ }
 }
