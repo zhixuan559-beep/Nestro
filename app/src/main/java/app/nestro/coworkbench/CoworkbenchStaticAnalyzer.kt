@@ -216,11 +216,20 @@ object CoworkbenchStaticAnalyzer {
         val result = linkedSetOf<String>()
         val lower = path.lowercase()
         if (lower.endsWith(".toml")) {
-            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*(?:\{[^}]*module\s*=\s*["']([^"']+)["'][^}]*}|["']([^"']+)["'])""")
-                .findAll(text).forEach { match ->
-                    result += "catalog:" + match.groupValues[1] + ":" +
-                        (match.groupValues[2].ifBlank { match.groupValues[3] })
-                }
+            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*\{([^}]*)}""").findAll(text).forEach { match ->
+                val alias = match.groupValues[1]
+                val body = match.groupValues[2]
+                val module = Regex("""module\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
+                val group = Regex("""group\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
+                val name = Regex("""name\s*=\s*["']([^"']+)["']""").find(body)?.groupValues?.get(1)
+                val coordinate = module ?: if (!group.isNullOrBlank() && !name.isNullOrBlank()) "$group:$name" else null
+                val version = Regex("""version(?:\.ref)?\s*=\s*["']([^"']+)["']""")
+                    .find(body)?.groupValues?.get(1)
+                if (coordinate != null) result += "catalog:$alias:$coordinate" + (version?.let { ":$it" } ?: "")
+            }
+            Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']""").findAll(text).forEach { match ->
+                result += "catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2]
+            }
         } else {
             Regex("""\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation|classpath)\s*\(?\s*["']([^"']+)["']""")
                 .findAll(text).forEach { result += it.groupValues[1] }
