@@ -235,7 +235,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             onProgress(0.05f)
             val transcriptionFields = when (config.transcriptionModel) {
                 "gpt-transcribe" -> mapOf("model" to config.transcriptionModel, "languages[]" to languageTag.lowercase())
-                "whisper-1" -> mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
+                "whisper-1" -> mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json", "timestamp_granularities[]" to "segment")
                 else -> mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'))
             }
             val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields, onProgress = onProgress)
