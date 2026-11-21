@@ -262,7 +262,7 @@ fun CapabilityDirectoryPage() {
                     }.getOrDefault(emptyMap())
                     val result=withContext(Dispatchers.IO) { runCatching { app.nestro.data.SkillDependencyResolver.resolve(
                         releases.firstOrNull { it.name==bundle.name && it.version==bundle.version } ?: error("原始签名目录版本已失效"),
-                        releases, installed
+                        releases, installed, bundle
                     ) } }
                     result.onSuccess { pendingPlan=it; pendingBundle=null }
                         .onFailure { installStatus="依赖解析失败："+(it.message ?: "无法形成完整安装计划") }
