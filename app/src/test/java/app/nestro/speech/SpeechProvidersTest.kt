@@ -30,10 +30,14 @@ class SpeechProvidersTest {
         val queryCredentials = SpeechProviderConfig(
             "provider", "https://speech.example.com/v1?token=secret", "key", "model"
         )
+        val pathTraversal = SpeechProviderConfig(
+            "provider", "https://speech.example.com/v1/../internal", "key", "model"
+        )
 
         assertThrows(IllegalArgumentException::class.java) { insecure.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { embeddedCredentials.validateForRemoteProvider() }
         assertThrows(IllegalArgumentException::class.java) { queryCredentials.validateForRemoteProvider() }
+        assertThrows(IllegalArgumentException::class.java) { pathTraversal.validateForRemoteProvider() }
     }
 
     @Test
