@@ -101,7 +101,7 @@ class McpToolCenterRepository(context:Context) {
  fun saveCredential(id:String,token:String)=McpCredentialVault.write(app,id,token)
  fun readCredential(id:String)=McpCredentialVault.read(app,id)
  fun clearCredential(id:String)=McpCredentialVault.delete(app,id)
- fun hasCredential(id:String)=readCredential(id).isNotBlank()
+ fun hasCredential(id:String)=McpCredentialVault.exists(app,id)
  fun listTools():List<McpToolDescriptor> {
   val raw=prefs.getString(TOOLS_KEY,null)?:return emptyList()
   return McpToolCenterCodec.decodeToolsOrNull(raw)?:run {
@@ -166,6 +166,10 @@ private object McpCredentialVault {
   val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());cipher.updateAAD(id.toByteArray(Charsets.UTF_8))
   val packed=Base64.encodeToString(cipher.iv,Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(token.toByteArray(Charsets.UTF_8)),Base64.NO_WRAP)
   check(c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).edit().putString(PREFIX+id,packed).commit()){"MCP 凭据加密保存失败"}
+ }
+ fun exists(c:Context,id:String):Boolean {
+  require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
+  return c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).contains(PREFIX+id)
  }
  fun read(c:Context,id:String):String{
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
