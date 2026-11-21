@@ -37,7 +37,7 @@ import java.util.Locale
 fun VoiceSystemPage() {
     val context = LocalContext.current
     val providerStore = remember(context) { SpeechProviderConfigStore(context) }
-    val savedProvider = remember(context) { providerStore.read() }
+    val savedProvider = remember(context) { providerStore.read()?.copy(apiKey = "") }
     val scope = rememberCoroutineScope()
     var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
     var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
@@ -141,9 +141,14 @@ fun VoiceSystemPage() {
                 }
             ) { Text("开始朗读") }
             OutlinedButton(
-                enabled = ready,
+                enabled = ready || mediaPlayer != null,
                 onClick = {
                     controller.stop()
+                    runCatching { mediaPlayer?.stop() }
+                    runCatching { mediaPlayer?.release() }
+                    mediaPlayer = null
+                    audioFile?.delete()
+                    audioFile = null
                     status = "已停止朗读"
                 }
             ) { Text("停止") }
@@ -214,7 +219,7 @@ fun VoiceSystemPage() {
             ) { Text("删除配置") }
         }
         OutlinedButton(
-            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy,
+            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy && mediaPlayer == null,
             onClick = {
                 scope.launch {
                     remoteBusy = true
@@ -251,6 +256,10 @@ fun VoiceSystemPage() {
                         audioFile = file
                         player.prepareAsync()
                     } catch (error: Exception) {
+                        runCatching { mediaPlayer?.release() }
+                        mediaPlayer = null
+                        audioFile?.delete()
+                        audioFile = null
                         status = error.message ?: "远程语音合成失败"
                     } finally {
                         remoteBusy = false
