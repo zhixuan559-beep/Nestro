@@ -105,6 +105,58 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
 
     suspend fun loadReview(id: String): CoworkbenchReview = lock.withLock { loadReviewUnlocked(id) }
 
+    suspend fun listContextFiles(repositoryId: String): List<String> = lock.withLock {
+        val repository = git.localRepositories().firstOrNull { it.id == repositoryId }
+            ?: error("本地仓库不存在")
+        withContext(Dispatchers.IO) {
+            val root = File(repository.localPath).canonicalFile
+            require(root.isDirectory) { "本地仓库目录不可用" }
+            root.walkTopDown()
+                .onEnter { dir ->
+                    dir == root || (dir.name !in setOf(".git", ".gradle", "build", "node_modules", ".idea", ".nestro", "dist", "out") &&
+                        !java.nio.file.Files.isSymbolicLink(dir.toPath()))
+                }
+                .filter { file ->
+                    file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
+                        file.extension.lowercase() in setOf("kt", "kts", "java", "xml", "gradle", "toml", "properties", "json", "yml", "yaml", "md")
+                }
+                .mapNotNull { file ->
+                    val canonical = runCatching { file.canonicalFile }.getOrNull() ?: return@mapNotNull null
+                    if (!canonical.toPath().startsWith(root.toPath()) || file.length() !in 1..65_536L) null
+                    else root.toPath().relativize(canonical.toPath()).toString().replace(File.separatorChar, '/')
+                }
+                .take(120)
+                .toList()
+                .sorted()
+        }
+    }
+
+    suspend fun readContextFiles(repositoryId: String, paths: List<String>): String = lock.withLock {
+        require(paths.isNotEmpty() && paths.size <= 20) { "上下文文件需选择 1 到 20 个" }
+        val normalized = paths.map(CoworkbenchPolicy::safePath)
+        require(normalized.distinct().size == normalized.size) { "上下文文件包含重复路径" }
+        val repository = git.localRepositories().firstOrNull { it.id == repositoryId }
+            ?: error("本地仓库不存在")
+        withContext(Dispatchers.IO) {
+            val root = File(repository.localPath).canonicalFile
+            var total = 0
+            buildString {
+                normalized.forEach { relative ->
+                    val file = File(root, relative).canonicalFile
+                    require(file.toPath().startsWith(root.toPath()) && file.isFile &&
+                        !java.nio.file.Files.isSymbolicLink(file.toPath())) { "上下文文件无效或路径越界：$relative" }
+                    val size = file.length()
+                    require(size in 1..24_576L && total + size <= 65_536) { "上下文文件总量超过 64 KB 或单文件超过 24 KB" }
+                    val content = file.readText(Charsets.UTF_8)
+                    require('\u0000' !in content) { "上下文包含二进制文件：$relative" }
+                    total += size.toInt()
+                    append("\n--- FILE: ").append(relative).append(" ---\n")
+                    append(content).append("\n")
+                }
+            }
+        }
+    }
+
     suspend fun analyzeRepository(repositoryId: String): CoworkbenchAnalysisReport = lock.withLock {
         val repository = git.localRepositories().firstOrNull { it.id == repositoryId }
             ?: error("本地仓库不存在")
