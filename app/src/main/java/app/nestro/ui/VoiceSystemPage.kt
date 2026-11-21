@@ -2,6 +2,14 @@ package app.nestro.ui
 
 import android.content.Context
 import app.nestro.speech.AndroidTextToSpeechController
+import app.nestro.speech.OpenAiCompatibleSpeechOutputProvider
+import app.nestro.speech.SpeechProviderConfig
+import app.nestro.speech.SpeechProviderConfigStore
+import android.media.MediaPlayer
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.launch
+import java.io.File
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +36,17 @@ import java.util.Locale
 @Composable
 fun VoiceSystemPage() {
     val context = LocalContext.current
+    val providerStore = remember(context) { SpeechProviderConfigStore(context) }
+    val savedProvider = remember(context) { providerStore.read() }
+    val scope = rememberCoroutineScope()
+    var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
+    var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
+    var providerVoice by remember { mutableStateOf(savedProvider?.voice ?: "alloy") }
+    var providerApiKey by remember { mutableStateOf("") }
+    var providerConfigured by remember { mutableStateOf(savedProvider != null) }
+    var remoteBusy by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var audioFile by remember { mutableStateOf<File?>(null) }
     val voicePrefs = remember(context) {
         context.getSharedPreferences("nestro_voice_settings", Context.MODE_PRIVATE)
     }
@@ -74,7 +93,14 @@ fun VoiceSystemPage() {
         })
     }
     DisposableEffect(controller) {
-        onDispose { controller.close() }
+        onDispose {
+            controller.close()
+            runCatching { mediaPlayer?.stop() }
+            runCatching { mediaPlayer?.release() }
+            mediaPlayer = null
+            audioFile?.delete()
+            audioFile = null
+        }
     }
 
     Column(
@@ -122,6 +148,116 @@ fun VoiceSystemPage() {
                 }
             ) { Text("停止") }
         }
+        Text("第三方语音服务（可选）")
+        Text(
+            "仅在你主动保存并点击远程朗读时，文本才会发送到下方配置的 HTTPS 服务商。API Key 使用 Android Keystore 加密保存。",
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+        )
+        OutlinedTextField(
+            value = providerBaseUrl,
+            onValueChange = { providerBaseUrl = it.take(300) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("服务地址（HTTPS）") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = providerModel,
+            onValueChange = { providerModel = it.take(120) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("语音模型") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = providerVoice,
+            onValueChange = { providerVoice = it.take(120) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("音色 ID") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = providerApiKey,
+            onValueChange = { providerApiKey = it.take(4096) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(if (providerConfigured) "API Key（留空则保留已保存密钥）" else "API Key") },
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                val existingKey = if (providerApiKey.isBlank()) providerStore.read()?.apiKey.orEmpty() else providerApiKey
+                runCatching {
+                    providerStore.save(
+                        SpeechProviderConfig(
+                            providerId = "openai-compatible",
+                            baseUrl = providerBaseUrl,
+                            apiKey = existingKey,
+                            model = providerModel,
+                            voice = providerVoice.ifBlank { null }
+                        )
+                    )
+                }.onSuccess {
+                    providerApiKey = ""
+                    providerConfigured = true
+                    status = "远程语音服务配置已加密保存"
+                }.onFailure {
+                    status = it.message ?: "远程语音服务配置无效"
+                }
+            }) { Text("保存配置") }
+            OutlinedButton(
+                enabled = providerConfigured,
+                onClick = {
+                    runCatching { providerStore.delete() }
+                    providerConfigured = false
+                    providerApiKey = ""
+                    status = "远程语音服务配置已删除"
+                }
+            ) { Text("删除配置") }
+        }
+        OutlinedButton(
+            enabled = providerConfigured && providerModel.isNotBlank() && !remoteBusy,
+            onClick = {
+                scope.launch {
+                    remoteBusy = true
+                    status = "正在请求远程语音合成…"
+                    try {
+                        val config = providerStore.read() ?: error("请先保存远程语音服务配置")
+                        val audio = OpenAiCompatibleSpeechOutputProvider().synthesize(speechText, config)
+                        mediaPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }
+                        audioFile?.delete()
+                        val file = File.createTempFile("nestro-voice-", ".audio", context.cacheDir)
+                        file.writeBytes(audio.bytes)
+                        val player = MediaPlayer()
+                        player.setDataSource(file.absolutePath)
+                        player.setOnPreparedListener {
+                            it.start()
+                            status = "远程语音朗读中…"
+                        }
+                        player.setOnCompletionListener {
+                            it.release()
+                            file.delete()
+                            mediaPlayer = null
+                            audioFile = null
+                            status = "远程语音朗读完成"
+                        }
+                        player.setOnErrorListener { mp, _, _ ->
+                            mp.release()
+                            file.delete()
+                            mediaPlayer = null
+                            audioFile = null
+                            status = "远程音频播放失败"
+                            true
+                        }
+                        mediaPlayer = player
+                        audioFile = file
+                        player.prepareAsync()
+                    } catch (error: Exception) {
+                        status = error.message ?: "远程语音合成失败"
+                    } finally {
+                        remoteBusy = false
+                    }
+                }
+            }
+        ) { Text(if (remoteBusy) "正在合成…" else "远程朗读预览") }
         Text(status)
     }
 }
