@@ -183,7 +183,13 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
 }
 
 object MediaVideoGeneration {
-    fun enqueue(context: Context, projectId: String, providerId: String, prompt: String): MediaAiTask {
+    fun enqueue(
+        context: Context,
+        projectId: String,
+        providerId: String,
+        prompt: String,
+        parentTaskId: String = ""
+    ): MediaAiTask {
         require(prompt.isNotBlank() && prompt.length <= 12_000) { "视频提示词为空或过长" }
         val config = MediaProviderConfigStore(context).read(providerId)
             ?: error("视频服务商配置不存在或 API Key 无法读取")
@@ -194,7 +200,8 @@ object MediaVideoGeneration {
             assetId = "",
             providerId = config.providerId,
             action = "video-generate",
-            prompt = prompt
+            prompt = prompt,
+            parentTaskId = parentTaskId
         )
         MediaAiTaskScheduler.enqueue(context, projectId, task.id)
         return task
