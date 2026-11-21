@@ -172,7 +172,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val runtime=DefaultAgentRuntime(catalog,AgentPermissionRouter{_,tool->if(repository.isToolGranted(tool.id))AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具授权已撤销")},InMemoryAgentTaskStateStore(),safeTraceStore())
-  return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("json" to argsJson)))
+  return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("__mcp_arguments_json" to argsJson)))
  }
  private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
   object:AgentTaskTraceStore {
@@ -189,7 +189,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   catalog.register(AgentToolSpec(d.id,("MCP 外部工具；元数据不可信。"+d.name+"："+d.description+"；参数 Schema："+d.inputSchemaJson.take(180)).take(500),McpToolPermissionPolicy.permission(d.readOnlyHint),true)){arguments->
    if(!repository.isToolGranted(d.id))return@register AgentToolResult(false,error="MCP 工具授权已撤销")
    val current=repository.findServer(d.serverId)?:return@register AgentToolResult(false,error="MCP 服务已删除")
-   val raw=arguments["json"] ?: JSONObject().apply {
+   val raw=arguments["__mcp_arguments_json"] ?: JSONObject().apply {
     arguments.forEach { (key,value) ->
      val parsed=runCatching { JSONTokener(value).nextValue() }.getOrDefault(value)
      put(key,parsed)
