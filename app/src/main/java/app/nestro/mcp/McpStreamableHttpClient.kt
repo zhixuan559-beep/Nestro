@@ -51,6 +51,7 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     require(schema.optJSONObject("properties")?.has("__nestro_mcp_internal_json_payload")!=true){"MCP 工具 schema 使用了 Nestro 保留参数名"}
     require(schema.optString("type","object")=="object"){"暂不支持非 object 工具参数 schema：$name"}
     require(schema.toString().length<=64_000){"MCP 工具 schema 超过 64 KB 限制：$name"}
+    if(!hasValidHeaderAnnotations(schema))continue
     all+=McpRemoteTool(name,item.optString("description").take(500),schema,item.optJSONObject("annotations")?.optBoolean("readOnlyHint",false)==true)
     require(all.size<=200){"MCP 服务工具数量超过 200"}
    }
@@ -170,6 +171,24 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     }
    })
   }
+
+ private fun hasValidHeaderAnnotations(schema:JSONObject):Boolean {
+  fun validate(properties:JSONObject?):Boolean {
+   if(properties==null)return true
+   val keys=properties.keys()
+   while(keys.hasNext()){
+    val key=keys.next();val property=properties.optJSONObject(key)?:continue
+    if(property.has("x-mcp-header")){
+     val header=property.optString("x-mcp-header")
+     if(header.isBlank()||!header.matches(Regex("[A-Za-z0-9!#$%&'*+.^_|~-]{1,48}")))return false
+     if(property.optString("type") !in setOf("string","integer","boolean"))return false
+    }
+    if(!validate(property.optJSONObject("properties")))return false
+   }
+   return true
+  }
+  return validate(schema.optJSONObject("properties"))
+ }
 
  private fun addSchemaHeaders(builder:Request.Builder,schemaJson:String,args:JSONObject){
   val schema=runCatching{JSONObject(schemaJson)}.getOrNull()?:return
