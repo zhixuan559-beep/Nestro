@@ -124,11 +124,16 @@ object CoworkbenchStaticAnalyzer {
                 }
                 ancestor = ancestor.parentFile
             }
-            val before = runCatching {
-                candidate.canonicalFile.takeIf {
-                    it.toPath().startsWith(root.toPath()) && it.isFile
-                }?.readText(Charsets.UTF_8)
-            }.getOrNull()
+            val beforeFile = candidate.canonicalFile.takeIf {
+                it.toPath().startsWith(root.toPath()) && it.isFile
+            }
+            require(beforeFile == null || beforeFile.length() <= MAX_FILE_BYTES) {
+                "补丁基线文件超过静态分析读取上限：$relative"
+            }
+            val before = beforeFile?.readText(Charsets.UTF_8)
+            require(before == null || '\u0000' !in before) {
+                "补丁基线文件包含二进制内容：$relative"
+            }
             proposal to before
         }
         val findings = mutableListOf<CoworkbenchFinding>()
