@@ -180,6 +180,11 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
             MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.COMPLETED,progress=100,resultJson=result,errorMessage="")
             Result.success()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (isStopped) {
+                runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.CANCELLED) }
+            }
+            throw cancelled
         } catch(t:Throwable) {
             val latest=MediaAiTaskStore.read(applicationContext,projectId,taskId)
             if(isStopped || latest?.status==MediaAiTaskStatus.CANCELLED) {
