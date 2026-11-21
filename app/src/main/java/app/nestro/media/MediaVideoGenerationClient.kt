@@ -1,8 +1,6 @@
 package app.nestro.media
 
 import android.content.Context
-import androidx.work.*
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -200,74 +198,5 @@ object MediaVideoGeneration {
         )
         MediaAiTaskScheduler.enqueue(context, projectId, task.id)
         return task
-    }
-}
-
-class MediaVideoGenerationWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    private var client: MediaVideoGenerationClient? = null
-
-    override suspend fun doWork(): Result {
-        val projectId = inputData.getString(KEY_PROJECT) ?: return Result.failure()
-        val taskId = inputData.getString(KEY_TASK) ?: return Result.failure()
-        val task = MediaAiTaskStore.read(applicationContext, projectId, taskId) ?: return Result.failure()
-        if (task.status !in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)) return Result.success()
-        val config = MediaProviderConfigStore(applicationContext).read(task.providerId)
-            ?: return fail(projectId, taskId, "视频服务商配置不存在或 API Key 无法读取")
-        val activeClient = MediaVideoGenerationClient(config)
-        client = activeClient
-        return try {
-            MediaAiTaskStore.update(applicationContext, projectId, taskId, status = MediaAiTaskStatus.RUNNING, errorMessage = "")
-            val file = activeClient.generate(task.prompt) { progress ->
-                runCatching { MediaAiTaskStore.update(applicationContext, projectId, taskId, progress = progress) }
-                setProgressAsync(workDataOf("progress" to progress))
-            }
-            try {
-                val imported = MediaProjectStore.importGeneratedFile(
-                    applicationContext, projectId, file, MediaAssetKind.VIDEO, stableAssetId = task.id
-                )
-                MediaAiTaskStore.update(
-                    applicationContext, projectId, taskId,
-                    status = MediaAiTaskStatus.COMPLETED, progress = 100,
-                    resultJson = JSONObject().put("type", "video").put("assetId", imported.id)
-                        .put("displayName", imported.displayName).toString(),
-                    errorMessage = ""
-                )
-            } finally {
-                file.delete()
-            }
-            Result.success()
-        } catch (cancelled: CancellationException) {
-            runCatching { MediaAiTaskStore.update(applicationContext, projectId, taskId, status = MediaAiTaskStatus.CANCELLED) }
-            throw cancelled
-        } catch (error: Throwable) {
-            val latest = MediaAiTaskStore.read(applicationContext, projectId, taskId)
-            if (isStopped || latest?.status == MediaAiTaskStatus.CANCELLED) {
-                runCatching { MediaAiTaskStore.update(applicationContext, projectId, taskId, status = MediaAiTaskStatus.CANCELLED) }
-                Result.success()
-            } else fail(projectId, taskId, error.message ?: error.javaClass.simpleName)
-        } finally {
-            client = null
-            activeClient.cancel()
-        }
-    }
-
-    override fun onStopped() {
-        client?.cancel()
-        super.onStopped()
-    }
-
-    private fun fail(projectId: String, taskId: String, message: String): Result {
-        runCatching {
-            MediaAiTaskStore.update(
-                applicationContext, projectId, taskId,
-                status = MediaAiTaskStatus.FAILED, errorMessage = message
-            )
-        }
-        return Result.failure()
-    }
-
-    companion object {
-        const val KEY_PROJECT = "media_video_project_id"
-        const val KEY_TASK = "media_video_task_id"
     }
 }
