@@ -23,8 +23,19 @@ class MediaProviderConfigStoreTest {
         displayName = id,
         baseUrl = "https://api.example.com/v1",
         apiKey = key,
-        model = "vision-model"
+        model = "vision-model",
+        transcriptionModel = "gpt-transcribe"
     )
+
+
+    @Test fun onlyAdvertisesCapabilitiesWithConfiguredRealEndpoints() {
+        val base = config("capability-test", "key")
+        val defaultProvider = OpenAiCompatibleMediaIntelligenceProvider(base)
+        assertEquals(setOf(MediaIntelligenceCapability.TRANSCRIPTION, MediaIntelligenceCapability.IMAGE_UNDERSTANDING), defaultProvider.capabilities)
+        val extended = OpenAiCompatibleMediaIntelligenceProvider(base.copy(scenePath="v1/video/scenes", audioProcessPath="v1/audio/denoise"))
+        assertEquals(true, MediaIntelligenceCapability.SCENE_DETECTION in extended.capabilities)
+        assertEquals(true, MediaIntelligenceCapability.AUDIO_PROCESSING in extended.capabilities)
+    }
 
     @Test fun storesSwitchesAndDeletesIndependentEncryptedProfiles() {
         try {
@@ -37,6 +48,7 @@ class MediaProviderConfigStoreTest {
             assertEquals("media-test-a", store.activeProviderId())
             store.activate("media-test-b")
             assertEquals("media-test-b", store.read()?.providerId)
+            assertEquals("gpt-transcribe", store.read()?.transcriptionModel)
             assertNotNull(store.read("media-test-a"))
             assertEquals(2, store.list().size)
             store.delete("media-test-b")
