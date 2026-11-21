@@ -2,6 +2,8 @@ package app.nestro.data
 
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolResult
+import app.nestro.agent.AgentToolDiscovery
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -167,6 +169,97 @@ object GeneratedPluginPackageCodec {
             ).takeIf { it.id.isNotBlank() && it.steps.isNotEmpty() }
         }
     }.getOrDefault(emptyList())
+}
+
+/**
+ * Local install/enable lifecycle for declarative plugins. API keys are never stored
+ * in plugin packages; all step execution still passes through the AgentRuntime callback.
+ */
+class GeneratedPluginStore(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("nestro_generated_plugins_v1", Context.MODE_PRIVATE)
+
+    @Synchronized
+    fun list(discovery: AgentToolDiscovery? = null): List<GeneratedPluginPackage> =
+        GeneratedPluginPackageCodec.decode(prefs.getString(KEY_PACKAGES, "[]").orEmpty())
+            .mapNotNull { plugin ->
+                if (discovery == null) plugin else runCatching {
+                    GeneratedPluginPackageValidator.validate(plugin, discovery)
+                    plugin
+                }.getOrNull()
+            }
+            .sortedWith(compareBy<GeneratedPluginPackage> { it.name.lowercase() }.thenBy { it.id })
+
+    fun find(pluginId: String, discovery: AgentToolDiscovery? = null): GeneratedPluginPackage? =
+        list(discovery).firstOrNull { it.id == pluginId }
+
+    @Synchronized
+    fun install(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery): GeneratedPluginPackage {
+        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val current = list()
+        require(current.none { it.id == plugin.id }) { "插件 ID 已安装，请使用版本更新流程" }
+        require(current.size < MAX_PLUGINS) { "本地插件数量已达到上限" }
+        val installed = plugin.copy(enabled = false)
+        persist(current + installed)
+        return installed
+    }
+
+    @Synchronized
+    fun setEnabled(pluginId: String, enabled: Boolean, discovery: AgentToolDiscovery): GeneratedPluginPackage {
+        val current = list()
+        val existing = current.firstOrNull { it.id == pluginId } ?: error("插件不存在")
+        GeneratedPluginPackageValidator.validate(existing, discovery)
+        val updated = existing.copy(enabled = enabled)
+        persist(current.map { if (it.id == pluginId) updated else it })
+        return updated
+    }
+
+    @Synchronized
+    fun remove(pluginId: String): Boolean {
+        val current = list()
+        if (current.none { it.id == pluginId }) return false
+        persist(current.filterNot { it.id == pluginId })
+        return true
+    }
+
+    @Synchronized
+    fun replaceVersion(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery): GeneratedPluginPackage {
+        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val current = list()
+        val existing = current.firstOrNull { it.id == plugin.id } ?: error("待更新插件不存在")
+        require(compareSemVer(plugin.version, existing.version) > 0) { "插件更新版本必须高于当前版本" }
+        val updated = plugin.copy(enabled = false)
+        persist(current.map { if (it.id == plugin.id) updated else it })
+        return updated
+    }
+
+    private fun persist(packages: List<GeneratedPluginPackage>) {
+        check(prefs.edit().putString(KEY_PACKAGES, GeneratedPluginPackageCodec.encode(packages)).commit()) {
+            "插件安装库写入失败"
+        }
+    }
+
+    private fun compareSemVer(left: String, right: String): Int {
+        fun parts(value: String): Pair<List<Int>, String?> {
+            val core = value.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+            return core to value.substringAfter('-', "").takeIf { it.isNotBlank() }
+        }
+        val (leftCore, leftPre) = parts(left)
+        val (rightCore, rightPre) = parts(right)
+        for (index in 0..2) {
+            val diff = leftCore.getOrElse(index) { 0 }.compareTo(rightCore.getOrElse(index) { 0 })
+            if (diff != 0) return diff
+        }
+        return when {
+            leftPre == null && rightPre != null -> 1
+            leftPre != null && rightPre == null -> -1
+            else -> (leftPre ?: "").compareTo(rightPre ?: "")
+        }
+    }
+
+    private companion object {
+        const val KEY_PACKAGES = "installed_packages"
+        const val MAX_PLUGINS = 100
+    }
 }
 
 internal fun parseGeneratedPluginPackage(raw: String): GeneratedPluginPackage {
