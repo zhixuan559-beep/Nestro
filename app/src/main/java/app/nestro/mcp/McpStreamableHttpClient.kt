@@ -80,10 +80,16 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     val rpcError=parsed?.optJSONObject("error");val message=rpcError?.optString("message").orEmpty()
     val errorData=rpcError?.optJSONObject("data")
     val supported=errorData?.optJSONArray("supported")?:errorData?.optJSONArray("supportedVersions")
-    if(reply.code==400&&(message.contains("protocol",true)||message.contains("unsupported",true)||supported!=null)){
+    val advertised=(0 until (supported?.length()?:0)).map{supported!!.optString(it)}.filter{it.isNotBlank()}
+    if(reply.code==400&&supported!=null){
+     val legacy=advertised.firstOrNull{it in listOf("2025-11-25","2025-06-18","2025-03-26")}
+     if(legacy!=null){protocolVersion=legacy;legacyMode=true;return rpc(method,JSONObject(params.toString()).apply{remove("_meta")},name,schemaJson)}
+     error("MCP 服务不支持客户端协议版本 2026-07-28；服务端支持："+advertised.joinToString())
+    }
+    val recognizedModernError=rpcError!=null
+    if(reply.code in listOf(400,404,405)&&!recognizedModernError){
      legacyMode=true;return rpc(method,JSONObject(params.toString()).apply{remove("_meta")},name,schemaJson)
     }
-    if(reply.code==404 || (reply.code==400&&parsed==null)){legacyMode=true;return rpc(method,JSONObject(params.toString()).apply{remove("_meta")},name,schemaJson)}
     error("MCP HTTP "+reply.code+"："+(message.ifBlank{reply.body.take(1000)}))
    }
    val response=parsed?:error("MCP 服务没有返回 JSON-RPC 响应")
