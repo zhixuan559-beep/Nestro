@@ -91,7 +91,9 @@ internal class ModelLedToolDispatcher(
         maxTokens: Int?,
         shouldStop: () -> Boolean,
         taskModeEnabled: Boolean,
+        expertTeamEnabled: Boolean,
         planPhoneAgent: suspend () -> String,
+        runExpertTeam: suspend (String) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
         onDirectAnswer: suspend (String) -> Unit = {}
@@ -101,6 +103,7 @@ internal class ModelLedToolDispatcher(
         val available = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter { it.id != "phone_agent.plan" || taskModeEnabled }
+            .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
@@ -233,10 +236,10 @@ ${prompt.take(8_000)}
                 override fun find(toolId: String) = lease.access.find(toolId)
                 override fun list() = lease.access.list()
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
-                    if (toolId == "phone_agent.plan") {
-                        AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
-                    } else {
-                        lease.access.invoke(
+                    when (toolId) {
+                        "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
+                        "expert_team.run" -> AgentToolResult(success = true, output = runExpertTeam(systemContext).take(8_000))
+                        else -> lease.access.invoke(
                             toolId,
                             if (toolId.startsWith("mcp_")) arguments
                             else arguments + ("__nestro_project_id" to projectId)
