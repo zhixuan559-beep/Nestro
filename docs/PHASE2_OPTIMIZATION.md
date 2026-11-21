@@ -69,3 +69,4 @@ Finish all feature code and architecture integration first. Only then run the ag
 - Direct model responses are streamed to the chat UI in batches; ordinary streaming output also batches UI deltas and throttles partial-state writes to reduce recomposition and storage churn.
 - MCP calls are allowed only while the persisted tool grant and server-enabled state remain valid; the MCP handler rechecks authorization at execution time.
 - `knowledge.search` is available to the model and can only query the project ID injected by the dispatcher, not an ID supplied by the model.
+- `phone_agent.plan` is exposed only when the user explicitly enabled task mode; its planning/scheduling callback is no longer run before the model decision. The model must select this capability before a Phone Agent task can be created.
