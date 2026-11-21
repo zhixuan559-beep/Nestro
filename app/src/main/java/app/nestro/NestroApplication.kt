@@ -119,7 +119,7 @@ class NestroApplication : Application() {
                     app.nestro.agent.AgentToolResult(true, output = "当前项目知识库没有找到相关资料。")
                 } else {
                     val output = matches.joinToString("\n\n") { match ->
-                        "【${match.documentTitle}】\n${match.content}"
+                        "【${match.documentName}】\n${match.content}"
                     }.take(12_000)
                     app.nestro.agent.AgentToolResult(true, output = output)
                 }
