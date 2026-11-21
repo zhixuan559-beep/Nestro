@@ -52,7 +52,7 @@ class GitWorkbenchPolicyTest {
 
     @Test fun accountNamesRejectControlCharactersAndOversizedValues() {
         assertTrue(GitWorkbenchPolicy.validAccountName("developer"))
-        assertFalse(GitWorkbenchPolicy.validAccountName("bad\\nname"))
+        assertFalse(GitWorkbenchPolicy.validAccountName("bad\nname"))
         assertFalse(GitWorkbenchPolicy.validAccountName("x".repeat(121)))
     }
 
