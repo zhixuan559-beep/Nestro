@@ -173,6 +173,9 @@ class CoworkbenchReportParserTest {
         assertNull(CoworkbenchReportParser.parseJunitXml(
             "report.xml", """<testsuite tests="many" failures="0" errors="0" skipped="0"/>"""
         ))
+        assertNull(CoworkbenchReportParser.parseJunitXml(
+            "report.xml", """<testsuites><testsuite tests="-1" failures="0"/></testsuites>"""
+        ))
     }
 
 }
