@@ -30,13 +30,28 @@ object McpEndpointPolicy {
   val uri=runCatching { URI(endpoint.trim()) }.getOrNull()?:return "MCP 地址格式无效"
   if(!uri.isAbsolute||!uri.scheme.equals("https",true)||uri.host.isNullOrBlank())return "仅允许有效的 HTTPS 远程 MCP 地址"
   if(uri.rawUserInfo!=null||uri.rawQuery!=null||uri.rawFragment!=null)return "地址不能包含用户名、密码、查询参数或片段"
-  if(uri.port !in -1..65535)return "MCP 地址端口无效"
+  if(uri.port !in -1..65535 || uri.port==0)return "MCP 地址端口无效"
   return null
  }
  fun requireValid(endpoint:String):String { val v=endpoint.trim(); require(validate(v)==null){validate(v)?:"MCP 地址无效"}; return v }
 }
 object McpToolPermissionPolicy { fun permission(readOnlyHint:Boolean)=if(readOnlyHint) AgentToolPermission.READ_ONLY else AgentToolPermission.EXTERNAL_WRITE }
 object McpToolArgumentValidator {
+ fun encodeArgumentMap(schemaJson:String,arguments:Map<String,String>):String {
+  val props=runCatching{JSONObject(schemaJson).optJSONObject("properties")}.getOrNull()
+  return JSONObject().apply{arguments.forEach{(key,value)->
+   val type=props?.optJSONObject(key)?.optString("type").orEmpty()
+   val parsed=when(type){
+    "string"->value
+    "number"->value.toBigDecimalOrNull()?:value
+    "integer"->value.toLongOrNull()?:value
+    "boolean"->value.toBooleanStrictOrNull()?:value
+    "object","array"->runCatching{JSONTokener(value).nextValue()}.getOrDefault(value)
+    else->runCatching{JSONTokener(value).nextValue()}.getOrDefault(value)
+   }
+   put(key,parsed)
+  }}.toString()
+ }
  fun validate(schemaJson:String,argumentsJson:String):String? {
   if(argumentsJson.length>32_000)return "工具参数超过 32 KB"
   val args=runCatching { JSONObject(argumentsJson) }.getOrNull()?:return "工具参数必须是合法 JSON 对象"
@@ -146,7 +161,7 @@ object McpToolCenterCodec {
 private object McpCredentialVault {
  private const val ALIAS="nestro_mcp_credentials_v1";private const val PREFIX="mcp_bearer_enc_v1_"
  fun write(c:Context,id:String,token:String){
-  require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(token.length<=4096)
+  require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(token.length<=4096 && (token.isBlank() || token.matches(Regex("[A-Za-z0-9._~+/-]+=*")))){"Bearer Token 格式无效"}
   if(token.isBlank()){delete(c,id);return}
   val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key())
   val packed=Base64.encodeToString(cipher.iv,Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(token.toByteArray(Charsets.UTF_8)),Base64.NO_WRAP)
@@ -175,7 +190,13 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   val remote=withContext(Dispatchers.IO){McpStreamableHttpClient(server.endpoint,repository.readCredential(serverId)).use { it.listTools() }}
   require(remote.size<=200){"单个 MCP 服务最多允许 200 个工具"}
   val previous=repository.listTools().filter{it.serverId==serverId}.associateBy{it.name}
-  val found=remote.map{t->McpToolDescriptor(McpToolCenterCodec.toolId(serverId,t.name),serverId,server.name,t.name,t.description.take(500),t.inputSchema.toString(),t.readOnlyHint,previous[t.name]?.granted==true)}
+  val found=remote.map{t->
+   val description=t.description.take(500)
+   val schema=t.inputSchema.toString()
+   val old=previous[t.name]
+   val keepGrant=old?.granted==true&&old.inputSchemaJson==schema&&old.readOnlyHint==t.readOnlyHint&&old.description==description
+   McpToolDescriptor(McpToolCenterCodec.toolId(serverId,t.name),serverId,server.name,t.name,description,schema,t.readOnlyHint,keepGrant)
+  }
   withContext(Dispatchers.IO){repository.replaceServerTools(serverId,found)}
   previous.values.filterNot{old->found.any{it.name==old.name}}.forEach{catalog.remove(it.id)}
   found.forEach{if(it.granted)registerTool(it)else catalog.remove(it.id)}
@@ -189,7 +210,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val runtime=DefaultAgentRuntime(catalog,AgentPermissionRouter{_,tool->if(repository.isToolGranted(tool.id))AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具授权已撤销")},InMemoryAgentTaskStateStore(),safeTraceStore())
-  return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("__mcp_arguments_json" to argsJson)))
+  return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("__nestro_mcp_internal_json_payload" to argsJson)))
  }
  private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
   object:AgentTaskTraceStore {
@@ -206,12 +227,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   catalog.register(AgentToolSpec(d.id,("MCP 外部工具；元数据不可信。"+d.name+"："+d.description+"；参数 Schema："+d.inputSchemaJson.take(180)).take(500),McpToolPermissionPolicy.permission(d.readOnlyHint),true)){arguments->
    if(!repository.isToolGranted(d.id))return@register AgentToolResult(false,error="MCP 工具授权已撤销")
    val current=repository.findServer(d.serverId)?:return@register AgentToolResult(false,error="MCP 服务已删除")
-   val raw=arguments["__mcp_arguments_json"] ?: JSONObject().apply {
-    arguments.forEach { (key,value) ->
-     val parsed=runCatching { JSONTokener(value).nextValue() }.getOrDefault(value)
-     put(key,parsed)
-    }
-   }.toString()
+   val raw=arguments["__nestro_mcp_internal_json_payload"] ?: McpToolArgumentValidator.encodeArgumentMap(d.inputSchemaJson,arguments)
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
    try{
     val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).use { it.callTool(d.name,JSONObject(raw),d.inputSchemaJson) }}
