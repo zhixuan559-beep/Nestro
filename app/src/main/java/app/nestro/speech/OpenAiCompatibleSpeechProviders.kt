@@ -34,7 +34,7 @@ class OpenAiCompatibleSpeechOutputProvider(
             }
             try {
                 val payload = JSONObject()
-                    .put("model", config.model)
+                    .put("model", config.outputModel)
                     .put("input", normalized)
                     .put("voice", config.voice ?: "alloy")
                     .put("response_format", "mp3")
@@ -45,7 +45,7 @@ class OpenAiCompatibleSpeechOutputProvider(
                     throw IllegalStateException(SpeechHttpPolicy.readError(connection, status))
                 }
                 val mime = connection.contentType?.substringBefore(';')?.takeIf { it.startsWith("audio/") }
-                    ?: "audio/mpeg"
+                    ?: throw IllegalStateException("语音服务返回的不是音频数据")
                 val bytes = BufferedInputStream(connection.inputStream).use {
                     SpeechHttpPolicy.readBounded(it, SpeechHttpPolicy.MAX_AUDIO_BYTES)
                 }
@@ -89,7 +89,7 @@ class OpenAiCompatibleSpeechInputProvider(
                     output.write(value.toByteArray(Charsets.UTF_8))
                     output.write("\r\n".toByteArray())
                 }
-                field("model", config.model)
+                field("model", config.inputModel)
                 output.write("--$boundary\r\n".toByteArray())
                 val extension = when (mimeType.lowercase()) {
                     "audio/wav", "audio/x-wav" -> "wav"
@@ -126,10 +126,7 @@ internal object SpeechHttpPolicy {
     }
 
     fun readError(connection: HttpURLConnection, status: Int): String {
-        val stream = runCatching { connection.errorStream }.getOrNull()
-        val detail = stream?.use { runCatching { String(readBounded(it, 2_048), Charsets.UTF_8) }.getOrDefault("") }
-            .orEmpty().replace(Regex("[\\r\\n\\t]+"), " ").take(500)
-        return "语音服务请求失败（HTTP $status）" + detail.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()
+        return "语音服务请求失败（HTTP $status）"
     }
 
     fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
