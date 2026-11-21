@@ -5,6 +5,8 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val modelscopeOAuthBackendUrl = providers.gradleProperty("modelscopeOAuthBackendUrl").orElse("").get().trim().trimEnd('/')
+
 android {
     namespace = "app.nestro"
     compileSdk = 35
@@ -15,6 +17,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "0.3.1"
+        buildConfigField("String", "MODELSCOPE_OAUTH_BACKEND_URL", "\"${modelscopeOAuthBackendUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -26,7 +29,10 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
