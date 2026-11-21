@@ -143,7 +143,7 @@ class GitAccountStore(context: Context) {
         require(token.isNotBlank() && token.length <= 4096 && token.none { it.isISOControl() }) { "访问令牌不能为空、不能超过 4096 个字符且不能包含控制字符" }
         val existing = list()
         require(existing.any { it.id == account.id } || existing.size < 20) { "最多保存 20 个代码托管账号" }
-        val previousToken = existing.firstOrNull { it.id == account.id }?.let { GitCredentialVault.read(app, account.id) }.orEmpty()
+        val previousCipher = prefs.getString(CREDENTIAL_PREFIX + account.id, null)
         GitCredentialVault.write(app, account.id, token)
         val next = existing.filterNot { it.id == account.id } + account.copy(
             username = account.username.trim(),
@@ -152,7 +152,7 @@ class GitAccountStore(context: Context) {
         try {
             check(prefs.edit().putString(KEY, encode(next)).commit()) { "账号配置保存失败" }
         } catch (error: Exception) {
-            if (previousToken.isNotBlank()) GitCredentialVault.write(app, account.id, previousToken)
+            if (previousCipher != null) prefs.edit().putString(CREDENTIAL_PREFIX + account.id, previousCipher).commit()
             else GitCredentialVault.delete(app, account.id)
             throw error
         }
@@ -164,12 +164,12 @@ class GitAccountStore(context: Context) {
     @Synchronized
     fun delete(accountId: String) {
         val current = list()
-        val previousToken = GitCredentialVault.read(app, accountId)
+        val previousCipher = prefs.getString(CREDENTIAL_PREFIX + accountId, null)
         GitCredentialVault.delete(app, accountId)
         try {
             check(prefs.edit().putString(KEY, encode(current.filterNot { it.id == accountId })).commit()) { "账号配置删除失败" }
         } catch (error: Exception) {
-            if (previousToken.isNotBlank()) GitCredentialVault.write(app, accountId, previousToken)
+            if (previousCipher != null) prefs.edit().putString(CREDENTIAL_PREFIX + accountId, previousCipher).commit()
             throw error
         }
     }
@@ -183,6 +183,7 @@ class GitAccountStore(context: Context) {
 
     companion object {
         private const val KEY = "git_accounts_v1"
+        private const val CREDENTIAL_PREFIX = "git_access_token_enc_v1_"
         private const val CORRUPT_KEY = "git_accounts_v1_unreadable_backup"
         private const val CORRUPT_AT = "git_accounts_v1_unreadable_backup_at"
     }
