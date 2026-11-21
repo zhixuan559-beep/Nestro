@@ -586,3 +586,15 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - 当前只有成员状态与运行历史，没有完整的协作过程查看/干预能力。
 - CapabilityDraftCoordinator 只生成专家/Skill 的 name+prompt 草案，不具备可执行插件生成、沙箱、审批安装、版本升级和回滚。
 - 以上均为已确认的待实现需求，不代表功能代码已完成；不运行测试，不合并，不锁定。
+
+
+## 2026-11-22 专家协作/插件工厂/系统助手入口代码落点
+
+- 专家项目 DAG：`data/ExpertProjectPlanExecutor.kt`；主模型规划结果进入 `ExpertTeamExecutionCoordinator.executeProjectPlan()`，按依赖拓扑波次执行，工具租约复用 `AgentCapabilityRegistry`。
+- 主聊天自动组队：`data/ModelLedToolDispatcher.kt` 增加项目型任务规划指引；`ChatRequestExecutionCoordinator` 将模型选择的专家参数传入 NestroApp；`ui/NestroApp.kt` 将项目可见专家目录注入主模型上下文，并根据模型计划选择 2–4 名专家启动临时团队。
+- 专家中心手动入口：`ui/NestroApp.kt` 的 experts 页面支持临时勾选 2–4 位专家，返回主聊天后使用同一套专家项目调度；固定团队仍可继续复用。
+- 协作事件：`data/ExpertTeamCollaborationEvent.kt` 提供项目级事件结构和有界 codec；协调器记录成员状态、依赖交接和成果提交；NestroApp 将最近 300 条事件保存在本地 SharedPreferences，并在专家团队页展示最近时间线。尚未迁移 Room，也未形成独立交互式工作区。
+- 插件工厂：`data/GeneratedPluginFactory.kt` 生成基于当前 AgentToolCatalog 的声明式插件包，校验 SemVer、工具白名单、输入字段和步骤模板；执行器通过注入的 Runtime 回调调用已有工具。尚未接入产品 UI、插件持久化安装/注册和完整生命周期。
+- Android 系统助手：`AndroidManifest.xml` 声明 ACTION_ASSIST；`MainActivity` 将系统助手入口导向主聊天页；`phone/AndroidAssistantRoleSupport.kt` 检查/请求 ROLE_ASSISTANT；NestroApp 设置页提供系统角色申请入口。VoiceInteractionService、热词和锁屏会话尚未实现。
+- 新增测试源码：`ExpertProjectPlanExecutorTest.kt`、`ExpertTeamCollaborationEventTest.kt`、`GeneratedPluginFactoryTest.kt`；同时更新 `ChatRequestExecutionCoordinatorTest.kt` 的模型工具参数签名。上述测试尚未执行。
+- 以上是代码落点和静态源码记录，不代表编译、测试、模拟器或真机验收通过。
