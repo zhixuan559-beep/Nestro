@@ -2795,7 +2795,7 @@ fun NestroApp() {
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "git" -> GitWorkbenchPage(context)
-                        "coworkbench" -> AiCoworkbenchPage(onBack = { page = "home" })
+                        "coworkbench" -> AiCoworkbenchPage(onBack = { page = "home" }, onUseChatPrompt = { prompt -> draft = prompt; page = "home" })
                         "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
