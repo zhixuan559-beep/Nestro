@@ -35,7 +35,6 @@ import app.nestro.git.GitWorkbenchRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 @Composable
 fun AiCoworkbenchPage(
