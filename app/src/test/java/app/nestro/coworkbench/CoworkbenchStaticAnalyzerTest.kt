@@ -174,4 +174,29 @@ core-lib = { group = "org.example", name = "core", version.ref = "core" }
         }
     }
 
+    @Test
+    fun detectsMultilineVersionCatalogLibraryCoordinatesAndVersionReferences() {
+        val root = createTempDir(prefix = "nestro-coworkbench-catalog-")
+        try {
+            val catalog = File(root, "gradle/libs.versions.toml")
+            catalog.parentFile?.mkdirs()
+            catalog.writeText(
+                """
+                [versions]
+                compose = "1.7.0"
+
+                [libraries.androidx-compose-runtime]
+                module = "androidx.compose.runtime:runtime"
+                version.ref = "compose"
+                """.trimIndent()
+            )
+            val report = CoworkbenchStaticAnalyzer.analyze(root)
+            assertTrue(report.dependencyDeclarations.any {
+                it.contains("catalog:androidx-compose-runtime:androidx.compose.runtime:runtime:version-ref:compose")
+            })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
 }
