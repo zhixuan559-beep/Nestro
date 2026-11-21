@@ -2,7 +2,6 @@ package app.nestro.data
 
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolResult
-import app.nestro.model.ModelUsageStats
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -80,7 +79,7 @@ object GeneratedPluginPackageValidator {
             step.arguments.values.forEach { template ->
                 val matches = TEMPLATE.findAll(template).toList()
                 val residue = TEMPLATE.replace(template, "")
-                require(!residue.contains("${") && !residue.contains("}")) {
+                require(!residue.contains("\\${") && !residue.contains("}")) {
                     "插件参数模板包含不支持的表达式"
                 }
                 matches.forEach { match ->
