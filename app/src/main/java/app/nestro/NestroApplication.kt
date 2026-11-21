@@ -400,7 +400,13 @@ class NestroApplication : Application() {
                 toolDefinitionProvider = { toolId ->
                     mcpToolCenterRepository.findTool(toolId)?.let { descriptor ->
                         "name=${descriptor.name}; description=${descriptor.description}; input_schema=${descriptor.inputSchemaJson}"
-                    }
+                    } ?: if (toolId.startsWith("plugin.")) {
+                        GeneratedPluginStore(this@NestroApplication)
+                            .find(toolId.removePrefix("plugin."), agentToolCatalog)
+                            ?.let { plugin ->
+                                "name=${plugin.name}; description=${plugin.description}; input_schema=${GeneratedPluginPackageCodec.inputSchema(plugin)}"
+                            }
+                    } else null
                 },
                 visibleToolFilter = { tool ->
                     !tool.id.startsWith("mcp_") || mcpToolCenterRepository.isToolGranted(tool.id)
