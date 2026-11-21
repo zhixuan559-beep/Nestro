@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.ByteArrayOutputStream
+import org.json.JSONArray
 import org.json.JSONObject
 
 @OptIn(UnstableApi::class, ExperimentalApi::class)
@@ -122,10 +123,6 @@ fun MediaEditorPage(
                     } }
                 }.getOrDefault(emptyList())
             }
-            if (activeMediaAiTaskId.isBlank()) {
-                activeMediaAiTaskId = mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.COMPLETED && !it.resultConsumed }?.id
-                    ?: mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.QUEUED || it.status == MediaAiTaskStatus.RUNNING }?.id.orEmpty()
-            }
             delay(1_000)
         }
     }
@@ -174,6 +171,14 @@ fun MediaEditorPage(
         }
     }
 
+
+    LaunchedEffect(mediaAiTasks, activeMediaAiTaskId) {
+        if (activeMediaAiTaskId.isBlank()) {
+            val next = mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.COMPLETED && !it.resultConsumed }?.id
+                ?: mediaAiTasks.firstOrNull { it.status == MediaAiTaskStatus.QUEUED || it.status == MediaAiTaskStatus.RUNNING }?.id
+            if (next != null) activeMediaAiTaskId = next
+        }
+    }
 
     LaunchedEffect(projectId, activeMediaAiTaskId) {
         if (activeMediaAiTaskId.isNotBlank()) {
