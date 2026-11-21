@@ -24,6 +24,10 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             runCatching { JSONObject(metadata.optString(name, "{}")).optString("version") }.getOrDefault("")
         }.toMutableMap()
         bundles.forEach { bundle ->
+            require(runCatching { SkillSemVer.compare(bundle.version, bundle.version) }.isSuccess) { "社区技能版本不是有效 SemVer 2.0" }
+            bundle.dependencies.forEach { dependency ->
+                require(runCatching { SkillSemVer.matches("1.0.0", dependency.version) }.isSuccess) { "技能依赖版本范围无效：${dependency.name}" }
+            }
             val oldMeta = runCatching { JSONObject(metadata.optString(bundle.name, "{}")) }.getOrDefault(JSONObject())
             val oldPrompt = skills.optString(bundle.name, null)
             if (oldPrompt != null && oldMeta.optString("source") != "已验证签名社区目录") error("同名本地技能已存在；为防止覆盖，已拒绝安装：${bundle.name}")
