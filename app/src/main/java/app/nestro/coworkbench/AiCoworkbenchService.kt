@@ -110,6 +110,9 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         val staticReport = withContext(Dispatchers.IO) {
             CoworkbenchStaticAnalyzer.analyze(File(repository.localPath))
         }
+        val changeImpact = withContext(Dispatchers.IO) {
+            CoworkbenchStaticAnalyzer.analyzeProposalsWithBaseline(File(repository.localPath), proposals)
+        }
         val files = proposals.map { proposal ->
             val path = CoworkbenchPolicy.safePath(proposal.path)
             val before = readOrNull(repositoryId, path)
@@ -122,8 +125,15 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             "${finding.level} · ${finding.category} · ${finding.path}" +
                 (finding.line?.let { ":$it" } ?: "") + "：" + finding.message
         } + if (staticReport.truncated) listOf("仓库静态扫描达到安全上限，影响分析结果不完整") else emptyList()
+        val changeWarnings = changeImpact.findings.map { finding ->
+            "${finding.level} · ${finding.category} · ${finding.path}" +
+                (finding.line?.let { ":$it" } ?: "") + "：" + finding.message + "（" + finding.evidence.take(180) + "）"
+        } + changeImpact.permissionsAdded.map { "新增权限：$it" } +
+            changeImpact.permissionsRemoved.map { "移除权限：$it" } +
+            changeImpact.dependenciesAdded.map { "新增依赖声明：$it" } +
+            changeImpact.dependenciesRemoved.map { "移除依赖声明：$it" }
         val review = CoworkbenchReview(UUID.randomUUID().toString(), repositoryId, System.currentTimeMillis(), hash,
-            files, (files.flatMap { it.impact } + repositoryWarnings).distinct(),
+            files, (files.flatMap { it.impact } + repositoryWarnings + changeWarnings).distinct(),
             "拟变更 " + files.size + " 个文件：新增 " + files.count { it.before == null } +
                 "、修改 " + files.count { it.before != null && it.after != null } + "、删除 " + files.count { it.after == null })
         writeJson(File(reviews, review.id + ".json"), encodeReview(review))
