@@ -15,7 +15,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.nestro.MainActivity
-import app.nestro.R
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -25,7 +24,6 @@ object CalendarReminderScheduler {
     private const val CHANNEL_ID = "calendar_reminders"
 
     fun schedule(context: Context, event: CalendarEvent) {
-        val dao = CalendarDatabase.get(context).calendarDao()
         val now = System.currentTimeMillis()
         val occurrenceStart = CalendarRules.nextOccurrenceStart(event, now)
         if (occurrenceStart == null) {
@@ -75,7 +73,7 @@ object CalendarReminderScheduler {
         val time = Instant.ofEpochMilli(occurrenceStart).atZone(ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("M月d日 HH:mm"))
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
             .setContentTitle(event.title)
             .setContentText("日程即将开始 · $time")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
