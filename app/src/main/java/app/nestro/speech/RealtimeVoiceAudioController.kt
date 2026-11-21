@@ -23,6 +23,7 @@ class RealtimeVoiceAudioController(
     @Volatile private var captureThread: Thread? = null
 
     fun start() {
+        check(!closed.get()) { "实时音频控制器已关闭" }
         check(running.compareAndSet(false, true)) { "实时音频已经启动" }
         val minInput = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val minOutput = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -42,23 +43,29 @@ class RealtimeVoiceAudioController(
             running.set(false)
             error("无法初始化麦克风录音")
         }
-        val output = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(max(minOutput * 2, FRAME_BYTES * 4))
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+        val output = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(SAMPLE_RATE)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(max(minOutput * 2, FRAME_BYTES * 4))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+        } catch (error: Throwable) {
+            input.release()
+            running.set(false)
+            throw error
+        }
         if (output.state != AudioTrack.STATE_INITIALIZED) {
             input.release()
             output.release()
@@ -103,7 +110,9 @@ class RealtimeVoiceAudioController(
     fun play(audio: SpeechAudio) {
         check(running.get()) { "实时音频尚未启动" }
         require(audio.mimeType.startsWith("audio/pcm", ignoreCase = true)) { "实时播放仅接受 PCM 音频" }
-        require(audio.bytes.isNotEmpty() && audio.bytes.size <= MAX_PLAYBACK_CHUNK_BYTES) { "播放音频分片大小无效" }
+        require(audio.bytes.isNotEmpty() && audio.bytes.size <= MAX_PLAYBACK_CHUNK_BYTES && audio.bytes.size % 2 == 0) {
+            "播放音频分片大小无效（PCM16 必须为偶数字节）"
+        }
         val track = player ?: error("语音播放设备尚未就绪")
         var offset = 0
         while (offset < audio.bytes.size && running.get()) {
