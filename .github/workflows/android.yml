@@ -106,6 +106,7 @@ jobs:
           api-level: 30
           target: default
           arch: x86_64
+          disable-linux-hw-accel: false
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -no-snapshot -wipe-data -camera-back none -memory 4096 -cores 4
           disable-animations: true
