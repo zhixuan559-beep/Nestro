@@ -50,7 +50,8 @@ data class CoworkbenchValidationResult(
     val artifacts: List<CoworkbenchArtifactReport> = emptyList(),
     val diagnostics: List<String> = emptyList(),
     val sbomComponents: List<CoworkbenchSbomComponent> = emptyList(),
-    val testReports: List<CoworkbenchTestReport> = emptyList()
+    val testReports: List<CoworkbenchTestReport> = emptyList(),
+    val resolvedDependencies: List<CoworkbenchResolvedDependency> = emptyList()
 ) {
     val completed: Boolean get() = status == "completed"
     val reportedTestFailures: Int get() = testReports.sumOf { it.failures + it.errors }
@@ -207,8 +208,13 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                     val testReports = artifacts.flatMap { artifact ->
                         artifact.files.mapNotNull { CoworkbenchReportParser.parseJunitXml(it.path, it.content) }
                     }.take(100)
+                    val resolvedDependencies = artifacts.flatMap { artifact ->
+                        artifact.files.flatMap { CoworkbenchReportParser.parseGradleDependencyReport(it.path, it.content) }
+                    }.distinctBy { listOf(it.configuration, it.group, it.artifact, it.resolvedVersion, it.parent) }
+                        .take(10_000)
                     return@withContext found.copy(jobs = jobs, artifacts = artifacts, diagnostics = diagnostics,
-                        sbomComponents = sbomComponents, testReports = testReports)
+                        sbomComponents = sbomComponents, testReports = testReports,
+                        resolvedDependencies = resolvedDependencies)
                 }
             } else if (visibleSince == null && System.currentTimeMillis() - startedAt > 90_000L) {
                 error("已触发 Workflow，但 90 秒内未找到对应运行记录；请检查 workflow_dispatch、分支和仓库 Actions 设置")
