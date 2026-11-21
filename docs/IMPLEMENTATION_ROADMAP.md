@@ -4,7 +4,7 @@
 
 > **2026-11-20 模块7锁定记录：** PR #7 已合并至 `refactor/phase-2-architecture`，合并提交 `c2c2e18b7e5e383cb550a2ed7ac2fdb67584739d`。对应 CI Run #72 的 `verify` 与 `instrumentation` 均通过；编译、JVM 单元测试、Lint、APK/测试包构建及 Android 模拟器测试全部成功。模块7代码与云端验证锁定完成。
 
-> **2026-11-21 模块8锁定记录：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`；提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 对应 CI 的 `verify` 与 `instrumentation` 均通过。模块8云端代码与模拟器验证完成；真实设备兼容性、后台限制和功耗验收仍待完成。
+> **2026-11-21 模块8状态更正：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`。提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 的 `verify` Job 全部通过，但 `instrumented` Job 被取消；后续合并提交对应的 `verify` 与 `instrumented` 也被取消。因此模块8代码已合并、静态/单元验证通过，但模拟器验收尚未完成，不得标记为云端完整锁定。真实设备兼容性、后台限制和功耗验收同样待完成。
 
 ## 已实现
 
