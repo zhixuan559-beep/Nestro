@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +46,8 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
     var patchJson by remember { mutableStateOf("") }
     var review by remember { mutableStateOf<CoworkbenchReview?>(null) }
     var snapshot by remember { mutableStateOf<CoworkbenchSnapshot?>(null) }
+    var snapshotHistory by remember { mutableStateOf<List<CoworkbenchSnapshot>>(emptyList()) }
+    LaunchedEffect(selectedRepoId) { if (selectedRepoId.isNotBlank()) snapshotHistory = runCatching { service.listSnapshots(selectedRepoId) }.getOrDefault(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
 
@@ -133,6 +136,7 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                     scope.launch {
                         try {
                             snapshot = service.applyApproved(item.id, item.contentHash, explicitlyApproved = true)
+                            snapshotHistory = service.listSnapshots(selectedRepoId)
                             status = "补丁已应用；回滚快照已持久化。"
                         } catch (error: Exception) {
                             status = error.message ?: "补丁应用失败"
@@ -157,6 +161,29 @@ fun AiCoworkbenchPage(onBack: () -> Unit, onUseChatPrompt: (String) -> Unit) {
                         } finally { busy = false }
                     }
                 }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回滚本次变更") }
+            }
+        }
+        if (snapshotHistory.isNotEmpty()) {
+            Divider()
+            Text("历史回滚快照", style = MaterialTheme.typography.titleMedium)
+            snapshotHistory.forEach { saved ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("快照 " + saved.id.take(8) + " · " + saved.files.size + " 个文件", style = MaterialTheme.typography.bodySmall)
+                    TextButton(enabled = !busy, onClick = {
+                        busy = true
+                        scope.launch {
+                            try {
+                                service.rollback(saved.id)
+                                snapshotHistory = service.listSnapshots(selectedRepoId)
+                                snapshot = null
+                                review = null
+                                status = "已按历史快照回滚。"
+                            } catch (error: Exception) {
+                                status = error.message ?: "回滚失败"
+                            } finally { busy = false }
+                        }
+                    }) { Text("回滚") }
+                }
             }
         }
         if (busy) CircularProgressIndicator()
