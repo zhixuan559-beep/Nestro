@@ -157,10 +157,10 @@ internal object CoworkbenchContextPolicy {
     fun redactSecrets(source: String): String {
         var text = source
         val patterns = listOf(
-            Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\\\s\\\\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
-            Regex("(?i)\\\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\\\\b"),
-            Regex("(?i)(authorization\\\\s*[:=]\\\\s*(?:bearer|basic)\\\\s+)[A-Za-z0-9._~+/-]{12,}"),
-            Regex("(?i)(\\\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\\\\s*[:=]\\\\s*[\\\\\\"']?)[A-Za-z0-9_./+=-]{4,}")
+            Regex("""-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"""),
+            Regex("""(?i)\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9]{24,})\b"""),
+            Regex("""(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[A-Za-z0-9._~+/-]{12,}"""),
+            Regex("""(?i)(\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|aws_secret_access_key|password|secret)\s*[:=]\s*["']?)[A-Za-z0-9_./+=-]{4,}""")
         )
         patterns.forEach { pattern ->
             text = pattern.replace(text) { match ->
