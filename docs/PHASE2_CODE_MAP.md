@@ -549,3 +549,32 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - 静态复核发现并修正 Media3 EditedMediaItem.durationUs 应使用原始素材时长而非剪辑后片段时长；图片素材单独设置帧率。Media3 官方 API 文档说明 CompositionPlayer 要求 Composition 中媒体项具备明确时长，且视频/音频 setDurationUs 指向裁剪前源媒体时长。
 - 上述源码已写入 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；已回读分支 tree 与文件 SHA。尚未编译、测试、模拟器/真机验收，不能标记模块完成。
 - 未运行构建、单元测试、模拟器或真机测试，遵守“功能代码全部补齐后再统一验收”的顺序。
+
+## 2026-11-22 — 二次优化与模型统一调度接入（feature/phase2-optimization）
+
+### 已写入源码
+
+- `data/ModelLedToolDispatcher.kt`：新增模型决策协议。模型输出 `DIRECT` 时直接流式回复；输出 `TOOL` 时只允许选择本轮可见的能力目录项。执行通过 task-local lease、`AgentRuntime`、权限路由和持久化任务状态；工具结果以不可信资料回传模型，最多三轮决策。
+- `NestroApplication.kt`：把模型调度器接入应用级聊天执行链；在共享 `AgentToolCatalog` 注册项目级 `knowledge.search`、受任务模式门控的 `phone_agent.plan` 和受显式团队选择门控的 `expert_team.run`；MCP 使用现有已授权工具状态再次校验。
+- `data/ChatRequestExecutionCoordinator.kt`：聊天请求不再预先执行 Phone Agent 计划或专家团队；由模型选择对应能力后才触发回调。
+- `data/ChatContextRetrievalPolicy.kt` / `data/ChatRequestContextAssembler.kt`：历史对话与用户记忆仍按需并行检索；知识库不再按关键词预取，交由模型决定是否调用项目范围内的 `knowledge.search`。
+- `model/ChatStreamingCoordinator.kt`：小块模型输出合并后再更新 Compose，恢复状态按字符/时间阈值写入，结束或取消时补写最终部分答案。
+- `ui/NestroApp.kt`：导航抽屉宽度按平板可用宽度比例调整；页面顶部内容间距按屏幕宽度适配。
+
+### 新增/调整的测试源码（未执行）
+
+- `data/ModelToolDecisionParserTest.kt`
+- `model/ChatStreamingCoordinatorBatchingTest.kt`
+- `ui/AdaptiveLayoutPolicyTest.kt`
+- `data/ChatRequestExecutionCoordinatorTest.kt`
+- `data/ChatRequestContextAssemblerTest.kt`
+
+### 当前边界
+
+- 已有模型主导的 DIRECT/TOOL 调度路径，但尚未接入 OpenAI/Anthropic/Gemini 原生 tool-call 协议适配。
+- 已有知识库、MCP、Phone Agent 计划、专家团队四类可见能力；其他模块的能力仍需逐项迁入同一目录与权限入口。
+- Phone Agent 和专家团队的调度已经改为模型选择后触发；高风险动作仍由各自任务流程与授权边界处理。
+- 全机型布局、折叠屏/分屏/键盘安全区验证，以及低中高档设备性能/功耗实测仍未完成。
+- AI 代码共建沙箱、补丁影响分析、隔离构建、用户批准、快照回滚仍未完成。
+- 模型费用预算、速率限制与完整社区目录分发仍需补强。
+- 本分支未执行编译、自动化测试、模拟器或真机验收；代码状态与验收状态分开记录。
