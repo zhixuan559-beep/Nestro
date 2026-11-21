@@ -1010,6 +1010,17 @@ fun NestroApp(initialPage: String = "home") {
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[requestSelectedExpert]?.enabled != false) requestExpertPrompts[requestSelectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills) else "",
                 requestProjectInstructions,
+                if (requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2) {
+                    "当前项目可用专家目录（主模型可按任务需要自动组队）：\\n" + requestExperts
+                        .filter { requestExpertProfiles[it]?.enabled != false }
+                        .sorted()
+                        .take(24)
+                        .joinToString("\\n") { name ->
+                            val role = requestExpertPrompts[name].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(name) }
+                            val skillContext = ExpertProfileCodec.skillContext(requestExpertProfiles[name], requestSkills, requestDisabledSkills)
+                            "- 专家：$name\\n  角色：${role.take(900)}\\n  专属技能：${skillContext.take(700)}"
+                        }.take(8_000)
+                } else "",
                 requestSkills[requestSelectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && requestSelectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
@@ -1037,7 +1048,7 @@ fun NestroApp(initialPage: String = "home") {
                         modelConfigs = requestModelConfigs,
                         baseSystemContext = baseSystemContext,
                         taskModeEnabled = requestExecutionAuthorization.taskModeEnabled,
-                        expertTeamEnabled = requestExecutionAuthorization.shouldRunExpertTeam(),
+                        expertTeamEnabled = requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2,
                         temperature = requestExpertProfile?.temperature,
                         maxTokens = requestExpertProfile?.maxTokens,
                         previousAssistant = previousAssistant,
@@ -1070,70 +1081,138 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     },
                     onTaskPlanningFailure = { status = "任务计划保存失败：${it.message ?: "未知错误"}" },
-                    runExpertTeam = { requestSystemContext ->
-                    val selectedTeam = if (requestExecutionAuthorization.shouldRunExpertTeam()) requestExpertTeams.firstOrNull { it.id == requestExecutionAuthorization.selectedTeamId } else null
-                    if (selectedTeam != null) {
-                        teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
-                        teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
-                        val memberTasks = selectedTeam.members.filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }.take(4).map { member ->
-                            val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
-                            val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
-                            ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
-                        }
-                        check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
-                        val teamRun = appRuntime.expertTeamExecutionCoordinator.execute(
-                            teamId = selectedTeam.id,
-                            teamName = selectedTeam.name,
-                            teamDescription = selectedTeam.description,
-                            task = prompt,
-                            members = memberTasks,
-                            shouldStop = { stopRequested },
-                            onMember = { member, state ->
-                                withContext(Dispatchers.Main) {
-                                    teamMemberStatuses = teamMemberStatuses + (member to state)
-                                    teamRunStatus = when (state) {
-                                        "running" -> "专家团执行中：$member 正在分析"
-                                        "retrying" -> "专家团执行中：$member 正在重试"
-                                        "success" -> "专家团执行中：$member 已完成"
-                                        "failed" -> "专家团执行中：$member 调用失败"
-                                        else -> teamRunStatus
-                                    }
-                                }
-                            },
-                            invokeMember = { member, memberPrompt ->
-                                withContext(Dispatchers.IO) {
-                                    val memberSystemContext = listOf(requestSystemContext, memberPrompt)
-                                        .filter { it.isNotBlank() }.joinToString("\n\n").take(18000)
-                                    appRuntime.chatExecutionService.completeWithFallback(
-                                        requestModelConfigs,
-                                        ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
-                                        memberSystemContext,
-                                        connectTimeoutMillis = 15_000,
-                                        readTimeoutMillis = 25_000,
-                                        temperature = requestExpertProfiles[member.name]?.temperature,
-                                        maxTokens = requestExpertProfiles[member.name]?.maxTokens,
-                                        onUsage = recordModelUsage,
-                                        onProviderUsage = recordProviderModelUsage
-                                    ).take(2200)
-                                }
-                            },
-                            toolCatalog = appRuntime.agentToolCatalog
+                    runExpertTeam = { requestSystemContext, toolArguments ->
+                    val selectedTeam = if (requestExecutionAuthorization.shouldRunExpertTeam()) {
+                        requestExpertTeams.firstOrNull { it.id == requestExecutionAuthorization.selectedTeamId }
+                    } else null
+                    val requestedMembers = toolArguments["member_names"]
+                        ?.split(Regex("[,，、;；]"))
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty()
+                    val chosenNames = (selectedTeam?.members ?: requestedMembers)
+                        .distinct()
+                        .filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }
+                        .take(4)
+                    check(chosenNames.size in 2..4) {
+                        if (selectedTeam != null) "当前专家团队至少需要 2 位已启用专家。"
+                        else "主模型没有从当前项目的专家目录中选出至少 2 位可用专家，已阻止启动空团队。"
+                    }
+                    val teamId = selectedTeam?.id ?: "auto-" + assistantId.take(48)
+                    val teamName = selectedTeam?.name ?: toolArguments["team_name"]?.take(40)?.ifBlank { null } ?: "临时专家团"
+                    val teamDescription = selectedTeam?.description
+                        ?: toolArguments["team_description"]?.take(300)?.ifBlank { null }
+                        ?: prompt.take(300)
+                    val assignmentJson = runCatching { JSONObject(toolArguments["assignments"].orEmpty()) }.getOrNull()
+                    val memberTasks = chosenNames.associateWith { member ->
+                        val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
+                        val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
+                        ExpertTeamMemberTask(
+                            name = member,
+                            rolePrompt = listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"),
+                            assignedTask = assignmentJson?.optString(member).orEmpty().take(8_000)
                         )
-                        val scopedTeamRun = teamRun.copy(projectId = requestProjectId)
-                        expertTeamRunHistory = (
-                            listOf(scopedTeamRun) +
-                                expertTeamRunHistory.filter { it.projectId == requestProjectId }.take(29) +
-                                expertTeamRunHistory.filterNot { it.projectId == requestProjectId }
-                            ).take(300)
-                        prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
-                        teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"
-                        if (!teamRun.isUsable) {
-                            throw IllegalStateException("专家团所有成员均未能完成分析，请检查模型配置、网络和成员角色指令。")
+                    }
+                    val plan = runCatching {
+                        val json = JSONObject(toolArguments["plan"] ?: error("模型未提供项目工作包计划"))
+                        val packageArray = json.getJSONArray("packages")
+                        val packages = (0 until packageArray.length()).map { index ->
+                            val item = packageArray.getJSONObject(index)
+                            val dependencyArray = item.optJSONArray("depends_on") ?: JSONArray()
+                            ExpertWorkPackage(
+                                id = item.optString("id"),
+                                memberName = item.optString("member_name"),
+                                instruction = item.optString("instruction"),
+                                dependsOn = (0 until dependencyArray.length()).map { dependencyArray.getString(it) },
+                                acceptanceCriteria = item.optString("acceptance_criteria")
+                            )
                         }
-                        teamRun.toContext(10_000)
-                    } else ""
-
+                        ExpertProjectPlan(
+                            projectGoal = json.optString("project_goal", prompt),
+                            packages = packages,
+                            finalAcceptanceCriteria = json.optString("final_acceptance_criteria", "所有工作包完成，主模型完成交叉审查并整合交付。")
+                        )
+                    }.getOrElse {
+                        ExpertProjectPlan(
+                            projectGoal = prompt,
+                            packages = chosenNames.mapIndexed { index, member ->
+                                ExpertWorkPackage(
+                                    id = "work-${index + 1}",
+                                    memberName = member,
+                                    instruction = memberTasks.getValue(member).assignedTask.ifBlank { prompt },
+                                    acceptanceCriteria = "提交可核验的工作成果、依据、风险和未解决项。"
+                                )
+                            },
+                            finalAcceptanceCriteria = "所有工作包完成，主模型完成交叉审查并整合交付。"
+                        )
+                    }
+                    teamRunStatus = "专家团“$teamName”正在拆解并执行项目…"
+                    teamMemberStatuses = plan.packages.associate { it.id to "waiting" }
+                    val eventPrefsKey = "expert_team_events_v1"
+                    val projectPlanResult = appRuntime.expertTeamExecutionCoordinator.executeProjectPlan(
+                        teamId = teamId,
+                        teamName = teamName,
+                        teamDescription = teamDescription,
+                        plan = plan,
+                        members = memberTasks,
+                        projectId = requestProjectId,
+                        taskId = assistantId,
+                        shouldStop = { stopRequested },
+                        eventSink = app.nestro.data.ExpertTeamEventSink { event ->
+                            withContext(Dispatchers.IO) {
+                                val existing = app.nestro.data.ExpertTeamCollaborationEventCodec.decode(
+                                    prefs.getString(eventPrefsKey, "[]") ?: "[]"
+                                )
+                                check(prefs.edit().putString(
+                                    eventPrefsKey,
+                                    app.nestro.data.ExpertTeamCollaborationEventCodec.encode(existing + event)
+                                ).commit()) { "专家协作事件保存失败" }
+                            }
+                        },
+                        onPackage = { packageId, state, detail ->
+                            withContext(Dispatchers.Main) {
+                                teamMemberStatuses = teamMemberStatuses + (packageId to state)
+                                teamRunStatus = when (state) {
+                                    "running" -> "专家团执行中：$packageId 正在执行"
+                                    "success" -> "专家团执行中：$packageId 已提交成果"
+                                    "failed" -> "专家团执行中：$packageId 执行失败"
+                                    "blocked" -> "专家团执行中：$packageId 等待依赖"
+                                    else -> teamRunStatus
+                                }
+                            }
+                        },
+                        invokeMember = { member, memberPrompt ->
+                            withContext(Dispatchers.IO) {
+                                val memberSystemContext = listOf(requestSystemContext, memberPrompt)
+                                    .filter { it.isNotBlank() }.joinToString("\n\n").take(18_000)
+                                appRuntime.chatExecutionService.completeWithFallback(
+                                    requestModelConfigs,
+                                    ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
+                                    memberSystemContext,
+                                    connectTimeoutMillis = 15_000,
+                                    readTimeoutMillis = 25_000,
+                                    temperature = requestExpertProfiles[member.name]?.temperature,
+                                    maxTokens = requestExpertProfiles[member.name]?.maxTokens,
+                                    onUsage = recordModelUsage,
+                                    onProviderUsage = recordProviderModelUsage
+                                ).take(12_000)
+                            }
+                        },
+                        toolCatalog = appRuntime.agentToolCatalog
+                    )
+                    val projectResultContext = buildString {
+                        append("专家项目：").append(plan.projectGoal).append("\n")
+                        append("最终验收标准：").append(plan.finalAcceptanceCriteria).append("\n\n")
+                        projectPlanResult.packageResults.forEach { item ->
+                            append("【").append(item.memberName).append(" / ").append(item.packageId).append(" / ").append(item.status).append("】\n")
+                            append(item.output.ifBlank { item.error }.take(5_000)).append("\n\n")
+                        }
+                        append("项目执行状态：").append(if (projectPlanResult.isSuccessful) "全部工作包成功" else "存在失败或阻塞工作包")
+                    }.take(18_000)
+                    teamRunStatus = if (projectPlanResult.isSuccessful) "专家项目已完成，等待主模型审核" else "专家项目部分工作包未完成，交由主模型检查"
+                    projectResultContext
                     },
+
                     onPartialAnswer = { partial ->
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
