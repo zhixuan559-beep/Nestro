@@ -57,6 +57,8 @@ fun VoiceSystemPage() {
     val realtimeAudioRef = remember { AtomicReference<RealtimeVoiceAudioController?>(null) }
     var providerBaseUrl by remember { mutableStateOf(savedProvider?.baseUrl ?: "https://api.openai.com/v1") }
     var providerModel by remember { mutableStateOf(savedProvider?.model.orEmpty()) }
+    var providerInputModel by remember { mutableStateOf(savedProvider?.inputModel ?: "whisper-1") }
+    var providerOutputModel by remember { mutableStateOf(savedProvider?.outputModel ?: "gpt-4o-mini-tts") }
     var providerVoice by remember { mutableStateOf(savedProvider?.voice ?: "alloy") }
     var providerApiKey by remember { mutableStateOf("") }
     var providerConfigured by remember { mutableStateOf(savedProvider != null) }
@@ -254,7 +256,21 @@ fun VoiceSystemPage() {
             value = providerModel,
             onValueChange = { providerModel = it.take(120) },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("语音模型") },
+            label = { Text("实时语音模型") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = providerInputModel,
+            onValueChange = { providerInputModel = it.take(120) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("语音识别模型") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = providerOutputModel,
+            onValueChange = { providerOutputModel = it.take(120) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("语音合成模型") },
             singleLine = true
         )
         OutlinedTextField(
@@ -282,7 +298,9 @@ fun VoiceSystemPage() {
                             baseUrl = providerBaseUrl,
                             apiKey = existingKey,
                             model = providerModel,
-                            voice = providerVoice.ifBlank { null }
+                            voice = providerVoice.ifBlank { null },
+                            inputModel = providerInputModel,
+                            outputModel = providerOutputModel
                         )
                     )
                 }.onSuccess {
