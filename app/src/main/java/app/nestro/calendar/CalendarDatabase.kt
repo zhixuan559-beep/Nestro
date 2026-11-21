@@ -42,6 +42,12 @@ interface CalendarDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(event: CalendarEvent)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAll(events: List<CalendarEvent>)
+
+    @Query("DELETE FROM calendar_events")
+    suspend fun deleteAll()
+
     @Query("DELETE FROM calendar_events WHERE id = :id")
     suspend fun delete(id: String): Int
 }
