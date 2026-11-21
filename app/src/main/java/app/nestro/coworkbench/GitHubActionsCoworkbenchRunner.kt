@@ -136,7 +136,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("User-Agent", "Nestro-AI-Coworkbench")
             .get().build()
         val previousRunIds = executeCancellable(previousRunsRequest).use { response ->
-            require(response.isSuccessful) { "读取既有 Workflow 运行记录失败（HTTP ${response.code}）" }
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取既有 Workflow 运行记录失败")
+                else "读取既有 Workflow 运行记录失败（HTTP ${response.code}）"
+            }
             val rows = JSONObject(response.body?.string().orEmpty()).optJSONArray("workflow_runs")
                 ?: org.json.JSONArray()
             (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optLong("id")?.takeIf { id -> id > 0 } }.toSet()
@@ -330,7 +333,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("User-Agent", "Nestro-AI-Coworkbench")
             .get().build()
         val body = executeCancellable(request).use { response ->
-            require(response.isSuccessful) { "读取 Job/Step 结果失败（HTTP " + response.code + "）" }
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取 Job/Step 结果失败")
+                else "读取 Job/Step 结果失败（HTTP " + response.code + "）"
+            }
             response.body?.string().orEmpty()
         }
         val jobs = JSONObject(body).optJSONArray("jobs") ?: org.json.JSONArray()
@@ -377,7 +383,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("User-Agent", "Nestro-AI-Coworkbench")
             .get().build()
         val body = executeCancellable(request).use { response ->
-            require(response.isSuccessful) { "读取构建产物失败（HTTP " + response.code + "）" }
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取构建产物失败")
+                else "读取构建产物失败（HTTP " + response.code + "）"
+            }
             response.body?.string().orEmpty()
         }
         val rows = JSONObject(body).optJSONArray("artifacts") ?: org.json.JSONArray()
@@ -411,7 +420,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("User-Agent", "Nestro-AI-Coworkbench")
             .get().build()
         return executeCancellable(request).use { response ->
-            require(response.isSuccessful) { "下载构建产物失败（HTTP " + response.code + "）" }
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "下载构建产物失败")
+                else "下载构建产物失败（HTTP " + response.code + "）"
+            }
             val stream = response.body?.byteStream() ?: return@use emptyList()
             ZipInputStream(stream).use { zip ->
                 val reports = mutableListOf<CoworkbenchArtifactFile>()
@@ -467,7 +479,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             .header("User-Agent", "Nestro-AI-Coworkbench")
             .get().build()
         return executeCancellable(request).use { response ->
-            require(response.isSuccessful) { "下载 Job 日志失败（HTTP " + response.code + "）" }
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "下载 Job 日志失败")
+                else "下载 Job 日志失败（HTTP " + response.code + "）"
+            }
             val stream = response.body?.byteStream() ?: return@use ""
             ZipInputStream(stream).use { zip ->
                 val output = StringBuilder()
