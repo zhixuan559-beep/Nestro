@@ -38,7 +38,7 @@ object SkillBundleParser {
         val prompt = json.optString("prompt").trim()
         val source = json.optString("source", safeSource).take(200)
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
-        require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本必须使用语义版本格式" }
+        require(runCatching { SkillSemVer.compare(version, version) }.isSuccess) { "技能版本必须使用严格 SemVer 2.0 格式" }
         require(description.length <= 300) { "技能描述过长" }
         require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
