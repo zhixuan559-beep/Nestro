@@ -3,6 +3,7 @@ package app.nestro.ui
 import app.nestro.NestroApplication
 import app.nestro.model.ModelRegistry
 import app.nestro.mcp.McpToolCenterPage
+import app.nestro.git.GitWorkbenchPage
 import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelRequestConfigurationSelector
 import app.nestro.data.runCatchingCancellable
@@ -2791,6 +2792,7 @@ fun NestroApp() {
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "capabilities" -> CapabilityDirectoryPage()
                         "mcp" -> McpToolCenterPage(appRuntime)
+                        "git" -> GitWorkbenchPage(context)
                         "voice" -> VoiceSystemPage()
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {

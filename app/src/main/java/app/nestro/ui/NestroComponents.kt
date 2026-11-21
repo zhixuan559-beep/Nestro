@@ -135,6 +135,7 @@ internal fun NavigationDrawerContent(
         DrawerItem("▣", "产物库") { onNavigate("artifacts") }
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
         DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
+        DrawerItem("⑂", "Git 工作台") { onNavigate("git") }
         DrawerItem("✦", "我的专家") { onNavigate("experts") }
         DrawerItem("♧", "专家团队") { onNavigate("teams") }
         DrawerItem("◇", "能力中心") { onNavigate("skills") }

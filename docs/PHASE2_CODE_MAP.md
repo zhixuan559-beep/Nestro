@@ -43,7 +43,7 @@
 | 11 | 专家模板 | ExpertTemplateCatalog、ExpertRevisionAndTemplate、NestroApp 模板流程 | 主体已有；对应测试已有，完整 UI 回归仍需核验 |
 | 12 | 双模型对比 | ModelComparisonPage、ModelComparisonCoordinator、ModelComparisonPolicy；复用 ModelRegistry、加密 Key 仓库与 ChatExecutionService | 功能代码已补齐并快进合并锁定（commit 5868d6d）；静态源码/结构复核完成，Kotlin 编译与 JVM 测试尚未执行，模拟器/真机留待统一验收 |
 | 13 | MCP 工具中心 | McpStreamableHttpClient（2026-07-28 stateless + 2025 legacy fallback）、McpToolCenterRepository/Service、McpToolCenterPage；复用 AgentToolCatalog/AgentRuntime/RoomAgentTaskTraceStore；Keystore Bearer vault | 远程服务/工具发现、逐工具授权、参数预览调用、审计撤销及损坏审计隔离已实现并静态复核；编译/JVM/设备验收待十九模块统一阶段 |
-| 14 | GitHub 工作台 | 仓库未见 GitHub 工作台专属 package、页面或 Git 操作服务 | 尚未形成模块 |
+| 14 | GitHub 工作台 | `git/GitWorkbench.kt`（GitHub/GitLab/Gitee API、Android Keystore 凭据、JGit 本地仓库操作）、`git/GitWorkbenchPage.kt`、NestroApp 路由与抽屉入口；JGit 6.10.1 | 主体代码已落地：PAT 授权、仓库搜索/克隆（空间预检）、分支/Fetch/Pull/Push/Commit、文件浏览编辑/新建删除、Diff/冲突处理/历史/反向回滚；静态复核中，编译/JVM/设备验收未执行 |
 | 15 | AI 共建工作台 | WorkflowEngine、专家、产物、Agent 底座可复用；未见独立共建工作台 | 只有可复用基础，不算模块完成 |
 | 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
 | 17 | 智能剪辑 | 当前主源码树未发现媒体编辑服务、页面或任务实现 | 未发现实现，后续再核验 |
