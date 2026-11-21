@@ -62,6 +62,28 @@ class ArtifactStoreBackupValidationTest {
     }
 
     @Test
+    fun rejectsMoreThanTwoHundredArtifactsInOneProject() {
+        val rows = JSONArray()
+        repeat(201) { index ->
+            val id = "00000000-0000-0000-0000-" + index.toString().padStart(12, '0')
+            rows.put(row(id = id, title = "Draft $index"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
+    @Test
+    fun rejectsDuplicateVersionNumberForSameProjectAndTitle() {
+        val rows = JSONArray()
+            .put(row(version = 2))
+            .put(row(id = "223e4567-e89b-12d3-a456-426614174000", version = 2))
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.validateBackup(rows, setOf("project-a"))
+        }
+    }
+
+    @Test
     fun rejectsInvalidVersionNumbers() {
         assertThrows(IllegalArgumentException::class.java) {
             ArtifactStore.validateBackup(JSONArray().put(row(version = 0)), setOf("project-a"))

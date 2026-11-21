@@ -48,8 +48,12 @@ fun ArtifactLibraryPage(projectId: String) {
     var content by remember { mutableStateOf("") }
     var records by remember { mutableStateOf(emptyList<ArtifactRecord>()) }
     var selectedForExport by remember { mutableStateOf<ArtifactRecord?>(null) }
+    var selectedForDelete by remember { mutableStateOf<ArtifactRecord?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var previewRecord by remember { mutableStateOf<ArtifactRecord?>(null) }
     var status by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         val record = selectedForExport
@@ -62,9 +66,21 @@ fun ArtifactLibraryPage(projectId: String) {
         selectedForExport = null
     }
 
+    LaunchedEffect(projectId) {
+        title = ""
+        content = ""
+        status = ""
+        saving = false
+        selectedForExport = null
+        selectedForDelete = null
+        preview = null
+        previewRecord = null
+    }
+
     LaunchedEffect(projectId, refresh) {
         records = emptyList()
         preview = null
+        previewRecord = null
         val result = withContext(Dispatchers.IO) { runCatching { ArtifactStore.list(context, projectId) } }
         result.onSuccess { records = it }
             .onFailure { status = "加载产物失败：${it.message ?: "本机数据读取异常"}" }
@@ -76,27 +92,53 @@ fun ArtifactLibraryPage(projectId: String) {
         OutlinedTextField(value = title, onValueChange = { title = it.take(100) }, label = { Text("产物名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(value = content, onValueChange = { content = it.take(1_500_000) }, label = { Text("产物内容（Markdown）") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
         Button(
-            enabled = title.isNotBlank() && content.isNotBlank(),
+            enabled = !saving && title.isNotBlank() && content.isNotBlank(),
             onClick = {
                 val draftTitle = title
                 val draftContent = content
+                val targetProjectId = projectId
+                saving = true
                 scope.launch {
-                    val result = withContext(Dispatchers.IO) { runCatching { ArtifactStore.save(context, projectId, draftTitle, draftContent) } }
-                    status = result.fold({ title = ""; content = ""; refresh++; "已保存到本机产物库：v${it.version}" }, { "保存失败：${it.message ?: "未知错误"}" })
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching { ArtifactStore.save(context, targetProjectId, draftTitle, draftContent) }
+                    }
+                    if (projectId == targetProjectId) {
+                        saving = false
+                        result.fold(
+                            { saved ->
+                                title = ""
+                                content = ""
+                                refresh++
+                                status = "已保存到本机产物库：v${saved.version}"
+                            },
+                            { error -> status = "保存失败：${error.message ?: "未知错误"}" }
+                        )
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth()
-        ) { Text("保存产物") }
+        ) { Text(if (saving) "正在保存…" else "保存产物") }
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("已保存的产物", style = MaterialTheme.typography.titleMedium)
             Text("${records.size} 个版本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (records.isEmpty()) {
-            Text("这里还没有产物。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = { Text("搜索作品名称") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        val visibleRecords = records.filter { it.title.contains(searchQuery.trim(), ignoreCase = true) }
+        if (visibleRecords.isEmpty()) {
+            Text(
+                if (records.isEmpty()) "这里还没有产物。" else "没有找到匹配的作品。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                records.forEach { record ->
+                visibleRecords.forEach { record ->
                     Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(record.title, style = MaterialTheme.typography.titleSmall)
@@ -106,6 +148,7 @@ fun ArtifactLibraryPage(projectId: String) {
                                     scope.launch {
                                         val body = withContext(Dispatchers.IO) { runCatching { ArtifactStore.read(context, record) } }
                                         preview = body.getOrNull()?.let { record.title to it }
+                                        previewRecord = record.takeIf { body.isSuccess }
                                         if (body.isFailure) status = "读取失败：${body.exceptionOrNull()?.message ?: "文件不可用"}"
                                     }
                                 }) { Text("预览") }
@@ -128,15 +171,7 @@ fun ArtifactLibraryPage(projectId: String) {
                                 }) { Text("导出") }
                                 TextButton(onClick = {
                                     scope.launch {
-                                        val result = withContext(Dispatchers.IO) {
-                                            runCatching { ArtifactStore.delete(context, record) }
-                                        }
-                                        result.onSuccess {
-                                            refresh++
-                                            status = "已删除：${record.title} v${record.version}"
-                                        }.onFailure {
-                                            status = "删除失败：${it.message ?: "本机存储异常"}"
-                                        }
+                                        selectedForDelete = record
                                     }
                                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                             }
@@ -146,12 +181,60 @@ fun ArtifactLibraryPage(projectId: String) {
             }
         }
     }
+    selectedForDelete?.let { record ->
+        AlertDialog(
+            onDismissRequest = { selectedForDelete = null },
+            title = { Text("删除作品版本？") },
+            text = { Text("将删除「${record.title}」v${record.version}。此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedForDelete = null
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { ArtifactStore.delete(context, record) }
+                        }
+                        result.onSuccess {
+                            refresh++
+                            status = "已删除：${record.title} v${record.version}"
+                        }.onFailure {
+                            status = "删除失败：${it.message ?: "本机存储异常"}"
+                        }
+                    }
+                }) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedForDelete = null }) { Text("取消") }
+            }
+        )
+    }
     preview?.let { (name, body) ->
         AlertDialog(
-            onDismissRequest = { preview = null },
+            onDismissRequest = { preview = null; previewRecord = null },
             title = { Text(name) },
-            text = { Text(body.take(12000)) },
-            confirmButton = { TextButton(onClick = { preview = null }) { Text("关闭") } }
+            text = {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (body.length > 12000) body.take(12000) + "\n\n……预览已截断，完整内容可导出或分享。" else body)
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(enabled = previewRecord != null, onClick = {
+                        val source = previewRecord
+                        if (source != null) scope.launch {
+                            val result = withContext(Dispatchers.IO) { runCatching { ArtifactStore.save(context, projectId, source.title, body) } }
+                            result.onSuccess { saved ->
+                                status = "已从历史版本另存为新版本：v${saved.version}"
+                                refresh++
+                                preview = null
+                                previewRecord = null
+                            }.onFailure { error ->
+                                status = "恢复历史版本失败：${error.message ?: "本机存储异常"}"
+                            }
+                        }
+                    }) { Text("恢复为新版本") }
+                    TextButton(onClick = { preview = null; previewRecord = null }) { Text("关闭") }
+                }
+            }
         )
     }
 }

@@ -47,7 +47,7 @@ class ArtifactStoreBackupTest {
         repeat(201) { index ->
             val id = "00000000-0000-0000-0000-" + index.toString().padStart(12, '0')
             val projectId = if (index % 2 == 0) "project-a" else "project-b"
-            rows.put(row(id, projectId))
+            rows.put(row(id, projectId).put("title", "Draft $index"))
         }
         assertEquals(201, ArtifactStore.validateBackup(rows, setOf("project-a", "project-b")).length())
     }

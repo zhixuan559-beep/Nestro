@@ -285,6 +285,48 @@ class ProjectPackageCodecTest {
             .any { it.getString("projectId") == "foreign" && it.getString("contentHash") == "a".repeat(64) })
     }
 
+    @Test fun importRejectsMalformedArtifactIdAndDuplicateArtifactIds() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val malformedId = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        malformedId.getJSONArray("artifacts_v1").getJSONObject(0).put("id", "not-a-uuid")
+        seal(malformedId)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), malformedId.toString())
+        }
+
+        val duplicateIds = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        duplicateIds.getJSONArray("artifacts_v1").put(
+            JSONObject(duplicateIds.getJSONArray("artifacts_v1").getJSONObject(0).toString())
+        )
+        seal(duplicateIds)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), duplicateIds.toString())
+        }
+    }
+
+    @Test fun importRejectsDuplicateArtifactVersionNumbers() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val packageRoot = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        val artifacts = packageRoot.getJSONArray("artifacts_v1")
+        val duplicate = JSONObject(artifacts.getJSONObject(0).toString())
+            .put("id", "223e4567-e89b-12d3-a456-426614174000")
+        artifacts.put(duplicate)
+        seal(packageRoot)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), packageRoot.toString())
+        }
+    }
+
+    @Test fun importRejectsOversizedProjectArtifactPayload() {
+        val source = fixtureBackup(includeForeignProject = false)
+        val oversized = JSONObject(ProjectPackageCodec.export(source.toString(), "source", emptySet()))
+        oversized.getJSONArray("artifacts_v1").getJSONObject(0).put("content", "x".repeat(1_500_001))
+        seal(oversized)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectPackageCodec.mergeIntoFullBackup(source.toString(), oversized.toString())
+        }
+    }
+
     @Test fun importRejectsDuplicateTeamAndWorkflowIdsBeforeScopeRemapping() {
         val source = fixtureBackup(includeForeignProject = false)
         val packageRaw = ProjectPackageCodec.export(source.toString(), "source", emptySet())
@@ -398,7 +440,7 @@ class ProjectPackageCodecTest {
                     .put("createdAt", 1L).put("updatedAt", 2L)
             )
             artifacts.put(
-                JSONObject().put("id", "source-artifact").put("projectId", projectId)
+                JSONObject().put("id", "123e4567-e89b-12d3-a456-426614174000").put("projectId", projectId)
                     .put("title", "项目产物").put("version", 1).put("createdAt", 1L)
                     .put("content", "# 项目产物")
             )

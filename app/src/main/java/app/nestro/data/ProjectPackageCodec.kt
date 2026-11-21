@@ -316,14 +316,39 @@ internal object ProjectPackageCodec {
 
         val artifacts = arrayField(current, "artifacts_v1")
         val incomingArtifacts = arrayField(incoming, "artifacts_v1").objects()
-        val artifactIds = incomingArtifacts.map { artifact ->
-            require(artifact.opt("projectId") == sourceProjectId) { "项目包产物包含来源项目之外的数据" }
-            artifact.opt("id") as? String ?: error("项目包产物 ID 无效")
-        }
-        require(artifactIds.all { it.isNotBlank() } && artifactIds.distinct().size == artifactIds.size) {
-            "项目包产物 ID 为空或重复"
-        }
+        require(incomingArtifacts.size <= 200) { "项目包产物版本数量超过 200 个" }
+        val artifactIds = mutableSetOf<String>()
+        val artifactVersions = mutableSetOf<Triple<String, String, Int>>()
+        var artifactBytes = 0L
         for (artifact in incomingArtifacts) {
+            val artifactId = artifact.opt("id") as? String ?: error("项目包产物 ID 无效")
+            val artifactProjectId = artifact.opt("projectId") as? String ?: error("项目包产物项目归属无效")
+            val title = artifact.opt("title") as? String ?: error("项目包产物标题无效")
+            val content = artifact.opt("content") as? String ?: error("项目包产物内容无效")
+            val versionValue = artifact.opt("version") as? Number ?: error("项目包产物版本号无效")
+            val versionNumber = versionValue.toDouble()
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            require(artifactId.matches(Regex("[0-9a-fA-F-]{36}")) && artifactIds.add(artifactId)) {
+                "项目包产物 ID 无效或重复"
+            }
+            require(artifactProjectId == sourceProjectId) { "项目包产物包含来源项目之外的数据" }
+            require(title.isNotBlank() && title.length <= 100 && title == title.trim()) {
+                "项目包产物标题无效"
+            }
+            require(versionNumber.isFinite() && versionNumber % 1.0 == 0.0 && versionNumber in 1.0..10_000.0) {
+                "项目包产物版本号无效"
+            }
+            require(artifactVersions.add(Triple(artifactProjectId, title.lowercase(), versionNumber.toInt()))) {
+                "项目包同一作品包含重复版本号"
+            }
+            require(bytes.isNotEmpty() && bytes.size <= 1_500_000) { "项目包产物内容为空或超过 1.5 MB" }
+            artifactBytes += bytes.size
+            require(artifactBytes <= 3_000_000L) { "项目包产物总量超过 3 MB" }
+            val createdAt = artifact.opt("createdAt") as? Number ?: error("项目包产物创建时间无效")
+            require(createdAt.toDouble().isFinite() && createdAt.toDouble() >= 0.0 &&
+                createdAt.toDouble() % 1.0 == 0.0) {
+                "项目包产物创建时间无效"
+            }
             artifacts.put(JSONObject(artifact.toString())
                 .put("id", UUID.randomUUID().toString())
                 .put("projectId", newProjectId))

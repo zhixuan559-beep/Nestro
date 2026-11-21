@@ -117,6 +117,35 @@ class ArtifactStoreTest {
     }
 
     @Test
+    fun stagedProjectDeletionRecoversFilesBeforeIndexCommitAndCleansAfterCommit() {
+        val record = ArtifactStore.save(context, "project-a", "Recover", "recoverable content")
+        val directory = File(context.filesDir, "artifacts")
+        val original = File(directory, record.fileName)
+        val staged = File(directory, ".${record.fileName}.${UUID.randomUUID()}.deleting")
+        assertTrue(original.renameTo(staged))
+
+        assertEquals("recoverable content", ArtifactStore.read(context, record))
+        assertTrue(original.isFile)
+        assertFalse(staged.exists())
+
+        assertTrue(original.renameTo(staged))
+        File(directory, "index.json").writeText(JSONArray().toString(), Charsets.UTF_8)
+        assertTrue(ArtifactStore.list(context, "project-a").isEmpty())
+        assertFalse(staged.exists())
+    }
+
+    @Test
+    fun listFailsClosedWhenIndexIsMissingButArtifactFilesRemain() {
+        val record = ArtifactStore.save(context, "project-a", "Orphan", "content")
+        File(context.filesDir, "artifacts/index.json").delete()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ArtifactStore.list(context, "project-a")
+        }
+        assertTrue(File(context.filesDir, "artifacts/${record.fileName}").isFile)
+    }
+
+    @Test
     fun projectDeletionGuardFailsClosedWhenArtifactIndexIsCorrupt() {
         val directory = File(context.filesDir, "artifacts").apply { mkdirs() }
         val index = File(directory, "index.json")
@@ -204,6 +233,21 @@ class ArtifactStoreTest {
         )
         assertEquals(3, ArtifactStore.list(context, "source").size)
         assertTrue(ArtifactStore.list(context, "other").isEmpty())
+    }
+
+    @Test
+    fun projectDuplicationPreservesVersionNumbersAndCreationTimes() {
+        val first = ArtifactStore.save(context, "source", "Plan", "# first")
+        val second = ArtifactStore.save(context, "source", "Plan", "# second")
+        val third = ArtifactStore.save(context, "source", "Plan", "# third")
+        ArtifactStore.delete(context, second)
+
+        val copied = ArtifactStore.duplicateProject(context, "source", "copy")
+            .sortedBy { it.version }
+
+        assertEquals(listOf(1, 3), copied.map { it.version })
+        assertEquals(listOf(first.createdAt, third.createdAt), copied.map { it.createdAt })
+        assertEquals(listOf("# first", "# third"), copied.map { ArtifactStore.read(context, it) })
     }
 
     @Test

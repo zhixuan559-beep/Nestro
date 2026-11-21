@@ -60,11 +60,45 @@ object ArtifactStore {
 
     private fun indexFile(context: Context) = File(root(context), "index.json")
 
+    private fun recoverStagedProjectDeletes(context: Context) {
+        val directory = File(context.applicationContext.filesDir, "artifacts")
+        if (!directory.isDirectory) return
+        val stagedPattern = Regex("^\\.([0-9a-fA-F-]{36}\\.md)\\.[0-9a-fA-F-]{36}\\.deleting$")
+        val index = File(directory, "index.json")
+        val indexedNames = try {
+            if (!index.isFile) emptySet()
+            else {
+                val rows = JSONArray(index.readText(Charsets.UTF_8))
+                (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optString("fileName") }.toSet()
+            }
+        } catch (_: Throwable) {
+            null
+        }
+        directory.listFiles().orEmpty().forEach { staged ->
+            val originalName = stagedPattern.matchEntire(staged.name)?.groupValues?.getOrNull(1) ?: return@forEach
+            val original = File(directory, originalName)
+            if (indexedNames == null || originalName in indexedNames) {
+                if (!original.exists()) staged.renameTo(original)
+            } else {
+                staged.delete()
+            }
+        }
+    }
+
     @Synchronized
     fun list(context: Context, projectId: String): List<ArtifactRecord> {
-        val raw = indexFile(context).takeIf { it.exists() }?.readText(Charsets.UTF_8) ?: "[]"
-        val rows = JSONArray(raw)
-        return (0 until rows.length()).map { index ->
+        require(projectId.isNotBlank()) { "项目空间无效" }
+        recoverStagedProjectDeletes(context)
+        val index = indexFile(context)
+        if (!index.exists()) {
+            val unindexedFiles = root(context).listFiles().orEmpty().any { file ->
+                file.isFile && file.name.endsWith(".md")
+            }
+            require(!unindexedFiles) { "产物索引缺失，但检测到未登记作品文件；已停止显示空列表以避免误判数据丢失" }
+            return emptyList()
+        }
+        val rows = JSONArray(index.readText(Charsets.UTF_8))
+        val records = (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             val id = row.artifactString("id")
             val fileName = row.artifactString("fileName")
@@ -74,19 +108,27 @@ object ArtifactStore {
                 title = row.artifactString("title"),
                 fileName = fileName,
                 mimeType = row.optString("mimeType", "text/markdown"),
-                createdAt = row.optLong("createdAt"),
-                sizeBytes = row.optLong("sizeBytes", -1L),
-                version = row.optInt("version", 1)
+                createdAt = row.artifactLongOrDefault("createdAt", 0L),
+                sizeBytes = row.artifactLongOrDefault("sizeBytes", -1L),
+                version = row.artifactInt("version")
             )
             require(id.matches(Regex("[0-9a-fA-F-]{36}")) && fileName == "${id}.md") {
                 "产物索引包含无效文件引用"
             }
             require(record.projectId.isNotBlank() && record.title.isNotBlank() &&
-                record.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() && record.version in 1..10_000) {
+                record.createdAt >= 0L && record.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() &&
+                record.version in 1..10_000) {
                 "产物索引元数据无效"
             }
             record
-        }.filter { it.projectId == projectId }
+        }
+        require(records.map { it.id }.distinct().size == records.size) { "产物索引包含重复 ID" }
+        val versionKeys = records.map { Triple(it.projectId, it.title.lowercase(), it.version) }
+        require(versionKeys.distinct().size == versionKeys.size) { "产物索引包含重复版本号" }
+        require(records.groupingBy { it.projectId }.eachCount().values.all { it <= MAX_ITEMS }) {
+            "产物索引中的项目版本数量超过单项目上限"
+        }
+        return records.filter { it.projectId == projectId }
             .onEach { record ->
                 require(File(root(context), record.fileName).isFile) {
                     "产物文件缺失：${record.title} v${record.version}，已停止显示以避免误判为空"
@@ -142,14 +184,15 @@ object ArtifactStore {
             title = row.artifactString("title"),
             fileName = row.artifactString("fileName"),
             mimeType = row.optString("mimeType", "text/markdown"),
-            createdAt = row.optLong("createdAt"),
-            sizeBytes = row.optLong("sizeBytes", -1L),
-            version = row.optInt("version", 1)
+            createdAt = row.artifactLongOrDefault("createdAt", 0L),
+            sizeBytes = row.artifactLongOrDefault("sizeBytes", -1L),
+            version = row.artifactInt("version")
         )
         require(artifactReferenceMatchesIndex(requested, indexed)) {
             "产物不属于当前项目，或引用已失效"
         }
         require(indexed.fileName == "${indexed.id}.md" &&
+            indexed.title.isNotBlank() && indexed.createdAt >= 0L &&
             indexed.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() &&
             indexed.version in 1..10_000) { "产物索引元数据无效" }
         return indexed
@@ -172,14 +215,32 @@ object ArtifactStore {
         require(list(context, targetProjectId).isEmpty()) { "目标项目已有产物，拒绝覆盖" }
         val source = list(context, sourceProjectId)
             .sortedWith(compareBy<ArtifactRecord> { it.title.lowercase() }.thenBy { it.version })
-            .map { it.title to read(context, it) }
+            .map { record -> record to read(context, record) }
         require(source.size <= MAX_ITEMS) { "源项目产物数量超过复制上限" }
+        val all = readAll(context)
         val created = mutableListOf<ArtifactRecord>()
+        val createdFiles = mutableListOf<File>()
         try {
-            source.forEach { (title, content) -> created += save(context, targetProjectId, title, content) }
+            source.forEach { (original, content) ->
+                val bytes = content.toByteArray(Charsets.UTF_8)
+                require(bytes.size in 1..MAX_ARTIFACT_BYTES) { "源项目产物内容无效，已中止复制" }
+                val id = UUID.randomUUID().toString()
+                val fileName = "$id.md"
+                val target = File(root(context), fileName)
+                writeAtomically(target, bytes)
+                createdFiles += target
+                val copied = original.copy(id = id, projectId = targetProjectId, fileName = fileName, sizeBytes = bytes.size.toLong())
+                created += copied
+                all.put(JSONObject()
+                    .put("id", copied.id).put("projectId", copied.projectId)
+                    .put("title", copied.title).put("fileName", copied.fileName)
+                    .put("mimeType", copied.mimeType).put("createdAt", copied.createdAt)
+                    .put("sizeBytes", copied.sizeBytes).put("version", copied.version))
+            }
+            writeIndex(context, all)
             return created
         } catch (error: Throwable) {
-            created.asReversed().forEach { record -> runCatching { delete(context, record) } }
+            createdFiles.forEach { it.delete() }
             throw error
         }
     }
@@ -229,11 +290,28 @@ object ArtifactStore {
                 require(id.matches(Regex("[0-9a-fA-F-]{36}")) && row.artifactString("fileName") == "$id.md") {
                     "项目产物文件引用无效，拒绝清理"
                 }
-                files += File(root(context), "$id.md")
+                val file = File(root(context), "$id.md")
+                require(file.isFile) { "项目产物文件缺失，拒绝清理" }
+                files += file
             } else kept.put(row)
         }
-        writeIndex(context, kept)
-        files.forEach { it.delete() }
+        val staged = mutableListOf<Pair<File, File>>()
+        try {
+            files.forEach { file ->
+                val temporary = File(file.parentFile, ".${file.name}.${UUID.randomUUID()}.deleting")
+                check(file.renameTo(temporary)) { "项目产物暂存失败，已取消删除" }
+                staged += file to temporary
+            }
+            writeIndex(context, kept)
+        } catch (error: Throwable) {
+            staged.asReversed().forEach { (original, temporary) ->
+                if (temporary.exists()) temporary.renameTo(original)
+            }
+            throw error
+        }
+        staged.forEach { (_, temporary) ->
+            check(!temporary.exists() || temporary.delete()) { "项目索引已清理，但部分暂存文件未能回收：${temporary.name}" }
+        }
     }
 
     @Synchronized
@@ -272,11 +350,17 @@ object ArtifactStore {
         require(rows.length() <= MAX_BACKUP_ITEMS) { "产物版本数量超过备份上限" }
         val output = JSONArray()
         var totalBytes = 0L
+        val projectCounts = mutableMapOf<String, Int>()
+        val versionKeys = mutableSetOf<Triple<String, String, Int>>()
+        val artifactIds = mutableSetOf<String>()
         for (index in 0 until rows.length()) {
             val row = requireNotNull(rows.optJSONObject(index)) { "产物索引包含无效条目，已中止备份" }
             val id = row.artifactString("id")
             val projectId = row.artifactString("projectId")
-            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && projectId in allowedProjectIds) { "产物索引包含无效 ID 或项目归属" }
+            require(id.matches(Regex("[0-9a-fA-F-]{36}")) && artifactIds.add(id) && projectId in allowedProjectIds) { "产物索引包含无效/重复 ID 或项目归属" }
+            val projectCount = (projectCounts[projectId] ?: 0) + 1
+            require(projectCount <= MAX_ITEMS) { "项目 $projectId 的产物版本数量超过 $MAX_ITEMS 个" }
+            projectCounts[projectId] = projectCount
             val fileName = "$id.md"
             require(row.artifactString("fileName") == fileName) { "产物索引文件引用无效" }
             val file = File(root(context), fileName)
@@ -285,6 +369,10 @@ object ArtifactStore {
             require(file.length() <= MAX_ARTIFACT_BYTES) { "产物文件超出备份大小限制" }
             val title = row.artifactString("title")
             val version = row.artifactInt("version")
+            val createdAt = row.artifactLongOrDefault("createdAt", 0L)
+            require(createdAt >= 0L) { "产物创建时间无效，已中止备份" }
+            val versionKey = Triple(projectId, title.lowercase(), version)
+            require(versionKeys.add(versionKey)) { "同一作品包含重复版本号，已中止备份" }
             require(title.isNotBlank() && title.length <= 100 && title == title.trim()) { "产物标题无效，已中止备份" }
             require(version in 1..10_000) { "产物版本号无效，已中止备份" }
             totalBytes += file.length()
@@ -294,7 +382,7 @@ object ArtifactStore {
                 .put("projectId", row.optString("projectId"))
                 .put("title", title)
                 .put("version", version)
-                .put("createdAt", row.artifactLongOrDefault("createdAt", 0L))
+                .put("createdAt", createdAt)
                 .put("content", file.readText(Charsets.UTF_8)))
         }
         return output
@@ -304,6 +392,8 @@ object ArtifactStore {
         require(rows.length() <= MAX_BACKUP_ITEMS) { "备份中的产物版本数量超出限制" }
         val normalized = JSONArray()
         val ids = mutableSetOf<String>()
+        val projectCounts = mutableMapOf<String, Int>()
+        val versionKeys = mutableSetOf<Triple<String, String, Int>>()
         var totalBytes = 0L
         for (index in 0 until rows.length()) {
             val row = rows.getJSONObject(index)
@@ -313,13 +403,20 @@ object ArtifactStore {
             val content = row.artifactString("content")
             val bytes = content.toByteArray(Charsets.UTF_8)
             val version = row.artifactInt("version")
+            val createdAt = row.artifactLongOrDefault("createdAt", 0L)
+            require(createdAt >= 0L) { "产物创建时间无效" }
             require(id.matches(Regex("[0-9a-fA-F-]{36}")) && ids.add(id) && projectId in allowedProjectIds) { "产物项目归属、ID 无效或重复" }
+            val projectCount = (projectCounts[projectId] ?: 0) + 1
+            require(projectCount <= MAX_ITEMS) { "项目 $projectId 的产物版本数量超过 $MAX_ITEMS 个" }
+            projectCounts[projectId] = projectCount
+            val versionKey = Triple(projectId, title.lowercase(), version)
+            require(versionKeys.add(versionKey)) { "同一作品包含重复版本号" }
             require(title.isNotBlank() && title.length <= 100 && title == title.trim() && version in 1..10000) { "产物元数据无效" }
             require(bytes.isNotEmpty() && bytes.size <= MAX_ARTIFACT_BYTES) { "产物内容为空或超出大小限制" }
             totalBytes += bytes.size
             require(totalBytes <= 3_000_000L) { "产物总量超过备份安全容量" }
             normalized.put(JSONObject().put("id", id).put("projectId", projectId).put("title", title)
-                .put("version", version).put("createdAt", row.optLong("createdAt")).put("content", content))
+                .put("version", version).put("createdAt", createdAt).put("content", content))
         }
         return normalized
     }
@@ -342,6 +439,7 @@ object ArtifactStore {
         }
         val newIndex = JSONArray()
         val newFiles = mutableListOf<File>()
+        val stagedOldFiles = mutableListOf<Pair<File, File>>()
         try {
             pending.forEach { item ->
                 // Fresh IDs ensure a failed restore cannot overwrite files referenced by the old index.
@@ -357,15 +455,27 @@ object ArtifactStore {
                     .put("mimeType", "text/markdown").put("createdAt", item.createdAt)
                     .put("sizeBytes", bytes.size.toLong()).put("version", item.version))
             }
+            oldFiles.forEach { oldFile ->
+                if (oldFile.isFile) {
+                    val temporary = File(directory, ".${oldFile.name}.${UUID.randomUUID()}.deleting")
+                    check(oldFile.renameTo(temporary)) { "旧产物暂存失败，已取消备份恢复" }
+                    stagedOldFiles += oldFile to temporary
+                }
+            }
             writeIndex(context, newIndex)
         } catch (error: Throwable) {
+            stagedOldFiles.asReversed().forEach { (original, temporary) ->
+                if (temporary.exists()) temporary.renameTo(original)
+            }
             newFiles.forEach { it.delete() }
             throw error
         }
-        oldFiles.forEach { it.delete() }
+        // If the process stops here, the next read reconciles staged files against the committed index.
+        stagedOldFiles.forEach { (_, temporary) -> temporary.delete() }
     }
 
     private fun readAll(context: Context): JSONArray {
+        recoverStagedProjectDeletes(context)
         val file = indexFile(context)
         return if (!file.exists()) JSONArray() else JSONArray(file.readText(Charsets.UTF_8))
     }
