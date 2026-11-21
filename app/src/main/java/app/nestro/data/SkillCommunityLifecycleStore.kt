@@ -15,6 +15,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
         val history = JSONObject(preferences.getString(HISTORY_KEY, "{}") ?: "{}")
+        val disabledBefore = isDisabled(bundle.name)
         val existingPrompt = skills.optString(bundle.name, null)
         val existingMetaRaw = metadata.optString(bundle.name, null)
         val existingMeta = existingMetaRaw?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -32,12 +33,14 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             .put("hadSkill", existingPrompt != null)
             .put("prompt", existingPrompt ?: JSONObject.NULL)
             .put("metadata", existingMetaRaw ?: JSONObject.NULL)
+            .put("wasDisabled", disabledBefore)
             .put("savedAt", System.currentTimeMillis()))
         while (snapshots.length() > MAX_HISTORY) snapshots.remove(0)
         history.put(bundle.name, snapshots)
         skills.put(bundle.name, bundle.prompt)
         metadata.put(bundle.name, SkillBundleParser.metadataJson(bundle))
-        commit(skills, metadata, history, disabledSkills())
+        val disabledAfter = if (existingPrompt == null) setDisabled(bundle.name, true) else disabledSkills()
+        commit(skills, metadata, history, disabledAfter)
     }
 
     fun uninstall(name: String) {
@@ -52,6 +55,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             .put("hadSkill", true)
             .put("prompt", skills.getString(name))
             .put("metadata", metadata.getString(name))
+            .put("wasDisabled", isDisabled(name))
             .put("savedAt", System.currentTimeMillis()))
         while (snapshots.length() > MAX_HISTORY) snapshots.remove(0)
         history.put(name, snapshots)
@@ -75,15 +79,17 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         require(snapshots.length() > 0) { "没有可回退的历史版本" }
         val previous = snapshots.getJSONObject(snapshots.length() - 1)
         snapshots.remove(snapshots.length() - 1)
+        val disabled = setDisabled(name, previous.optBoolean("wasDisabled", true))
         if (previous.optBoolean("hadSkill")) {
             skills.put(name, previous.getString("prompt"))
             metadata.put(name, previous.getString("metadata"))
         } else {
             skills.remove(name)
             metadata.remove(name)
+            disabled.remove(name)
         }
         if (snapshots.length() == 0) history.remove(name) else history.put(name, snapshots)
-        commit(skills, metadata, history, disabledSkills())
+        commit(skills, metadata, history, disabled)
     }
 
     fun canRollback(name: String): Boolean = (historyJson().optJSONArray(name)?.length() ?: 0) > 0
@@ -102,6 +108,22 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
                 }
             }
         }
+    }
+
+    private fun isDisabled(name: String): Boolean {
+        val current = disabledSkills()
+        return (0 until current.length()).any { current.optString(it) == name }
+    }
+
+    private fun setDisabled(name: String, disabled: Boolean): JSONArray {
+        val result = JSONArray()
+        val current = disabledSkills()
+        for (index in 0 until current.length()) {
+            val value = current.optString(index)
+            if (value != name) result.put(value)
+        }
+        if (disabled) result.put(name)
+        return result
     }
 
     private fun disabledSkills(): JSONArray = runCatching {
