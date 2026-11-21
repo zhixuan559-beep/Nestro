@@ -1,8 +1,6 @@
 package app.nestro.data
 
 import app.nestro.model.ChatStreamingCoordinator
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 
 internal data class ChatRequestExecutionRequest(
     val requestId: String,
@@ -41,7 +39,7 @@ internal class ChatRequestExecutionCoordinator(
         request: ChatRequestExecutionRequest,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
-        planPhoneAgent: suspend () -> Unit = {},
+        planPhoneAgent: suspend () -> String = { "" },
         onTaskPlanningFailure: (Throwable) -> Unit = {},
         runExpertTeam: suspend (String) -> String = { "" },
         onPartialAnswer: suspend (String) -> Unit
@@ -51,28 +49,16 @@ internal class ChatRequestExecutionCoordinator(
         val partialAnswer = StringBuilder()
         var taskPlanningFailure: Throwable? = null
         val result = runCatchingCancellable {
-            // Planning and context retrieval are independent. Overlap them so
-            // optional task preparation does not add its full latency to retrieval.
-            val assembled = coroutineScope {
-                val planning = if (request.taskModeEnabled) async {
-                    runCatchingCancellable { planPhoneAgent() }
-                        .onFailure {
-                            taskPlanningFailure = it
-                            onTaskPlanningFailure(it)
-                        }
-                } else null
-
-                val context = contextAssembler.assemble(
-                    projectId = request.projectId,
-                    conversationId = request.conversationId,
-                    prompt = request.prompt,
-                    requestHistory = request.history,
-                    baseSystemContext = request.baseSystemContext,
-                    taskModeEnabled = request.taskModeEnabled
-                )
-                planning?.await()
-                context
-            }
+            // Context retrieval is selected by policy; task planning is deferred until
+            // the model explicitly selects the phone_agent.plan capability.
+            val assembled = contextAssembler.assemble(
+                projectId = request.projectId,
+                conversationId = request.conversationId,
+                prompt = request.prompt,
+                requestHistory = request.history,
+                baseSystemContext = request.baseSystemContext,
+                taskModeEnabled = request.taskModeEnabled
+            )
             recalledCount = assembled.recalledCount
             recallSources = assembled.recallSources
 
@@ -95,6 +81,16 @@ internal class ChatRequestExecutionCoordinator(
                         temperature = request.temperature,
                         maxTokens = request.maxTokens,
                         shouldStop = request.shouldStop,
+                        taskModeEnabled = request.taskModeEnabled,
+                        planPhoneAgent = {
+                            try {
+                                planPhoneAgent()
+                            } catch (error: Throwable) {
+                                taskPlanningFailure = error
+                                onTaskPlanningFailure(error)
+                                throw error
+                            }
+                        },
                         onUsage = onUsage,
                         onProviderUsage = onProviderUsage,
                         onDirectAnswer = { partial ->
