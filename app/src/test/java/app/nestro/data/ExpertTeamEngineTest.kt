@@ -26,6 +26,27 @@ class ExpertTeamEngineTest {
         assertEquals(3,events.count { it.second=="success" })
     }
 
+    @Test fun manualAssignmentsGiveEachExpertItsOwnWorkPackage() = runBlocking {
+        val assigned = listOf(
+            members[0].copy(assignedTask = "只负责市场规模与证据"),
+            members[1].copy(assignedTask = "只负责风险与反例")
+        )
+        val prompts = mutableMapOf<String, String>()
+        val result = ExpertTeamEngine.run(
+            teamName = "项目组",
+            teamDescription = "独立分工",
+            task = "完成项目研究",
+            members = assigned
+        ) { member, prompt ->
+            prompts[member.name] = prompt
+            "已完成"
+        }
+        assertEquals(2, result.successfulMembers)
+        assertTrue(prompts.getValue("研究员").contains("只负责市场规模与证据"))
+        assertTrue(prompts.getValue("审校员").contains("只负责风险与反例"))
+        assertFalse(prompts.getValue("研究员").contains("只负责风险与反例"))
+    }
+
     @Test fun isolatesMemberFailureAndKeepsPartialResults()=runBlocking {
         val result=ExpertTeamEngine.run("分析组","分工明确","分析问题",members,maxRetries=0) { member,_ ->
             if(member.name=="审校员") error("模拟接口错误")
