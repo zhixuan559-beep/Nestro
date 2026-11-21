@@ -82,6 +82,12 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
         val currentMeta = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
         require(currentMeta.optString("source") == "已验证签名社区目录") { "仅可从社区管理器卸载社区技能" }
+        metadata.keys().forEach { dependentName ->
+            if (dependentName == name) return@forEach
+            val dependent = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val deps = dependent.optJSONArray("dependencies") ?: return@forEach
+            require((0 until deps.length()).none { deps.optJSONObject(it)?.optString("name") == name }) { "该技能仍被 $dependentName 依赖，不能直接卸载" }
+        }
         val history = historyJson()
         val snapshots = history.optJSONArray(name) ?: JSONArray()
         snapshots.put(JSONObject()
