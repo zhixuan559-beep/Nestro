@@ -12,6 +12,8 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
     fun install(bundle: SkillBundle) {
         require(bundle.source == "已验证签名社区目录") { "仅允许安装经过签名目录验证的社区技能" }
         validateDependencies(bundle)
+        validateExistingDependents(bundle)
+        validateNoDependencyCycle(bundle)
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
         val history = JSONObject(preferences.getString(HISTORY_KEY, "{}") ?: "{}")
@@ -106,6 +108,49 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
                 "依赖版本不匹配：${dependency.name} 需要 ${dependency.version}，本机为 $installed"
             }
         }
+    }
+
+    private fun validateExistingDependents(bundle: SkillBundle) {
+        val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
+        metadata.keys().forEach { installedName ->
+            if (installedName == bundle.name) return@forEach
+            val installedMeta = runCatching { JSONObject(metadata.optString(installedName, "{}")) }.getOrDefault(JSONObject())
+            val dependencies = installedMeta.optJSONArray("dependencies") ?: return@forEach
+            for (index in 0 until dependencies.length()) {
+                val dependency = dependencies.optJSONObject(index) ?: continue
+                if (dependency.optString("name") == bundle.name) {
+                    val requirement = dependency.optString("version", "*")
+                    require(versionMatches(bundle.version, requirement)) {
+                        "更新会破坏已有技能依赖：$installedName 要求 ${bundle.name} $requirement"
+                    }
+                }
+            }
+        }
+    }
+
+    private fun validateNoDependencyCycle(bundle: SkillBundle) {
+        val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
+        val graph = mutableMapOf<String, List<String>>()
+        metadata.keys().forEach { name ->
+            val row = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
+            val dependencies = row.optJSONArray("dependencies") ?: JSONArray()
+            graph[name] = (0 until dependencies.length()).mapNotNull { dependencies.optJSONObject(it)?.optString("name") }
+        }
+        graph[bundle.name] = bundle.dependencies.map { it.name }
+        val visiting = mutableSetOf<String>()
+        val visited = mutableSetOf<String>()
+        fun visit(name: String): Boolean {
+            if (name in visiting) return false
+            if (name in visited) return true
+            visiting.add(name)
+            graph[name].orEmpty().forEach { dependency ->
+                if (dependency in graph && !visit(dependency)) return false
+            }
+            visiting.remove(name)
+            visited.add(name)
+            return true
+        }
+        require(visit(bundle.name)) { "技能依赖存在循环引用，已拒绝安装或更新" }
     }
 
     private fun versionMatches(installed: String, requirement: String): Boolean {
