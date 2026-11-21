@@ -175,22 +175,32 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             .take(50)
     }
 
-    suspend fun applyApproved(reviewId: String, expectedHash: String, explicitlyApproved: Boolean): CoworkbenchSnapshot = lock.withLock {
+    suspend fun applyApproved(
+        reviewId: String,
+        expectedHash: String,
+        explicitlyApproved: Boolean,
+        selectedPaths: Set<String>? = null
+    ): CoworkbenchSnapshot = lock.withLock {
         require(explicitlyApproved) { "未取得用户明确批准，禁止应用补丁" }
         val review = loadReviewUnlocked(reviewId)
         require(review.createdAt + 86_400_000L > System.currentTimeMillis()) { "审查已过期，请重新生成" }
         require(review.contentHash == expectedHash && hash(review.repositoryId, review.files) == expectedHash) { "审查摘要不匹配，请重新审查" }
         require(git.localRepositories().any { it.id == review.repositoryId }) { "目标仓库不存在" }
-        review.files.forEach { item ->
+        val selected = if (selectedPaths == null) review.files else {
+            require(selectedPaths.isNotEmpty()) { "至少选择一个文件阶段应用" }
+            require(selectedPaths.all { path -> review.files.any { it.path == path } }) { "阶段补丁包含审查范围外的文件" }
+            review.files.filter { it.path in selectedPaths }
+        }
+        selected.forEach { item ->
             require(readOrNull(review.repositoryId, item.path) == item.before) {
                 "文件 " + item.path + " 在审查后已变化，已中止以防止覆盖"
             }
         }
         val snapshot = CoworkbenchSnapshot(UUID.randomUUID().toString(), review.repositoryId, review.id,
-            System.currentTimeMillis(), review.files.map { CoworkbenchSnapshotFile(it.path, it.before, it.after) })
+            System.currentTimeMillis(), selected.map { CoworkbenchSnapshotFile(it.path, it.before, it.after) })
         writeJson(File(snapshots, snapshot.id + ".json"), encodeSnapshot(snapshot))
         try {
-            review.files.forEach { item ->
+            selected.forEach { item ->
                 if (item.after == null) git.deleteFile(review.repositoryId, item.path)
                 else git.writeFile(review.repositoryId, item.path, item.after)
             }
