@@ -1,28 +1,42 @@
 package app.nestro.mcp
-
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 data class McpRemoteTool(val name:String,val description:String,val inputSchema:JSONObject,val readOnlyHint:Boolean)
-class McpStreamableHttpClient(endpoint:String,private val bearerToken:String){
+private data class McpHttpReply(val code:Int,val body:String,val contentType:String,val sessionId:String?)
+object McpHeaderValueEncoder {
+ fun encode(value:String):String {
+  val plainAscii=value.all{it.code in 0x21..0x7e}&&!value.startsWith("=?base64?")
+  return if(plainAscii)value else "=?base64?"+Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))+"?="
+ }
+}
+class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) {
  private val url=McpEndpointPolicy.requireValid(endpoint)
  private val client=OkHttpClient.Builder().connectTimeout(12,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(20,TimeUnit.SECONDS).callTimeout(75,TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
- private val ids=AtomicLong(0);private var sessionId:String?=null;private var protocolVersion="2025-03-26";private var initialized=false
- fun listTools():List<McpRemoteTool>{
-  initialize();val all=mutableListOf<McpRemoteTool>();var cursor:String?=null
+ private val ids=AtomicLong(0)
+ private var protocolVersion="2026-07-28"
+ private var legacyMode=false
+ private var initialized=false
+ private var sessionId:String?=null
+
+ fun listTools():List<McpRemoteTool> {
+  val all=mutableListOf<McpRemoteTool>();var cursor:String?=null
   repeat(10){
-   val params=JSONObject().apply{cursor?.let{put("cursor",it)}}
+   val params=JSONObject()
+   cursor?.let{params.put("cursor",it)}
+   if(!legacyMode)params.put("_meta",clientMeta())
    val result=rpc("tools/list",params).optJSONObject("result")?:error("MCP tools/list 缺少 result")
    val items=result.optJSONArray("tools")?:JSONArray()
    for(i in 0 until items.length()){
     val item=items.optJSONObject(i)?:continue;val name=item.optString("name")
-    require(name.matches(Regex("[A-Za-z0-9_.-]{1,128}"))){"MCP 返回了无效工具名称"}
+    require(name.isNotBlank()&&name.length<=128&&name.none{it.isISOControl()}){"MCP 返回了无效工具名称"}
     val schema=item.optJSONObject("inputSchema")?:JSONObject().put("type","object").put("properties",JSONObject())
     require(schema.optString("type","object")=="object"){"暂不支持非 object 工具参数 schema：$name"}
     all+=McpRemoteTool(name,item.optString("description").take(500),schema,item.optJSONObject("annotations")?.optBoolean("readOnlyHint",false)==true)
@@ -33,47 +47,120 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String){
   }
   require(cursor==null){"MCP 工具目录分页超过 10 页"};return all
  }
- fun callTool(name:String,args:JSONObject):String{
-  initialize();val result=rpc("tools/call",JSONObject().put("name",name).put("arguments",args)).optJSONObject("result")?:error("MCP tools/call 缺少 result")
+
+ fun callTool(name:String,arguments:JSONObject,inputSchemaJson:String):String {
+  val params=JSONObject().put("name",name).put("arguments",arguments)
+  if(!legacyMode)params.put("_meta",clientMeta())
+  val result=rpc("tools/call",params,name,inputSchemaJson).optJSONObject("result")?:error("MCP tools/call 缺少 result")
   if(result.optBoolean("isError",false))error(extractContent(result.optJSONArray("content")).ifBlank{"MCP 工具执行返回错误"}.take(2000))
   val structured=result.optJSONObject("structuredContent")
   return (structured?.toString()?:extractContent(result.optJSONArray("content"))).ifBlank{"工具执行完成（服务未返回文本内容）"}.take(32_000)
  }
- private fun initialize(){
-  if(initialized)return
-  val result=rpc("initialize",JSONObject().put("protocolVersion",protocolVersion).put("capabilities",JSONObject()).put("clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1"))).optJSONObject("result")?:error("MCP 初始化响应缺少 result")
-  val negotiated=result.optString("protocolVersion")
-  require(negotiated in setOf("2025-03-26","2024-11-05")){"MCP 服务协议版本不兼容：$negotiated"}
-  protocolVersion=negotiated
-  post(JSONObject().put("jsonrpc","2.0").put("method","notifications/initialized"),false);initialized=true
- }
- private fun rpc(method:String,params:JSONObject):JSONObject{
+
+ private fun rpc(method:String,params:JSONObject,name:String?=null,schemaJson:String="{}"):JSONObject {
+  if(!legacyMode){
+   val id=ids.incrementAndGet()
+   val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params)
+   val reply=post(request,method,name,schemaJson,true,true)
+   val parsed=reply.body.takeIf{it.isNotBlank()}?.let{parseBody(it,reply.contentType)}
+   if(reply.code !in 200..299){
+    val rpcError=parsed?.optJSONObject("error");val message=rpcError?.optString("message").orEmpty()
+    val supported=rpcError?.optJSONObject("data")?.optJSONArray("supported")
+    if(reply.code==400&&(message.contains("protocol",true)||message.contains("unsupported",true)||supported!=null)){
+     legacyMode=true;return rpc(method,params,name,schemaJson)
+    }
+    if((reply.code==400||reply.code==404)&&parsed==null){legacyMode=true;return rpc(method,params,name,schemaJson)}
+    error("MCP HTTP "+reply.code+"："+(message.ifBlank{reply.body.take(1000)}))
+   }
+   val response=parsed?:error("MCP 服务没有返回 JSON-RPC 响应")
+   if(response.has("error")){val e=response.optJSONObject("error")?:JSONObject();error("MCP $method 失败（"+e.optInt("code")+"）："+e.optString("message","未知错误"))}
+   require(response.opt("id")?.toString()==id.toString()){"MCP JSON-RPC 响应 ID 不匹配"};return response
+  }
+  initializeLegacy()
   val id=ids.incrementAndGet()
-  val response=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),true)?:error("MCP 服务没有返回 JSON-RPC 响应")
-  if(response.has("error")){val e=response.optJSONObject("error")?:JSONObject();error("MCP $method 失败（"+e.optInt("code")+"）："+e.optString("message","未知错误"))}
-  require(response.opt("id")?.toString()==id.toString()){"MCP JSON-RPC 响应 ID 不匹配"};return response
+  val reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false,true)
+  require(reply.code in 200..299){"MCP HTTP "+reply.code+"："+reply.body.take(1000)}
+  val json=parseBody(reply.body,reply.contentType)?:error("MCP 服务没有返回 JSON-RPC 响应")
+  if(json.has("error")){val e=json.optJSONObject("error")?:JSONObject();error("MCP $method 失败（"+e.optInt("code")+"）："+e.optString("message","未知错误"))}
+  require(json.opt("id")?.toString()==id.toString()){"MCP JSON-RPC 响应 ID 不匹配"};return json
  }
- private fun post(payload:JSONObject,expectResponse:Boolean):JSONObject?{
+
+ private fun initializeLegacy(){
+  if(initialized)return
+  var lastError="MCP 初始化失败"
+  for(version in listOf("2025-11-25","2025-06-18","2025-03-26")){
+   protocolVersion=version
+   val id=ids.incrementAndGet()
+   val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method","initialize")
+    .put("params",JSONObject().put("protocolVersion",version).put("capabilities",JSONObject()).put("clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1")))
+   val reply=post(request,"initialize",null,"{}",false,true)
+   val json=runCatching{parseBody(reply.body,reply.contentType)}.getOrNull()
+   val result=json?.optJSONObject("result")
+   if(reply.code in 200..299&&result!=null){
+    val negotiated=result.optString("protocolVersion",version)
+    require(negotiated in listOf("2025-11-25","2025-06-18","2025-03-26")){"MCP 服务返回了不支持的协议版本："+negotiated}
+    protocolVersion=negotiated
+    val notified=post(JSONObject().put("jsonrpc","2.0").put("method","notifications/initialized"),"notifications/initialized",null,"{}",false,false)
+    require(notified.code in 200..299){"MCP 初始化通知失败：HTTP "+notified.code}
+    initialized=true;return
+   }
+   lastError=json?.optJSONObject("error")?.optString("message")?:"MCP 初始化 HTTP "+reply.code
+  }
+  error(lastError)
+ }
+
+ private fun clientMeta()=JSONObject()
+  .put("io.modelcontextprotocol/protocolVersion","2026-07-28")
+  .put("io.modelcontextprotocol/clientInfo",JSONObject().put("name","Nestro").put("version","0.3.1"))
+  .put("io.modelcontextprotocol/clientCapabilities",JSONObject())
+
+ private fun post(payload:JSONObject,method:String,name:String?,schemaJson:String,modern:Boolean,expectResponse:Boolean):McpHttpReply {
   val builder=Request.Builder().url(url).post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).header("Accept","application/json, text/event-stream")
-  if(initialized)builder.header("MCP-Protocol-Version",protocolVersion)
+  if(modern||protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
+  if(modern){
+   builder.header("Mcp-Method",method)
+   name?.let{builder.header("Mcp-Name",McpHeaderValueEncoder.encode(it))}
+   if(method=="tools/call"&&name!=null)addSchemaHeaders(builder,schemaJson,payload.optJSONObject("params")?.optJSONObject("arguments")?:JSONObject())
+  }
   if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
-  sessionId?.let{builder.header("Mcp-Session-Id",it)}
+  if(!modern)sessionId?.let{builder.header("Mcp-Session-Id",it)}
   client.newCall(builder.build()).execute().use{response->
-   response.header("Mcp-Session-Id")?.let{require(it.length<=512);sessionId=it}
-   if(!expectResponse&&response.code==202)return null
-   if(response.code !in 200..299){val detail=readBounded(response.body?.byteStream(),8192);error("MCP HTTP "+response.code+"："+detail.take(1000))}
-   val raw=readBounded(response.body?.byteStream(),1_000_000);if(!expectResponse)return null
-   return if(response.header("Content-Type").orEmpty().contains("text/event-stream",true))parseSse(raw) else JSONObject(raw)
+   if(!modern)response.header("Mcp-Session-Id")?.let{require(it.length<=512);sessionId=it}
+   val body=readBounded(response.body?.byteStream(),1_000_000)
+   McpHttpReply(response.code,body,response.header("Content-Type").orEmpty(),response.header("Mcp-Session-Id"))
   }
  }
- private fun parseSse(raw:String):JSONObject{
-  val messages=raw.lineSequence().filter{it.startsWith("data:")}.map{it.removePrefix("data:").trim()}.filter{it.isNotBlank()}.mapNotNull{runCatching{JSONObject(it)}.getOrNull()}.toList()
-  return messages.lastOrNull{it.has("id")}?:messages.lastOrNull()?:error("MCP SSE 响应中没有 JSON-RPC 消息")
+
+ private fun addSchemaHeaders(builder:Request.Builder,schemaJson:String,args:JSONObject){
+  val schema=runCatching{JSONObject(schemaJson)}.getOrNull()?:return
+  fun walk(properties:JSONObject?,values:JSONObject){
+   if(properties==null)return
+   val keys=properties.keys()
+   while(keys.hasNext()){
+    val key=keys.next();val property=properties.optJSONObject(key)?:continue;val value=values.opt(key)
+    val header=property.optString("x-mcp-header")
+    if(header.isNotBlank()&&!values.isNull(key)){
+     require(header.matches(Regex("[A-Za-z0-9-]{1,48}"))){"MCP 工具 schema 含无效 x-mcp-header"}
+     builder.header("Mcp-Param-$header",McpHeaderValueEncoder.encode(value.toString()))
+    }
+    if(value is JSONObject)walk(property.optJSONObject("properties"),value)
+   }
+  }
+  walk(schema.optJSONObject("properties"),args)
+ }
+
+ private fun parseBody(raw:String,contentType:String):JSONObject?{
+  if(raw.isBlank())return null
+  return if(contentType.contains("text/event-stream",true)){
+   val messages=raw.lineSequence().filter{it.startsWith("data:")}.map{it.removePrefix("data:").trim()}.filter{it.isNotBlank()}.mapNotNull{runCatching{JSONObject(it)}.getOrNull()}.toList()
+   messages.lastOrNull{it.has("id")}?:messages.lastOrNull()
+  }else runCatching{JSONObject(raw)}.getOrNull()
  }
  private fun extractContent(items:JSONArray?):String{
   if(items==null)return ""
-  return (0 until items.length()).mapNotNull{i->val o=items.optJSONObject(i)?:return@mapNotNull null
-   when(o.optString("type")){"text"->o.optString("text");"image"->"[服务返回了图片内容，当前页面暂不显示]";"resource"->o.optJSONObject("resource")?.optString("text");else->o.optString("text").takeIf{it.isNotBlank()}}
+  return (0 until items.length()).mapNotNull{i->
+   val item=items.optJSONObject(i)?:return@mapNotNull null
+   when(item.optString("type")){"text"->item.optString("text");"image"->"[服务返回了图片内容，当前页面暂不显示]";"resource"->item.optJSONObject("resource")?.optString("text");else->item.optString("text").takeIf{it.isNotBlank()}}
   }.joinToString("\n")
  }
  private fun readBounded(stream:java.io.InputStream?,limit:Int):String{
