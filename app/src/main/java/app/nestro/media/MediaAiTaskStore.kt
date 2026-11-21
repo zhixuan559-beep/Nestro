@@ -31,7 +31,8 @@ data class MediaAiTask(
     val resultConsumed: Boolean = false,
     val error: String = "",
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val parentTaskId: String = ""
 )
 
 object MediaAiTaskStore {
@@ -47,16 +48,23 @@ object MediaAiTaskStore {
         require(taskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "AI 任务 ID 无效" }
         return File(directory(context,projectId),"$taskId.json")
     }
-    @Synchronized fun create(context: Context, projectId: String, assetId: String, providerId: String, action: String, prompt: String = ""): MediaAiTask {
+    @Synchronized fun create(context: Context, projectId: String, assetId: String, providerId: String, action: String, prompt: String = "", parentTaskId: String = ""): MediaAiTask {
         require(action in setOf("transcribe","scenes","audio-clean","image","video-generate")) { "媒体 AI 操作无效" }
         require(
             (action == "video-generate" && assetId.isBlank()) ||
                 (action != "video-generate" && assetId.matches(Regex("^[A-Fa-f0-9-]{36}$")))
         ) { "素材 ID 无效" }
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "服务商 ID 无效" }
-        require(prompt.length<=2000) { "媒体 AI 指令过长" }
+        require(prompt.length <= if (action == "video-generate") 12_000 else 2_000) { "媒体 AI 指令过长" }
+        if (parentTaskId.isNotBlank()) {
+            require(parentTaskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "上一个视频任务 ID 无效" }
+            val parent = read(context, projectId, parentTaskId)
+                ?: error("上一个视频任务不存在或不属于当前项目")
+            require(parent.action == "video-generate") { "只能基于视频生成任务创建新版本" }
+        }
         val now=System.currentTimeMillis()
-        return MediaAiTask(UUID.randomUUID().toString(),projectId,assetId,providerId,action,prompt,MediaAiTaskStatus.QUEUED,0,createdAt=now,updatedAt=now).also { write(context,it) }
+        return MediaAiTask(UUID.randomUUID().toString(),projectId,assetId,providerId,action,prompt,MediaAiTaskStatus.QUEUED,0,
+            createdAt=now,updatedAt=now,parentTaskId=parentTaskId).also { write(context,it) }
     }
     @Synchronized fun read(context: Context, projectId: String, taskId: String): MediaAiTask? {
         val target=file(context,projectId,taskId)
@@ -66,7 +74,7 @@ object MediaAiTaskStore {
             MediaAiTask(j.getString("id"),j.getString("projectId"),j.getString("assetId"),j.getString("providerId"),
                 j.getString("action"),j.optString("prompt"),MediaAiTaskStatus.valueOf(j.getString("status")),
                 j.optInt("progress").coerceIn(0,100),j.optString("resultJson"),j.optBoolean("resultConsumed",false),j.optString("error").take(1000),
-                j.getLong("createdAt"),j.getLong("updatedAt")).also { require(it.id==taskId && it.projectId==projectId) }
+                j.getLong("createdAt"),j.getLong("updatedAt"),j.optString("parentTaskId")).also { require(it.id==taskId && it.projectId==projectId) }
         }.getOrNull()
     }
     fun list(context: Context, projectId: String): List<MediaAiTask> =
@@ -98,6 +106,7 @@ object MediaAiTaskStore {
             .put("providerId",task.providerId).put("action",task.action).put("prompt",task.prompt)
             .put("status",task.status.name).put("progress",task.progress).put("resultJson",task.resultJson)
             .put("resultConsumed",task.resultConsumed).put("error",task.error.take(1000)).put("createdAt",task.createdAt).put("updatedAt",task.updatedAt)
+            .put("parentTaskId", task.parentTaskId)
         val atomic=android.util.AtomicFile(file(context,task.projectId,task.id))
         val stream=atomic.startWrite()
         try { stream.write(json.toString().toByteArray(Charsets.UTF_8)); stream.fd.sync(); atomic.finishWrite(stream) }
