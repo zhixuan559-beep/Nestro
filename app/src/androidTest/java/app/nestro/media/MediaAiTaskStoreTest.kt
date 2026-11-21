@@ -41,7 +41,7 @@ class MediaAiTaskStoreTest {
         MediaAiTaskStore.update(
             context, parent.projectId, parent.id,
             status = MediaAiTaskStatus.COMPLETED, progress = 100,
-            resultJson = "{\\"type\\":\\"video\\",\\"assetId\\":\\"00000000-0000-0000-0000-000000000010\\"}"
+            resultJson = "{\"type\":\"video\",\"assetId\":\"00000000-0000-0000-0000-000000000010\"}"
         )
         val revision = MediaAiTaskStore.create(
             context, parent.projectId, "", "provider.video", "video-generate",
