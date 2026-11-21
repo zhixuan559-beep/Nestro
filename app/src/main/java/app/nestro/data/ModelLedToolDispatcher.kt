@@ -165,7 +165,7 @@ ${prompt.take(8_000)}
             ) { chunk ->
                 decisionText.append(chunk)
                 if (!headerResolved) {
-                    val newline = decisionText.indexOf("\\n")
+                    val newline = decisionText.indexOf("\n")
                     if (newline >= 0) {
                         val header = decisionText.substring(0, newline).trim()
                         headerResolved = true
