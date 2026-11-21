@@ -1,6 +1,7 @@
 package app.nestro.coworkbench
 
 import android.content.Context
+import org.json.JSONObject
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -52,6 +53,28 @@ object CoworkbenchPolicy {
         return files.filter { it.path in selectedPaths }.also {
             require(it.isNotEmpty()) { "所选阶段没有可应用的文件" }
         }
+    }
+
+    fun parsePatchJson(raw: String): List<CoworkbenchProposal> {
+        val root = JSONObject(raw)
+        require(root.length() == 1 && root.has("files")) { "补丁 JSON 顶层只能包含 files 字段" }
+        val rows = root.getJSONArray("files")
+        require(rows.length() in 1..MAX_FILES) { "补丁必须包含 1 到 $MAX_FILES 个文件" }
+        val proposals = (0 until rows.length()).map { index ->
+            val row = rows.getJSONObject(index)
+            require(row.length() == 2 && row.has("path") && row.has("content")) {
+                "每个文件对象只能包含 path 和 content 两个字段"
+            }
+            val path = row.get("path")
+            require(path is String) { "补丁文件 path 必须是字符串" }
+            val content = row.get("content")
+            require(content == JSONObject.NULL || content is String) {
+                "补丁文件 content 必须是完整文本字符串或 null"
+            }
+            CoworkbenchProposal(path, if (content == JSONObject.NULL) null else content as String)
+        }
+        validate(proposals)
+        return proposals
     }
 
     fun validate(proposals: List<CoworkbenchProposal>) {
