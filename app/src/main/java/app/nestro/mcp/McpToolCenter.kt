@@ -79,9 +79,9 @@ class McpToolCenterRepository(context:Context) {
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(v.map{if(it.id==id)it.copy(enabled=on)else it})).commit()){"MCP 服务状态保存失败"}
  }
  fun deleteServer(id:String){
+  McpCredentialVault.delete(app,id)
   check(prefs.edit().putString(SERVERS_KEY,McpToolCenterCodec.encodeServers(listServers().filterNot{it.id==id}))
    .putString(TOOLS_KEY,McpToolCenterCodec.encodeTools(listTools().filterNot{it.serverId==id})).commit()){"MCP 服务删除失败"}
-  McpCredentialVault.delete(app,id)
  }
  fun saveCredential(id:String,token:String)=McpCredentialVault.write(app,id,token)
  fun readCredential(id:String)=McpCredentialVault.read(app,id)
@@ -175,14 +175,14 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   require(remote.size<=200){"单个 MCP 服务最多允许 200 个工具"}
   val previous=repository.listTools().filter{it.serverId==serverId}.associateBy{it.name}
   val found=remote.map{t->McpToolDescriptor(McpToolCenterCodec.toolId(serverId,t.name),serverId,server.name,t.name,t.description.take(500),t.inputSchema.toString(),t.readOnlyHint,previous[t.name]?.granted==true)}
-  previous.values.filterNot{old->found.any{it.name==old.name}}.forEach{catalog.remove(it.id)}
   withContext(Dispatchers.IO){repository.replaceServerTools(serverId,found)}
+  previous.values.filterNot{old->found.any{it.name==old.name}}.forEach{catalog.remove(it.id)}
   found.forEach{if(it.granted)registerTool(it)else catalog.remove(it.id)}
   return found
  }
  fun setToolGranted(id:String,on:Boolean){repository.setToolGranted(id,on);val t=requireNotNull(repository.findTool(id));if(on)registerTool(t)else catalog.remove(id)}
  fun setServerEnabled(id:String,on:Boolean){repository.setServerEnabled(id,on);repository.listTools().filter{it.serverId==id}.forEach{if(on&&it.granted)registerTool(it)else catalog.remove(it.id)}}
- fun deleteServer(id:String){repository.listTools().filter{it.serverId==id}.forEach{catalog.remove(it.id)};repository.deleteServer(id)}
+ fun deleteServer(id:String){val ids=repository.listTools().filter{it.serverId==id}.map{it.id};repository.deleteServer(id);ids.forEach{catalog.remove(it)}}
  suspend fun invoke(id:String,argsJson:String):AgentToolResult{
   require(repository.isToolGranted(id)){"该 MCP 工具尚未获得授权"}
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
