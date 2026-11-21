@@ -86,7 +86,12 @@ object ArtifactStore {
                 "产物索引元数据无效"
             }
             record
-        }.filter { it.projectId == projectId && File(root(context), it.fileName).isFile }
+        }.filter { it.projectId == projectId }
+            .onEach { record ->
+                require(File(root(context), record.fileName).isFile) {
+                    "产物文件缺失：${record.title} v${record.version}，已停止显示以避免误判为空"
+                }
+            }
             .sortedWith(compareByDescending<ArtifactRecord> { it.createdAt }.thenByDescending { it.version })
     }
 
