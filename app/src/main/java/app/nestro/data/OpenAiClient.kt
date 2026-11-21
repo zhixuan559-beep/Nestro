@@ -36,7 +36,11 @@ private fun estimatedUsageOutput(response: String): Int =
 
 private fun supportsOpenAiStreamUsage(config: ModelConfig): Boolean =
     runCatching { java.net.URI(config.baseUrl).host.equals("api.openai.com", ignoreCase = true) }.getOrDefault(false)
-internal data class NativeToolDefinition(val id: String, val description: String)
+internal data class NativeToolDefinition(
+    val id: String,
+    val description: String,
+    val parametersJson: String = """{"type":"object","properties":{},"additionalProperties":true}"""
+)
 internal data class NativeToolCallResult(val output: String, val requiresUser: Boolean = false)
 internal data class NativeToolCompletion(val text: String, val requiresUser: Boolean = false, val toolCallsExecuted: Int = 0)
 
@@ -226,16 +230,14 @@ internal object OpenAiClient {
                 put(JSONObject().put("type", "function").put("function", JSONObject()
                     .put("name", name)
                     .put("description", "${definition.description} (tool id: ${definition.id})")
-                    .put("parameters", JSONObject().put("type", "object")
-                        .put("properties", JSONObject()).put("additionalProperties", true))))
+                    .put("parameters", JSONObject(definition.parametersJson))))
             }
         }
         val anthropicTools = JSONArray().apply {
             toolNames.entries.forEach { (name, definition) ->
                 put(JSONObject().put("name", name)
                     .put("description", "${definition.description} (tool id: ${definition.id})")
-                    .put("input_schema", JSONObject().put("type", "object")
-                        .put("properties", JSONObject()).put("additionalProperties", true)))
+                    .put("input_schema", JSONObject(definition.parametersJson)))
             }
         }
         val geminiTools = JSONArray().apply {
@@ -243,7 +245,7 @@ internal object OpenAiClient {
                 toolNames.entries.forEach { (name, definition) ->
                     put(JSONObject().put("name", name)
                         .put("description", "${definition.description} (tool id: ${definition.id})")
-                        .put("parameters", JSONObject().put("type", "OBJECT").put("properties", JSONObject())))
+                        .put("parameters", JSONObject(definition.parametersJson).apply { put("type", "OBJECT") }))
                 }
             }))
         }
