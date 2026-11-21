@@ -27,10 +27,10 @@ internal data class ModelToolDecision(
 internal object ModelToolDecisionParser {
     fun parse(raw: String): ModelToolDecision? {
         val trimmed = raw.trimStart()
-        if (trimmed.startsWith("DIRECT\\n")) {
-            return ModelToolDecision("reply", trimmed.substringAfter("DIRECT\\n").trimEnd(), "", emptyMap())
+        if (trimmed.startsWith("DIRECT\n")) {
+            return ModelToolDecision("reply", trimmed.substringAfter("DIRECT\n").trimEnd(), "", emptyMap())
         }
-        val protocolBody = if (trimmed.startsWith("TOOL\\n")) trimmed.substringAfter("TOOL\\n") else trimmed
+        val protocolBody = if (trimmed.startsWith("TOOL\n")) trimmed.substringAfter("TOOL\n") else trimmed
         val candidate = protocolBody.trim()
             .removePrefix("```json").removePrefix("```")
             .removeSuffix("```").trim()
@@ -38,7 +38,7 @@ internal object ModelToolDecisionParser {
         val end = candidate.lastIndexOf('}')
         if (start < 0 || end <= start) return null
         val json = runCatching { JSONObject(candidate.substring(start, end + 1)) }.getOrNull() ?: return null
-        val action = json.optString("action").ifBlank { if (trimmed.startsWith("TOOL\\n")) "tool" else "" }
+        val action = json.optString("action").ifBlank { if (trimmed.startsWith("TOOL\n")) "tool" else "" }
         if (action !in setOf("reply", "tool")) return null
         val args = json.optJSONObject("arguments")
         val mapped = buildMap {
