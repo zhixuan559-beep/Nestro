@@ -78,9 +78,7 @@ object GitWorkbenchPolicy {
 
     fun validBranchName(value: String): Boolean =
         value.isNotBlank() && value.length <= 120 &&
-            !value.startsWith("-") && !value.startsWith("/") && !value.endsWith("/") &&
-            !value.contains("..") && !value.contains("@{") &&
-            value.none { it.isWhitespace() || it in charArrayOf('~', '^', ':', '?', '*', '[', '\\', ' ') }
+            org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/" + value)
 
     fun validCloneUrl(provider: GitProvider, value: String): Boolean {
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
@@ -96,7 +94,8 @@ object GitWorkbenchPolicy {
 
     fun safeRelativePath(value: String): String {
         require(value.isNotBlank() && value.length <= 1024) { "文件路径不能为空且不能超过 1024 个字符" }
-        val normalized = value.replace('\\', '/').trimStart('/')
+        require(!value.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(value)) { "必须使用仓库内的相对路径" }
+        val normalized = value.replace('\\', '/')
         require(normalized.isNotBlank() && normalized.split('/').none { it.isBlank() || it == "." || it == ".." }) {
             "文件路径无效"
         }
