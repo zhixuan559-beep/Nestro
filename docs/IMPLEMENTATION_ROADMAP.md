@@ -253,11 +253,11 @@
 - [x] Android 端仅连接用户配置的 HTTPS 远程服务，不承诺启动任意本地 MCP Server；stdio 与模型原生 tool-call schema 适配不在本模块范围内。
 
 #### 2B. Git 工作台
-> **2026-11-21 模块14开发记录：** 已建立 `feature/module-14-github-workbench` 分支；前三项主体代码已落地。支持 PAT 授权与 Android Keystore 加密、仓库搜索/克隆、JGit 分支/Fetch/Pull/Push/Commit、手机文件浏览编辑/新建删除、Diff/冲突处理/历史/反向回滚；API 有超时与连接失败重试，Git 传输有超时；大仓库/未知大小克隆需确认并做可用空间预检。克隆中断会清理未完成目录，暂不支持断点续传。当前仍在静态复核；Kotlin 编译/JVM 测试、模拟器与真机验收均未执行。
+> **代码阶段已完成并锁定：** PR #10 已合并至 `refactor/phase-2-architecture`，合并提交 `2e7ca199`。支持 GitHub/GitLab/Gitee PAT 授权与 Android Keystore 加密、仓库搜索/克隆、JGit 分支/Fetch/Pull/Push/Commit、手机端文件浏览编辑/新建删除、Diff/冲突处理/历史/反向回滚；API 超时与连接失败重试、Git 传输超时、失败克隆清理、大仓库可用空间预检均已实现。断点续传、增量/浅克隆作为后续性能增强，不阻塞当前模块锁定。**按既定顺序，Kotlin 编译/JVM/仪器测试、模拟器与真机验收统一留到十九模块代码完成后；目前尚未执行。**
 - [x] GitHub/GitLab/Gitee 授权与凭据安全存储（PAT）。
 - [x] 仓库浏览、搜索、clone、fetch、pull、push、commit、branch、历史和安全反向回滚。
 - [x] 手机端代码查看/编辑、新建/删除、diff、冲突处理和变更审查入口。
-- [x] 基础网络/状态/大仓库保护：API 连接失败重试与超时、Git 传输超时、失败克隆清理、可用空间预检、未提交修改保护和冲突处理。断点续传、增量/浅克隆属于后续性能增强，不纳入本模块当前锁定范围。
+- [x] 基础网络/状态/大仓库保护：API 连接失败重试与超时、Git 传输超时、失败克隆清理、可用空间预检、未提交修改保护和冲突处理。
 
 #### 2C. AI 开发工作台
 - [ ] AI 生成补丁、变更范围说明和逐文件 diff 预览。
