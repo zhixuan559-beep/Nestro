@@ -97,6 +97,9 @@ def main():
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if destination.stat().st_size > 240_000:
+        destination.unlink(missing_ok=True)
+        raise SystemExit("CycloneDX SBOM 超过 240 KB 安全读取上限，拒绝生成不完整验收证据")
     print(f"Generated CycloneDX 1.5 SBOM with {len(components)} components: {destination}")
 
 
