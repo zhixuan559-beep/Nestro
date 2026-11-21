@@ -62,6 +62,14 @@ def main():
     components = parse_components(report)
     if not components:
         raise SystemExit("未解析到已解析的 Maven 依赖，拒绝输出空 SBOM")
+    build_file = Path("app/build.gradle.kts")
+    if not build_file.is_file() or build_file.stat().st_size > 1_000_000:
+        raise SystemExit("无法读取受限大小内的 app/build.gradle.kts 版本信息")
+    build_text = build_file.read_text(encoding="utf-8", errors="replace")
+    version_match = re.search(r"""\\bversionName\\s*=\\s*["']([^"']+)["']""", build_text)
+    if not version_match:
+        raise SystemExit("无法从 app/build.gradle.kts 解析 versionName")
+    app_version = version_match.group(1)
     document = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -77,7 +85,7 @@ def main():
             "component": {
                 "type": "application",
                 "name": "Nestro",
-                "version": "0.3.1",
+                "version": app_version,
                 "bom-ref": "app:nestro",
             },
             "properties": [{
