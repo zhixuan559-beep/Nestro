@@ -237,7 +237,8 @@ private object GitCredentialVault {
 
 class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(12, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
-    .callTimeout(45, TimeUnit.SECONDS).followRedirects(false).build()) {
+    .callTimeout(45, TimeUnit.SECONDS).retryOnConnectionFailure(true)
+    .followRedirects(false).build()) {
 
     suspend fun verify(account: GitAccount, token: String): String = withContext(Dispatchers.IO) {
         val path = when (account.provider) {
