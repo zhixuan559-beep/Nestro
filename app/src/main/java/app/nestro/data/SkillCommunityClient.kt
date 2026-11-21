@@ -17,7 +17,8 @@ data class SignedSkillRelease(
     val version: String,
     val description: String,
     val bundleUrl: String,
-    val sha256: String
+    val sha256: String,
+    val signerFingerprint: String = ""
 )
 
 /** Read-only community catalog. A user-pinned RSA key authenticates the catalog;
@@ -45,6 +46,7 @@ object SkillCommunityClient {
         require(root.optInt("schema") == 1) { "不支持的社区目录格式" }
         val rows = root.optJSONArray("releases") ?: JSONArray()
         require(rows.length() <= 200) { "社区目录条目超过 200 项" }
+        val signerFingerprint = MessageDigest.getInstance("SHA-256").digest(keyBytes).joinToString("") { "%02x".format(it) }
         val seen = mutableSetOf<String>()
         return (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
@@ -63,7 +65,7 @@ object SkillCommunityClient {
                 "技能包必须使用不含凭据/片段/路径回退的 HTTPS 地址"
             }
             require(seen.add("$name@$version")) { "社区目录存在重复版本" }
-            SignedSkillRelease(name, version, description, bundleUrl, hash)
+            SignedSkillRelease(name, version, description, bundleUrl, hash, signerFingerprint)
         }
     }
 
@@ -81,7 +83,7 @@ object SkillCommunityClient {
         require(actual == release.sha256) { "技能包 SHA-256 不匹配，已拒绝导入" }
         val bundle = SkillBundleParser.parse(bytes.toString(Charsets.UTF_8), release.name)
         require(bundle.name == release.name && bundle.version == release.version) { "技能包名称或版本与已签名目录不一致" }
-        return bundle.copy(description = release.description.ifBlank { bundle.description }, source = "已验证签名社区目录")
+        return bundle.copy(description = release.description.ifBlank { bundle.description }, source = "已验证签名社区目录", signerFingerprint = release.signerFingerprint)
     }
 
     /** Returns true only when candidate has a strictly higher semantic version. */
