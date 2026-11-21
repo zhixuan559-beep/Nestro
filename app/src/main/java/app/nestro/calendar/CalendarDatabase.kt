@@ -30,7 +30,8 @@ data class CalendarEvent(
     val createdAt: Long,
     val updatedAt: Long,
     val sourceSystemEventId: Long? = null,
-    val sourceSystemCalendarId: Long? = null
+    val sourceSystemCalendarId: Long? = null,
+    val sourceSystemImported: Boolean = false
 )
 
 @Dao
