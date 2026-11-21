@@ -158,9 +158,18 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             var total = 0
             buildString {
                 normalized.forEach { relative ->
-                    val file = File(root, relative).canonicalFile
-                    require(file.toPath().startsWith(root.toPath()) && file.isFile &&
-                        !java.nio.file.Files.isSymbolicLink(file.toPath())) { "上下文文件无效或路径越界：$relative" }
+                    val candidate = File(root, relative)
+                    var ancestor: File? = candidate
+                    while (ancestor != null && ancestor.toPath().startsWith(root.toPath())) {
+                        require(!java.nio.file.Files.isSymbolicLink(ancestor.toPath())) {
+                            "上下文文件包含符号链接，已拒绝：$relative"
+                        }
+                        ancestor = ancestor.parentFile
+                    }
+                    val file = candidate.canonicalFile
+                    require(file.toPath().startsWith(root.toPath()) && file.isFile) {
+                        "上下文文件无效或路径越界：$relative"
+                    }
                     val size = file.length()
                     require(size in 1..24_576L && total + size <= 65_536) { "上下文文件总量超过 64 KB 或单文件超过 24 KB" }
                     val content = file.readText(Charsets.UTF_8)
