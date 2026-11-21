@@ -269,6 +269,24 @@ fun AiCoworkbenchPage(
                 }, enabled = !busy && selectedReviewPaths.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                     Text("批准并应用本批选中的文件")
                 }
+                OutlinedButton(onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            service.rollbackReview(item.id)
+                            snapshotHistory = service.listSnapshots(selectedRepoId)
+                            approvalHistory = service.listApprovalHistory(selectedRepoId)
+                            snapshot = null
+                            review = null
+                            selectedReviewPaths = emptySet()
+                            status = "该补丁所有已应用批次均已回滚。"
+                        } catch (error: Exception) {
+                            status = error.message ?: "整份补丁回滚失败；请查看事务历史"
+                        } finally { busy = false }
+                    }
+                }, enabled = !busy && snapshotHistory.any { it.reviewId == item.id }, modifier = Modifier.fillMaxWidth()) {
+                    Text("撤销这份补丁的全部已应用批次")
+                }
             }
             snapshot?.let { saved ->
                 Text("快照已保存：${saved.id}", style = MaterialTheme.typography.bodySmall)
