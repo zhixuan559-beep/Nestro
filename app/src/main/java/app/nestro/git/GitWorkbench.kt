@@ -51,7 +51,8 @@ data class GitRemoteRepository(
     val description: String,
     val cloneUrl: String,
     val defaultBranch: String,
-    val isPrivate: Boolean
+    val isPrivate: Boolean,
+    val sizeKb: Long = 0L
 )
 
 data class GitLocalRepository(
@@ -260,7 +261,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
             val path = when (account.provider) {
                 GitProvider.GITHUB -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
-                GitProvider.GITLAB -> "/projects?membership=true&per_page=100&order_by=last_activity_at" +
+                GitProvider.GITLAB -> "/projects?membership=true&per_page=100&order_by=last_activity_at&statistics=true" +
                     if (query.isBlank()) "" else "&search=" + enc(query)
                 GitProvider.GITEE -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
@@ -294,7 +295,12 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
                         GitProvider.GITHUB -> row.optBoolean("private")
                         GitProvider.GITLAB -> row.optString("visibility") != "public"
                         GitProvider.GITEE -> row.optBoolean("private")
-                    }
+                    },
+                    sizeKb = when (account.provider) {
+                        GitProvider.GITHUB -> row.optLong("size")
+                        GitProvider.GITLAB -> row.optJSONObject("statistics")?.optLong("repository_size")?.div(1024L) ?: 0L
+                        GitProvider.GITEE -> row.optLong("size")
+                    }.coerceAtLeast(0L)
                 )
             }
         }
