@@ -377,11 +377,18 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             }
             return emptyList()
         }
-        return (0 until array.length()).mapNotNull { i ->
-            val row = array.optJSONObject(i) ?: return@mapNotNull null
-            val local = runCatching { decodeLocal(row) }.getOrNull() ?: return@mapNotNull null
-            val path = runCatching { File(local.localPath).canonicalFile.toPath() }.getOrNull() ?: return@mapNotNull null
-            if (path.startsWith(root.canonicalFile.toPath()) && File(path.toFile(), ".git").isDirectory) local else null
+        val decoded = runCatching {
+            (0 until array.length()).map { i -> decodeLocal(array.getJSONObject(i)) }
+        }.getOrElse {
+            if (!prefs.contains(LOCAL_CORRUPT_KEY)) {
+                check(prefs.edit().putString(LOCAL_CORRUPT_KEY, raw)
+                    .putLong(LOCAL_CORRUPT_AT, System.currentTimeMillis()).commit()) { "无法隔离损坏的本地仓库索引" }
+            }
+            return emptyList()
+        }
+        return decoded.filter { local ->
+            val path = runCatching { File(local.localPath).canonicalFile.toPath() }.getOrNull()
+            path != null && path.startsWith(root.canonicalFile.toPath()) && File(path.toFile(), ".git").isDirectory
         }
     }
 
@@ -637,11 +644,19 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             .putString(LOCAL_KEY, json).commit()) { "本地仓库索引保存失败" }
     }
 
-    private fun decodeLocal(row: JSONObject) = GitLocalRepository(
-        row.getString("id"), row.getString("accountId"), GitProvider.valueOf(row.getString("provider")),
-        row.getString("fullName"), row.getString("cloneUrl"), row.getString("localPath"),
-        row.optString("defaultBranch", "main")
-    )
+    private fun decodeLocal(row: JSONObject): GitLocalRepository {
+        val local = GitLocalRepository(
+            row.getString("id"), row.getString("accountId"), GitProvider.valueOf(row.getString("provider")),
+            row.getString("fullName"), row.getString("cloneUrl"), row.getString("localPath"),
+            row.optString("defaultBranch", "main")
+        )
+        require(local.id.matches(Regex("[A-Fa-f0-9-]{36}")))
+        require(local.accountId.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
+        require(local.fullName.isNotBlank() && local.fullName.length <= 300)
+        require(GitWorkbenchPolicy.validCloneUrl(local.provider, local.cloneUrl))
+        require(File(local.localPath).isAbsolute)
+        return local
+    }
 
     companion object {
         private const val LOCAL_KEY = "git_local_repositories_v1"
