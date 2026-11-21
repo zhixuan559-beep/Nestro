@@ -445,6 +445,24 @@ fun AiCoworkbenchPage(
                 Text("总计 ${report.total} · 通过 ${report.passed} · 失败 ${report.failures} · 错误 ${report.errors} · 跳过 ${report.skipped}",
                     style = MaterialTheme.typography.bodySmall)
             }
+            if (result.resolvedDependencies.isNotEmpty()) {
+                Text("Gradle 已解析依赖：${result.resolvedDependencies.size} 项",
+                    style = MaterialTheme.typography.titleSmall)
+                result.resolvedDependencies.take(120).forEach { dependency ->
+                    val coordinate = listOfNotNull(dependency.group, dependency.artifact, dependency.resolvedVersion)
+                        .joinToString(":")
+                    Text(
+                        "  ".repeat(dependency.depth.coerceAtMost(8)) + coordinate +
+                            (if (dependency.requestedVersion != dependency.resolvedVersion)
+                                "（请求 ${dependency.requestedVersion}）" else "") +
+                            (dependency.configuration.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (result.resolvedDependencies.size > 120) {
+                    Text("另有 ${result.resolvedDependencies.size - 120} 项依赖未展开。")
+                }
+            }
             if (result.sbomComponents.isNotEmpty()) {
                 Text("SBOM 组件：${result.sbomComponents.size} 项", style = MaterialTheme.typography.titleSmall)
                 result.sbomComponents.take(100).forEach { component ->
