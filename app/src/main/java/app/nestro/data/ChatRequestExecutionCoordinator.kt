@@ -48,22 +48,28 @@ internal class ChatRequestExecutionCoordinator(
         val partialAnswer = StringBuilder()
         var taskPlanningFailure: Throwable? = null
         val result = runCatchingCancellable {
-            if (request.taskModeEnabled) {
-                runCatchingCancellable { planPhoneAgent() }
-                    .onFailure {
-                        taskPlanningFailure = it
-                        onTaskPlanningFailure(it)
-                    }
-            }
+            // Planning and context retrieval are independent. Overlap them so
+            // optional task preparation does not add its full latency to retrieval.
+            val assembled = kotlinx.coroutines.coroutineScope {
+                val planning = if (request.taskModeEnabled) kotlinx.coroutines.async {
+                    runCatchingCancellable { planPhoneAgent() }
+                        .onFailure {
+                            taskPlanningFailure = it
+                            onTaskPlanningFailure(it)
+                        }
+                } else null
 
-            val assembled = contextAssembler.assemble(
-                projectId = request.projectId,
-                conversationId = request.conversationId,
-                prompt = request.prompt,
-                requestHistory = request.history,
-                baseSystemContext = request.baseSystemContext,
-                taskModeEnabled = request.taskModeEnabled
-            )
+                val context = contextAssembler.assemble(
+                    projectId = request.projectId,
+                    conversationId = request.conversationId,
+                    prompt = request.prompt,
+                    requestHistory = request.history,
+                    baseSystemContext = request.baseSystemContext,
+                    taskModeEnabled = request.taskModeEnabled
+                )
+                planning?.await()
+                context
+            }
             recalledCount = assembled.recalledCount
             recallSources = assembled.recallSources
 
