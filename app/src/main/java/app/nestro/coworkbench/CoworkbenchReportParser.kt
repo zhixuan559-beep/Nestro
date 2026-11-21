@@ -130,7 +130,7 @@ object CoworkbenchReportParser {
                 val parent = parents.filterKeys { it < depth }.maxByOrNull { it.key }?.value
                 result += CoworkbenchResolvedDependency(configuration, null, artifact, null, null,
                     depth, parent, notation)
-                parents.keys.filter { it >= depth }.toList().forEach(parents::remove)
+                parents.keys.filter { it >= depth }.toList().forEach { parents.remove(it) }
                 parents[depth] = artifact
             }
         }
