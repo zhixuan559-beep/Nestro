@@ -251,9 +251,8 @@ fun VoiceSystemPage() {
                         audio.close()
                     }
                     mainHandler.post {
-                        if (realtimeConnectCancelled.get() !== cancelled && realtimeSessionRef.get() != null) {
-                            return@post
-                        }
+                        val currentAttempt = realtimeConnectCancelled.get()
+                        if (currentAttempt != null && currentAttempt !== cancelled) return@post
                         realtimeAudio = null
                         realtimeSession = null
                         pendingRealtimeSession = null
