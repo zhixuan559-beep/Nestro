@@ -319,6 +319,30 @@ fun AiCoworkbenchPage(
         if (approvalHistory.isNotEmpty()) {
             Divider()
             Text("补丁审批与事务历史", style = MaterialTheme.typography.titleMedium)
+            approvalHistory.map { it.reviewId }.distinct().forEach { reviewId ->
+                val batchCount = approvalHistory.count { it.reviewId == reviewId }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("补丁 ${reviewId.take(8)} · ${batchCount} 批", style = MaterialTheme.typography.labelMedium)
+                    TextButton(
+                        enabled = !busy && snapshotHistory.any { it.reviewId == reviewId },
+                        onClick = {
+                            busy = true
+                            scope.launch {
+                                try {
+                                    service.rollbackReview(reviewId)
+                                    snapshotHistory = service.listSnapshots(selectedRepoId)
+                                    approvalHistory = service.listApprovalHistory(selectedRepoId)
+                                    snapshot = null
+                                    review = null
+                                    status = "已从历史记录撤销该补丁的全部已应用批次。"
+                                } catch (error: Exception) {
+                                    status = error.message ?: "历史补丁回滚失败；请查看事务状态"
+                                } finally { busy = false }
+                            }
+                        }
+                    ) { Text("整份回滚") }
+                }
+            }
             approvalHistory.forEach { event ->
                 Text("状态：${event.status} · ${event.paths.size} 个文件 · ${event.id.take(8)}",
                     style = MaterialTheme.typography.labelMedium)
