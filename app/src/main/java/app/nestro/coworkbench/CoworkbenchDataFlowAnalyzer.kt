@@ -28,7 +28,9 @@ object CoworkbenchDataFlowAnalyzer {
             "网络请求地址", "外部输入可能控制请求 URL；限制 HTTPS、主机白名单、端口和重定向目标")
     )
 
-    private val assignment = Regex("""^\s*(?:(?:val|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$""")
+    private val assignment = Regex(
+        """^\s*(?:(?:val|var)\s+|(?:(?:final\s+)?(?:String|CharSequence|Object|Uri|URI|File|Path|var)\s+))?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$"""
+    )
     private val identifier = Regex("""\b[A-Za-z_][A-Za-z0-9_]*\b""")
     private val commentLine = Regex("""^\s*(?://|/\*|\*|#)""")
 
