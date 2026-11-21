@@ -83,7 +83,7 @@ fun VoiceSystemPage() {
     ) {
         Text("语音输入与输出")
         Text("语音输入：在聊天输入框按住麦克风说话，松开后由 Android 系统识别服务转写并发送。识别服务的数据处理方式取决于设备当前启用的系统语音服务。")
-        Text("语音输出：使用设备已安装的 Android 语音合成引擎在本机朗读，不会通过本功能上传文本。")
+        Text("语音输出：调用设备已安装的 Android 语音合成引擎；是否联网及文本如何处理取决于该系统引擎，Nestro 不会将文本转发到自建语音服务。")
         OutlinedTextField(
             value = speechText,
             onValueChange = { speechText = it.take(4_000) },
