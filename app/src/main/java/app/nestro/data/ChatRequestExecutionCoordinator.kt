@@ -1,6 +1,8 @@
 package app.nestro.data
 
 import app.nestro.model.ChatStreamingCoordinator
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 internal data class ChatRequestExecutionRequest(
     val requestId: String,
@@ -50,8 +52,8 @@ internal class ChatRequestExecutionCoordinator(
         val result = runCatchingCancellable {
             // Planning and context retrieval are independent. Overlap them so
             // optional task preparation does not add its full latency to retrieval.
-            val assembled = kotlinx.coroutines.coroutineScope {
-                val planning = if (request.taskModeEnabled) kotlinx.coroutines.async {
+            val assembled = coroutineScope {
+                val planning = if (request.taskModeEnabled) async {
                     runCatchingCancellable { planPhoneAgent() }
                         .onFailure {
                             taskPlanningFailure = it
