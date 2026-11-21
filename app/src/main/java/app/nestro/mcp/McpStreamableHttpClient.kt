@@ -190,7 +190,10 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
  private fun parseBody(raw:String,contentType:String):JSONObject?{
   if(raw.isBlank())return null
   return if(contentType.contains("text/event-stream",true)){
-   val messages=raw.lineSequence().filter{it.startsWith("data:")}.map{it.removePrefix("data:").trim()}.filter{it.isNotBlank()}.mapNotNull{runCatching{JSONObject(it)}.getOrNull()}.toList()
+   val messages=raw.split("\\n\\n","\\r\\n\\r\\n").mapNotNull{event->
+    val data=event.lineSequence().filter{it.startsWith("data:")}.map{it.removePrefix("data:").trimStart()}.joinToString("\\n")
+    data.takeIf{it.isNotBlank()}?.let{runCatching{JSONObject(it)}.getOrNull()}
+   }
    messages.lastOrNull{it.has("id")}?:messages.lastOrNull()
   }else runCatching{JSONObject(raw)}.getOrNull()
  }
