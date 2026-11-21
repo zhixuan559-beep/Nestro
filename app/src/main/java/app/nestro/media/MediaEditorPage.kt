@@ -277,9 +277,14 @@ fun MediaEditorPage(
                                 when (aiAction) {
                                     "transcribe" -> provider.transcribe(asset, file, "zh-CN")
                                     "scenes" -> provider.detectScenes(asset, file)
-                                    "audio-clean" -> MediaProjectStore.importGeneratedFile(
-                                        context, projectId, provider.processAudio(asset, file, "noise_reduction"), MediaAssetKind.AUDIO
-                                    )
+                                    "audio-clean" -> {
+                                        val processed = provider.processAudio(asset, file, "noise_reduction")
+                                        try {
+                                            MediaProjectStore.importGeneratedFile(context, projectId, processed, MediaAssetKind.AUDIO)
+                                        } finally {
+                                            processed.delete()
+                                        }
+                                    }
                                     "image" -> provider.analyzeImage(asset, file, "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
                                     else -> error("不支持的媒体 AI 操作")
                                 }
