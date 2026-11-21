@@ -31,5 +31,6 @@ class GitWorkbenchPolicyTest {
         assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath("/etc/passwd") }
         assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath("C:\\outside.txt") }
         assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath(".git/config") }
+        assertThrows(IllegalArgumentException::class.java) { GitWorkbenchPolicy.safeRelativePath("src/.git/config") }
     }
 }
