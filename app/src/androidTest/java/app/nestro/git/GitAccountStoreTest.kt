@@ -48,6 +48,10 @@ class GitAccountStoreTest {
                 .putString("git_access_token_enc_v1_" + second, firstCipher)
                 .commit()
             assertThrows(IllegalStateException::class.java) { store.token(first) }
+            prefs.edit()
+                .putString("git_access_token_enc_v1_" + first, firstCipher)
+                .putString("git_access_token_enc_v1_" + second, secondCipher)
+                .commit()
         } finally {
             runCatching { store.delete(first) }
             runCatching { store.delete(second) }
