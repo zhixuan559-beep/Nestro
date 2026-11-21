@@ -558,14 +558,15 @@ fun MediaEditorPage(
             }) { Text("摘要文案") }
         }
         val selected = assets.firstOrNull { it.id == selectedAssetId }
+        val selectedProvider = MediaIntelligenceRegistry.current()
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(enabled = selected != null && selected.kind != MediaAssetKind.IMAGE,
+            OutlinedButton(enabled = selected != null && selected.kind != MediaAssetKind.IMAGE && MediaIntelligenceCapability.TRANSCRIPTION in (selectedProvider?.capabilities ?: emptySet()),
                 onClick = { aiAction = "transcribe"; performAiAction() }) { Text("AI 转字幕") }
-            OutlinedButton(enabled = selected?.kind == MediaAssetKind.VIDEO,
+            OutlinedButton(enabled = selected?.kind == MediaAssetKind.VIDEO && MediaIntelligenceCapability.SCENE_DETECTION in (selectedProvider?.capabilities ?: emptySet()),
                 onClick = { aiAction = "scenes"; performAiAction() }) { Text("识别场景") }
-            OutlinedButton(enabled = selected?.kind == MediaAssetKind.AUDIO,
+            OutlinedButton(enabled = selected?.kind == MediaAssetKind.AUDIO && MediaIntelligenceCapability.AUDIO_PROCESSING in (selectedProvider?.capabilities ?: emptySet()),
                 onClick = { aiAction = "audio-clean"; performAiAction() }) { Text("音频处理") }
-            OutlinedButton(enabled = selected?.kind == MediaAssetKind.IMAGE,
+            OutlinedButton(enabled = selected?.kind == MediaAssetKind.IMAGE && MediaIntelligenceCapability.IMAGE_UNDERSTANDING in (selectedProvider?.capabilities ?: emptySet()),
                 onClick = { aiAction = "image"; performAiAction() }) { Text("理解图片") }
         }
         if (mediaAiRunning) {
