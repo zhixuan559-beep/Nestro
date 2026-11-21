@@ -161,6 +161,7 @@ internal fun NavigationDrawerContent(
         DrawerItem("▦", "日历") { onNavigate("calendar") }
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
         DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
+        DrawerItem("🧩", "插件工坊") { onNavigate("plugins") }
         DrawerItem("⑂", "Git 工作台") { onNavigate("git") }
         DrawerItem("✦", "我的专家") { onNavigate("experts") }
         DrawerItem("♧", "专家团队") { onNavigate("teams") }
