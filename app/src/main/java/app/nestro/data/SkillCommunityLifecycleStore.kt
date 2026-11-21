@@ -102,11 +102,34 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
                 ?: error("缺少技能依赖：${dependency.name}")
             val installed = runCatching { JSONObject(raw).optString("version") }.getOrDefault("")
             require(installed.isNotBlank()) { "依赖技能版本无效：${dependency.name}" }
-            if (dependency.version != "*") {
-                require(installed == dependency.version) {
-                    "依赖版本不匹配：${dependency.name} 需要 ${dependency.version}，本机为 $installed"
-                }
+            require(versionMatches(installed, dependency.version)) {
+                "依赖版本不匹配：${dependency.name} 需要 ${dependency.version}，本机为 $installed"
             }
+        }
+    }
+
+    private fun versionMatches(installed: String, requirement: String): Boolean {
+        if (requirement == "*") return true
+        val operator = listOf(">=", "<=", ">", "<", "^", "~").firstOrNull { requirement.startsWith(it) }
+        val requested = if (operator == null) requirement else requirement.removePrefix(operator)
+        if (operator == null) return installed == requested
+        fun parts(value: String): List<Long> {
+            val core = value.substringBefore('-').substringBefore('+')
+            val values = core.split('.')
+            require(values.size in 2..3 && values.all { it.matches(Regex("[0-9]{1,18}")) }) { "技能版本格式无效：$value" }
+            return (values.map { it.toLong() } + listOf(0L, 0L, 0L)).take(3)
+        }
+        val actual = parts(installed)
+        val expected = parts(requested)
+        val comparison = compareValuesBy(actual, expected, { it[0] }, { it[1] }, { it[2] })
+        return when (operator) {
+            ">=" -> comparison >= 0
+            "<=" -> comparison <= 0
+            ">" -> comparison > 0
+            "<" -> comparison < 0
+            "^" -> comparison >= 0 && actual[0] == expected[0]
+            "~" -> comparison >= 0 && actual[0] == expected[0] && actual[1] == expected[1]
+            else -> false
         }
     }
 
