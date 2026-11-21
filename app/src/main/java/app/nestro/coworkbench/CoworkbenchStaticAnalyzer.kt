@@ -232,7 +232,9 @@ object CoworkbenchStaticAnalyzer {
 
     private fun dependencyTokens(path: String, text: String): Set<String> {
         val result = linkedSetOf<String>()
-        fun add(value: String) { if (result.size < MAX_DEPENDENCIES) add(value }
+        fun add(value: String) {
+            if (result.size < MAX_DEPENDENCIES) result.add(value)
+        }
         val lower = path.lowercase()
         if (lower.endsWith(".toml")) {
             fun quoted(value: String): String? =
@@ -241,20 +243,18 @@ object CoworkbenchStaticAnalyzer {
                 val module = fields["module"]?.let(::quoted)
                 val group = fields["group"]?.let(::quoted)
                 val name = fields["name"]?.let(::quoted)
-                val coordinate = module ?: if (!group.isNullOrBlank() && !name.isNullOrBlank()) "$group:$name" else null
+                val coordinate = module ?: if (!group.isNullOrBlank() && !name.isNullOrBlank()) group + ":" + name else null
                 val version = fields["version"]?.let(::quoted)
-                    ?: fields["version.ref"]?.let(::quoted)?.let { "version-ref:$it" }
-                if (coordinate != null) add("catalog:$alias:$coordinate" + (version?.let { ":$it" } ?: ""))
+                    ?: fields["version.ref"]?.let(::quoted)?.let { "version-ref:" + it }
+                if (coordinate != null) add("catalog:" + alias + ":" + coordinate + (version?.let { ":" + it } ?: ""))
             }
 
-            // Inline Gradle version-catalog entries.
             Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*\{([^}]*)}""").findAll(text).forEach { match ->
                 val fields = Regex("""([A-Za-z0-9_.-]+)\s*=\s*("[^"]*"|'[^']*')""")
                     .findAll(match.groupValues[2]).associate { it.groupValues[1] to it.groupValues[2] }
                 recordLibrary(match.groupValues[1], fields)
             }
 
-            // Dotted TOML tables such as [libraries.androidx-core].
             var section: String? = null
             val tableFields = linkedMapOf<String, String>()
             fun flushTable() {
@@ -276,17 +276,16 @@ object CoworkbenchStaticAnalyzer {
             }
             flushTable()
 
-            // Version aliases and plugin aliases are useful change evidence too.
             Regex("""(?m)^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']""").findAll(text).forEach { match ->
                 add("catalog-value:" + match.groupValues[1] + ":" + match.groupValues[2])
             }
         } else {
             Regex("""\b(?:implementation|api|runtimeOnly|compileOnly|kapt|annotationProcessor|testImplementation|androidTestImplementation|classpath)\s*\(?\s*["']([^"']+)["']""")
-                .findAll(text).forEach { add(it.groupValues[1] }
+                .findAll(text).forEach { add(it.groupValues[1]) }
             Regex("""\b(?:id|alias)\s*\(?\s*["']([^"']+)["']\s*\)?\s*(?:version\s*["']([^"']+)["'])?""")
-                .findAll(text).forEach { add("plugin:" + it.groupValues[1] + ":" + it.groupValues[2] }
+                .findAll(text).forEach { add("plugin:" + it.groupValues[1] + ":" + it.groupValues[2]) }
             Regex("""\blibs(?:\.[A-Za-z0-9_-]+){1,8}\b""")
-                .findAll(text).forEach { add("catalog-alias:" + it.value }
+                .findAll(text).forEach { add("catalog-alias:" + it.value) }
         }
         return result
     }
