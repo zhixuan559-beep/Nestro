@@ -170,7 +170,10 @@ fun GitWorkbenchPage(context: Context) {
                 locals.forEach { item ->
                     Surface(
                         color = if (localId == item.id) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth().clickable { localId = item.id }
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            if (file.isNotBlank() && editor != originalEditor) status = "当前文件有未保存修改，请先保存后再切换仓库。"
+                            else localId = item.id
+                        }
                     ) { Column(Modifier.padding(10.dp)) { Text(item.fullName); Text(item.localPath, style = MaterialTheme.typography.labelSmall) } }
                 }
                 if (selectedLocal != null) {
