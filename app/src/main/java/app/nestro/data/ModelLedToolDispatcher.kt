@@ -18,6 +18,7 @@ import app.nestro.agent.RoomAgentTaskStateStore
 import app.nestro.data.NestroDatabase
 import app.nestro.model.ChatExecutionService
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.UUID
 
 internal data class ModelToolDecision(
@@ -169,7 +170,7 @@ ${prompt.take(8_000)}
                 history = requestHistory,
                 systemPrompt = decisionSystem,
                 tools = visibleRows.map { (spec, definition) ->
-                    NativeToolDefinition(spec.id, definition)
+                    NativeToolDefinition(spec.id, definition, nativeToolSchema(spec.id, definition))
                 },
                 temperature = temperature ?: 0.0,
                 maxTokens = maxTokens,
@@ -395,6 +396,49 @@ ${prompt.take(8_000)}
             markTerminal(AgentTaskStatus.FAILED, error.message ?: "模型工具调度失败")
             throw error
         }
+    }
+
+    private fun nativeToolSchema(toolId: String, definition: String): String {
+        val properties = JSONObject()
+        val required = JSONArray()
+        when (toolId) {
+            "knowledge.search" -> {
+                properties.put("query", JSONObject().put("type", "string").put("description", "当前项目知识库检索问题"))
+                properties.put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 8))
+                required.put("query")
+            }
+            "expert_team.run" -> {
+                properties.put("member_names", JSONObject().put("type", "array")
+                    .put("items", JSONObject().put("type", "string")).put("minItems", 2).put("maxItems", 4))
+                properties.put("team_name", JSONObject().put("type", "string"))
+                properties.put("team_description", JSONObject().put("type", "string"))
+                properties.put("plan", JSONObject().put("type", "string")
+                    .put("description", "包含 project_goal、final_acceptance_criteria、packages 的 JSON 字符串"))
+                required.put("member_names")
+                required.put("team_name")
+                required.put("team_description")
+                required.put("plan")
+            }
+            "media.video.generate" -> {
+                properties.put("prompt", JSONObject().put("type", "string").put("description", "完整、可执行的视频生成提示词"))
+                properties.put("provider_id", JSONObject().put("type", "string").put("description", "可选的已配置媒体服务商 ID"))
+                properties.put("previous_task_id", JSONObject().put("type", "string").put("description", "用户要求修改上一版时使用的任务 ID"))
+                required.put("prompt")
+            }
+            "media.video.status" -> properties.put("task_id", JSONObject().put("type", "string")
+                .put("description", "可选；省略时查询当前项目最近一次视频任务"))
+            else -> {
+                val schemaText = definition.substringAfter("input_schema=", "").trim()
+                if (schemaText.startsWith("{")) {
+                    val supplied = runCatching { JSONObject(schemaText) }.getOrNull()
+                    if (supplied != null) return supplied.toString()
+                }
+            }
+        }
+        val schema = JSONObject().put("type", "object").put("properties", properties)
+            .put("additionalProperties", toolId.startsWith("mcp_"))
+        if (required.length() > 0) schema.put("required", required)
+        return schema.toString()
     }
 
     private companion object {
