@@ -6,6 +6,8 @@
 
 > **2026-11-21 模块8状态更正：** PR #8 已合并至 `refactor/phase-2-architecture`，合并提交 `ad48068efc97d99b37af851ef7c884539144c5ed`。提交 `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a` 的 `verify` Job 全部通过，但 `instrumented` Job 被取消；后续合并提交对应的 `verify` 与 `instrumented` 也被取消。因此模块8代码已合并、静态/单元验证通过，但模拟器验收尚未完成，不得标记为云端完整锁定。真实设备兼容性、后台限制和功耗验收同样待完成。
 
+> **2026-11-21 模块9锁定记录：** PR #9 已合并至 `refactor/phase-2-architecture`，合并提交 `5191ba81859914926652b52d3c19281256ff7d30`。CI Run #1190 对应提交 `f16d3ed9eba1c59b888ffea47aa198d18c973567`，`verify` 与 Android emulator `instrumented` 两个 Job 均成功；编译、JVM 单元测试、Lint、instrumentation test sources 与模拟器测试通过。模块9云端代码与自动化验收锁定；真实设备音频路由、回声、厂商兼容及网络恢复留待十九模块完成后的统一设备验收。
+
 ## 已实现
 
 ### 核心与本地安全
@@ -56,7 +58,7 @@
 - [x] 本机语音合成：接入 Android TextToSpeech，支持中英文选择、语速/音调调节、朗读状态反馈与停止；本机合成不由 Nestro 上传文本。
 - [x] 远程语音配置：服务地址、识别/合成/实时模型及音色本地保存；API Key 使用 Android Keystore AES-GCM 加密。
 - [x] 实时双向语音：OpenAI Realtime-compatible WebSocket、PCM16 麦克风采集/扬声器播放、实时转写与文本发送；远程录音转写与远程 TTS 预览由用户主动触发。
-- [ ] 构建与自动化测试、实体设备音频路由/回声消除、服务商协议差异、网络中断恢复和交互流畅度验收。
+- [x] 构建与自动化测试（CI Run #1190 的 verify 与 Android emulator instrumentation 均通过）；[ ] 实体设备音频路由/回声消除、服务商协议差异、网络中断恢复和交互流畅度验收。
 
 ### Phone Agent
 - [x] AccessibilityService 注册与用户手动授权入口。
