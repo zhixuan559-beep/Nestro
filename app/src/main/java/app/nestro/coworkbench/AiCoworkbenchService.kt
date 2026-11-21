@@ -317,11 +317,13 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         val file = File(snapshots, snapshotId + ".json")
         require(file.isFile && file.length() <= 5_000_000) { "快照不存在或大小无效" }
         val snapshot = decodeSnapshot(JSONObject(file.readText(Charsets.UTF_8)))
-        snapshot.files.forEach { item ->
-            require(readOrNull(snapshot.repositoryId, item.path) == item.applied) {
+        val currentContents = snapshot.files.map { item -> readOrNull(snapshot.repositoryId, item.path) }
+        snapshot.files.zip(currentContents).forEach { (item, current) ->
+            require(current == item.applied || current == item.before) {
                 "文件 " + item.path + " 在补丁应用后又发生变化，已中止回滚以保护新内容"
             }
         }
+        if (snapshot.files.zip(currentContents).all { (item, current) -> current == item.before }) return@withLock snapshot
         val eventFile = File(approvals, snapshot.id + ".json")
         val existingEvent = if (eventFile.isFile) {
             runCatching { decodeApproval(JSONObject(eventFile.readText(Charsets.UTF_8))) }.getOrNull()
@@ -355,14 +357,19 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
             .filter { it.reviewId == reviewId }
             .sortedByDescending { it.createdAt }
         require(matching.isNotEmpty()) { "该补丁没有可回滚的已应用批次" }
-        matching.forEach { snapshot ->
+        val activeSnapshots = matching.filter { snapshot ->
+            var anyApplied = false
             snapshot.files.forEach { item ->
-                require(readOrNull(snapshot.repositoryId, item.path) == item.applied) {
+                val current = readOrNull(snapshot.repositoryId, item.path)
+                require(current == item.applied || current == item.before) {
                     "文件 ${item.path} 在补丁应用后又发生变化；整份补丁回滚已中止，未覆盖外部修改"
                 }
+                if (current == item.applied) anyApplied = true
             }
+            anyApplied
         }
-        val events = matching.map { snapshot ->
+        if (activeSnapshots.isEmpty()) return@withLock matching
+        val events = activeSnapshots.map { snapshot ->
             val file = File(approvals, snapshot.id + ".json")
             val old = if (file.isFile) runCatching {
                 decodeApproval(JSONObject(file.readText(Charsets.UTF_8)))
