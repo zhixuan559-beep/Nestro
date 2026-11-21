@@ -33,6 +33,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     var serverName by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
+    var credentialDrafts by remember { mutableStateOf(emptyMap<String, String>()) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var selectedTool by remember { mutableStateOf<McpToolDescriptor?>(null) }
@@ -167,6 +168,35 @@ fun McpToolCenterPage(app: NestroApplication) {
                         if (repository.hasCredential(server.id)) "Bearer Token：已加密保存" else "Bearer Token：未配置",
                         style = MaterialTheme.typography.labelSmall
                     )
+                    OutlinedTextField(
+                        value = credentialDrafts[server.id].orEmpty(),
+                        onValueChange = { credentialDrafts = credentialDrafts + (server.id to it) },
+                        label = { Text("设置或更新 Bearer Token") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    TextButton(
+                        enabled = !loading && credentialDrafts[server.id].orEmpty().isNotBlank(),
+                        onClick = {
+                            val token = credentialDrafts[server.id].orEmpty().trim()
+                            scope.launch {
+                                loading = true
+                                try {
+                                    withContext(Dispatchers.IO) { repository.saveCredential(server.id, token) }
+                                    credentialDrafts = credentialDrafts - server.id
+                                    status = "Bearer Token 已加密更新。"
+                                    reload()
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (error: Exception) {
+                                    status = "凭据更新失败：" + (error.message ?: "未知错误")
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        }
+                    ) { Text("保存凭据") }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled = !loading, onClick = { discover(server.id) }) { Text("刷新工具") }
                         if (repository.hasCredential(server.id)) {
