@@ -1,6 +1,7 @@
 package app.nestro.git
 
 import android.content.Context
+import android.os.StatFs
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -359,6 +360,11 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun clone(account: GitAccount, remote: GitRemoteRepository): GitLocalRepository = withContext(Dispatchers.IO) {
         require(remote.provider == account.provider)
         require(GitWorkbenchPolicy.validCloneUrl(remote.provider, remote.cloneUrl)) { "远程仓库地址不属于已选代码托管服务商，已阻止克隆" }
+        if (remote.sizeKb > 0L) {
+            val available = StatFs(root.absolutePath).availableBytes
+            val estimatedBytes = remote.sizeKb.coerceAtMost(Long.MAX_VALUE / 2048L) * 2048L
+            require(estimatedBytes <= available - available / 5L) { "可用存储不足以安全克隆此仓库；请先释放空间或改用更小的仓库" }
+        }
         val id = UUID.randomUUID().toString()
         val directory = File(root, id)
         try {
