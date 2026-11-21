@@ -81,7 +81,7 @@ object GitWorkbenchPolicy {
 
     fun validCloneUrl(provider: GitProvider, value: String): Boolean {
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
-        if (!uri.scheme.equals("https", true) || uri.userInfo != null || uri.host.isNullOrBlank()) return false
+        if (uri.scheme?.equals("https", true) != true || uri.userInfo != null || uri.host.isNullOrBlank()) return false
         val expected = when (provider) {
             GitProvider.GITHUB -> setOf("github.com")
             GitProvider.GITLAB -> setOf("gitlab.com")
