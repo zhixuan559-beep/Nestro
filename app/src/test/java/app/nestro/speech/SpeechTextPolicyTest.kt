@@ -7,12 +7,14 @@ import org.junit.Test
 class SpeechTextPolicyTest {
     @Test
     fun trimsWhitespaceAndRemovesUnsupportedControlCharacters() {
-        assertEquals("你好世界", SpeechTextPolicy.normalize("  你好\\u0000世界\\u0007  "))
+        val input = "  你好" + 0.toChar() + "世界" + 7.toChar() + "  "
+        assertEquals("你好世界", SpeechTextPolicy.normalize(input))
     }
 
     @Test
     fun rejectsBlankInput() {
-        assertNull(SpeechTextPolicy.normalize("  \\n\\t "))
+        val input = "  " + 10.toChar() + 9.toChar() + " "
+        assertNull(SpeechTextPolicy.normalize(input))
     }
 
     @Test
