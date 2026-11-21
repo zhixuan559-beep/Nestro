@@ -240,7 +240,7 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
    val raw=arguments["__nestro_mcp_internal_json_payload"] ?: McpToolArgumentValidator.encodeArgumentMap(d.inputSchemaJson,arguments)
    McpToolArgumentValidator.validate(d.inputSchemaJson,raw)?.let{return@register AgentToolResult(false,error=it)}
    val job=currentCoroutineContext()[Job]
-   val calls=job?.let{activeCalls.computeIfAbsent(d.id){ConcurrentHashMap.newKeySet<Job>()}.also{set->set.add(it)}}
+   val calls=job?.let{currentJob->activeCalls.computeIfAbsent(d.id){ConcurrentHashMap.newKeySet<Job>()}.also{set->set.add(currentJob)}}
    try{
     if(!repository.isToolGranted(d.id))return@register AgentToolResult(false,error="MCP 工具授权已撤销")
     val output=withContext(Dispatchers.IO){McpStreamableHttpClient(current.endpoint,repository.readCredential(current.id)).use { it.callTool(d.name,JSONObject(raw),d.inputSchemaJson) }}
