@@ -87,7 +87,38 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
         require(Regex("^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$").matches(fullName)) { "仓库名称无效" }
         val encodedWorkflow = URLEncoder.encode(workflowFile, "UTF-8")
         val encodedBranch = URLEncoder.encode(branch, "UTF-8")
-        val base = "https://api.github.com/repos/" + fullName + "/actions/workflows/" + encodedWorkflow
+        val repositoryApi = "https://api.github.com/repos/" + fullName
+        val branchRequest = Request.Builder().url(repositoryApi + "/branches/" + encodedBranch)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        executeCancellable(branchRequest).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 404) "目标分支尚未推送到 GitHub；请先推送本地已审查变更。"
+                else "检查远程分支失败（HTTP ${response.code}）；请确认仓库读取权限。"
+            }
+        }
+        val base = repositoryApi + "/actions/workflows/" + encodedWorkflow
+        val workflowRequest = Request.Builder().url(base)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        executeCancellable(workflowRequest).use { response ->
+            val body = response.body?.string().orEmpty()
+            require(response.isSuccessful) {
+                when (response.code) {
+                    401, 403 -> "读取 Workflow 失败：GitHub 账号需要 Actions 读取权限，并具备触发权限。"
+                    404 -> "GitHub 未找到该 Workflow；请确认文件已推送到默认分支且位于 .github/workflows。"
+                    else -> "Workflow 预检失败（HTTP ${response.code}）：${body.take(500)}"
+                }
+            }
+            val state = JSONObject(body).optString("state")
+            require(state == "active") { "目标 Workflow 当前状态为 ${state.ifBlank { "未知" }}，必须先启用。" }
+        }
         val startedAt = System.currentTimeMillis()
         val dispatch = Request.Builder().url(base + "/dispatches")
             .header("Accept", "application/vnd.github+json")
