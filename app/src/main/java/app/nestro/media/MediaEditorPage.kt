@@ -46,9 +46,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.ui.PlayerView
 import androidx.core.net.toUri
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -81,7 +79,6 @@ fun MediaEditorPage(
     var showAiConsent by remember(projectId) { mutableStateOf(false) }
     var detectedScenes by remember(projectId) { mutableStateOf(emptyList<MediaScene>()) }
     var imageAnalysis by remember(projectId) { mutableStateOf("") }
-    var mediaAiJob by remember(projectId) { mutableStateOf<Job?>(null) }
     var activeMediaAiTaskId by remember(projectId) { mutableStateOf("") }
     var mediaAiTasks by remember(projectId) { mutableStateOf(emptyList<MediaAiTask>()) }
     var mediaAiProgress by remember(projectId) { mutableStateOf(0f) }
