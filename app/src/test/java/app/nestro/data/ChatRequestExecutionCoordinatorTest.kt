@@ -165,7 +165,7 @@ class ChatRequestExecutionCoordinatorTest {
 
 class ChatRequestExecutionCoordinatorConcurrencyTest {
     @Test
-    fun knowledgeRetrievalDoesNotPreemptivelyStartPhoneAgentPlanning() = runBlocking {
+    fun knowledgeLookupAndPhoneAgentPlanningAreDeferredToModelDispatch() = runBlocking {
         val started = java.util.concurrent.atomic.AtomicInteger(0)
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
@@ -184,7 +184,7 @@ class ChatRequestExecutionCoordinatorConcurrencyTest {
             planPhoneAgent = { error("must not run before model tool selection") },
             onPartialAnswer = { }
         )
-        assertEquals(1, started.get())
+        assertEquals(0, started.get())
         assertEquals("reply", result.finalization.finalText)
     }
 }
