@@ -48,8 +48,11 @@ object MediaAiTaskStore {
         return File(directory(context,projectId),"$taskId.json")
     }
     @Synchronized fun create(context: Context, projectId: String, assetId: String, providerId: String, action: String, prompt: String = ""): MediaAiTask {
-        require(action in setOf("transcribe","scenes","audio-clean","image")) { "媒体 AI 操作无效" }
-        require(assetId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "素材 ID 无效" }
+        require(action in setOf("transcribe","scenes","audio-clean","image","video-generate")) { "媒体 AI 操作无效" }
+        require(
+            (action == "video-generate" && assetId.isBlank()) ||
+                (action != "video-generate" && assetId.matches(Regex("^[A-Fa-f0-9-]{36}$")))
+        ) { "素材 ID 无效" }
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "服务商 ID 无效" }
         require(prompt.length<=2000) { "媒体 AI 指令过长" }
         val now=System.currentTimeMillis()
@@ -104,6 +107,7 @@ object MediaAiTaskStore {
 
 class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context,params) {
     @Volatile private var activeProvider: OpenAiCompatibleMediaIntelligenceProvider?=null
+    @Volatile private var activeVideoClient: MediaVideoGenerationClient?=null
 
     override suspend fun doWork(): Result {
         val projectId=inputData.getString(KEY_PROJECT) ?: return Result.failure()
@@ -112,13 +116,38 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         if(task.status !in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) return Result.success()
         val providerConfig=MediaProviderConfigStore(applicationContext).read(task.providerId)
             ?: return fail(projectId,taskId,"媒体服务商配置不存在或 API Key 无法读取")
-        val asset=runCatching { MediaProjectStore.listAssets(applicationContext,projectId).firstOrNull { it.id==task.assetId } }.getOrNull()
-            ?: return fail(projectId,taskId,"原始素材不存在或已损坏")
+        val asset = if (task.action == "video-generate") null else
+            runCatching { MediaProjectStore.listAssets(applicationContext,projectId).firstOrNull { it.id==task.assetId } }.getOrNull()
+                ?: return fail(projectId,taskId,"原始素材不存在或已损坏")
         val provider=OpenAiCompatibleMediaIntelligenceProvider(providerConfig)
         activeProvider=provider
         return try {
             MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.RUNNING,errorMessage="")
-            val file=MediaProjectStore.assetFile(applicationContext,asset)
+            if (task.action == "video-generate") {
+                val videoClient = MediaVideoGenerationClient(providerConfig)
+                activeVideoClient = videoClient
+                val generated = videoClient.generate(task.prompt) { value ->
+                    val p = value.coerceIn(0, 100)
+                    runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,progress=p) }
+                    setProgressAsync(workDataOf("progress" to p))
+                }
+                try {
+                    val imported = MediaProjectStore.importGeneratedFile(
+                        applicationContext, projectId, generated, MediaAssetKind.VIDEO, stableAssetId = task.id
+                    )
+                    val result = JSONObject().put("type","video").put("assetId",imported.id)
+                        .put("displayName",imported.displayName).toString()
+                    MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.COMPLETED,
+                        progress=100,resultJson=result,errorMessage="")
+                    return Result.success()
+                } finally {
+                    generated.delete()
+                    activeVideoClient = null
+                    videoClient.cancel()
+                }
+            }
+            val mediaAsset = asset ?: error("媒体素材不存在")
+            val file=MediaProjectStore.assetFile(applicationContext,mediaAsset)
             val progress:(Float)->Unit={ value ->
                 val p=(value.coerceIn(0f,1f)*100).toInt()
                 runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,progress=p) }
@@ -159,12 +188,15 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             } else fail(projectId,taskId,t.message ?: t.javaClass.simpleName)
         } finally {
             activeProvider=null
+            activeVideoClient?.cancel()
+            activeVideoClient=null
             provider.cancelActiveRequests()
         }
     }
 
     override fun onStopped() {
         activeProvider?.cancelActiveRequests()
+        activeVideoClient?.cancel()
         super.onStopped()
     }
 
