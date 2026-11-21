@@ -5,12 +5,9 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.diff.DiffFormatter
-import org.eclipse.jgit.api.MergeResult
 import org.eclipse.jgit.lib.PersonIdent
-import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.json.JSONArray
 import org.json.JSONObject
