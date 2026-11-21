@@ -40,6 +40,16 @@ private fun JSONObject.artifactLongOrDefault(key: String, default: Long): Long {
     return value.toLong()
 }
 
+internal fun artifactReferenceMatchesIndex(
+    requested: ArtifactRecord,
+    indexed: ArtifactRecord
+): Boolean =
+    requested.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
+        requested.fileName == "\${requested.id}.md" &&
+        requested.id == indexed.id &&
+        requested.projectId == indexed.projectId &&
+        requested.fileName == indexed.fileName
+
 object ArtifactStore {
     private const val MAX_ARTIFACT_BYTES = 1_500_000
     private const val MAX_ITEMS = 200
@@ -99,15 +109,48 @@ object ArtifactStore {
             .put("title", record.title).put("fileName", record.fileName)
             .put("mimeType", record.mimeType).put("createdAt", record.createdAt)
             .put("sizeBytes", record.sizeBytes).put("version", record.version))
-        writeIndex(context, all)
+        try {
+            writeIndex(context, all)
+        } catch (error: Throwable) {
+            target.delete()
+            throw error
+        }
         return record
     }
 
+    private fun resolveIndexedRecord(context: Context, requested: ArtifactRecord): ArtifactRecord {
+        require(requested.id.matches(Regex("[0-9a-fA-F-]{36}")) &&
+            requested.fileName == "\${requested.id}.md") { "产物文件引用无效" }
+        val rows = readAll(context)
+        val matches = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }
+            .filter { it.optString("id") == requested.id }
+        require(matches.size == 1) { "产物记录不存在或索引重复" }
+        val row = matches.single()
+        val indexed = ArtifactRecord(
+            id = row.artifactString("id"),
+            projectId = row.artifactString("projectId"),
+            title = row.artifactString("title"),
+            fileName = row.artifactString("fileName"),
+            mimeType = row.optString("mimeType", "text/markdown"),
+            createdAt = row.optLong("createdAt"),
+            sizeBytes = row.optLong("sizeBytes", -1L),
+            version = row.optInt("version", 1)
+        )
+        require(artifactReferenceMatchesIndex(requested, indexed)) {
+            "产物不属于当前项目，或引用已失效"
+        }
+        require(indexed.fileName == "\${indexed.id}.md" &&
+            indexed.sizeBytes in 1..MAX_ARTIFACT_BYTES.toLong() &&
+            indexed.version in 1..10_000) { "产物索引元数据无效" }
+        return indexed
+    }
+
+    @Synchronized
     fun read(context: Context, record: ArtifactRecord): String {
-        require(record.id.matches(Regex("[0-9a-fA-F-]{36}")) && record.fileName == "${record.id}.md") { "产物文件引用无效" }
-        val file = File(root(context), record.fileName)
+        val indexed = resolveIndexedRecord(context, record)
+        val file = File(root(context), indexed.fileName)
         require(file.isFile && file.length() <= MAX_ARTIFACT_BYTES) { "产物文件不存在或超出大小限制" }
-        require(file.length() == record.sizeBytes) { "产物文件完整性校验失败，请从备份恢复" }
+        require(file.length() == indexed.sizeBytes) { "产物文件完整性校验失败，请从备份恢复" }
         return file.readText(Charsets.UTF_8)
     }
 
@@ -185,15 +228,22 @@ object ArtifactStore {
 
     @Synchronized
     fun delete(context: Context, record: ArtifactRecord) {
-        require(record.id.matches(Regex("[0-9a-fA-F-]{36}")) && record.fileName == "${record.id}.md") { "产物文件引用无效" }
+        val indexed = resolveIndexedRecord(context, record)
         val all = readAll(context)
         val kept = JSONArray()
+        var removed = 0
         for (i in 0 until all.length()) {
-            val row = all.optJSONObject(i) ?: continue
-            if (row.optString("id") != record.id || row.optString("projectId") != record.projectId) kept.put(row)
+            val row = all.optJSONObject(i) ?: error("产物索引包含无效条目")
+            if (row.optString("id") == indexed.id && row.optString("projectId") == indexed.projectId) {
+                removed++
+            } else {
+                kept.put(row)
+            }
         }
+        require(removed == 1) { "产物索引状态已变化，请刷新后重试" }
         writeIndex(context, kept)
-        File(root(context), record.fileName).delete()
+        val file = File(root(context), indexed.fileName)
+        if (file.exists() && !file.delete()) error("产物索引已移除，但文件清理失败；请检查本机存储")
     }
 
     fun export(context: Context, record: ArtifactRecord, destination: Uri) {
