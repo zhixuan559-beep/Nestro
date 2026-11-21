@@ -344,7 +344,9 @@ internal class GeneratedPluginFactory(
         onUsage: (ModelConfig, Int, Int) -> Unit
     ): GeneratedPluginPackage {
         require(request.isNotBlank() && request.length <= 8_000)
-        val toolDirectory = discovery.list().take(100).joinToString("\n") { spec ->
+        val toolDirectory = discovery.list().filterNot { it.id.startsWith("plugin.") }
+            .filter { it.permission in setOf(app.nestro.agent.AgentToolPermission.READ_ONLY, app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE) }
+            .take(100).joinToString("\n") { spec ->
             "- ${spec.id}: ${spec.description} (permission=${spec.permission.name}, confirmation=${spec.requiresConfirmation})"
         }
         require(toolDirectory.isNotBlank()) { "当前没有可组合的已注册工具，无法创建可执行插件" }
@@ -358,7 +360,7 @@ tool_id 必须来自下方当前工具目录；arguments 的值只能是普通�
 当前工具目录：
 $toolDirectory
 禁止生成 Kotlin/Java/Python/JavaScript/shell 代码，禁止任意网络、文件、设备权限声明，禁止引用不存在的工具。
-插件只组合现有已注册工具，所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
+插件只组合现有已注册的只读或外部写入工具，不能组合设备控制、身份验证、金融工具或其他生成插件；所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
 已存在的插件 ID：${existingPluginIds.take(100).joinToString(",").ifBlank { "无" }}。
 用户需求：${request}
 """.trimIndent()
