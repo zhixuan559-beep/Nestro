@@ -12,7 +12,7 @@ object CoworkbenchDataFlowAnalyzer {
     private val sources = listOf(
         Regex("""\b(?:getStringExtra|getCharSequenceExtra|getQueryParameter|getParameter|getParameterValues|getHeader|getDataString|getTextBeforeCursor|getPrimaryClip|readLine|nextLine|readText|readBytes|getInputStream)\s*\(""", RegexOption.IGNORE_CASE),
         Regex("""\b(?:TextFieldValue|Editable)\b|\.text\s*(?:\.toString\s*\(\))?"""),
-        Regex("""\b(?:System\.getenv|System\.getProperty|Runtime\.getRuntime\(\)\.exec)\s*\(""", RegexOption.IGNORE_CASE),
+        Regex("""\bSystem\.(?:getenv|getProperty)\s*\(""", RegexOption.IGNORE_CASE),
         Regex("""\b(?:Intent|Bundle|Uri|JSONObject|JSONArray|SharedPreferences)\b[^;=]*\.(?:getString|getStringExtra|getQueryParameter|optString)\s*\(""")
     )
 
