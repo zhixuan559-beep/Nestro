@@ -2,11 +2,13 @@ package app.nestro.media
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.media.MediaMetadataRetriever
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.StatFs
+import android.os.Build
 import android.provider.OpenableColumns
 import android.util.AtomicFile
 import org.json.JSONArray
@@ -169,8 +171,20 @@ object MediaProjectStore {
         if (kind == MediaAssetKind.IMAGE) {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, options)
-            require(options.outWidth > 0 && options.outHeight > 0) { "图片文件无法解析" }
-            return ExtractedMetadata(5_000L, options.outWidth, options.outHeight, 0)
+            var width = options.outWidth
+            var height = options.outHeight
+            if ((width <= 0 || height <= 0) && Build.VERSION.SDK_INT >= 28) {
+                val decoded = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+                    width = info.size.width
+                    height = info.size.height
+                    val largestSide = maxOf(width, height)
+                    if (largestSide > 4_096) decoder.setTargetSampleSize((largestSide + 4_095) / 4_096)
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                }
+                decoded.recycle()
+            }
+            require(width > 0 && height > 0) { "图片文件无法解析" }
+            return ExtractedMetadata(5_000L, width, height, 0)
         }
         val retriever = MediaMetadataRetriever()
         var duration = 0L
