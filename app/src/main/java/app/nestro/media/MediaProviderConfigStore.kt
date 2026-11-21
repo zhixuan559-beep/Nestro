@@ -25,6 +25,7 @@ data class MediaProviderConfig(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
+    val transcriptionModel: String = model,
     val transcriptionPath: String = "audio/transcriptions",
     val scenePath: String = "media/scenes",
     val audioProcessPath: String = "audio/process"
@@ -33,11 +34,13 @@ data class MediaProviderConfig(
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "媒体服务商标识无效" }
         require(displayName.isNotBlank() && displayName.length <= 80) { "服务商名称无效" }
         require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.isISOControl() }) { "API Key 无效" }
-        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "模型名称无效" }
+        require(model.isNotBlank() && model.length <= 120 && model.none { it.isISOControl() }) { "视觉/聊天模型名称无效" }
+        require(transcriptionModel.isNotBlank() && transcriptionModel.length <= 120 && transcriptionModel.none { it.isISOControl() }) { "转写模型名称无效" }
         val uri = URI(baseUrl.trim().trimEnd('/'))
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "媒体服务地址必须使用 HTTPS，且不能包含 URL 凭据" }
         require(uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "媒体服务地址包含不允许的路径参数" }
-        listOf(transcriptionPath, scenePath, audioProcessPath).forEach {
+        require(transcriptionPath.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && transcriptionPath.split('/').none { it == "." || it == ".." }) { "转写 API 路径无效" }
+        listOf(scenePath, audioProcessPath).filter { it.isNotBlank() }.forEach {
             require(it.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && it.split('/').none { part -> part == "." || part == ".." }) { "媒体 API 路径无效" }
         }
     }
@@ -153,6 +156,7 @@ class MediaProviderConfigStore(context: Context) {
                 baseUrl = json.optString("baseUrl"),
                 apiKey = key,
                 model = json.optString("model"),
+                transcriptionModel = json.optString("transcriptionModel", json.optString("model")),
                 transcriptionPath = json.optString("transcriptionPath", "audio/transcriptions"),
                 scenePath = json.optString("scenePath", "media/scenes"),
                 audioProcessPath = json.optString("audioProcessPath", "audio/process")
@@ -193,6 +197,7 @@ class MediaProviderConfigStore(context: Context) {
         .put("displayName", config.displayName.trim())
         .put("baseUrl", config.baseUrl.trim().trimEnd('/'))
         .put("model", config.model.trim())
+        .put("transcriptionModel", config.transcriptionModel.trim())
         .put("transcriptionPath", config.transcriptionPath.trim())
         .put("scenePath", config.scenePath.trim())
         .put("audioProcessPath", config.audioProcessPath.trim())
@@ -217,18 +222,23 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         activeConnections.forEach { runCatching { it.disconnect() } }
     }
 
-    override val capabilities: Set<MediaIntelligenceCapability> = setOf(
-        MediaIntelligenceCapability.TRANSCRIPTION,
-        MediaIntelligenceCapability.SCENE_DETECTION,
-        MediaIntelligenceCapability.AUDIO_PROCESSING,
-        MediaIntelligenceCapability.IMAGE_UNDERSTANDING
-    )
+    override val capabilities: Set<MediaIntelligenceCapability> = buildSet {
+        add(MediaIntelligenceCapability.TRANSCRIPTION)
+        add(MediaIntelligenceCapability.IMAGE_UNDERSTANDING)
+        if (config.scenePath.isNotBlank() && config.scenePath != "media/scenes") add(MediaIntelligenceCapability.SCENE_DETECTION)
+        if (config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process") add(MediaIntelligenceCapability.AUDIO_PROCESSING)
+    }
 
     override suspend fun transcribe(asset: MediaAsset, sourceFile: File, languageTag: String, onProgress: (Float) -> Unit): List<MediaSubtitleCue> =
         withContext(Dispatchers.IO) {
             require(asset.kind == MediaAssetKind.AUDIO || asset.kind == MediaAssetKind.VIDEO) { "当前素材不能转写" }
             onProgress(0.05f)
-            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json"))
+            val transcriptionFields = if (config.transcriptionModel == "gpt-transcribe") {
+                mapOf("model" to config.transcriptionModel, "languages[]" to languageTag.lowercase())
+            } else {
+                mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
+            }
+            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields)
             onProgress(0.9f)
             val root = JSONObject(response.toString(Charsets.UTF_8))
             val segments = root.optJSONArray("segments")
@@ -251,6 +261,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
     override suspend fun detectScenes(asset: MediaAsset, sourceFile: File, onProgress: (Float) -> Unit): List<MediaScene> =
         withContext(Dispatchers.IO) {
             require(asset.kind == MediaAssetKind.VIDEO) { "场景识别需要视频素材" }
+            require(config.scenePath.isNotBlank() && config.scenePath != "media/scenes") { "当前服务商没有配置真实场景识别接口" }
             onProgress(0.05f)
             val response = multipart(config.scenePath, sourceFile, asset.mimeType, mapOf("model" to config.model))
             onProgress(0.9f)
@@ -269,6 +280,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
     override suspend fun processAudio(asset: MediaAsset, sourceFile: File, operation: String, onProgress: (Float) -> Unit): File =
         withContext(Dispatchers.IO) {
             require(asset.kind == MediaAssetKind.AUDIO || asset.kind == MediaAssetKind.VIDEO) { "当前素材不含可处理音频" }
+            require(config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process") { "当前服务商没有配置真实音频处理接口" }
             require(operation.matches(Regex("[A-Za-z0-9_-]{1,40}"))) { "音频处理操作名称无效" }
             onProgress(0.05f)
             val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation), expectedContentTypePrefix = "audio/")
@@ -350,7 +362,8 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         fields: Map<String, String>,
         expectedContentTypePrefix: String? = null
     ): ByteArray {
-        require(file.isFile && file.length() in 1..MAX_UPLOAD_BYTES) { "媒体文件不存在或超过 100 MB 上传限制" }
+        val uploadLimit = if (URI(config.baseUrl).host.equals("api.openai.com", true)) OPENAI_MAX_UPLOAD_BYTES else MAX_UPLOAD_BYTES
+        require(file.isFile && file.length() in 1..uploadLimit) { "媒体文件不存在或超过 ${uploadLimit / (1024 * 1024)} MB 上传限制" }
         require(mimeType.matches(Regex("[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+"))) { "媒体 MIME 类型无效" }
         val boundary = "NestroMedia-${UUID.randomUUID()}"
         val url = URL(config.baseUrl.trimEnd('/') + "/" + path.trimStart('/'))
@@ -401,6 +414,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
 
     companion object {
         private const val MAX_UPLOAD_BYTES = 100L * 1024 * 1024
+        private const val OPENAI_MAX_UPLOAD_BYTES = 25L * 1024 * 1024
         private const val MAX_RESPONSE_BYTES = 100 * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 20L * 1024 * 1024
         private const val MAX_JSON_RESPONSE_BYTES = 2 * 1024 * 1024
