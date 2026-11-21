@@ -17,7 +17,7 @@ object CalendarProviderBridge {
     fun canWrite(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
-    fun importEvents(context: Context, repository: CalendarRepository, from: Long, until: Long): Int {
+    suspend fun importEvents(context: Context, repository: CalendarRepository, from: Long, until: Long): Int {
         check(canRead(context)) { "尚未授予读取系统日历权限" }
         require(until > from) { "导入时间范围无效" }
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
@@ -62,7 +62,8 @@ object CalendarProviderBridge {
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis(),
                     sourceSystemEventId = systemEventId,
-                    sourceSystemCalendarId = systemCalendarId
+                    sourceSystemCalendarId = systemCalendarId,
+                    sourceSystemImported = true
                 )
                 repository.save(event)
                 imported++
@@ -71,13 +72,13 @@ object CalendarProviderBridge {
         return imported
     }
 
-    fun exportEvents(context: Context, repository: CalendarRepository, from: Long, until: Long): Int {
+    suspend fun exportEvents(context: Context, repository: CalendarRepository, from: Long, until: Long): Int {
         check(canWrite(context)) { "尚未授予写入系统日历权限" }
         val target = writableCalendars(context).firstOrNull()
             ?: error("没有可写入的系统日历，请先在系统日历应用中创建或启用一个日历")
         val zone = ZoneId.systemDefault().id
-        val events = kotlinx.coroutines.runBlocking { repository.allEvents() }
-            .filter { it.startAt < until && it.endAt >= from && !it.completed && it.sourceSystemEventId == null }
+        val events = repository.allEvents()
+            .filter { it.startAt < until && it.endAt >= from && !it.completed && !it.sourceSystemImported }
         var written = 0
         events.forEach { event ->
             val values = ContentValues().apply {
@@ -97,10 +98,25 @@ object CalendarProviderBridge {
                     CalendarRules.YEARLY -> put(CalendarContract.Events.RRULE, "FREQ=YEARLY")
                 }
             }
-            val inserted = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-                ?: error("系统日历拒绝写入：${event.title}")
-            val systemEventId = inserted.lastPathSegment?.toLongOrNull()
-                ?: error("系统日历未返回事件编号")
+            val linkedId = event.sourceSystemEventId
+            val linkedCalendarId = event.sourceSystemCalendarId ?: target.id
+            val updated = linkedId?.let { id ->
+                context.contentResolver.update(
+                    CalendarContract.Events.CONTENT_URI, values,
+                    "${CalendarContract.Events._ID}=? AND ${CalendarContract.Events.CALENDAR_ID}=?",
+                    arrayOf(id.toString(), linkedCalendarId.toString())
+                )
+            } ?: 0
+            val systemEventId = if (updated > 0 && linkedId != null) linkedId else {
+                val inserted = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+                    ?: error("系统日历拒绝写入：${event.title}")
+                inserted.lastPathSegment?.toLongOrNull() ?: error("系统日历未返回事件编号")
+            }
+            context.contentResolver.delete(
+                CalendarContract.Reminders.CONTENT_URI,
+                "${CalendarContract.Reminders.EVENT_ID}=?",
+                arrayOf(systemEventId.toString())
+            )
             if (event.reminderMinutes >= 0) {
                 val reminder = ContentValues().apply {
                     put(CalendarContract.Reminders.EVENT_ID, systemEventId)
@@ -111,7 +127,8 @@ object CalendarProviderBridge {
             }
             repository.save(event.copy(
                 sourceSystemEventId = systemEventId,
-                sourceSystemCalendarId = target.id
+                sourceSystemCalendarId = target.id,
+                sourceSystemImported = false
             ))
             written++
         }
