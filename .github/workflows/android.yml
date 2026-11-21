@@ -36,7 +36,8 @@ jobs:
       - name: Set up Gradle
         id: setup_gradle
         uses: gradle/actions/setup-gradle@v6
-
+        with:
+          gradle-version: "8.10.2"
       - name: Compile production Kotlin
         run: gradle --no-daemon --stacktrace compileDebugKotlin
 
@@ -90,7 +91,8 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-
+        with:
+          gradle-version: "8.10.2"
       - name: Run Android instrumentation tests on emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
