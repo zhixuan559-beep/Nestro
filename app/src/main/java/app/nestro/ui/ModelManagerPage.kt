@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -53,6 +54,7 @@ internal fun ModelManager(
     onDiscoverModels: suspend (ModelProvider, String) -> List<String>
 ) {
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
     var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
     var revealKey by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -145,6 +147,14 @@ internal fun ModelManager(
                     }
                 }) { Text(if (existingPreset == null) "添加" else "选择") }
             }
+        }
+
+        ModelProviderPresetCatalog.byId("modelscope")?.let { preset ->
+            OutlinedButton(
+                onClick = { preset.accountUrl?.let(uriHandler::openUri) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("打开魔搭账号 · 获取访问令牌") }
+            Text("魔搭官方 OAuth 需要应用登记与安全的服务端换取 Token；当前版本先提供官方令牌页直达，不会把账号密码交给 Nestro。", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
 
         Text("服务商", color = Ink, style = MaterialTheme.typography.titleSmall)
@@ -342,7 +352,9 @@ internal fun ModelManager(
             Text("模型", color = Ink, style = MaterialTheme.typography.titleSmall)
             registry.models.filter { it.providerId == selectedProviderId }.forEach { item ->
                 val providerProtocol = registry.providers.firstOrNull { it.id == item.providerId }?.protocol
-                val protocolReady = providerProtocol == app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
+                val protocolReady = providerProtocol == app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS ||
+                    providerProtocol == app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ||
+                    providerProtocol == app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT
                 val available = item in registry.selectableModels() && protocolReady
                 Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -351,7 +363,7 @@ internal fun ModelManager(
                             Text(item.modelCode, color = Muted, style = MaterialTheme.typography.bodySmall)
                             Text(
                                 when {
-                                    !protocolReady -> "原生协议适配尚未完成，暂不可启用"
+                                    !protocolReady -> "该协议暂不可启用"
                                     available -> "可用"
                                     else -> "缺少可用 Key 或已停用"
                                 },
