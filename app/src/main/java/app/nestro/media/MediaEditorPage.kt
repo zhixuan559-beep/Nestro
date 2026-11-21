@@ -82,6 +82,7 @@ fun MediaEditorPage(
     var showAiConsent by remember(projectId) { mutableStateOf(false) }
     var detectedScenes by remember(projectId) { mutableStateOf(emptyList<MediaScene>()) }
     var imageAnalysis by remember(projectId) { mutableStateOf("") }
+    var videoPromptDraft by remember(projectId) { mutableStateOf("") }
     var activeMediaAiTaskId by remember(projectId) { mutableStateOf("") }
     var mediaAiTasks by remember(projectId) { mutableStateOf(emptyList<MediaAiTask>()) }
     var mediaAiProgress by remember(projectId) { mutableStateOf(0f) }
@@ -224,6 +225,10 @@ fun MediaEditorPage(
                                 status = "场景分析完成："+detectedScenes.size+" 个场景。"
                             }
                             "audio" -> { reload(); status = "音频处理结果已作为新素材保存，原始音频未修改。" }
+                            "video" -> {
+                                reload()
+                                status = "视频生成完成，已保存到当前项目素材库。你可以预览、加入时间线或继续让主模型修改提示词后重新生成。"
+                            }
                             "image" -> { imageAnalysis = result.optString("text"); status = "图片理解完成。" }
                             else -> error("媒体 AI 任务返回未知结果类型")
                         }
@@ -361,6 +366,30 @@ fun MediaEditorPage(
         showAiConsent = true
     }
 
+    fun enqueueVideoGeneration() {
+        val config = MediaProviderConfigStore(context).read()
+        if (config == null || config.videoGenerationModel.isBlank()) {
+            status = "当前媒体服务商没有配置视频生成模型。请在上方填写模型 ID 和异步任务接口路径并保存。"
+            return
+        }
+        if (videoPromptDraft.isBlank()) {
+            status = "先填写视频生成提示词。"
+            return
+        }
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { MediaVideoGeneration.enqueue(context, projectId, config.providerId, videoPromptDraft.trim()) }
+            }
+            result.onSuccess { task ->
+                activeMediaAiTaskId = task.id
+                mediaAiRunning = true
+                mediaAiProgress = 0f
+                mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                status = "视频生成任务已提交。生成过程在后台运行，完成后视频会自动保存到当前项目。"
+            }.onFailure { status = "视频生成任务提交失败：" + (it.message ?: "配置无效") }
+        }
+    }
+
     if (showAiConsent) {
         AlertDialog(
             onDismissRequest = { showAiConsent = false },
@@ -400,6 +429,25 @@ fun MediaEditorPage(
         Text("项目隔离的本地素材库、多轨时间线、非破坏性剪辑、字幕编辑与后台 MP4 导出。", style = MaterialTheme.typography.bodySmall)
         Text(status, style = MaterialTheme.typography.bodySmall)
         MediaProviderSettingsCard()
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("AI 视频生成", style = MaterialTheme.typography.titleMedium)
+                Text("主聊天模型负责理解需求和修改提示词；已配置的视频模型负责生成成品。生成结果会自动进入当前项目素材库。", style = MaterialTheme.typography.bodySmall)
+                TextField(
+                    value = videoPromptDraft,
+                    onValueChange = { videoPromptDraft = it.take(12_000) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("视频生成提示词") },
+                    minLines = 3
+                )
+                Button(
+                    onClick = { enqueueVideoGeneration() },
+                    enabled = !mediaAiRunning && videoPromptDraft.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (mediaAiRunning) "媒体任务处理中…" else "生成视频") }
+                Text("注意：上方通用聊天接口连通测试不代表视频生成接口已验证。首次生成会实际提交视频任务，可能产生服务商费用。", style = MaterialTheme.typography.bodySmall)
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { importLauncher.launch(arrayOf("video/*", "audio/*", "image/*")) }) { Text("导入素材") }
             OutlinedButton(onClick = { scope.launch { runCatching { reload() }.onFailure { status = it.message ?: "刷新失败" } } }) { Text("刷新") }
