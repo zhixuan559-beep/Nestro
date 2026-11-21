@@ -134,6 +134,7 @@ internal fun NavigationDrawerContent(
         DrawerItem("麦", "语音输入") { onNavigate("voice") }
         DrawerItem("▣", "产物库") { onNavigate("artifacts") }
         DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
+        DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
         DrawerItem("✦", "我的专家") { onNavigate("experts") }
         DrawerItem("♧", "专家团队") { onNavigate("teams") }
         DrawerItem("◇", "能力中心") { onNavigate("skills") }
