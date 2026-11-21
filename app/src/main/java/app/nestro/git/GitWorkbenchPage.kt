@@ -351,7 +351,7 @@ fun GitWorkbenchPage(context: Context) {
                     revertTarget = null
                     if (current != null) scope.launch {
                         loading = true
-                        runCatching { repo.revert(current.id, target.id) }
+                        runCatching { repo.revert(current.id, target.id, author, email) }
                             .onSuccess { status = it.message + if (it.conflicts.isEmpty()) "" else "\n冲突：" + it.conflicts.joinToString(); refreshWorkspace(current.id) }
                             .onFailure { status = it.message ?: "回滚失败" }
                         loading = false
