@@ -235,7 +235,7 @@ internal class GeneratedPluginFactory(
 id 使用小写命名空间，例如 media.video-brief；version 使用 SemVer。
 inputs 是 [{name,required,description}]。
 steps 是按顺序执行的数组，每项为 {id,tool_id,arguments,result_key}。
-tool_id 必须来自当前工具目录；arguments 的值只能是普通文本，或 ${'
+tool_id 必须来自当前工具目录；arguments 的值只能是普通文本，或 ${'$'}{input.field} / ${'$'}{steps.previous_result.output} 模板。
 禁止生成 Kotlin/Java/Python/JavaScript/shell 代码，禁止任意网络、文件、设备权限声明，禁止引用不存在的工具。
 插件只组合现有已注册工具，所有执行仍由 Nestro 统一 AgentRuntime 和权限路由处理。
 已存在的插件 ID：${existingPluginIds.take(100).joinToString(",").ifBlank { "无" }}。
