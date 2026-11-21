@@ -191,7 +191,7 @@ fun VoiceSystemPage() {
                     callbackSession.set(activeSession)
                     realtimeSessionRef.set(activeSession)
                     try {
-                        val audio = RealtimeVoiceAudioController(activeSession) { message ->
+                        val audio = RealtimeVoiceAudioController(context, activeSession) { message ->
                             activeSession.close()
                             mainHandler.post { status = message }
                         }
