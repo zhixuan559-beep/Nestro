@@ -103,6 +103,16 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
 
     suspend fun loadReview(id: String): CoworkbenchReview = lock.withLock { loadReviewUnlocked(id) }
 
+    suspend fun listSnapshots(repositoryId: String): List<CoworkbenchSnapshot> = lock.withLock {
+        require(repositoryId.isNotBlank()) { "仓库标识无效" }
+        snapshots.listFiles().orEmpty()
+            .filter { it.isFile && it.extension == "json" && it.length() in 1..5_000_000 }
+            .mapNotNull { file -> runCatching { decodeSnapshot(JSONObject(file.readText(Charsets.UTF_8))) }.getOrNull() }
+            .filter { it.repositoryId == repositoryId }
+            .sortedByDescending { it.createdAt }
+            .take(50)
+    }
+
     suspend fun applyApproved(reviewId: String, expectedHash: String, explicitlyApproved: Boolean): CoworkbenchSnapshot = lock.withLock {
         require(explicitlyApproved) { "未取得用户明确批准，禁止应用补丁" }
         val review = loadReviewUnlocked(reviewId)
