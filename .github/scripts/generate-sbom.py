@@ -21,7 +21,7 @@ def parse_components(report: str):
     components = {}
     configuration = None
     configuration_pattern = re.compile(
-        r"^\\s*(debugRuntimeClasspath|releaseRuntimeClasspath)\\s+-"
+        r"^\s*(debugRuntimeClasspath|releaseRuntimeClasspath)\s+-"
     )
     for raw in report.splitlines():
         if len(raw) > 4_000:
@@ -104,17 +104,10 @@ def main():
     components = parse_components(report)
     if not components:
         raise SystemExit("未解析到已解析的 Maven 依赖，拒绝输出空 SBOM")
-    covered_configurations = {
-        configuration
-        for component in components
-        for prop in component.get("properties", [])
-        if prop.get("name") == "nestro:gradle:configurations"
-        for configuration in prop.get("value", "").split(",")
-    }
-    required_configurations = {"debugRuntimeClasspath", "releaseRuntimeClasspath"}
-    if not required_configurations.issubset(covered_configurations):
-        missing = sorted(required_configurations - covered_configurations)
-        raise SystemExit("SBOM 缺少实际依赖来源：" + ", ".join(missing))
+    try:
+        require_configuration_coverage(components)
+    except ValueError as error:
+        raise SystemExit(str(error))
     build_file = Path("app/build.gradle.kts")
     if not build_file.is_file() or build_file.stat().st_size > 1_000_000:
         raise SystemExit("无法读取受限大小内的 app/build.gradle.kts 版本信息")
