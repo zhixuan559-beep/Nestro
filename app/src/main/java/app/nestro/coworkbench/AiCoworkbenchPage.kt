@@ -356,6 +356,14 @@ fun AiCoworkbenchPage(
                     Text(job.logExcerpt.take(12_000), style = MaterialTheme.typography.bodySmall)
                 }
             }
+            result.artifacts.forEach { artifact ->
+                Text("构建产物：${artifact.name} · ${artifact.sizeBytes} bytes",
+                    style = MaterialTheme.typography.titleSmall)
+                artifact.files.forEach { report ->
+                    Text(report.path, style = MaterialTheme.typography.labelMedium)
+                    Text(report.content.take(12_000), style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         if (busy) CircularProgressIndicator()
         if (status.isNotBlank()) Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
