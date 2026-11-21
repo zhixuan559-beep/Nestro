@@ -43,4 +43,14 @@ class CoworkbenchPolicyTest {
         assertTrue(CoworkbenchPolicy.impact("new.txt", null, "new").contains("新增文件"))
         assertTrue(CoworkbenchPolicy.impact("old.txt", "old", null).contains("删除文件"))
     }
+    @Test fun stagedApprovalSelectsOnlyReviewedFiles() {
+        val files = listOf(
+            CoworkbenchFileReview("a.txt", "old-a", "new-a", "-old-a\\n+new-a", emptyList()),
+            CoworkbenchFileReview("b.txt", "old-b", "new-b", "-old-b\\n+new-b", emptyList())
+        )
+        assertEquals(listOf("b.txt"), CoworkbenchPolicy.selectStage(files, setOf("b.txt")).map { it.path })
+        assertFalse(runCatching { CoworkbenchPolicy.selectStage(files, emptySet()) }.isSuccess)
+        assertFalse(runCatching { CoworkbenchPolicy.selectStage(files, setOf("outside.txt")) }.isSuccess)
+    }
+
 }
