@@ -12,4 +12,12 @@ class AdaptiveLayoutPolicyTest {
         assertEquals(320, adaptiveDrawerWidthDp(600))
         assertEquals(360, adaptiveDrawerWidthDp(840))
     }
+
+    @Test
+    fun contentSpacingScalesWithAvailableWidth() {
+        assertEquals(12, adaptiveContentPaddingDp(320))
+        assertEquals(16, adaptiveContentPaddingDp(390))
+        assertEquals(24, adaptiveContentPaddingDp(700))
+        assertEquals(32, adaptiveContentPaddingDp(1000))
+    }
 }
