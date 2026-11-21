@@ -69,6 +69,18 @@ internal class ChatStreamingCoordinator(
         const val PERSIST_EVERY_CHARS = 256
         const val PERSIST_EVERY_MILLIS = 1_500L
     }
+
+    fun persistPartial(
+        requestId: String,
+        conversationId: String,
+        projectId: String,
+        prompt: String,
+        partialAnswer: String,
+        startedAt: Long
+    ) {
+        partialStateStore.persist(requestId, conversationId, projectId, prompt, partialAnswer, startedAt)
+    }
+
     suspend fun execute(
         configs: List<ModelConfig>,
         history: List<ChatMessage>,
