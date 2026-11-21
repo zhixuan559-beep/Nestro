@@ -45,6 +45,7 @@ fun GitWorkbenchPage(context: Context) {
     var newBranch by remember { mutableStateOf("") }
     var newFilePath by remember { mutableStateOf("") }
     var pendingDeleteFile by remember { mutableStateOf("") }
+    var pendingDeleteRepo by remember { mutableStateOf("") }
     var revertTarget by remember { mutableStateOf<GitCommitRecord?>(null) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -326,11 +327,34 @@ fun GitWorkbenchPage(context: Context) {
                             loading = false
                         }
                     }) { Text("移除仓库（保留文件）") }
+                    TextButton(enabled = !loading, onClick = { pendingDeleteRepo = selectedLocal.id }) { Text("彻底删除本地副本") }
                 }
             }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (pendingDeleteRepo.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteRepo = "" },
+            title = { Text("彻底删除本地仓库？") },
+            text = { Text("将删除应用私有目录中的完整仓库副本和本地提交记录；远程仓库不受影响。此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = pendingDeleteRepo
+                    pendingDeleteRepo = ""
+                    scope.launch {
+                        loading = true
+                        runCatching { repo.removeLocal(id, true) }
+                            .onSuccess { refreshLocals(); status = "本地仓库副本已删除。" }
+                            .onFailure { status = it.message ?: "删除失败" }
+                        loading = false
+                    }
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDeleteRepo = "" }) { Text("取消") } }
+        )
     }
 
     if (pendingDeleteFile.isNotBlank()) {
