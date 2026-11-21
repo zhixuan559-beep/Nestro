@@ -34,7 +34,9 @@ object SkillDependencyResolver {
             val ranges = state.constraints[unresolved].orEmpty()
             val installed = installedVersions[unresolved]
             if (installed != null && ranges.all { runCatching { SkillSemVer.matches(installed, it) }.getOrDefault(false) }) {
-                return search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
+                val installedSolution = search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
+                if (installedSolution != null) return installedSolution
+                // A later dependency may add a stricter range; then try a signed catalog version instead.
             }
             val candidates = byName[unresolved].orEmpty()
                 .filter { release -> ranges.all { runCatching { SkillSemVer.matches(release.version, it) }.getOrDefault(false) } }
