@@ -52,11 +52,13 @@ class SpeechProviderConfigStore(context: Context) {
         check(preferences.edit().remove(METADATA_KEY).commit()) { "语音服务配置删除失败" }
     }
 
-    private fun readProviderId(): String? = runCatching {
-        JSONObject(preferences.getString(METADATA_KEY, null) ?: return null)
-            .optString("providerId")
-            .takeIf { it.matches(Regex("[a-zA-Z0-9._-]{1,80}")) }
-    }.getOrNull()
+    private fun readProviderId(): String? {
+        val raw = preferences.getString(METADATA_KEY, null) ?: return null
+        return runCatching {
+            JSONObject(raw).optString("providerId")
+                .takeIf { it.matches(Regex("[a-zA-Z0-9._-]{1,80}")) }
+        }.getOrNull()
+    }
 
     private fun keyId(providerId: String) = "speech-provider-$providerId"
 
