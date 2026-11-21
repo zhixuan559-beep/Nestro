@@ -46,7 +46,8 @@ data class CoworkbenchValidationResult(
     val url: String,
     val createdAt: String,
     val jobs: List<CoworkbenchJobResult> = emptyList(),
-    val artifacts: List<CoworkbenchArtifactReport> = emptyList()
+    val artifacts: List<CoworkbenchArtifactReport> = emptyList(),
+    val diagnostics: List<String> = emptyList()
 ) {
     val completed: Boolean get() = status == "completed"
     val successful: Boolean get() = completed && conclusion == "success"
@@ -132,21 +133,24 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             if (found != null) {
                 visibleSince = visibleSince ?: System.currentTimeMillis()
                 if (found.completed) {
+                    val diagnostics = mutableListOf<String>()
                     val jobs = try {
                         loadJobResults(fullName, token, found.runId)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Exception) {
+                    } catch (error: Exception) {
+                        diagnostics += "Job/Step 与日志读取失败：" + (error.message ?: "未知错误")
                         emptyList()
                     }
                     val artifacts = try {
                         loadArtifactReports(fullName, token, found.runId)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Exception) {
+                    } catch (error: Exception) {
+                        diagnostics += "构建产物/测试报告读取失败：" + (error.message ?: "未知错误")
                         emptyList()
                     }
-                    return@withContext found.copy(jobs = jobs, artifacts = artifacts)
+                    return@withContext found.copy(jobs = jobs, artifacts = artifacts, diagnostics = diagnostics)
                 }
             } else if (visibleSince == null && System.currentTimeMillis() - startedAt > 90_000L) {
                 error("已触发 Workflow，但 90 秒内未找到对应运行记录；请检查 workflow_dispatch、分支和仓库 Actions 设置")
@@ -204,8 +208,8 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 downloadJobLog(repository, token, jobId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                "日志暂不可读取"
+            } catch (error: Exception) {
+                "日志暂不可读取：" + (error.message ?: "未知错误")
             }
             CoworkbenchJobResult(
                 jobId,
