@@ -110,3 +110,13 @@ Finish all feature code and architecture integration first. Only then run the ag
 ### 验收边界
 - 本轮新增/修改均只提交代码和测试源码；按用户要求，尚未运行编译、JVM 测试、Lint、模拟器或真机验收。
 - 设备全面适配与高响应/低资源专项优化仍在功能代码补齐之后进行，不提前开始统一验收。
+
+
+## Native tool calling and multimodal media integration
+
+- Added provider-native function calling for OpenAI-compatible Chat Completions, Anthropic Messages, and Gemini Generate Content. Native tool calls are preferred; the text decision protocol remains only for providers that explicitly reject function calling.
+- Tool schemas are provider-shaped, tool results are re-injected using the corresponding protocol, and the loop is bounded. Authentication/network failures do not trigger a duplicate legacy model request.
+- Added a separate asynchronous video generation provider path with video-only provider support, custom submit/status routes, configurable request/response field names, authentication header/prefix, and extra request JSON.
+- Video generation tasks run through WorkManager, persist progress and revision lineage, download HTTPS outputs under size/host constraints, and import assets into the current project.
+- Chat responses expose actions to open generated assets in the media editor or open the secure provider setup screen.
+- Remaining validation and broader optimization work are still pending; no acceptance tests were run in this implementation phase.
