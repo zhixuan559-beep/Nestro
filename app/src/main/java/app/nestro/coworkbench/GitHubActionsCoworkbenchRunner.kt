@@ -105,7 +105,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
         executeCancellable(branchRequest).use { response ->
             require(response.isSuccessful) {
                 if (response.code == 404) "目标分支尚未推送到 GitHub；请先推送本地已审查变更。"
-                else "检查远程分支失败（HTTP ${response.code}）；请确认仓库读取权限。"
+                else permissionDiagnostic(response, "检查远程分支失败")
             }
         }
         val base = repositoryApi + "/actions/workflows/" + encodedWorkflow
@@ -119,7 +119,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
             val body = response.body?.string().orEmpty()
             require(response.isSuccessful) {
                 when (response.code) {
-                    401, 403 -> "读取 Workflow 失败：GitHub 账号需要 Actions 读取权限，并具备触发权限。"
+                    401, 403 -> permissionDiagnostic(response, "读取 Workflow 失败")
                     404 -> "GitHub 未找到该 Workflow；请确认文件已推送到默认分支且位于 .github/workflows。"
                     else -> "Workflow 预检失败（HTTP ${response.code}）：${body.take(500)}"
                 }
@@ -156,7 +156,7 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 require(response.code == 204) {
                     val body = response.body?.string().orEmpty().take(1200)
                     when (response.code) {
-                        401, 403 -> "GitHub 拒绝访问 Actions；请检查账号权限与 Actions 写入授权。"
+                        401, 403 -> permissionDiagnostic(response, "触发远程隔离构建失败")
                         404 -> "未找到该 Workflow，或它未声明 workflow_dispatch；请先推送分支并启用手动触发。"
                         else -> "触发远程隔离构建失败（HTTP " + response.code + "）：" + body
                     }
@@ -171,7 +171,10 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 .get().build()
             val found = executeCancellable(request).use { response ->
                 val body = response.body?.string().orEmpty()
-                require(response.isSuccessful) { "读取远程构建状态失败（HTTP " + response.code + "）：" + body.take(1000) }
+                require(response.isSuccessful) {
+                    if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取远程构建状态失败")
+                    else "读取远程构建状态失败（HTTP " + response.code + "）：" + body.take(1000)
+                }
                 val runs = JSONObject(body).optJSONArray("workflow_runs") ?: org.json.JSONArray()
                 (0 until runs.length()).mapNotNull { index ->
                     val row = runs.optJSONObject(index) ?: return@mapNotNull null
@@ -295,6 +298,20 @@ class GitHubActionsCoworkbenchRunner(context: Context) {
                 }
             })
         }
+
+    private fun permissionDiagnostic(response: okhttp3.Response, operation: String): String {
+        val accepted = response.header("X-Accepted-GitHub-Permissions")
+            ?.take(300)?.takeIf { it.isNotBlank() }
+        val classicScopes = response.header("X-OAuth-Scopes")
+            ?.take(300)?.takeIf { it.isNotBlank() }
+        val hints = buildList {
+            accepted?.let { add("GitHub 接口要求权限：$it") }
+            classicScopes?.let { add("Classic PAT 当前 scopes：$it") }
+        }
+        return operation + "（HTTP " + response.code + "）：" +
+            (hints.joinToString("；").ifBlank { "GitHub 未返回可读取的权限提示" }) +
+            "。请在 GitHub Token 设置中补齐仓库 Contents: read、Actions: read；触发工作流还需要 Actions: write。不会通过试探性请求启动工作流。"
+    }
 
     private suspend fun loadJobResults(
         repository: String,
