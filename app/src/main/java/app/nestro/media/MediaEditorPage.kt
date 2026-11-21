@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +67,7 @@ fun MediaEditorPage(
     val scope = rememberCoroutineScope()
     var assets by remember(projectId) { mutableStateOf(emptyList<MediaAsset>()) }
     var timeline by remember(projectId) { mutableStateOf(MediaTimeline.empty(projectId)) }
+    val latestTimeline by rememberUpdatedState(timeline)
     var tasks by remember(projectId) { mutableStateOf(emptyList<MediaRenderTask>()) }
     var status by remember(projectId) { mutableStateOf("导入本地视频、音频或图片，素材只保存在当前项目。") }
     var selectedAssetId by remember(projectId) { mutableStateOf("") }
@@ -192,7 +194,7 @@ fun MediaEditorPage(
                 }
                 mediaAiProgress = task.progress / 100f
                 if (task.status == MediaAiTaskStatus.COMPLETED) {
-                    runCatching {
+                    val applyResult = runCatching {
                         val result = JSONObject(task.resultJson)
                         when (result.optString("type")) {
                             "transcribe" -> {
@@ -201,7 +203,11 @@ fun MediaEditorPage(
                                     val row = rows.getJSONObject(index)
                                     MediaSubtitleCue(row.getString("id"), row.getLong("startMs"), row.getLong("endMs"), row.getString("text"))
                                 }
-                                persist(timeline.copy(subtitles = (timeline.subtitles + cues).sortedBy { it.startMs }))
+                                val existingIds = latestTimeline.subtitles.map { it.id }.toSet()
+                                val merged = (latestTimeline.subtitles + cues.filterNot { it.id in existingIds }).sortedBy { it.startMs }
+                                val next = latestTimeline.copy(subtitles = merged)
+                                withContext(Dispatchers.IO) { MediaProjectStore.saveTimeline(context, projectId, next) }
+                                timeline = next
                                 status = "AI 字幕已生成："+cues.size+" 条。"
                             }
                             "scenes" -> {
@@ -216,7 +222,13 @@ fun MediaEditorPage(
                             "image" -> { imageAnalysis = result.optString("text"); status = "图片理解完成。" }
                             else -> error("媒体 AI 任务返回未知结果类型")
                         }
-                    }.onFailure { status = "读取媒体 AI 结果失败："+(it.message ?: "结果格式无效") }
+                    }
+                    val applyError = applyResult.exceptionOrNull()?.message.orEmpty()
+                    if (applyError.isNotBlank()) status = "读取/保存媒体 AI 结果失败："+applyError
+                    withContext(Dispatchers.IO) {
+                        MediaAiTaskStore.update(applicationContext = context, projectId = projectId, taskId = task.id,
+                            status = MediaAiTaskStatus.COMPLETED, resultConsumed = true, errorMessage = applyError)
+                    }
                     mediaAiRunning = false
                     activeMediaAiTaskId = ""
                     break
