@@ -21,6 +21,9 @@ import java.nio.file.StandardCopyOption
 import java.security.KeyStore
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.stream.Collectors
+import org.eclipse.jgit.transport.RefSpec
+import org.eclipse.jgit.api.CreateBranchCommand
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -222,7 +225,9 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
                     if (query.isBlank()) "" else "&q=" + enc(query)
             }
             val raw = request(account, token, path)
-            val array = JSONArray(raw)
+            val array = if (account.provider == GitProvider.GITHUB && query.isNotBlank()) {
+                JSONObject(raw).optJSONArray("items") ?: JSONArray()
+            } else JSONArray(raw)
             (0 until array.length()).mapNotNull { i ->
                 val row = array.optJSONObject(i) ?: return@mapNotNull null
                 val fullName = when (account.provider) {
@@ -339,7 +344,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
                     val file = path.toFile()
                     GitFileEntry(base.relativize(path).toString().replace(File.separatorChar, '/'),
                         file.isDirectory, if (file.isFile) file.length() else 0L)
-                }.toList().sortedBy { it.path }
+                }.collect(Collectors.toList()).sortedBy { it.path }
         }
     }
 
@@ -379,21 +384,30 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     suspend fun createBranch(id: String, name: String, checkout: Boolean = true) = withRepo(id) { git ->
         require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
         require(git.repository.findRef("refs/heads/$name") == null) { "本地分支已存在" }
-        git.branchCreate().setName(name).call()
-        if (checkout) {
-            require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
-            git.checkout().setName(name).call()
-        }
+        if (checkout) require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
+        val defaultBranch = requireLocal(id).defaultBranch
+        git.branchCreate().setName(name).setStartPoint("origin/$defaultBranch")
+            .setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM).call()
+        if (checkout) git.checkout().setName(name).call()
     }
 
     suspend fun checkout(id: String, name: String) = withRepo(id) { git ->
         require(GitWorkbenchPolicy.validBranchName(name)) { "分支名称无效" }
         require(git.status().call().isClean) { "工作区有未提交修改，请先提交或暂存后再切换分支" }
-        git.checkout().setName(name).call()
+        val remoteRef = "refs/remotes/origin/$name"
+        if (git.repository.findRef("refs/heads/$name") == null && git.repository.findRef(remoteRef) != null) {
+            git.checkout().setCreateBranch(true).setName(name)
+                .setStartPoint("origin/$name")
+                .setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM).call()
+        } else {
+            git.checkout().setName(name).call()
+        }
     }
 
     suspend fun branches(id: String): List<String> = withRepo(id) { git ->
-        git.branchList().call().map { it.name.removePrefix("refs/heads/") }.sorted()
+        git.branchList().setListMode(org.eclipse.jgit.lib.ListBranchCommand.ListMode.ALL).call()
+            .map { it.name.removePrefix("refs/heads/").removePrefix("refs/remotes/") }
+            .filterNot { it == "origin/HEAD" }.distinct().sorted()
     }
 
     suspend fun commit(id: String, message: String, authorName: String, authorEmail: String): String = withRepo(id) { git ->
@@ -406,6 +420,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
     }
 
     suspend fun pull(id: String): GitOperationResult = withRepo(id) { git ->
+        require(git.status().call().isClean) { "工作区存在未提交变更，请先提交或暂存后再拉取" }
         val result = git.pull().setCredentialsProvider(credentials(requireAccount(requireLocal(id).accountId)))
             .setRebase(false).call()
         val merge = result.mergeResult
@@ -419,7 +434,9 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
 
     suspend fun push(id: String): GitOperationResult = withRepo(id) { git ->
         val account = requireAccount(requireLocal(id).accountId)
-        val results = git.push().setCredentialsProvider(credentials(account)).call()
+        val branch = git.repository.branch
+        val results = git.push().setCredentialsProvider(credentials(account))
+            .setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call()
         val messages = results.flatMap { it.remoteUpdates }.map { it.status.name }
         val failed = messages.any { it !in setOf("OK", "UP_TO_DATE") }
         GitOperationResult(!failed, if (failed) "推送未完成：" + messages.distinct().joinToString("、") else "推送完成。")
@@ -445,7 +462,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val commit = git.repository.resolve(commitId + "^{commit}") ?: error("找不到指定提交")
         val result = git.revert().include(commit).call()
         if (result.status == org.eclipse.jgit.api.RevertResult.Status.CONFLICTING) {
-            GitOperationResult(false, "回滚产生冲突，请人工处理。", result.confailingPaths)
+            GitOperationResult(false, "回滚产生冲突，请人工处理。", result.failingPaths?.keys?.toList().orEmpty())
         } else {
             GitOperationResult(true, "已生成反向提交：" + (result.newHead?.name ?: "完成"))
         }
