@@ -43,7 +43,7 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:7.8.0.202609011348-r")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
