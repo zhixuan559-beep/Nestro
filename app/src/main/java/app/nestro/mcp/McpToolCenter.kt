@@ -163,14 +163,14 @@ private object McpCredentialVault {
  fun write(c:Context,id:String,token:String){
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")));require(token.length<=4096 && (token.isBlank() || token.matches(Regex("[A-Za-z0-9._~+/-]+=*")))){"Bearer Token 格式无效"}
   if(token.isBlank()){delete(c,id);return}
-  val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key())
+  val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());cipher.updateAAD(id.toByteArray(Charsets.UTF_8))
   val packed=Base64.encodeToString(cipher.iv,Base64.NO_WRAP)+":"+Base64.encodeToString(cipher.doFinal(token.toByteArray(Charsets.UTF_8)),Base64.NO_WRAP)
   check(c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).edit().putString(PREFIX+id,packed).commit()){"MCP 凭据加密保存失败"}
  }
  fun read(c:Context,id:String):String{
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
   val packed=c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).getString(PREFIX+id,null)?:return ""
-  return runCatching{val p=packed.split(":");require(p.size==2);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(p[0],Base64.NO_WRAP)));String(cipher.doFinal(Base64.decode(p[1],Base64.NO_WRAP)),Charsets.UTF_8)}.getOrDefault("")
+  return runCatching{val p=packed.split(":");require(p.size==2);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(p[0],Base64.NO_WRAP)));cipher.updateAAD(id.toByteArray(Charsets.UTF_8));String(cipher.doFinal(Base64.decode(p[1],Base64.NO_WRAP)),Charsets.UTF_8)}.getOrDefault("")
  }
  fun delete(c:Context,id:String){
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
