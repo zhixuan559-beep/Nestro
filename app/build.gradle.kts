@@ -44,6 +44,7 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.1.202505221210-r")
+    implementation("org.slf4j:slf4j-nop:2.0.13")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
