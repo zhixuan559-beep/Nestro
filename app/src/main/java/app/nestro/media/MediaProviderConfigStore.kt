@@ -10,7 +10,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import java.security.MessageDigest
+import java.util.Base64
 import java.util.UUID
 
 /**
@@ -110,7 +110,8 @@ class OpenAiCompatibleMediaIntelligenceProvider(
     override val capabilities: Set<MediaIntelligenceCapability> = setOf(
         MediaIntelligenceCapability.TRANSCRIPTION,
         MediaIntelligenceCapability.SCENE_DETECTION,
-        MediaIntelligenceCapability.AUDIO_PROCESSING
+        MediaIntelligenceCapability.AUDIO_PROCESSING,
+        MediaIntelligenceCapability.IMAGE_UNDERSTANDING
     )
 
     override suspend fun transcribe(asset: MediaAsset, sourceFile: File, languageTag: String, onProgress: (Float) -> Unit): List<MediaSubtitleCue> =
@@ -163,6 +164,67 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             output
         }
 
+    override suspend fun analyzeImage(asset: MediaAsset, sourceFile: File, prompt: String, onProgress: (Float) -> Unit): String =
+        withContext(Dispatchers.IO) {
+            require(asset.kind == MediaAssetKind.IMAGE) { "图片理解需要图片素材" }
+            require(sourceFile.isFile && sourceFile.length() in 1..MAX_IMAGE_BYTES) { "图片不存在或超过 20 MB" }
+            require(prompt.isNotBlank() && prompt.length <= 2_000) { "图片分析指令为空或过长" }
+            val mime = asset.mimeType.takeIf { it.matches(Regex("image/(jpeg|png|webp|gif)")) }
+                ?: error("当前图片格式不支持远程视觉分析")
+            val encoded = Base64.getEncoder().encodeToString(sourceFile.readBytes())
+            val dataUrl = "data:$mime;base64,$encoded"
+            val payload = JSONObject()
+                .put("model", config.model)
+                .put("messages", org.json.JSONArray().put(
+                    JSONObject().put("role", "user").put("content", org.json.JSONArray()
+                        .put(JSONObject().put("type", "text").put("text", prompt))
+                        .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUrl))))
+                )
+                .put("max_tokens", 1200)
+                .toString()
+            val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
+            val connection = url.openConnection() as? HttpURLConnection ?: error("无法建立媒体服务连接")
+            try {
+                connection.requestMethod = "POST"
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 120_000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                require(status in 200..299) { "图片理解请求失败（HTTP $status）" }
+                val body = connection.inputStream.use { input ->
+                    val out = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        require(out.size() + count <= MAX_JSON_RESPONSE_BYTES) { "图片理解响应超过 2 MB" }
+                        out.write(buffer, 0, count)
+                    }
+                    out.toByteArray()
+                }
+                val message = JSONObject(body.toString(Charsets.UTF_8))
+                    .optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                    ?: error("图片理解服务响应格式无效")
+                val content = message.opt("content")
+                val text = when (content) {
+                    is String -> content.trim()
+                    is org.json.JSONArray -> (0 until content.length()).mapNotNull { content.optJSONObject(it)?.optString("text") }
+                        .joinToString("\\n").trim()
+                    else -> ""
+                }
+                require(text.isNotBlank()) { "图片理解服务未返回文本" }
+                onProgress(1f)
+                text.take(20_000)
+            } finally {
+                connection.disconnect()
+            }
+        }
+
     private fun multipart(path: String, file: File, mimeType: String, fields: Map<String, String>): ByteArray {
         require(file.isFile && file.length() in 1..MAX_UPLOAD_BYTES) { "媒体文件不存在或超过 100 MB 上传限制" }
         require(mimeType.matches(Regex("[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+"))) { "媒体 MIME 类型无效" }
@@ -209,5 +271,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
     companion object {
         private const val MAX_UPLOAD_BYTES = 100L * 1024 * 1024
         private const val MAX_RESPONSE_BYTES = 100 * 1024 * 1024
+        private const val MAX_IMAGE_BYTES = 20L * 1024 * 1024
+        private const val MAX_JSON_RESPONSE_BYTES = 2 * 1024 * 1024
     }
 }
