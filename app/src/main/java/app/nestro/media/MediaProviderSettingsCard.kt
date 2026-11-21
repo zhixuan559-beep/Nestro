@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,7 +62,7 @@ fun MediaProviderSettingsCard() {
             Text("仅在你主动确认媒体分析时，才会把素材发送到这里。转写接口使用 OpenAI 兼容格式；场景识别和音频处理接口路径可按服务商文档调整。", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(apiKey, { apiKey = it }, label = { Text(if (configured) "新 API Key（留空不允许覆盖）" else "API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(apiKey, { apiKey = it }, label = { Text(if (configured) "新 API Key（留空不允许覆盖）" else "API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
             OutlinedTextField(model, { model = it }, label = { Text("模型名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
