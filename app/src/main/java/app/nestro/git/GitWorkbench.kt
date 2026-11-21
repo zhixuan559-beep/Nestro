@@ -578,7 +578,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val commit = git.repository.resolve(commitId + "^{commit}") ?: error("找不到指定提交")
         val result = git.revert().include(commit).call()
         if (result.status == org.eclipse.jgit.api.RevertResult.Status.CONFLICTING) {
-            GitOperationResult(false, "回滚产生冲突，请人工处理。", result.failingPaths?.keys?.toList().orEmpty())
+            GitOperationResult(false, "回滚产生冲突，请人工处理。", result.unmergedPaths.orEmpty())
         } else {
             GitOperationResult(true, "已生成反向提交：" + (result.newHead?.name ?: "完成"))
         }
