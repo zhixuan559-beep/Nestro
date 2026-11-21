@@ -309,7 +309,8 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                     JSONObject().put("role", "user").put("content", org.json.JSONArray()
                         .put(JSONObject().put("type", "text").put("text", prompt))
                         .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUrl))))
-                )
+                ))
+
                 .put("max_tokens", 1200)
                 .toString()
             val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
