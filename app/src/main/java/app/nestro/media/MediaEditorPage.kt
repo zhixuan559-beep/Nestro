@@ -113,6 +113,51 @@ fun MediaEditorPage(
         }
     }
 
+
+    LaunchedEffect(timeline.revision, assets) {
+        val hasVideo = timeline.tracks.any { it.kind == MediaTrackKind.VIDEO && it.clips.isNotEmpty() }
+        if (!hasVideo) {
+            player.stop()
+        } else {
+            val composition = withContext(Dispatchers.IO) {
+                runCatching { MediaRenderEngine.buildComposition(context, projectId) }
+            }
+            composition.onSuccess {
+                player.setComposition(it)
+                player.prepare()
+            }.onFailure {
+                status = "时间线预览暂不可用：" + (it.message ?: "媒体格式不受支持")
+            }
+        }
+    }
+
+    fun persist(next: MediaTimeline, onSaved: () -> Unit = {}) {
+        if (isSaving) {
+            status = "上一项时间线修改仍在保存，请稍后再操作。"
+            return
+        }
+        isSaving = true
+        val expectedRevision = timeline.revision
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { MediaProjectStore.saveTimeline(context, next, expectedRevision) }
+                }
+                result.onSuccess {
+                    timeline = it
+                    onSaved()
+                    status = "时间线已保存。"
+                }.onFailure {
+                    status = "保存失败：" + (it.message ?: "请刷新后重试")
+                    runCatching { reload() }
+                }
+            } finally {
+                isSaving = false
+            }
+        }
+    }
+
+
     LaunchedEffect(projectId, activeMediaAiTaskId) {
         if (activeMediaAiTaskId.isNotBlank()) {
             while (isActive && activeMediaAiTaskId.isNotBlank()) {
@@ -166,48 +211,6 @@ fun MediaEditorPage(
         }
     }
 
-    LaunchedEffect(timeline.revision, assets) {
-        val hasVideo = timeline.tracks.any { it.kind == MediaTrackKind.VIDEO && it.clips.isNotEmpty() }
-        if (!hasVideo) {
-            player.stop()
-        } else {
-            val composition = withContext(Dispatchers.IO) {
-                runCatching { MediaRenderEngine.buildComposition(context, projectId) }
-            }
-            composition.onSuccess {
-                player.setComposition(it)
-                player.prepare()
-            }.onFailure {
-                status = "时间线预览暂不可用：" + (it.message ?: "媒体格式不受支持")
-            }
-        }
-    }
-
-    fun persist(next: MediaTimeline, onSaved: () -> Unit = {}) {
-        if (isSaving) {
-            status = "上一项时间线修改仍在保存，请稍后再操作。"
-            return
-        }
-        isSaving = true
-        val expectedRevision = timeline.revision
-        scope.launch {
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    runCatching { MediaProjectStore.saveTimeline(context, next, expectedRevision) }
-                }
-                result.onSuccess {
-                    timeline = it
-                    onSaved()
-                    status = "时间线已保存。"
-                }.onFailure {
-                    status = "保存失败：" + (it.message ?: "请刷新后重试")
-                    runCatching { reload() }
-                }
-            } finally {
-                isSaving = false
-            }
-        }
-    }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
