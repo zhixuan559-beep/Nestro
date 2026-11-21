@@ -36,7 +36,9 @@ class SkillCommunityLifecycleStoreTest {
         assertTrue(store.canRollback("CommunitySkill"))
         store.rollback("CommunitySkill")
         assertEquals("old prompt", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
-        assertFalse(store.canRollback("CommunitySkill"))
+        assertTrue(store.canRollback("CommunitySkill"))
+        store.rollback("CommunitySkill")
+        assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
     }
 
     @Test fun uninstallRemovesOnlyCommunitySkillAndKeepsRollbackHistory() {
