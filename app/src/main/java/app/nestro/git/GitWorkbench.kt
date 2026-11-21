@@ -254,6 +254,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
 
     suspend fun repositories(account: GitAccount, token: String, query: String = ""): List<GitRemoteRepository> =
         withContext(Dispatchers.IO) {
+            require(query.length <= 200) { "仓库搜索词不能超过 200 个字符" }
             val path = when (account.provider) {
                 GitProvider.GITHUB -> if (query.isBlank()) "/user/repos?per_page=100&sort=updated" else
                     "/search/repositories?q=" + enc(query) + "&per_page=100"
@@ -266,6 +267,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
             val array = if (account.provider == GitProvider.GITHUB && query.isNotBlank()) {
                 JSONObject(raw).optJSONArray("items") ?: JSONArray()
             } else JSONArray(raw)
+            require(array.length() <= 100) { "远程仓库列表超过单次读取上限" }
             (0 until array.length()).mapNotNull { i ->
                 val row = array.optJSONObject(i) ?: return@mapNotNull null
                 val fullName = when (account.provider) {
@@ -278,7 +280,7 @@ class GitProviderApi(private val client: OkHttpClient = OkHttpClient.Builder()
                     GitProvider.GITLAB -> row.optString("http_url_to_repo")
                     GitProvider.GITEE -> row.optString("clone_url")
                 }
-                if (fullName.isBlank() || cloneUrl.isBlank()) return@mapNotNull null
+                if (fullName.isBlank() || fullName.length > 300 || cloneUrl.isBlank() || cloneUrl.length > 2000) return@mapNotNull null
                 GitRemoteRepository(
                     id = row.opt("id")?.toString() ?: fullName,
                     provider = account.provider,
