@@ -238,7 +238,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             } else {
                 mapOf("model" to config.transcriptionModel, "language" to languageTag.substringBefore('-'), "response_format" to "verbose_json")
             }
-            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields)
+            val response = multipart(config.transcriptionPath, sourceFile, asset.mimeType, transcriptionFields, onProgress = onProgress)
             onProgress(0.9f)
             val root = JSONObject(response.toString(Charsets.UTF_8))
             val segments = root.optJSONArray("segments")
@@ -263,7 +263,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(asset.kind == MediaAssetKind.VIDEO) { "场景识别需要视频素材" }
             require(config.scenePath.isNotBlank() && config.scenePath != "media/scenes") { "当前服务商没有配置真实场景识别接口" }
             onProgress(0.05f)
-            val response = multipart(config.scenePath, sourceFile, asset.mimeType, mapOf("model" to config.model))
+            val response = multipart(config.scenePath, sourceFile, asset.mimeType, mapOf("model" to config.model), onProgress = onProgress)
             onProgress(0.9f)
             val rows = JSONObject(response.toString(Charsets.UTF_8)).optJSONArray("scenes") ?: error("服务商响应缺少 scenes 数组")
             require(rows.length() <= 500) { "场景数量超过限制" }
@@ -283,7 +283,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process") { "当前服务商没有配置真实音频处理接口" }
             require(operation.matches(Regex("[A-Za-z0-9_-]{1,40}"))) { "音频处理操作名称无效" }
             onProgress(0.05f)
-            val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation), expectedContentTypePrefix = "audio/")
+            val bytes = multipart(config.audioProcessPath, sourceFile, asset.mimeType, mapOf("model" to config.model, "operation" to operation), expectedContentTypePrefix = "audio/", onProgress = onProgress)
             onProgress(0.9f)
             require(bytes.isNotEmpty() && bytes.size <= MAX_RESPONSE_BYTES) { "服务商返回的音频为空或超过 100 MB" }
             val output = File.createTempFile("nestro-media-ai-", ".audio")
@@ -299,7 +299,9 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             require(prompt.isNotBlank() && prompt.length <= 2_000) { "图片分析指令为空或过长" }
             val mime = asset.mimeType.takeIf { it.matches(Regex("image/(jpeg|png|webp|gif)")) }
                 ?: error("当前图片格式不支持远程视觉分析")
+            onProgress(0.05f)
             val encoded = Base64.getEncoder().encodeToString(sourceFile.readBytes())
+            onProgress(0.35f)
             val dataUrl = "data:$mime;base64,$encoded"
             val payload = JSONObject()
                 .put("model", config.model)
@@ -324,6 +326,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                 connection.setRequestProperty("Accept", "application/json")
                 connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
+                onProgress(0.85f)
                 require(status in 200..299) { "图片理解请求失败（HTTP $status）" }
                 val body = connection.inputStream.use { input ->
                     val out = ByteArrayOutputStream()
@@ -360,7 +363,8 @@ class OpenAiCompatibleMediaIntelligenceProvider(
         file: File,
         mimeType: String,
         fields: Map<String, String>,
-        expectedContentTypePrefix: String? = null
+        expectedContentTypePrefix: String? = null,
+        onProgress: (Float) -> Unit = {}
     ): ByteArray {
         val uploadLimit = if (URI(config.baseUrl).host.equals("api.openai.com", true)) OPENAI_MAX_UPLOAD_BYTES else MAX_UPLOAD_BYTES
         require(file.isFile && file.length() in 1..uploadLimit) { "媒体文件不存在或超过 ${uploadLimit / (1024 * 1024)} MB 上传限制" }
@@ -384,7 +388,17 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                     out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
                 }
                 out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"media.bin\"\r\nContent-Type: $mimeType\r\n\r\n".toByteArray())
-                file.inputStream().use { input -> input.copyTo(out) }
+                var sent = 0L
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                        sent += count
+                        onProgress((0.1f + 0.58f * (sent.toFloat() / file.length().toFloat())).coerceIn(0.1f, 0.68f))
+                    }
+                }
                 out.write("\r\n--$boundary--\r\n".toByteArray())
             }
             val status = connection.responseCode
@@ -396,6 +410,7 @@ class OpenAiCompatibleMediaIntelligenceProvider(
             }
             val stream = connection.inputStream
             val output = ByteArrayOutputStream()
+            val responseLength = connection.contentLengthLong
             stream.use { input ->
                 val buffer = ByteArray(8192)
                 while (true) {
@@ -403,8 +418,10 @@ class OpenAiCompatibleMediaIntelligenceProvider(
                     if (count < 0) break
                     require(output.size() + count <= MAX_RESPONSE_BYTES) { "媒体服务响应超过 100 MB" }
                     output.write(buffer, 0, count)
+                    if (responseLength > 0) onProgress((0.7f + 0.25f * (output.size().toFloat() / responseLength.toFloat())).coerceIn(0.7f, 0.95f))
                 }
             }
+            onProgress(0.95f)
             return output.toByteArray()
         } finally {
             activeConnections.remove(connection)
