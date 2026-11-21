@@ -80,7 +80,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(taskMode = false),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { planCalls++ },
+            planPhoneAgent = { planCalls++; "planned" },
             onPartialAnswer = { }
         )
         assertEquals(0, planCalls)
@@ -186,7 +186,7 @@ class ChatRequestExecutionCoordinatorConcurrencyTest {
             request = request(taskMode = true).copy(prompt = "请根据知识库回答"),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { rendezvous() },
+            planPhoneAgent = { rendezvous(); "planned" },
             onPartialAnswer = { }
         )
         assertEquals(2, started.get())
