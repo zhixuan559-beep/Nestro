@@ -280,6 +280,12 @@ object CoworkbenchStaticAnalyzer {
     ) {
         val lowerPath = path.lowercase()
         val lines = text.lines()
+        if (lowerPath.endsWith(".gradle") || lowerPath.endsWith(".gradle.kts")) {
+            Regex("""(?is)maven\\s*\\{[\\s\\S]{0,2000}?https?://""").find(text)?.let { match ->
+                findings += finding("依赖仓库", CoworkbenchFindingLevel.WARNING, path, null,
+                    match.value.take(240), "发现自定义 Maven 仓库 URL；核验仓库来源、TLS 与供应链可信度")
+            }
+        }
         lines.forEachIndexed { index, raw ->
             val line = raw.take(500)
             val number = index + 1
@@ -294,10 +300,6 @@ object CoworkbenchStaticAnalyzer {
                                 "发现动态或快照依赖版本，构建结果可能不可复现")
                         }
                     }
-                if (Regex("""maven\s*\{[^}]*https?://""", RegexOption.IGNORE_CASE).containsMatchIn(line)) {
-                    findings += finding("依赖仓库", CoworkbenchFindingLevel.WARNING, path, number, line,
-                        "发现自定义 HTTP/Maven 仓库声明，需核验来源、TLS 与供应链可信度")
-                }
             }
 
             if (lowerPath.endsWith("androidmanifest.xml")) {
