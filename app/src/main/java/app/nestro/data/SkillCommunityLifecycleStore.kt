@@ -9,42 +9,73 @@ import org.json.JSONObject
  * Previous versions are retained for rollback; no permission is granted here.
  */
 class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
-    fun install(bundle: SkillBundle) {
-        require(bundle.source == "已验证签名社区目录") { "仅允许安装经过签名目录验证的社区技能" }
-        validateDependencies(bundle)
-        validateExistingDependents(bundle)
-        validateNoDependencyCycle(bundle)
+    fun install(bundle: SkillBundle) = installAll(listOf(bundle))
+
+    /** Validates and commits the complete dependency plan in one SharedPreferences transaction. */
+    fun installAll(bundles: List<SkillBundle>) {
+        require(bundles.isNotEmpty() && bundles.size <= 50) { "安装计划为空或超过 50 个技能" }
+        require(bundles.map { it.name }.distinct().size == bundles.size) { "安装计划包含重复技能" }
+        require(bundles.all { it.source == "已验证签名社区目录" }) { "仅允许安装经过签名目录验证的社区技能" }
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
-        val history = JSONObject(preferences.getString(HISTORY_KEY, "{}") ?: "{}")
-        val disabledBefore = isDisabled(bundle.name)
-        val existingPrompt = skills.optString(bundle.name, null)
-        val existingMetaRaw = metadata.optString(bundle.name, null)
-        val existingMeta = existingMetaRaw?.let { runCatching { JSONObject(it) }.getOrNull() }
-        if (existingPrompt != null && existingMeta?.optString("source") != "已验证签名社区目录") {
-            error("同名本地技能已存在；为防止覆盖，已拒绝安装")
+        val history = historyJson()
+        val planned = bundles.associateBy { it.name }
+        val currentVersions = metadata.keys().associateWith { name ->
+            runCatching { JSONObject(metadata.optString(name, "{}")).optString("version") }.getOrDefault("")
+        }.toMutableMap()
+        bundles.forEach { bundle ->
+            val oldMeta = runCatching { JSONObject(metadata.optString(bundle.name, "{}")) }.getOrDefault(JSONObject())
+            val oldPrompt = skills.optString(bundle.name, null)
+            if (oldPrompt != null && oldMeta.optString("source") != "已验证签名社区目录") error("同名本地技能已存在；为防止覆盖，已拒绝安装：${bundle.name}")
+            if (oldPrompt != null) require(SkillSemVer.compare(bundle.version, oldMeta.optString("version")) > 0) { "仅允许安装高于当前社区版本的更新：${bundle.name}" }
+            currentVersions[bundle.name] = bundle.version
         }
-        if (existingPrompt != null) {
-            val installedVersion = existingMeta?.optString("version").orEmpty()
-            require(installedVersion.isNotBlank() && SkillCommunityClient.isNewerVersion(bundle.version, installedVersion)) {
-                "仅允许安装高于当前社区版本的更新"
+        bundles.forEach { bundle -> bundle.dependencies.forEach { dependency ->
+            val available = currentVersions[dependency.name] ?: error("缺少技能依赖：${dependency.name}")
+            require(SkillSemVer.matches(available, dependency.version)) { "依赖版本不匹配：${dependency.name} 需要 ${dependency.version}，计划版本为 $available" }
+        } }
+        // Existing dependents must remain compatible with every changed package.
+        metadata.keys().forEach { dependentName ->
+            if (dependentName in planned) return@forEach
+            val row = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val deps = row.optJSONArray("dependencies") ?: return@forEach
+            for (i in 0 until deps.length()) {
+                val dep = deps.optJSONObject(i) ?: continue
+                val changed = planned[dep.optString("name")] ?: continue
+                require(SkillSemVer.matches(changed.version, dep.optString("version", "*"))) { "更新会破坏已有技能依赖：$dependentName 要求 ${changed.name} ${dep.optString("version", "*")}" }
             }
         }
-        val snapshots = history.optJSONArray(bundle.name) ?: JSONArray()
-        snapshots.put(JSONObject()
-            .put("hadSkill", existingPrompt != null)
-            .put("prompt", existingPrompt ?: JSONObject.NULL)
-            .put("metadata", existingMetaRaw ?: JSONObject.NULL)
-            .put("wasDisabled", disabledBefore)
-            .put("savedAt", System.currentTimeMillis()))
-        while (snapshots.length() > MAX_HISTORY) snapshots.remove(0)
-        history.put(bundle.name, snapshots)
-        skills.put(bundle.name, bundle.prompt)
-        metadata.put(bundle.name, SkillBundleParser.metadataJson(bundle))
-        val disabledAfter = if (existingPrompt == null) setDisabled(bundle.name, true) else disabledSkills()
-        commit(skills, metadata, history, disabledAfter)
+        val graph = mutableMapOf<String, List<String>>()
+        metadata.keys().forEach { name ->
+            val row = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
+            val deps = row.optJSONArray("dependencies") ?: JSONArray()
+            graph[name] = (0 until deps.length()).mapNotNull { deps.optJSONObject(it)?.optString("name") }
+        }
+        bundles.forEach { graph[it.name] = it.dependencies.map(SkillDependency::name) }
+        val visiting = mutableSetOf<String>(); val visited = mutableSetOf<String>()
+        fun visit(name: String) {
+            require(name !in visiting) { "技能依赖存在循环引用：$name" }
+            if (!visited.add(name)) return
+            visiting.add(name)
+            graph[name].orEmpty().forEach { dependency -> if (dependency in graph) visit(dependency) }
+            visiting.remove(name)
+        }
+        graph.keys.forEach(::visit)
+        val disabled = disabledSkills()
+        bundles.forEach { bundle ->
+            val oldPrompt = skills.optString(bundle.name, null)
+            val oldMeta = metadata.optString(bundle.name, null)
+            val snapshots = history.optJSONArray(bundle.name) ?: JSONArray()
+            snapshots.put(JSONObject().put("hadSkill", oldPrompt != null).put("prompt", oldPrompt ?: JSONObject.NULL)
+                .put("metadata", oldMeta ?: JSONObject.NULL).put("wasDisabled", isDisabled(bundle.name)).put("savedAt", System.currentTimeMillis()))
+            while (snapshots.length() > MAX_HISTORY) snapshots.remove(0)
+            history.put(bundle.name, snapshots)
+            skills.put(bundle.name, bundle.prompt)
+            metadata.put(bundle.name, SkillBundleParser.metadataJson(bundle))
+            if (oldPrompt == null && !isDisabled(bundle.name)) disabled.put(bundle.name)
+        }
+        commit(skills, metadata, history, disabled)
     }
-
     fun uninstall(name: String) {
         require(name.isNotBlank() && name.length <= 40)
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
