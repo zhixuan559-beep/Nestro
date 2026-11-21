@@ -362,6 +362,10 @@ fun AiCoworkbenchPage(
             Text("Run #${result.runId} · ${result.status} · ${result.conclusion ?: "无结论"}",
                 style = MaterialTheme.typography.titleSmall)
             Text(result.url, style = MaterialTheme.typography.bodySmall)
+            result.diagnostics.forEach { diagnostic ->
+                Text("结果读取提示：$diagnostic", color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+            }
             result.jobs.forEach { job ->
                 Text("${job.name} · ${job.status} · ${job.conclusion ?: "无结论"}",
                     style = MaterialTheme.typography.titleSmall)
