@@ -13,6 +13,32 @@ class CoworkbenchPolicyTest {
         assertEquals("src/main/File.kt", CoworkbenchPolicy.safePath("src/main/File.kt"))
     }
 
+    @Test fun rejectsCredentialsSigningMaterialsAndLocalMetadata() {
+        listOf(
+            ".env", ".env.production", "local.properties", "gradle.properties",
+            "app/google-services.json", "config/key.properties", "release/upload.jks",
+            "certs/client.pem", "secrets/token.txt", "credentials/cloud.json", ".nestro/state.json"
+        ).forEach { path ->
+            assertFalse("must reject $path", runCatching { CoworkbenchPolicy.safePath(path) }.isSuccess)
+        }
+        assertEquals("src/main/Feature.kt", CoworkbenchPolicy.safePath("src/main/Feature.kt"))
+    }
+
+    @Test fun rejectsFileAndDescendantPathCollisions() {
+        assertFalse(runCatching {
+            CoworkbenchPolicy.validate(listOf(
+                CoworkbenchProposal("config", "file"),
+                CoworkbenchProposal("config/child.json", "{}")
+            ))
+        }.isSuccess)
+        assertTrue(runCatching {
+            CoworkbenchPolicy.validate(listOf(
+                CoworkbenchProposal("config-one", "file"),
+                CoworkbenchProposal("config-two/child.json", "{}")
+            ))
+        }.isSuccess)
+    }
+
     @Test fun rejectsDuplicatePathsAndOversizedPatch() {
         assertFalse(runCatching {
             CoworkbenchPolicy.validate(listOf(CoworkbenchProposal("a.txt", "one"), CoworkbenchProposal("a.txt", "two")))
