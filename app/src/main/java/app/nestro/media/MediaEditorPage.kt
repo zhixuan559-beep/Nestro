@@ -45,7 +45,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.CompositionPlayer
 import androidx.media3.ui.PlayerView
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -77,6 +79,9 @@ fun MediaEditorPage(
     var showAiConsent by remember(projectId) { mutableStateOf(false) }
     var detectedScenes by remember(projectId) { mutableStateOf(emptyList<MediaScene>()) }
     var imageAnalysis by remember(projectId) { mutableStateOf("") }
+    var mediaAiJob by remember(projectId) { mutableStateOf<Job?>(null) }
+    var mediaAiProgress by remember(projectId) { mutableStateOf(0f) }
+    var mediaAiRunning by remember(projectId) { mutableStateOf(false) }
     var isSaving by remember(projectId) { mutableStateOf(false) }
     val player = remember(context) { CompositionPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
@@ -269,23 +274,26 @@ fun MediaEditorPage(
                     showAiConsent = false
                     val provider = MediaIntelligenceRegistry.current() ?: return@TextButton
                     val asset = assets.firstOrNull { it.id == selectedAssetId } ?: return@TextButton
-                    scope.launch {
+                    mediaAiRunning = true
+                    mediaAiProgress = 0f
+                    mediaAiJob = scope.launch {
                         status = "媒体 AI 正在分析素材…"
                         val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 val file = MediaProjectStore.assetFile(context, asset)
+                                val progress: (Float) -> Unit = { value -> scope.launch { mediaAiProgress = value.coerceIn(0f, 1f) } }
                                 when (aiAction) {
-                                    "transcribe" -> provider.transcribe(asset, file, "zh-CN")
-                                    "scenes" -> provider.detectScenes(asset, file)
+                                    "transcribe" -> provider.transcribe(asset, file, "zh-CN", progress)
+                                    "scenes" -> provider.detectScenes(asset, file, progress)
                                     "audio-clean" -> {
-                                        val processed = provider.processAudio(asset, file, "noise_reduction")
+                                        val processed = provider.processAudio(asset, file, "noise_reduction", progress)
                                         try {
                                             MediaProjectStore.importGeneratedFile(context, projectId, processed, MediaAssetKind.AUDIO)
                                         } finally {
                                             processed.delete()
                                         }
                                     }
-                                    "image" -> provider.analyzeImage(asset, file, "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
+                                    "image" -> provider.analyzeImage(asset, file, "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。", progress)
                                     else -> error("不支持的媒体 AI 操作")
                                 }
                             }
@@ -313,7 +321,11 @@ fun MediaEditorPage(
                                     status = "图片理解完成。"
                                 }
                             }
-                        }.onFailure { status = "媒体 AI 处理失败：" + (it.message ?: "未知错误") }
+                        }.onFailure {
+                            status = if (it is CancellationException) "媒体 AI 任务已取消。" else "媒体 AI 处理失败：" + (it.message ?: "未知错误")
+                        }
+                        mediaAiRunning = false
+                        mediaAiJob = null
                     }
                 }) { Text("确认处理") }
             },
@@ -537,6 +549,15 @@ fun MediaEditorPage(
                 onClick = { aiAction = "audio-clean"; performAiAction() }) { Text("音频处理") }
             OutlinedButton(enabled = selected?.kind == MediaAssetKind.IMAGE,
                 onClick = { aiAction = "image"; performAiAction() }) { Text("理解图片") }
+        }
+        if (mediaAiRunning) {
+            LinearProgressIndicator(progress = mediaAiProgress, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = {
+                MediaIntelligenceRegistry.current()?.cancelActiveRequests()
+                mediaAiJob?.cancel()
+                mediaAiRunning = false
+                status = "已请求取消媒体 AI 任务。"
+            }) { Text("取消媒体 AI 任务") }
         }
         if (imageAnalysis.isNotBlank()) {
             Text("图片理解结果", style = MaterialTheme.typography.titleSmall)
