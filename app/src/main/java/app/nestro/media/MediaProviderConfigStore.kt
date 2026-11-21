@@ -111,7 +111,8 @@ data class MediaProviderSummary(
     val providerId: String,
     val displayName: String,
     val baseUrl: String,
-    val model: String
+    val model: String,
+    val videoGenerationModel: String = ""
 )
 
 class MediaProviderConfigStore(context: Context) {
@@ -140,7 +141,10 @@ class MediaProviderConfigStore(context: Context) {
         val providers = readRoot().optJSONObject(PROVIDERS) ?: return emptyList()
         return providers.keys().asSequence().mapNotNull { id ->
             val row = providers.optJSONObject(id) ?: return@mapNotNull null
-            MediaProviderSummary(id, row.optString("displayName"), row.optString("baseUrl"), row.optString("model"))
+            MediaProviderSummary(
+                id, row.optString("displayName"), row.optString("baseUrl"),
+                row.optString("model"), row.optString("videoGenerationModel")
+            )
         }.sortedBy { it.displayName }
     }
 
