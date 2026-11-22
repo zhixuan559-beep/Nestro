@@ -136,7 +136,28 @@ class WorkflowExecutionCoordinator(
                 resumeCompletedRuns = resumeRuns,
                 resumeOutput = resumeOutput
             )
-            taskContext.checkpoint("workflow:" + workflow.id + ":finished", result.completedSteps)
+            taskContext.checkpoint(
+                "workflow_run:" + JSONObject()
+                    .put("schemaVersion", 1)
+                    .put("workflowId", workflow.id)
+                    .put("workflowFingerprint", workflowFingerprint)
+                    .put("inputFingerprint", inputFingerprint)
+                    .put("completedStepIndex", result.completedSteps)
+                    .put("previousOutput", result.output.take(24_000))
+                    .put("stepRuns", JSONArray().apply {
+                        completedRuns.forEach { row ->
+                            put(JSONObject()
+                                .put("stepId", row.stepId)
+                                .put("title", row.title.take(40))
+                                .put("status", row.status)
+                                .put("attempts", row.attempts.coerceIn(0, 100))
+                                .put("output", "")
+                                .put("error", row.error.take(300))
+                                .put("iterations", row.iterations.coerceIn(0, 3)))
+                        }
+                    }).toString(),
+                result.completedSteps
+            )
             result
         }
     }
