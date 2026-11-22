@@ -93,6 +93,28 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun executionContextOwnsPhoneAgentPauseAndUserHandoffTransitions() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        registry.register("phone_agent") { context ->
+            context.checkpoint("persisted-phone-plan", 3)
+            context.waitForUser("需要用户在目标应用中完成验证")
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        coordinator.enqueue("phone-context-lifecycle", "phone_agent")
+        withTimeout(2_000) {
+            while (states.get("phone-context-lifecycle")?.status != AgentTaskStatus.WAITING_FOR_USER) delay(10)
+        }
+
+        val state = states.get("phone-context-lifecycle")
+        assertEquals("persisted-phone-plan", state?.checkpoint)
+        assertEquals(3, state?.currentStep)
+        assertEquals("需要用户在目标应用中完成验证", state?.lastError)
+        coordinator.close()
+    }
+
+    @Test
     fun retryableFailureUsesBackoffAndRetriesWithinConfiguredLimit() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
