@@ -61,6 +61,30 @@ class GeneratedPluginFactoryTest {
     }
 
     @Test
+    fun installedPluginPinsToolContractsAndRejectsChangedCapabilities() {
+        val pinned = GeneratedPluginPackageValidator.pinToolContracts(plugin(), discovery)
+        assertTrue(pinned.steps.all { it.toolFingerprint.length == 64 })
+        GeneratedPluginPackageValidator.validate(pinned, discovery)
+
+        val changedDiscovery = object : AgentToolDiscovery {
+            override fun find(toolId: String): AgentToolSpec? = when (toolId) {
+                "media.inspect" -> AgentToolSpec("media.inspect", "Changed inspection semantics", AgentToolPermission.READ_ONLY)
+                "media.render" -> AgentToolSpec("media.render", "Render media output", AgentToolPermission.EXTERNAL_WRITE)
+                else -> null
+            }
+            override fun list() = listOfNotNull(find("media.inspect"), find("media.render"))
+        }
+        assertFalse(runCatching {
+            GeneratedPluginPackageValidator.validate(pinned, changedDiscovery)
+        }.isSuccess)
+
+        val restored = GeneratedPluginPackageCodec.decode(
+            GeneratedPluginPackageCodec.encode(listOf(pinned))
+        ).single()
+        assertEquals(pinned, restored)
+    }
+
+    @Test
     fun packageCodecPreservesDraftAndDisabledDefault() {
         val decoded = GeneratedPluginPackageCodec.decode(GeneratedPluginPackageCodec.encode(listOf(plugin())))
         assertEquals(listOf(plugin()), decoded)
