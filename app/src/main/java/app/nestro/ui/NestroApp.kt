@@ -1412,6 +1412,11 @@ fun NestroApp(initialPage: String = "home") {
                 activeRequestId = ""
                 activeRequestConversationId = ""
                 if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
+                    // Capture Compose state on the main thread; the IO coroutine must not read
+                    // the mutable snapshot while the user may switch or edit conversations.
+                    val completedConversationVersion = conversations.firstOrNull {
+                        it.id == requestConversationId
+                    }?.hashCode()
                     scope.launch(Dispatchers.IO) {
                         val memoryEnabled = requestAutomaticMemoryEnabled &&
                             CapabilityRegistryStore.authorize(prefs, requestProjectId, "memory")
@@ -1422,10 +1427,14 @@ fun NestroApp(initialPage: String = "home") {
                                     projectId = requestProjectId,
                                     messages = completedHistory
                                 )
-                                val persistedVersion = conversations.firstOrNull { it.id == requestConversationId }?.hashCode()
-                                if (persistedVersion != null) {
+                                if (completedConversationVersion != null) {
                                     withContext(Dispatchers.Main) {
-                                        persistedConversationVersions[requestConversationId] = persistedVersion
+                                        val currentVersion = conversations.firstOrNull {
+                                            it.id == requestConversationId
+                                        }?.hashCode()
+                                        if (currentVersion == completedConversationVersion) {
+                                            persistedConversationVersions[requestConversationId] = completedConversationVersion
+                                        }
                                     }
                                 }
                             } catch (error: Exception) {
