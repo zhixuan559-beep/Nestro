@@ -6,6 +6,7 @@ import app.nestro.mcp.McpToolCenterRepository
 import app.nestro.mcp.McpToolCenterService
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentApprovalCoordinator
+import app.nestro.agent.AgentApprovalPendingException
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
