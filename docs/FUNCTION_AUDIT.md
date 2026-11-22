@@ -813,3 +813,35 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 模块 2、5、6、8、9、10、11、12、14、15、17、18、19：相对本轮对照检查点没有源码差异，保留前文各专项审计结论。主要跨模块缺口仍包括模块17媒体任务与模块18日历触发未统一接入 AgentTaskCoordinator、聊天原生多模态 parts/通用视频问答/非语音音频理解缺失、Phone Agent 通用兼容与导航授权流程未闭环、专家团双向协作与可编辑任务图未完成。
 - 本轮未执行全量 Kotlin 编译、JVM/Android 测试、模拟器、真机或真实服务商联调；这些统一验证仍留在功能修复和第二轮扫描之后。
 
+
+
+## 2026-11-22 第一阶段历史分支整合记录（进行中）
+
+整合目标固定为 `integration/19-modules`。本轮对仓库当前可见的 28 个其他分支逐一核对分支关系，并对分叉分支比较 Git tree 路径；分支 ahead/behind 数量只用于定位差异，不作为代码优劣判断。
+
+### 已确认已包含或无需直接迁入的分支
+
+- `feature/modelscope-oauth`、`feature/module-5-project-space`、`feature/module-7-memory`、`feature/module-10-artifacts`、`feature/module-11-expert-templates`、`feature/module-12-model-comparison`、`feature/module-17-smart-editing`、`feature/module-18-calendar`、`feature/phase2-optimization`、`feature/voice-system`、`refactor/phase-2-architecture` 及四个 `staging/phase2-*` 分支的分支提交已被当前整合分支包含；不重复合并。
+- `feature/module-6-knowledge-base`、`feature/module-8-phone-agent`、`feature/module-9-voice-system`、`feature/module-13-mcp-tool-center`、`feature/module-14-github-workbench`、`feature/module-15-ai-coworkbench`、`fix/module-13-audit-reliability`、`wip/module-6-finalize`、`wip/module-6-knowledge-base`、`feature/phase2-optimization` 和 staging 分支的文件路径均已在当前整合树中找到。对照现有审计记录，当前整合版本包含后续安全/兼容修正；不以旧分支文件覆盖当前版本。
+- `fix/module-13-audit-reliability` 的 MCP 核心文件和测试与整合分支一致；无需重复迁入。
+- `test/github-write-access-20261122` 的全部文件路径均已在整合分支中存在；该分支没有额外文件需要迁入。
+
+### 历史分叉分支的选择性回收
+
+- `feature/knowledge-retrieval-ranking`：不整分支合并。旧 `CapabilityTaskEngine` / `CapabilityCenterPage` 与当前 `AgentTaskCoordinator` / `CapabilityDirectoryPage` 形成重复任务架构；旧任务引擎测试绑定已淘汰的数据表/API，不迁入。旧 `CapabilityRegistryStoreTest` 依赖当前已改为私有的旧 codec API，不直接复制。其数据库终态保护是有效且曾遗漏的实现，已选择性恢复，见提交 `31fedead85e036a870c4eea6e0fbad862cf908d8`。
+- `feature/module-7-skill-library`：旧 `SkillCommunityInstallPlanner`、`SkillInstallPolicy` 和相关测试不整套迁入。当前版本使用更新的 SemVer 2.0、依赖约束回溯求解、签名信任根/撤销与安装计划 API；旧测试面向不同 API。当前 `SkillSemVerTest`、`SkillDependencyRuntimePolicyTest`、`SkillCommunityClientTest` 已覆盖对应核心规则。
+- `wip/module-5-project-space`：唯一缺失路径是详细设计文档 `docs/MODULE_5_PROJECT_SPACE_DESIGN.md`。已将其保留到整合分支，并明确标注为 2026-11-19 历史设计归档，当前实现以功能审计/代码地图/路线图为准；提交 `e84a2fcade2a0a7cb4efc33e38dbeeaf14a9de22`。
+- `main`：独有 `UnifiedAgentDispatcher`、`ChatNetworkPolicy`、`TtsCapability` 及其旧测试不恢复。前者是较弱的关键词路由，后两者分别与现有请求策略和 Android TTS 控制器重复；具体判断见本审计“旧 main 分支独有辅助类的去留判断”。
+
+### 本轮实际变更
+
+- `31fedead85e036a870c4eea6e0fbad862cf908d8`：恢复 Phone Agent 终态任务 SQL 保护，并回收数据库回归测试。
+- `e84a2fcade2a0a7cb4efc33e38dbeeaf14a9de22`：保留模块5历史设计文档并标注历史状态。
+- `cf64ff7f83c6548db8163b9770c746835c3629e3`：同步本审计记录。
+
+### 当前边界
+
+- 未删除任何源码、资源、依赖或历史分支。
+- 未执行历史遗留/死代码扫描；该工作严格留待用户确认第一阶段整合完成后再开始。
+- 未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验证；按既定顺序留待后续统一验收。
+- 当前记录是历史分支整合进度，不代表第一阶段已经完成；仍需继续核对分叉分支中共享路径的独有语义，确认没有遗漏有效实现。
