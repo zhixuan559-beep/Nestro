@@ -1104,3 +1104,13 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 直接 MCP 调用在已取消但存在完成检查点时，不再向 UI 返回虚假的成功状态。
 - 工作流输入或定义变化时，旧待恢复任务必须先取消，避免覆盖其 taskId 后失去恢复/终止入口。
 - 以上为代码静态回读；没有运行构建或测试。
+
+
+## 2026-11-22 统一审批审计持久化（代码 HEAD `aebf89ce66f5bf231b3aac55780ce38558e92639`）
+
+- NestroDatabase 升级至 version 16，新增 `agent_approval_audits` 表及 scope/status 索引，记录审批范围、工具、原因、PENDING 和最终决策。
+- AgentApprovalCoordinator 是工作流、插件、MCP 与模型工具授权共用的审批入口；审批前先持久化 PENDING，用户决定后写入 AUTHORIZED_ONCE、AUTHORIZED_TASK 或 REJECTED。审批审计写入失败时不放行外部工具执行。
+- 新增 `endScopeAndAudit`，在工作流完成/取消、插件恢复/取消、MCP 任务完成/失败/撤销和聊天工具审批范围结束时，将遗留 PENDING 记录更新为 CLOSED/CANCELLED/FAILED。
+- 授权决定不跨进程自动继承；应用重启后仍需重新确认，历史记录只用于审计，不作为自动授权凭据。
+- DAO 已提供最近记录和待处理记录查询；独立审批记录浏览 UI 尚未制作。
+- 已新增审批记录与 scope 关闭的测试源码；未运行构建或测试。
