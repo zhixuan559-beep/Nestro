@@ -163,7 +163,10 @@ class LocalBackupRoundTripTest {
             val hash = LocalBackupCompatibility.sha256("doc")
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("d1", "p1", "资料.txt", "text/plain", 3L, 4L, hash))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("k1", "d1", "p1", 0, "这是需要恢复的知识库片段内容 restoreindexmarker")))
-            dao.putUserMemory(UserMemoryEntity("mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L))
+            dao.putUserMemory(UserMemoryEntity(
+                "mem1", "p1", "preference", "偏好使用简洁中文表达", "fp1", "c1", "m1", 0.9, 5L, 6L,
+                shareAcrossProjects = true
+            ))
             dao.putPhoneAgentTask(PhoneAgentTaskEntity(
                 "phone-task-1", "p1", "c1", "恢复后由用户手动继续", "GENERAL",
                 PhoneAgentTaskStore.STATUS_RUNNING, "[]", 0, 7L, 8L
@@ -225,6 +228,7 @@ class LocalBackupRoundTripTest {
             val ftsCount = database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
             assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
+            assertTrue("备份恢复必须保留用户主动开启的跨项目共享授权", dao.allUserMemories().single().shareAcrossProjects)
             assertEquals("检查点数据", dao.agentTaskState("phone-task-1")?.checkpoint)
             assertEquals("PAUSED", dao.agentTaskState("phone-task-1")?.status)
             assertTrue(dao.agentTaskState("phone-task-1")?.lastError?.contains("手动继续") == true)
