@@ -431,3 +431,11 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 恢复 create-only `assignNewResourceToProject`，新资源创建时如果 scope key 已存在则拒绝覆盖旧归属。
 - 8 个新建资源入口已切换到该 API；现有资源的全局/项目范围切换保留原 update API。
 - 已新增单元测试源码，未运行。
+
+
+## 2026-11-22 17:33 UTC — 会话持久化/记忆缓存原始需求补充
+
+- 模块3/4：会话快照防抖 effect 已补齐源码定义，委托唯一 ConversationPersistenceService；代码未编译/测试。
+- 模块7：记忆上下文缓存的原始验收口径为全局/项目/会话三层、本地命中复用、未命中本地检索整理、问题动态取用、按记忆增删改做局部失效、严格避免跨项目/会话串用。该缓存不属于统一任务调度，也不能用 embeddingCache 替代。
+- 模块7：自动记忆提取与 Room snapshot effect 存在时序竞态；增加 source ownership 校验前，必须先保证新旧会话及 source message 已事务性写入 Room。
+- 上述为源码状态与用户原始需求补录，不代表相关缺口已修复或验收通过。
