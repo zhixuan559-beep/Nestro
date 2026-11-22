@@ -9,6 +9,7 @@ import android.annotation.SuppressLint
 import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.net.Uri
@@ -34,6 +35,8 @@ internal class MikaVirtualDisplayService(
 ) : IMikaShell.Stub() {
     private val context: Context = MikaShellContext.create()
     private val displays = ConcurrentHashMap<Int, VirtualDisplay>()
+    private var orientationWatch: DisplayOrientationWatch? = null
+    private val requestedOrientations = ConcurrentHashMap<Int, Int>()
     private val launchLock = Any()
     private val keptTasks = HashMap<Int, String>()
     private val awakeTimer = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -98,6 +101,7 @@ internal class MikaVirtualDisplayService(
             }.getOrNull()
         } ?: return -1
         displays[display.display.displayId] = display
+        ensureOrientationWatch()
         configureDisplay(display.display.displayId)
         val id = display.display.displayId
         if (DisplayAwake.needed(flags, FLAG_OWN_DISPLAY_GROUP, displayGroup(id))) awake.start(id)
@@ -116,7 +120,65 @@ internal class MikaVirtualDisplayService(
 
     override fun releaseDisplay(displayId: Int) {
         awake.stop(displayId)
-        displays.remove(displayId)?.release()
+        val (display, watcher) = synchronized(displays) {
+            displays.remove(displayId) to if (displays.isEmpty()) orientationWatch.also { orientationWatch = null } else null
+        }
+        watcher?.close()
+        if (watcher != null) requestedOrientations.clear()
+        display?.release()
+    }
+
+    private fun ensureOrientationWatch() {
+        if (Build.VERSION.SDK_INT < 34 || synchronized(displays) { orientationWatch != null }) return
+        val watcher = runCatching {
+            DisplayOrientationWatch(
+                taskManager = taskManager,
+                active = { synchronized(displays) { displays.isNotEmpty() } },
+                onRequestedOrientation = { taskId, orientation -> requestedOrientations[taskId] = orientation },
+                onTaskRemoved = { taskId -> requestedOrientations.remove(taskId) },
+                sync = ::syncDisplayOrientations
+            )
+        }.onFailure { Log.w(TAG, "Display orientation watcher unavailable", it) }.getOrNull() ?: return
+        val spare = synchronized(displays) {
+            if (orientationWatch == null && displays.isNotEmpty()) { orientationWatch = watcher; null } else watcher
+        }
+        spare?.close()
+    }
+
+    @SuppressLint("PrivateApi")
+    private fun syncDisplayOrientations() {
+        val own = synchronized(displays) { displays.toMap() }
+        if (own.isEmpty()) return
+        val tasksByDisplay = allTasks().groupBy { taskInfoClass.getField("displayId").getInt(it) }
+        for ((id, virtualDisplay) in own) runCatching {
+            val task = tasksByDisplay[id]?.firstOrNull() ?: return@runCatching
+            val taskId = taskInfoClass.getField("taskId").getInt(task)
+            val compat = runCatching { taskInfoClass.getField("appCompatTaskInfo").get(task) }.getOrNull() ?: task
+            val type = compat.javaClass
+            if (!runCatching { type.getField("topActivityBoundsLetterboxed").getBoolean(compat) }.getOrDefault(true)) {
+                return@runCatching
+            }
+            val appWidth = runCatching { type.getField("topActivityLetterboxWidth").getInt(compat) }.getOrDefault(0)
+            val appHeight = runCatching { type.getField("topActivityLetterboxHeight").getInt(compat) }.getOrDefault(0)
+            val display = virtualDisplay.display
+            val mode = display.mode
+            val rotation = DisplayOrientation.rotation(
+                mode.physicalWidth, mode.physicalHeight, display.rotation, appWidth, appHeight,
+                requestedOrientations[taskId] ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            ) ?: return@runCatching
+            if (!owns(id)) return@runCatching
+            val frozen = runCatching {
+                val wm = Class.forName("android.view.WindowManagerGlobal")
+                    .getMethod("getWindowManagerService").invoke(null)!!
+                val method = wm.javaClass.methods.first { it.name == "freezeDisplayRotation" }
+                if (method.parameterTypes.size == 3) method.invoke(wm, id, rotation, "nestro")
+                else method.invoke(wm, id, rotation)
+            }.isSuccess
+            if (!frozen) {
+                ProcessBuilder("wm", "user-rotation", "-d", "$id", "lock", "$rotation")
+                    .redirectErrorStream(true).start().waitFor()
+            }
+        }.onFailure { Log.w(TAG, "Display orientation sync failed on display " + id, it) }
     }
 
     @SuppressLint("PrivateApi")
