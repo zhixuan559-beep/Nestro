@@ -222,7 +222,7 @@ fun MediaEditorPage(
     LaunchedEffect(projectId, activeMediaAiTaskId) {
         if (activeMediaAiTaskId.isNotBlank()) {
             while (isActive && activeMediaAiTaskId.isNotBlank()) {
-                val task = withContext(Dispatchers.IO) { MediaAiTaskStore.read(context, projectId, activeMediaAiTaskId) }
+                val task = withContext(Dispatchers.IO) { MediaAiTaskScheduler.read(context, projectId, activeMediaAiTaskId) }
                 if (task == null) {
                     status = "媒体 AI 任务记录丢失。"
                     mediaAiRunning = false
@@ -273,7 +273,7 @@ fun MediaEditorPage(
                     if (applyError.isNotBlank()) status = "读取/保存媒体 AI 结果失败："+applyError
                     val refreshedTasks = withContext(Dispatchers.IO) {
                         MediaAiTaskStore.update(context = context, projectId = projectId, taskId = task.id,
-                            status = MediaAiTaskStatus.COMPLETED, resultConsumed = true, errorMessage = applyError)
+                            resultConsumed = true, errorMessage = applyError)
                         MediaAiTaskScheduler.list(context, projectId)
                     }
                     mediaAiTasks = refreshedTasks
