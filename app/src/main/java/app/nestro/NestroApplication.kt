@@ -319,7 +319,16 @@ class NestroApplication : Application() {
             catalog.register(
                 app.nestro.agent.AgentToolSpec(
                     id = toolId,
-                    description = "执行本地插件「${plugin.name}」v${plugin.version}：${plugin.description}".take(500),
+                    description = buildString {
+                        append("执行本地插件「").append(plugin.name).append("」v").append(plugin.version)
+                        append("：").append(plugin.description)
+                        append("。将调用：")
+                        append(plugin.steps.joinToString("、") { step ->
+                            val spec = catalog.find(step.toolId)
+                            "${step.toolId}（${spec?.permission?.name ?: "权限未知"}" +
+                                if (spec?.requiresConfirmation == true) "，工具自身需确认）" else "）"
+                        })
+                    }.take(500),
                     permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
                     requiresConfirmation = true
                 )
