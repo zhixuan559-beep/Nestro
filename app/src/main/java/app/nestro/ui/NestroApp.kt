@@ -1925,6 +1925,7 @@ fun NestroApp(initialPage: String = "home") {
                                                      prefs.getString("workflow_task_workflow_id_v1", "").orEmpty() == workflow.id &&
                                                      task.capabilityId == workflow.id &&
                                                      task.status in setOf(
+                                                         app.nestro.agent.AgentTaskStatus.CREATED,
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
                                                          app.nestro.agent.AgentTaskStatus.PAUSED
@@ -1937,7 +1938,6 @@ fun NestroApp(initialPage: String = "home") {
                                              val workflowTaskBusy = savedWorkflowTaskState?.let { task ->
                                                  task.taskId == savedWorkflowTaskIdForCard &&
                                                      task.status in setOf(
-                                                         app.nestro.agent.AgentTaskStatus.CREATED,
                                                          app.nestro.agent.AgentTaskStatus.QUEUED,
                                                          app.nestro.agent.AgentTaskStatus.RUNNING,
                                                          app.nestro.agent.AgentTaskStatus.RETRY_WAIT
