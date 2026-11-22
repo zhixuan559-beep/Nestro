@@ -229,9 +229,10 @@ internal class MikaVirtualDisplayService(
         if (!owns(displayId)) return START_ERROR
         val parsed = uri?.let { runCatching { Uri.parse(it) }.getOrNull() }
         if (parsed != null && parsed.scheme !in setOf("https", "http")) return START_INVALID_LINK
+        if (!packageName.isNullOrBlank() && !validPackage(packageName)) return START_ERROR
         val intent = Intent(action?.takeIf { it.isNotBlank() } ?: Intent.ACTION_VIEW).apply {
             if (parsed != null) data = parsed
-            if (!packageName.isNullOrBlank() && validPackage(packageName)) setPackage(packageName)
+            if (!packageName.isNullOrBlank()) setPackage(packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         return synchronized(launchLock) {
@@ -324,7 +325,15 @@ internal class MikaVirtualDisplayService(
         val now = android.os.SystemClock.uptimeMillis()
         val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, 0, -1, 0, 0, InputDevice.SOURCE_KEYBOARD)
         val up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP)
-        return inject(down, displayId) && inject(up, displayId)
+        return try {
+            val downSent = inject(down, displayId)
+            // Always send key-up even if key-down injection reports failure, avoiding a stuck key.
+            val upSent = inject(up, displayId)
+            downSent && upSent
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
     }
 
     override fun injectTap(displayId: Int, x: Int, y: Int): Boolean =
@@ -354,7 +363,13 @@ internal class MikaVirtualDisplayService(
         if (displayOfTask(taskId) != displayId || packageOfTask(taskId) != packageName) return 0
         val events = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray()) ?: return 0
         var sent = true
-        events.forEach { event -> sent = inject(event, displayId) && sent }
+        events.forEach { event ->
+            try {
+                sent = inject(event, displayId) && sent
+            } finally {
+                event.recycle()
+            }
+        }
         return if (sent) 1 else 2
     }
 
@@ -378,9 +393,15 @@ internal class MikaVirtualDisplayService(
     }
 
     @SuppressLint("PrivateApi")
-    private fun removeTask(taskId: Int): Boolean = runCatching {
-        taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager, taskId) as? Boolean ?: true
-    }.getOrDefault(false)
+    private fun removeTask(taskId: Int): Boolean {
+        val invoked = runCatching {
+            taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager)
+            true
+        }.getOrDefault(false)
+        // Some framework/OEM variants expose a void method; verify removal instead of
+        // treating a normal Binder return as proof that the task disappeared.
+        return invoked && task(taskId) == null
+    }
 
     override fun watchMainScreen(windowMs: Int): Int = mainScreenWatch.watch(windowMs)
 
