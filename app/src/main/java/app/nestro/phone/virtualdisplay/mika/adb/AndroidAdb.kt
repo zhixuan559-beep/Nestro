@@ -1,5 +1,5 @@
 /* Adapted from Mika (https://github.com/wangzan101/Mika), Apache License 2.0. Original path: app/src/main/java/com/wangzan101/mika/cap/phone/shell/adb/AndroidAdb.kt */
-package com.wangzan101.mika.cap.phone.shell.adb
+package app.nestro.phone.virtualdisplay.mika.adb
 
 import android.content.Context
 import android.net.ssl.SSLSockets
