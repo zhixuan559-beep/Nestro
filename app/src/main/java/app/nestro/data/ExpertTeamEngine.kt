@@ -88,7 +88,11 @@ object ExpertTeamEngine {
         val semaphore=Semaphore(maxParallel)
         require(resumeMembers.map { it.name }.distinct().size == resumeMembers.size &&
             resumeMembers.all { saved ->
-                members.any { it.name == saved.name } && saved.status in setOf("success", "failed")
+                members.any { it.name == saved.name } &&
+                    saved.status in setOf("success", "failed") &&
+                    saved.attempts in 0..3 && saved.elapsedMillis >= 0 &&
+                    saved.output.length <= 2_200 && saved.error.length <= 500 &&
+                    (saved.status != "success" || saved.output.isNotBlank())
             }) { "恢复记录包含重复、未知成员或无效状态" }
         val resultsByName = linkedMapOf<String, ExpertTeamMemberRun>()
         resumeMembers.filter { it.status == "success" }.forEach { resultsByName[it.name] = it }
