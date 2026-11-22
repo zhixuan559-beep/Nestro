@@ -690,6 +690,27 @@ class AgentTaskCoordinatorTest {
 
 
     @Test
+    fun inlineHandlerReturningWhileWaitingForChildDoesNotBecomeCompleted() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            val result = coordinator.runInline(
+                taskId = "inline-parent-wait",
+                owner = "workflow",
+                metadata = AgentTaskMetadata(kind = "workflow")
+            ) { taskContext ->
+                taskContext.waitForTask("等待媒体子任务完成")
+                "waiting"
+            }
+
+            assertEquals(AgentTaskStatus.WAITING_FOR_TASK, result.status)
+            assertEquals("等待媒体子任务完成", states.get("inline-parent-wait")?.lastError)
+        } finally {
+            coordinator.close()
+        }
+    }
+
+    @Test
     fun parentTaskWaitsForChildAndResumesWhenChildCompletes() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
