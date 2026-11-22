@@ -91,10 +91,10 @@ internal class ModelLedToolDispatcher(
 ) {
     private fun mcpCallSignature(toolId: String, arguments: Map<String, String>): String {
         val canonical = buildString {
-            append(toolId).append('\\n')
+            append(toolId).append('\n')
             arguments.toSortedMap().forEach { (key, value) ->
                 append(key.length).append(':').append(key)
-                append(value.length).append(':').append(value).append('\\n')
+                append(value.length).append(':').append(value).append('\n')
             }
         }
         return MessageDigest.getInstance("SHA-256")
