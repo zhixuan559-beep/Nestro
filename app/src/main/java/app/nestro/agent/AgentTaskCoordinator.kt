@@ -179,9 +179,14 @@ class AgentTaskCoordinator(
     private val globalTaskPermits = Semaphore(MAX_CONCURRENT_TASKS)
     private val kindPermits = ConcurrentHashMap<String, Semaphore>()
 
-    private fun taskLaneLimit(kind: String): Int = when (kind) {
+    private fun taskLaneKey(state: AgentTaskState): String = when (state.kind) {
+        "workflow", "calendar_automation", "expert_team", "chat", "chat_tools" -> "orchestration"
+        else -> state.kind.ifBlank { state.owner }
+    }
+
+    private fun taskLaneLimit(laneKey: String): Int = when (laneKey) {
         "phone_agent", "media_render", "media_ai" -> 1
-        "calendar_automation", "workflow" -> 2
+        "orchestration" -> 2
         else -> 2
     }
 
@@ -516,6 +521,13 @@ class AgentTaskCoordinator(
         return states.get(taskId)
     }
 
+    suspend fun awaitTaskCompletion(
+        parentTaskId: String,
+        childTaskId: String,
+        timeoutMillis: Long = 30 * 60 * 1_000L
+    ): AgentTaskState = AgentTaskExecutionContext(parentTaskId, states, traces)
+        .awaitTaskCompletion(childTaskId, timeoutMillis)
+
     /** Lists durable non-terminal tasks for recovery surfaces such as the calendar. */
     suspend fun recoverableTasks(): List<AgentTaskState> = states.recoverable()
 
@@ -665,9 +677,9 @@ class AgentTaskCoordinator(
     private suspend fun executeQueued(taskId: String) {
         val state = states.get(taskId) ?: return
         if (state.status != AgentTaskStatus.QUEUED) return
-        val laneKey = state.kind.ifBlank { state.owner }
+        val laneKey = taskLaneKey(state)
         val lane = kindPermits.computeIfAbsent(laneKey) {
-            Semaphore(taskLaneLimit(state.kind))
+            Semaphore(taskLaneLimit(laneKey))
         }
         if (!lane.tryAcquire()) {
             // Do not park a worker on a busy resource lane: move this task to the
