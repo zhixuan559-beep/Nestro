@@ -271,7 +271,7 @@ class McpToolCenterService(
     )
   }.forEach { task ->
    coordinator.cancel(task.taskId)
-   approvalCoordinator?.endScope(task.taskId)
+   approvalCoordinator?.endScopeAndAudit(task.taskId, "CANCELLED")
   }
  }
  suspend fun invoke(id:String,argsJson:String):AgentToolResult =
@@ -299,7 +299,7 @@ class McpToolCenterService(
    app.nestro.agent.AgentTaskStatus.PAUSED
   )) { "当前 MCP 任务不能从待恢复列表终止：${state.status}" }
   coordinator.cancel(taskId)
-  approvalCoordinator?.endScope(taskId)
+  approvalCoordinator?.endScopeAndAudit(taskId, "CANCELLED")
  }
 
  private suspend fun invokeWithTaskId(taskId:String,id:String,argsJson:String):AgentToolResult {
@@ -313,13 +313,13 @@ class McpToolCenterService(
   if (checkpoint.startsWith("mcp:v1:executing:$id")) {
    val reason = "MCP 工具执行中断，外部结果不确定；为避免重复写入，系统未自动重放。请核对服务端结果后重新发起。"
    coordinator.transitionTask(taskId, AgentTaskStatus.FAILED, reason)
-   approvalCoordinator?.endScope(taskId)
+   approvalCoordinator?.endScopeAndAudit(taskId, "FAILED")
    return AgentToolResult(false, error = reason)
   }
   if (checkpoint.startsWith("mcp:v1:completed:$id\n")) {
    val output = checkpoint.substringAfter('\n').take(8_000)
    if (existingState?.status == AgentTaskStatus.CANCELLED) {
-    approvalCoordinator?.endScope(taskId)
+    approvalCoordinator?.endScopeAndAudit(taskId, "CANCELLED")
     return AgentToolResult(
      false,
      error = "MCP 任务已取消，但检查点显示外部调用此前已完成。结果摘要：${output.take(1_000)}"
@@ -331,7 +331,7 @@ class McpToolCenterService(
     "从持久检查点恢复已完成的 MCP 结果",
     resultSummary = output
    )
-   approvalCoordinator?.endScope(taskId)
+   approvalCoordinator?.endScopeAndAudit(taskId, "CLOSED")
    return AgentToolResult(true, output)
   }
   return try {
@@ -407,7 +407,14 @@ class McpToolCenterService(
        AgentTaskStatus.PAUSED
       )
    ) {
-    approvalCoordinator?.endScope(taskId)
+    approvalCoordinator?.endScopeAndAudit(
+     taskId,
+     when (state?.status) {
+      AgentTaskStatus.CANCELLED -> "CANCELLED"
+      AgentTaskStatus.FAILED -> "FAILED"
+      else -> "CLOSED"
+     }
+    )
    }
   }
  }
