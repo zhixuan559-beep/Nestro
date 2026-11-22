@@ -506,10 +506,16 @@ class NestroApplication : Application() {
                     ))
                 }
                 var retryAttempt = 0
+                // Replaying a workflow is safe only while every attempted step is read-only.
+                // Once a write/device action starts, a timeout may have an unknown outcome.
+                var wholeWorkflowReplaySafe = true
                 var executionResult: app.nestro.agent.AgentToolResult? = null
                 while (executionResult == null) {
                     try {
                         executionResult = GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
+                        if (catalog.find(stepToolId)?.permission != app.nestro.agent.AgentToolPermission.READ_ONLY) {
+                            wholeWorkflowReplaySafe = false
+                        }
                         val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
                         val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                             CapabilityRegistryStore.registerIfAbsent(
@@ -570,7 +576,10 @@ class NestroApplication : Application() {
                         updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件执行已暂停")
                         throw cancelled
                     } catch (error: Exception) {
-                        if (!app.nestro.agent.AgentTaskRetryPolicy.isRetryable(error) || retryAttempt >= 2) {
+                        if (!wholeWorkflowReplaySafe ||
+                            !app.nestro.agent.AgentTaskRetryPolicy.isRetryable(error) ||
+                            retryAttempt >= 2
+                        ) {
                             updatePluginTaskState(app.nestro.agent.AgentTaskStatus.FAILED, error.message.orEmpty())
                             return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
                         }
