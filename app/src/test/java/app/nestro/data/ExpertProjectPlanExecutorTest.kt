@@ -1,6 +1,10 @@
 package app.nestro.data
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,6 +80,43 @@ class ExpertProjectPlanExecutorTest {
         assertEquals(3, calls.size)
         assertFalse("研究员" in calls)
         assertEquals(listOf(3, 4), checkpointSizes)
+    }
+
+    @Test
+    fun successfulPackageIsCheckpointedBeforeParallelSiblingFinishes() = runBlocking {
+        val plan = ExpertProjectPlan(
+            projectGoal = "完成并行项目",
+            packages = listOf(
+                ExpertWorkPackage("research", "研究员", "完成研究", acceptanceCriteria = "研究结果"),
+                ExpertWorkPackage("strategy", "策略师", "形成策略", acceptanceCriteria = "策略结果")
+            ),
+            finalAcceptanceCriteria = "两项成果齐全"
+        )
+        val checkpointReady = CompletableDeferred<Unit>()
+        val snapshots = mutableListOf<List<ExpertWorkPackageResult>>()
+        val execution = launch {
+            runCatching {
+                ExpertProjectPlanExecutor.execute(
+                    plan = plan,
+                    availableMembers = setOf("研究员", "策略师"),
+                    invoke = { member, _ ->
+                        if (member == "研究员") "研究成果已完成" else awaitCancellation()
+                    },
+                    onPackageResult = { rows ->
+                        snapshots += rows
+                        if (rows.any { it.packageId == "research" && it.status == "success" }) {
+                            checkpointReady.complete(Unit)
+                        }
+                    }
+                )
+            }
+        }
+        withTimeout(2_000) { checkpointReady.await() }
+        execution.cancel()
+        execution.join()
+        assertTrue(snapshots.last().any {
+            it.packageId == "research" && it.status == "success" && it.output == "研究成果已完成"
+        })
     }
 
     @Test
