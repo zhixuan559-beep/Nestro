@@ -1,7 +1,6 @@
 package app.nestro.phone
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.app.DownloadManager
 import android.net.Uri
 import android.os.Environment
@@ -15,7 +14,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
 
-class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment {
+class PhoneAgentService : AccessibilityService() {
     private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String, val screenSnapshot: String)
     @Volatile private var lastTextUndo: TextUndoRecord? = null
 
@@ -23,10 +22,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         super.onServiceConnected()
         activeService = this
         val controller = (applicationContext as? NestroApplication)?.mikaVirtualDisplayController
-        when {
-            controller == null -> PhoneAgentExecutionEnvironmentProvider.attach(this)
-            controller.virtualExecutionPreferred -> controller.activatePhoneAgent(this)
-            else -> controller.restoreAccessibilityEnvironment(this)
+        if (controller?.virtualExecutionPreferred == true) {
+            controller.activatePhoneAgent(this)
         }
     }
 
@@ -40,11 +37,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         lastTextUndo = null
         if (activeService === this) activeService = null
         (applicationContext as? NestroApplication)?.mikaVirtualDisplayController?.detachPhoneAgentEnvironment(this)
-        PhoneAgentExecutionEnvironmentProvider.detach(this)
         super.onDestroy()
     }
-
-    override fun captureVisibleText(): String = captureRoot(rootInActiveWindow)
 
     /** Read a window on the selected isolated display, never the user's foreground display. */
     fun captureVisibleText(displayId: Int): String = captureRoot(rootForDisplay(displayId))
@@ -85,20 +79,18 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         }
     }
 
-    override fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
-    override fun isTaskStopped(taskId: String): Boolean =
+    fun hasValidGrant() { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
+    fun isTaskStopped(taskId: String): Boolean =
         getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean(PhoneAgentWorkScheduler.stopKey(taskId), false)
     fun clearTaskStop(taskId: String) {
         getSharedPreferences("nestro_local", MODE_PRIVATE).edit()
             .remove(PhoneAgentWorkScheduler.stopKey(taskId)).apply()
     }
-    override fun requestTaskStop(taskId: String) {
+    fun requestTaskStop(taskId: String) {
         getSharedPreferences("nestro_local", MODE_PRIVATE).edit()
             .putBoolean(PhoneAgentWorkScheduler.stopKey(taskId), true).apply()
         audit("TASK_STOP", "用户请求停止任务 " + taskId.take(48))
     }
-
-    override fun clickVisibleText(exactText: String): Boolean = clickVisibleText(rootInActiveWindow, exactText)
 
     fun clickVisibleText(displayId: Int, exactText: String): Boolean = clickVisibleText(rootForDisplay(displayId), exactText)
 
@@ -124,8 +116,6 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         audit("CLICK", redactSensitiveText(normalized))
         return success
     }
-
-    override fun setTextOnVisibleField(label: String, value: String): Boolean = setTextOnVisibleField(rootInActiveWindow, label, value)
 
     fun setTextOnVisibleField(displayId: Int, label: String, value: String): Boolean = setTextOnVisibleField(rootForDisplay(displayId), label, value)
 
@@ -176,15 +166,15 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
 
     fun canUndoLastTextEdit(): Boolean = lastTextUndo != null
 
-    fun undoLastTextEdit(): Boolean {
+    fun undoLastTextEdit(displayId: Int): Boolean {
         val record = lastTextUndo ?: return false
         if (!hasValidGrant() || PhoneAgentRiskPolicy.isSensitiveField(record.label) ||
             PhoneAgentRiskPolicy.redactSensitiveText(record.previousValue) != record.previousValue ||
             PhoneAgentRiskPolicy.redactSensitiveText(record.appliedValue) != record.appliedValue
         ) return false
-        val currentSnapshot = captureVisibleText()
+        val currentSnapshot = captureVisibleText(displayId)
         if (currentSnapshot != record.screenSnapshot) return false
-        val root = rootInActiveWindow ?: return false
+        val root = rootForDisplay(displayId) ?: return false
         val matches = findEditableFields(root, record.label)
         if (matches.size != 1) return false
         val node = matches.single()
@@ -204,8 +194,6 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return restored
     }
 
-    override fun scroll(direction: String): Boolean = scroll(rootInActiveWindow, direction)
-
     fun scroll(displayId: Int, direction: String): Boolean = scroll(rootForDisplay(displayId), direction)
 
     private fun scroll(root: AccessibilityNodeInfo?, direction: String): Boolean {
@@ -220,35 +208,6 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return success
     }
 
-    override fun openUrl(rawUrl: String): Boolean {
-        val uri = android.net.Uri.parse(rawUrl.trim())
-        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(rawUrl) && !PhoneAgentRiskPolicy.containsSensitiveValue(rawUrl)) { "仅允许打开安全且不含个人敏感信息的公开网页" }
-        require(hasValidGrant()) { "没有有效的操作授权" }
-        startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        consumeSingleGrantIfNeeded()
-        audit("OPEN_URL", uri.host ?: "网页")
-        return true
-    }
-
-    override fun launchPackage(packageName: String): Boolean {
-        require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用标识无效" }
-        require(hasValidGrant()) { "没有有效的操作授权" }
-        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
-        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        consumeSingleGrantIfNeeded()
-        audit("LAUNCH_APP", packageName)
-        return true
-    }
-
-    override fun pressBack(): Boolean {
-        require(hasValidGrant()) { "没有有效的操作授权" }
-        val success = performGlobalAction(GLOBAL_ACTION_BACK)
-        consumeSingleGrantIfNeeded()
-        audit("BACK", "返回")
-        return success
-    }
-
-    override fun verifyVisibleText(expected: String): Boolean = verifyVisibleText(rootInActiveWindow, expected)
 
     fun verifyVisibleText(displayId: Int, expected: String): Boolean = verifyVisibleText(rootForDisplay(displayId), expected)
 
@@ -315,12 +274,12 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
 
 
     /** Read-only snapshot for a non-focus-stealing virtual-screen layer. */
-    fun captureReadOnlySnapshot(maxLines: Int = 120, maxChars: Int = 12000): String {
-        return captureVisibleText().lines().take(maxLines).joinToString("\n").take(maxChars)
+    fun captureReadOnlySnapshot(displayId: Int, maxLines: Int = 120, maxChars: Int = 12000): String {
+        return captureVisibleText(displayId).lines().take(maxLines).joinToString("\n").take(maxChars)
     }
 
-    fun hasActiveWindow(): Boolean = rootInActiveWindow != null
-    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String, sourceUrl: String, licenseLabel: String): String? {
+    fun hasActiveWindow(displayId: Int): Boolean = rootForDisplay(displayId) != null
+    fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String, sourceUrl: String, licenseLabel: String): String? {
         require(hasValidGrant()) { "没有有效的操作授权" }
         require(url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "素材下载地址必须是安全的公开 HTTPS 直链" }
         require(sourceUrl.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(sourceUrl) && !PhoneAgentRiskPolicy.containsSensitiveValue(sourceUrl)) { "素材来源页面必须是安全的公开 HTTPS 地址" }
@@ -376,10 +335,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         }
     }
 
-    override fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
     fun activePackageName(displayId: Int): String? = rootForDisplay(displayId)?.packageName?.toString()
 
-    override fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
     fun screenTextChanged(displayId: Int, before: String): Boolean = captureVisibleText(displayId) != before
 
     private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {

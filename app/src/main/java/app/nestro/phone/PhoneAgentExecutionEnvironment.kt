@@ -3,9 +3,9 @@ package app.nestro.phone
 /**
  * Host-independent execution surface for Phone Agent actions.
  *
- * The current Android AccessibilityService is one adapter. A future isolated
- * VirtualDisplay adapter can implement the same contract without changing the
- * planner, task scheduler, action executor, or permission lifecycle.
+ * The isolated VirtualDisplay adapter is the only execution environment.
+ * Android AccessibilityService is used only to inspect and target nodes on that
+ * virtual display; it is never attached as a real-screen execution fallback.
  */
 interface PhoneAgentExecutionEnvironment {
     fun hasValidGrant(): Boolean

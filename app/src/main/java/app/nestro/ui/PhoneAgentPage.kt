@@ -89,8 +89,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         }
         Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (serviceEnabled) "无障碍服务已开启" else "尚未开启无障碍服务", color = if (serviceEnabled) Mint else Ink)
-                Text("需要你在 Android 系统设置中手动开启。Nestro 不能代替你授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text(if (serviceEnabled) "虚拟屏界面识别桥接已开启" else "虚拟屏界面识别桥接尚未开启", color = if (serviceEnabled) Mint else Ink)
+                Text("该桥接仅用于识别隔离虚拟屏内的界面节点；应用启动、坐标触控与返回由虚拟屏助手执行，不会接管真实主屏。需要你在系统设置中手动开启。", color = Muted, style = MaterialTheme.typography.bodySmall)
                 Button(
                     onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
                     modifier = Modifier.fillMaxWidth(),
@@ -103,7 +103,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                 Text("隔离虚拟屏", color = Ink, style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
-                        virtualSession != null && displayController.virtualExecutionPreferred -> "已连接隔离屏，Phone Agent 将在独立显示中操作"
+                        virtualSession != null && displayController.virtualExecutionPreferred -> "已连接隔离虚拟屏，Phone Agent 仅在独立显示中执行"
                         displayController.virtualExecutionPreferred -> "已选择隔离执行，但当前会话未恢复；任务会暂停，不会自动切回主屏"
                         helperBinder != null -> "无线调试助手已连接，可以创建隔离屏"
                         else -> "尚未连接无线调试助手"
@@ -195,39 +195,25 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                             TextButton(onClick = {
                                 val service = PhoneAgentService.activeService
                                 if (service != null && displayController.activatePhoneAgent(service)) taskMessage = "Phone Agent 已切换到隔离虚拟屏"
-                                else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
+                                else taskMessage = "虚拟屏界面识别桥接尚未连接，无法启用执行环境"
                             }) { Text("使用隔离屏", color = Mint) }
                         }
                         Text("实时画面无标题栏悬浮；单击切换大小，双击或长按屏幕触控，拖动屏幕滑动，拖动任一角调整大小。", color = Muted, style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = {
-                                    val service = PhoneAgentService.activeService
-                                    taskMessage = if (service != null && displayController.restoreAccessibilityEnvironment(service)) "已切回主屏执行环境" else "主屏执行环境切换失败，当前执行环境保持不变"
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("恢复主屏执行") }
+
                             TextButton(
                                 onClick = {
                                     virtualSession?.close()
                                     virtualSession = null
-                                    taskMessage = "隔离屏已关闭；执行环境不会自动回退，需手动选择主屏执行"
+                                    taskMessage = "隔离虚拟屏已关闭；Phone Agent 任务将暂停，不会回退到真实主屏"
                                     refresh++
                                 },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth()
                             ) { Text("关闭隔离屏", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
                         }
                     }
                 }
-                if (displayController.virtualExecutionPreferred && (virtualSession == null || helperBinder == null)) {
-                    OutlinedButton(
-                        onClick = {
-                            val service = PhoneAgentService.activeService
-                            taskMessage = if (service != null && displayController.restoreAccessibilityEnvironment(service)) "已明确切回主屏执行环境" else "主屏执行环境切换失败，当前执行环境保持不变"
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("恢复主屏执行") }
-                }
+
             }
         }
         Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -274,18 +260,18 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             }
         }
         OutlinedButton(
-            onClick = { snapshot = PhoneAgentExecutionEnvironmentProvider.active?.captureVisibleText() ?: "执行环境尚未连接，请先连接无障碍服务或隔离虚拟屏。" },
+            onClick = { snapshot = PhoneAgentExecutionEnvironmentProvider.active?.captureVisibleText() ?: "执行环境尚未连接，请先连接并启用隔离虚拟屏执行环境。" },
             enabled = serviceEnabled,
             modifier = Modifier.fillMaxWidth()
         ) { Text("读取当前界面（仅本次主动触发）") }
         Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
         OutlinedButton(
             onClick = {
-                val undone = PhoneAgentService.activeService?.undoLastTextEdit() == true
+                val undone = virtualSession?.let { session -> PhoneAgentService.activeService?.undoLastTextEdit(session.displayId) } == true
                 taskMessage = if (undone) "已撤销上一次安全文本填写" else "当前没有可撤销的安全文本填写，或页面已发生变化"
                 refresh++
             },
-            enabled = serviceEnabled,
+            enabled = serviceEnabled && virtualSession != null,
             modifier = Modifier.fillMaxWidth()
         ) { Text("撤销上次安全文本填写") }
         Text("仅支持页面未变化时撤销最后一次非敏感文本填写；需要有效操作授权。", color = Muted, style = MaterialTheme.typography.labelSmall)

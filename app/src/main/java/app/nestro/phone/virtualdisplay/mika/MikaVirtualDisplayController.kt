@@ -20,7 +20,7 @@ class MikaVirtualDisplayController(context: Context) {
     private val displayManager = app.getSystemService(DisplayManager::class.java)
     @Volatile private var activeSession: Session? = null
     @Volatile private var activeEnvironment: MikaPhoneAgentExecutionEnvironment? = null
-    @Volatile private var activeAccessibilityService: PhoneAgentService? = null
+    @Volatile private var activeBridgeService: PhoneAgentService? = null
 
     val helperConnected get() = adb.shell.value != null
     val virtualExecutionPreferred get() = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
@@ -48,29 +48,19 @@ class MikaVirtualDisplayController(context: Context) {
         val preferenceSaved = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
             .putBoolean("phone_virtual_execution_preferred", true).commit()
         if (!preferenceSaved) return false
-        activeAccessibilityService = service
+        activeBridgeService = service
         val environment = MikaPhoneAgentExecutionEnvironment(service, session)
         activeEnvironment = environment
         PhoneAgentExecutionEnvironmentProvider.attach(environment)
         return true
     }
 
-    fun restoreAccessibilityEnvironment(service: PhoneAgentService): Boolean {
-        val preferenceSaved = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
-            .putBoolean("phone_virtual_execution_preferred", false).commit()
-        if (!preferenceSaved) return false
-        activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
-        activeEnvironment = null
-        activeAccessibilityService = service
-        PhoneAgentExecutionEnvironmentProvider.attach(service)
-        return true
-    }
 
     fun detachPhoneAgentEnvironment(service: PhoneAgentService) {
-        if (activeAccessibilityService !== service) return
+        if (activeBridgeService !== service) return
         activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
         activeEnvironment = null
-        activeAccessibilityService = null
+        activeBridgeService = null
     }
 
     inner class Session internal constructor(
@@ -160,10 +150,9 @@ class MikaVirtualDisplayController(context: Context) {
                 activeSession = null
                 activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
                 activeEnvironment = null
-                activeAccessibilityService = null
+                activeBridgeService = null
             }
-            // Closing the isolated session must not silently fall back to the user's real screen.
-            // The user can explicitly restore main-screen execution from the Phone Agent page.
+            // No main-screen execution fallback exists; tasks pause until the virtual display is restored.
             // MikaAgentDisplay.release() already releases the remote display; calling
             // finishDisplay here first would send a duplicate Binder release.
             display.release()
