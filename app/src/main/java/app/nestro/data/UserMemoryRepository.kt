@@ -69,6 +69,9 @@ class UserMemoryRepository(
         return changed
     }
 
+    suspend fun invalidatePendingExtractions(projectId: String) =
+        UserMemoryStore.invalidateAndAwaitPendingExtractions(projectId)
+
     suspend fun clearProject(projectId: String) {
         UserMemoryStore.clearProject(database.dao(), projectId)
         synchronized(embeddingCache) { embeddingCache.clear() }
