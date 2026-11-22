@@ -77,6 +77,21 @@ class ProjectResourceScopeStoreTest {
         ))
     }
 
+    @Test fun newResourceAssignmentCannotOverwriteAnExistingScopeKey() {
+        val empty = ProjectResourceScopeStore.assignNewResourceToProject(
+            emptyMap(), ProjectResourceKind.SKILL, "new-skill", "project-a"
+        )
+        assertEquals(setOf("project-a"), empty.getValue("skill:new-skill"))
+
+        val existing = mapOf("skill:new-skill" to setOf("project-b"))
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectResourceScopeStore.assignNewResourceToProject(
+                existing, ProjectResourceKind.SKILL, "new-skill", "project-a"
+            )
+        }
+        assertEquals(setOf("project-b"), existing.getValue("skill:new-skill"))
+    }
+
     @Test fun renamingAndRemovingResourcesPreservesScopeWithoutMakingThemGlobal() {
         val original = mapOf("expert:writer" to setOf("project-a"))
         val renamed = ProjectResourceScopeStore.renameResourceScope(
