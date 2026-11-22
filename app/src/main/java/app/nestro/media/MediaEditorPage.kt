@@ -758,6 +758,62 @@ fun MediaEditorPage(
                         if (task.error.isNotBlank()) Text(task.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         if (task.status == MediaAiTaskStatus.QUEUED || task.status == MediaAiTaskStatus.RUNNING) {
                             LinearProgressIndicator(progress = task.progress / 100f, modifier = Modifier.fillMaxWidth())
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching { MediaAiTaskScheduler.pause(context, projectId, task.id) }
+                                        }
+                                        result.onSuccess {
+                                            if (activeMediaAiTaskId == task.id) mediaAiRunning = false
+                                            status = "媒体 AI 任务已暂停；可在任务列表中恢复。"
+                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                        }.onFailure { status = "暂停未完成：" + (it.message ?: "任务状态已变化") }
+                                    }
+                                }) { Text("暂停") }
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching { MediaAiTaskScheduler.cancel(context, projectId, task.id) }
+                                        }
+                                        result.onSuccess {
+                                            if (activeMediaAiTaskId == task.id) {
+                                                mediaAiRunning = false
+                                                activeMediaAiTaskId = ""
+                                            }
+                                            status = "媒体 AI 任务已取消。"
+                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                        }.onFailure { status = "取消未完成：" + (it.message ?: "任务状态已变化") }
+                                    }
+                                }) { Text("取消") }
+                            }
+                        }
+                        if (task.status == MediaAiTaskStatus.PAUSED) {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching { MediaAiTaskScheduler.resume(context, projectId, task.id) }
+                                    }
+                                    result.onSuccess {
+                                        activeMediaAiTaskId = task.id
+                                        mediaAiRunning = true
+                                        mediaAiProgress = 0f
+                                        status = "媒体 AI 任务已恢复，将从任务入口重新执行。"
+                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                    }.onFailure { status = "恢复未完成：" + (it.message ?: "任务状态已变化") }
+                                }
+                            }) { Text("恢复") }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching { MediaAiTaskScheduler.cancel(context, projectId, task.id) }
+                                    }
+                                    result.onSuccess {
+                                        status = "媒体 AI 任务已取消。"
+                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                    }.onFailure { status = "取消未完成：" + (it.message ?: "任务状态已变化") }
+                                }
+                            }) { Text("取消") }
                         }
                     }
                 }
