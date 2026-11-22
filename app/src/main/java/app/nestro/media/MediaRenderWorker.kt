@@ -282,27 +282,54 @@ object MediaRenderScheduler {
     }
 
     suspend fun pause(context: Context, projectId: String, taskId: String) {
-        val task = MediaRenderTaskStore.read(context, projectId, taskId) ?: error("导出任务不存在")
-        require(task.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING)) { "当前导出任务不能暂停" }
-        val app = registerUnifiedTask(context, projectId, taskId)
-        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.PAUSED, expectedStatus = task.status)
-        app.agentTaskCoordinator.pause("media-render:$taskId")
+        val nestroApp = registerUnifiedTask(context, projectId, taskId)
+        val state = nestroApp.agentTaskCoordinator.state("media-render:$taskId")
+            ?: error("统一媒体渲染任务状态不存在")
+        require(state.status in setOf(
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RUNNING,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT
+        )) { "当前统一媒体渲染任务不能暂停：${state.status}" }
+        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.PAUSED)
+        nestroApp.agentTaskCoordinator.pause("media-render:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(uniqueName(projectId, taskId))
     }
 
     suspend fun resume(context: Context, projectId: String, taskId: String) {
-        val task = MediaRenderTaskStore.read(context, projectId, taskId) ?: error("导出任务不存在")
-        require(task.status == MediaRenderStatus.PAUSED) { "只有暂停的任务可以恢复" }
-        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.QUEUED, progress = 0, errorMessage = "", expectedStatus = MediaRenderStatus.PAUSED)
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
+            ?: error("媒体渲染任务无法连接统一任务机")
+        val state = nestroApp.agentTaskCoordinator.state("media-render:$taskId")
+            ?: error("统一媒体渲染任务状态不存在")
+        require(state.status in setOf(
+            app.nestro.agent.AgentTaskStatus.PAUSED,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK
+        )) { "只有统一任务机中的暂停/等待任务可以恢复" }
+        MediaRenderTaskStore.update(
+            context, projectId, taskId,
+            status = MediaRenderStatus.QUEUED,
+            progress = 0,
+            errorMessage = ""
+        )
         enqueue(context, projectId, taskId, replace = true)
     }
 
     suspend fun cancel(context: Context, projectId: String, taskId: String) {
-        val task = MediaRenderTaskStore.read(context, projectId, taskId) ?: error("导出任务不存在")
-        require(task.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING, MediaRenderStatus.PAUSED)) { "当前导出任务不能取消" }
-        val app = registerUnifiedTask(context, projectId, taskId)
-        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.CANCELLED, expectedStatus = task.status)
-        app.agentTaskCoordinator.cancel("media-render:$taskId")
+        val nestroApp = registerUnifiedTask(context, projectId, taskId)
+        val state = nestroApp.agentTaskCoordinator.state("media-render:$taskId")
+            ?: error("统一媒体渲染任务状态不存在")
+        require(state.status in setOf(
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RUNNING,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
+            app.nestro.agent.AgentTaskStatus.PAUSED,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK
+        )) { "当前统一媒体渲染任务不可取消" }
+        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.CANCELLED)
+        nestroApp.agentTaskCoordinator.cancel("media-render:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(uniqueName(projectId, taskId))
     }
 }
