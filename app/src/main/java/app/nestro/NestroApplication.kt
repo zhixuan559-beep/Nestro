@@ -39,6 +39,8 @@ import app.nestro.data.UserMemoryRepository
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
 import app.nestro.data.ProjectAccessControlStore
+import app.nestro.data.CapabilityRegistryStore
+import app.nestro.data.CapabilityDescriptor
 import app.nestro.data.ProjectPreferencesStore
 import app.nestro.data.KnowledgeRepository
 import app.nestro.data.LocalBackupRepository
@@ -374,16 +376,42 @@ class NestroApplication : Application() {
                 app.nestro.agent.AgentToolResult(true, output = formatMediaAiTask(task))
             }
             registerInstalledGeneratedPlugins(this)
+        }.also { catalog ->
+            val capabilityPrefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
+            CapabilityRegistryStore.registerAll(
+                capabilityPrefs,
+                catalog.list().map { spec ->
+                    CapabilityDescriptor(
+                        id = spec.id,
+                        title = spec.id,
+                        category = spec.permission.name.lowercase(),
+                        description = spec.description.take(500),
+                        source = when {
+                            spec.id.startsWith("plugin.") -> "plugin"
+                            spec.id.startsWith("mcp_") -> "mcp"
+                            else -> "builtin"
+                        },
+                        requiresConfirmation = spec.requiresConfirmation ||
+                            spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
+                        defaultGranted = !spec.id.startsWith("plugin.")
+                    )
+                }
+            )
         }
     }
 
     fun refreshGeneratedPluginTools() {
         val catalog = agentToolCatalog
-        catalog.list().filter { it.id.startsWith("plugin.") }.forEach { catalog.remove(it.id) }
+        val capabilityPrefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
+        catalog.list().filter { it.id.startsWith("plugin.") }.forEach {
+            catalog.remove(it.id)
+            CapabilityRegistryStore.unregister(capabilityPrefs, it.id)
+        }
         registerInstalledGeneratedPlugins(catalog)
     }
 
     private fun registerInstalledGeneratedPlugins(catalog: AgentToolCatalog) {
+        val capabilityPrefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
         val store = GeneratedPluginStore(this@NestroApplication)
         val installed = store.list(catalog).filter { it.enabled }
         installed.forEach { plugin ->
@@ -412,12 +440,55 @@ class NestroApplication : Application() {
                 val inputs = rawArguments.filterKeys { it in inputNames }
                 val taskId = "plugin-${plugin.id}-${java.util.UUID.randomUUID()}".take(120)
                 val states = RoomAgentTaskStateStore(database.dao())
-                states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.RUNNING))
+                val initialTaskState = app.nestro.agent.AgentTaskState(
+                    taskId = taskId,
+                    owner = "generated-plugin:${plugin.id}",
+                    status = app.nestro.agent.AgentTaskStatus.RUNNING,
+                    projectId = projectId,
+                    kind = "generated_plugin",
+                    capabilityId = plugin.id,
+                    title = plugin.name.take(160),
+                    input = inputs.keys.sorted().joinToString(",").take(1_000),
+                    idempotencyKey = "plugin:" + projectId + ":" + plugin.id + ":" + taskId,
+                    startedAt = System.currentTimeMillis()
+                )
+                states.putIfAbsent(initialTaskState)
+                suspend fun updatePluginTaskState(status: app.nestro.agent.AgentTaskStatus, error: String = "") {
+                    val current = states.get(taskId) ?: initialTaskState
+                    val terminal = status in setOf(
+                        app.nestro.agent.AgentTaskStatus.COMPLETED,
+                        app.nestro.agent.AgentTaskStatus.FAILED,
+                        app.nestro.agent.AgentTaskStatus.CANCELLED
+                    )
+                    states.put(current.copy(
+                        status = status,
+                        lastError = error.take(2_000),
+                        finishedAt = if (terminal) System.currentTimeMillis() else 0L,
+                        updatedAt = System.currentTimeMillis()
+                    ))
+                }
                 val execution = try {
                     GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
                         val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
                         val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
-                            if (tool.id.startsWith("mcp_")) {
+                            CapabilityRegistryStore.registerIfAbsent(
+                                capabilityPrefs,
+                                CapabilityDescriptor(
+                                    id = tool.id,
+                                    title = tool.id,
+                                    category = tool.permission.name.lowercase(),
+                                    description = tool.description.take(500),
+                                    source = if (tool.id.startsWith("mcp_")) "mcp" else "builtin",
+                                    requiresConfirmation = tool.requiresConfirmation ||
+                                        tool.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
+                                    defaultGranted = if (tool.id.startsWith("mcp_")) {
+                                        mcpToolCenterRepository.isToolGranted(tool.id)
+                                    } else true
+                                )
+                            )
+                            if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
+                                app.nestro.agent.AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
+                            } else if (tool.id.startsWith("mcp_")) {
                                 if (mcpToolCenterRepository.isToolGranted(tool.id)) app.nestro.agent.AgentAuthorization.Allow
                                 else app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
                             } else if (tool.permission in setOf(
@@ -446,20 +517,18 @@ class NestroApplication : Application() {
                         }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.PAUSED))
+                    updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件执行已暂停")
                     throw cancelled
                 } catch (error: Exception) {
-                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.FAILED, lastError = error.message.orEmpty().take(2_000)))
+                    updatePluginTaskState(app.nestro.agent.AgentTaskStatus.FAILED, error.message.orEmpty())
                     return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
                 }
-                states.put(app.nestro.agent.AgentTaskState(
-                    taskId = taskId,
-                    owner = "generated-plugin:${plugin.id}",
-                    status = if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
-                        else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
-                        else app.nestro.agent.AgentTaskStatus.FAILED,
-                    lastError = if (execution.success) "" else execution.output.take(2_000)
-                ))
+                updatePluginTaskState(
+                    if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
+                    else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
+                    else app.nestro.agent.AgentTaskStatus.FAILED,
+                    if (execution.success) "" else execution.output
+                )
                 app.nestro.agent.AgentToolResult(
                     success = execution.success,
                     output = execution.output,
@@ -467,6 +536,18 @@ class NestroApplication : Application() {
                     requiresUser = execution.requiresUser
                 )
             }
+            CapabilityRegistryStore.registerIfAbsent(
+                capabilityPrefs,
+                CapabilityDescriptor(
+                    id = toolId,
+                    title = plugin.name.take(80),
+                    category = "plugin",
+                    description = plugin.description.take(500),
+                    source = "plugin",
+                    requiresConfirmation = true,
+                    defaultGranted = false
+                )
+            )
         }
     }
 
@@ -533,6 +614,7 @@ class NestroApplication : Application() {
                 chat = chatExecutionService,
                 catalog = agentToolCatalog,
                 database = database,
+                capabilityPreferences = getSharedPreferences("nestro_local", MODE_PRIVATE),
                 permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                     if (tool.id.startsWith("mcp_")) {
                         if (mcpToolCenterRepository.isToolGranted(tool.id)) {
