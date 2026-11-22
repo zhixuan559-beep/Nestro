@@ -466,7 +466,11 @@ class NestroApplication : Application() {
                         output = "该插件请求已存在，已阻止重复执行。task_id=${canonicalTask.taskId}; status=${canonicalTask.status.name}"
                     )
                 }
-                suspend fun updatePluginTaskState(status: app.nestro.agent.AgentTaskStatus, error: String = "") {
+                suspend fun updatePluginTaskState(
+                    status: app.nestro.agent.AgentTaskStatus,
+                    error: String = "",
+                    resultSummary: String = ""
+                ) {
                     val current = states.get(taskId) ?: initialTaskState
                     val terminal = status in setOf(
                         app.nestro.agent.AgentTaskStatus.COMPLETED,
@@ -476,7 +480,7 @@ class NestroApplication : Application() {
                     states.put(current.copy(
                         status = status,
                         lastError = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) "" else error.take(2_000),
-                        resultSummary = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) error.take(8_000) else current.resultSummary,
+                        resultSummary = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) resultSummary.take(8_000) else current.resultSummary,
                         finishedAt = if (terminal) System.currentTimeMillis() else 0L,
                         updatedAt = System.currentTimeMillis()
                     ))
@@ -549,7 +553,8 @@ class NestroApplication : Application() {
                     if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
                     else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
                     else app.nestro.agent.AgentTaskStatus.FAILED,
-                    if (execution.success) "" else execution.output
+                    if (execution.success) "" else execution.output,
+                    resultSummary = if (execution.success) execution.output else ""
                 )
                 app.nestro.agent.AgentToolResult(
                     success = execution.success,
