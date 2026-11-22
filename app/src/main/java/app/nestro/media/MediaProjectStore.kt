@@ -704,6 +704,8 @@ object MediaProjectStore {
     fun duplicateProject(context: Context, sourceProjectId: String, targetProjectId: String) {
         safeProjectId(sourceProjectId)
         safeProjectId(targetProjectId)
+        recoverArchiveSwap(context, sourceProjectId)
+        recoverArchiveSwap(context, targetProjectId)
         require(sourceProjectId != targetProjectId)
         val source = projectDir(context, sourceProjectId)
         if (!source.exists()) return
@@ -751,11 +753,15 @@ object MediaProjectStore {
         }
     }
 
-    fun hasProjectData(context: Context, projectId: String): Boolean = projectDir(context, projectId).exists()
+    fun hasProjectData(context: Context, projectId: String): Boolean {
+        recoverArchiveSwap(context, projectId)
+        return projectDir(context, projectId).exists()
+    }
 
     @Synchronized
     fun deleteProject(context: Context, projectId: String) {
         safeProjectId(projectId)
+        recoverArchiveSwap(context, projectId)
         val root = projectDir(context, projectId)
         if (root.exists()) {
             val mediaRoot = File(context.filesDir, "media-editor").canonicalFile
