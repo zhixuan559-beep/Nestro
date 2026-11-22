@@ -2657,6 +2657,41 @@ fun NestroApp(initialPage: String = "home") {
                                                     modifier = Modifier.fillMaxWidth(),
                                                     minLines = 2
                                                 )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text("跨项目共享", color = Ink, style = MaterialTheme.typography.labelMedium)
+                                                        Text(
+                                                            "开启后其他项目可以召回这条记忆；关闭会撤销共享。",
+                                                            color = Muted,
+                                                            style = MaterialTheme.typography.bodySmall
+                                                        )
+                                                    }
+                                                    Switch(
+                                                        checked = memory.shareAcrossProjects,
+                                                        onCheckedChange = { enabled ->
+                                                            scope.launch {
+                                                                val result = withContext(Dispatchers.IO) {
+                                                                    runCatching {
+                                                                        appRuntime.userMemoryRepository.setShareAcrossProjects(
+                                                                            memory.id, memory.projectId, enabled
+                                                                        )
+                                                                    }
+                                                                }
+                                                                if (result.getOrDefault(false)) {
+                                                                    automaticMemories = withContext(Dispatchers.IO) {
+                                                                        appRuntime.userMemoryRepository.list(activeProjectId)
+                                                                    }
+                                                                    memoryStatus = if (enabled) "已允许其他项目召回这条记忆" else "已撤销跨项目共享"
+                                                                } else {
+                                                                    memoryStatus = "共享设置失败：${result.exceptionOrNull()?.message ?: "记忆不存在"}"
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
                                                 Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 Text("创建：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.createdAt))} · 更新：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.updatedAt))}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 TextButton(
