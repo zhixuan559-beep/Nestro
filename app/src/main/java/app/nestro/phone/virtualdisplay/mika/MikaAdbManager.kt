@@ -32,6 +32,7 @@ class MikaAdbManager(context: Context) {
         finder.findPorts(AdbServiceTypes.CONNECT, timeoutMs)
 
     suspend fun pair(pairingPort: Int, pairingCode: String): AdbPeerInfo = withContext(Dispatchers.IO) {
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { "Wireless ADB TLS pairing requires Android 10 or later" }
         require(pairingPort in 1..65535)
         require(pairingCode.matches(Regex("[0-9]{6}")))
         val identity = AndroidAdb.pairingIdentity(app)
@@ -40,6 +41,7 @@ class MikaAdbManager(context: Context) {
 
     /** Launch the shell-UID helper through the already paired local adbd service. */
     suspend fun launchHelper(): Boolean = withContext(Dispatchers.IO) {
+        if (shell.value != null) return@withContext true
         check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { "Isolated shell helper requires Android 12 or later" }
         val discovered = finder.findPorts(AdbServiceTypes.CONNECT, 3_000L)
         val candidates = (discovered + (systemTlsPort()?.let(::listOf) ?: emptyList())).distinct()
