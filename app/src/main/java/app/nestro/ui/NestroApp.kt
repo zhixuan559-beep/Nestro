@@ -1931,7 +1931,8 @@ fun NestroApp(initialPage: String = "home") {
                                                          val existingWorkflowTask = appRuntime.agentTaskCoordinator.state(workflowTaskId)
                                                          val effectiveWorkflowTaskId = if (
                                                              existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.COMPLETED ||
-                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.CANCELLED
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.CANCELLED ||
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.FAILED
                                                          ) UUID.randomUUID().toString() else workflowTaskId
                                                          prefs.edit()
                                                              .putString("workflow_task_id_v1", effectiveWorkflowTaskId)
