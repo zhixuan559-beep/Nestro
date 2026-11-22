@@ -457,3 +457,10 @@
 - `GitHubActionsCoworkbenchRunner` 使用 GitHub-hosted Actions runner 执行用户主动触发的 `workflow_dispatch`；仓库代码不会在 Android 进程内执行。当前只支持 GitHub Actions，GitLab/Gitee runner 尚未接入；真实 Workflow、权限和取消联调仍待后续验收。
 - 因此，旧优化文档中“补丁预览、影响分析、明确应用、快照/回滚、隔离构建测试整体尚未实现”的状态已过期；当前已有代码实现。仍需确认远端 workflow 本身的权限最小化和实际运行结果，不能把 runner 代码存在当作真实 Actions 已验证。
 
+
+### 统一任务基座重试语义补充核对
+- `AgentTaskCoordinator.resume(taskId)` 支持用户/上层显式恢复 PAUSED、FAILED、WAITING_FOR_USER 任务；当前没有统一的 retryCount、最大尝试次数、退避策略或按错误类型判定可自动重试的策略。
+- `PhoneAgentExecutor` 对动作中断采取先核对页面、再由用户决定是否重试，避免重复支付/提交等不确定动作；这一安全边界必须保留。
+- `MediaAiTaskWorker` 的失败路径当前写入 FAILED，取消写入 CANCELLED；没有统一接入 AgentTaskCoordinator 的自动重试策略。
+- 后续调度引擎需区分可安全重试的幂等任务与必须等待用户核验的设备/外部写入任务；不能对所有失败任务无条件自动重放。
+
