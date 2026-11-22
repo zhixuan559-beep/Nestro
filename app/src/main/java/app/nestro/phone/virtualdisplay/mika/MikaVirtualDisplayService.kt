@@ -131,13 +131,13 @@ internal class MikaVirtualDisplayService(
         }
 
     override fun releaseDisplay(displayId: Int) {
-        awake.stop(displayId)
+        runCatching { awake.stop(displayId) }
         val (display, watcher) = synchronized(displays) {
             displays.remove(displayId) to if (displays.isEmpty()) orientationWatch.also { orientationWatch = null } else null
         }
-        watcher?.close()
+        runCatching { watcher?.close() }.onFailure { Log.w(TAG, "orientation watcher close failed", it) }
         if (watcher != null) requestedOrientations.clear()
-        display?.release()
+        runCatching { display?.release() }.onFailure { Log.w(TAG, "virtual display release failed", it) }
     }
 
     private fun ensureOrientationWatch() {
@@ -410,7 +410,10 @@ internal class MikaVirtualDisplayService(
     override fun identity(): IntArray = intArrayOf(Process.myUid(), Process.myPid())
 
     override fun releaseAll() {
-        displays.keys.toList().forEach(::releaseDisplay)
+        displays.keys.toList().forEach { displayId ->
+            runCatching { releaseDisplay(displayId) }
+                .onFailure { Log.w(TAG, "releaseAll failed for display " + displayId, it) }
+        }
     }
 
     @SuppressLint("PrivateApi")
