@@ -49,6 +49,7 @@ import app.nestro.data.LocalBackupRepository
 import app.nestro.data.ExpertTeamExecutionCoordinator
 import app.nestro.data.ChatRequestContextAssembler
 import app.nestro.data.ChatRequestExecutionCoordinator
+import app.nestro.data.ChatRequestExecutionRequest
 import app.nestro.data.AutomaticMemoryExtractionCoordinator
 import app.nestro.data.CapabilityDraftCoordinator
 import app.nestro.data.CapabilityDraftTransport
@@ -772,6 +773,98 @@ class NestroApplication : Application() {
                     PhoneAgentExecutor.Outcome.WAITING_USER -> taskContext.waitForUser(result.message.take(2_000))
                     PhoneAgentExecutor.Outcome.FAILED -> taskContext.fail(result.message.take(2_000))
                     PhoneAgentExecutor.Outcome.CANCELLED -> taskContext.cancel()
+                }
+            }
+            register("calendar_automation") { taskContext ->
+                val state = requireNotNull(agentTaskCoordinator.state(taskContext.taskId)) {
+                    "日历自动任务状态不存在"
+                }
+                val payload = org.json.JSONObject(state.input)
+                val prompt = payload.optString("prompt").trim().take(12_000)
+                val eventId = payload.optString("eventId")
+                require(prompt.isNotBlank() && state.projectId.isNotBlank()) {
+                    "日历自动任务缺少执行目标或项目范围"
+                }
+                val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
+                val profiles = ModelProfileCatalogCodec.decode(
+                    preferences.getString("model_profiles_v1", "[]").orEmpty()
+                )
+                val registry = modelConfigurationRepository.loadRegistry(profiles)
+                val activeModelId = preferences.getString("active_model_registry_id", "").orEmpty()
+                val failoverEnabled = preferences.getBoolean("model_failover_enabled", false)
+                val reasoningEffort = preferences.getString("reasoning_effort_v1", "low")
+                val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+                    registry = registry,
+                    activeModelId = activeModelId,
+                    failoverEnabled = failoverEnabled,
+                    reasoningEffort = reasoningEffort,
+                    readKey = modelConfigurationRepository::readApiKey
+                ).ifEmpty {
+                    val profileId = preferences.getString("active_model_profile_id", "").orEmpty()
+                    val profile = profiles.firstOrNull { it.id == profileId }
+                    val key = profile?.let { modelConfigurationRepository.readProfileKey(it.id) }.orEmpty()
+                    if (profile != null && key.isNotBlank()) {
+                        listOf(ModelConfig(profile.baseUrl, profile.model, key))
+                    } else emptyList()
+                }
+                require(configs.isNotEmpty()) { "日历自动任务没有可用的已选模型或 API Key" }
+                val conversationId = "calendar-$eventId".take(120)
+                val requestId = taskContext.taskId
+                val execution = chatRequestExecutionCoordinator.execute(
+                    request = ChatRequestExecutionRequest(
+                        requestId = requestId,
+                        conversationId = conversationId,
+                        projectId = state.projectId,
+                        prompt = prompt,
+                        startedAt = System.currentTimeMillis(),
+                        history = emptyList(),
+                        modelConfigs = configs,
+                        baseSystemContext = "这是用户在日历中明确设置的定时自动任务。请按目标完成工作；普通回答直接回答，需要外部能力时由主模型按权限和审批规则调用已接入工具。当前项目为：${state.projectId}。事件 ID：$eventId。",
+                        taskModeEnabled = true,
+                        expertTeamEnabled = false,
+                        temperature = 0.0,
+                        maxTokens = null,
+                        previousAssistant = null,
+                        shouldStop = { false }
+                    ),
+                    onUsage = { config, inputTokens, outputTokens ->
+                        recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = false)
+                    },
+                    onProviderUsage = { config, inputTokens, outputTokens ->
+                        recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = true)
+                    },
+                    planPhoneAgent = { arguments ->
+                        val goal = arguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt
+                        val plan = app.nestro.phone.PhoneAgentPlanner.plan(goal)
+                        val created = phoneAgentTaskService.createAndScheduleIfAuthorized(
+                            state.projectId,
+                            conversationId,
+                            plan
+                        )
+                        app.nestro.agent.AgentToolResult(
+                            true,
+                            output = "已创建 Phone Agent 任务：${created.id}；当前状态：${created.status}。"
+                        )
+                    },
+                    onPartialAnswer = { partial ->
+                        taskContext.checkpoint("calendar_output:" + partial.take(24_000))
+                    }
+                )
+                val finalText = execution.finalization.finalText.take(8_000)
+                when (execution.finalization.status.name) {
+                    "SUCCESS" -> {
+                        val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
+                        if (child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准")) {
+                            taskContext.fail(child.lastError)
+                        } else {
+                            taskContext.transition(
+                                AgentTaskStatus.COMPLETED,
+                                resultSummary = finalText
+                            )
+                        }
+                    }
+                    "STOPPED" -> taskContext.cancel("日历自动任务已停止")
+                    else -> taskContext.fail(finalText.ifBlank { "日历自动任务执行失败" })
                 }
             }
         }
