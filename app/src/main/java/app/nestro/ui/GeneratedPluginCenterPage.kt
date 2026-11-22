@@ -42,6 +42,7 @@ import java.io.ByteArrayOutputStream
 import java.io.OutputStreamWriter
 import java.text.DateFormat
 import java.util.Date
+import org.json.JSONObject
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -276,6 +277,85 @@ internal fun GeneratedPluginCenterPage(
                                 "${trace.event}：${trace.detail.take(400)}",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                        }
+                        if (
+                            entry.state.kind == "generated_plugin" &&
+                            entry.state.status in setOf("WAITING_FOR_USER", "PAUSED")
+                        ) {
+                            OutlinedButton(
+                                enabled = !busy,
+                                onClick = {
+                                    busy = true
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                val payload = entry.state.input
+                                                val separator = payload.indexOf('\n')
+                                                require(separator > 0 && payload.startsWith("request_id=")) {
+                                                    "旧版插件任务没有可恢复的完整输入，请核对审计后重新发起"
+                                                }
+                                                val requestId = payload.substring("request_id=".length, separator)
+                                                require(requestId.isNotBlank() && requestId.length <= 120)
+                                                val inputObject = JSONObject(payload.substring(separator + 1))
+                                                val arguments = buildMap {
+                                                    val keys = inputObject.keys()
+                                                    while (keys.hasNext()) {
+                                                        val key = keys.next()
+                                                        put(key, inputObject.optString(key).take(2_000))
+                                                    }
+                                                    put("__nestro_project_id", entry.state.projectId)
+                                                    put("__nestro_conversation_id", entry.state.conversationId)
+                                                    put("__nestro_request_id", requestId)
+                                                }
+                                                val toolId = "plugin." + entry.state.capabilityId
+                                                when (application.agentApprovalCoordinator.authorize(
+                                                    requestId,
+                                                    toolId,
+                                                    "恢复插件任务需要重新确认插件执行权限：${entry.state.title}"
+                                                )) {
+                                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE,
+                                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK -> {
+                                                        val invocation = application.agentToolCatalog.invoke(toolId, arguments)
+                                                        if (!invocation.success) {
+                                                            error(invocation.error.ifBlank { invocation.output }.ifBlank { "插件恢复执行失败" })
+                                                        }
+                                                        invocation.output.ifBlank { "插件任务已恢复并完成。" }
+                                                    }
+                                                    app.nestro.agent.AgentApprovalDecision.REJECT -> {
+                                                        application.agentTaskCoordinator.transitionTask(
+                                                            entry.state.taskId,
+                                                            app.nestro.agent.AgentTaskStatus.FAILED,
+                                                            "用户拒绝恢复插件任务"
+                                                        )
+                                                        error("用户拒绝恢复插件任务")
+                                                    }
+                                                    null -> "审批窗口已关闭，任务继续保持等待；可稍后再次恢复。"
+                                                }
+                                            }
+                                        }
+                                        result.onSuccess { status = it }
+                                            .onFailure { status = "插件恢复未完成：" + (it.message ?: "未知错误") }
+                                        withContext(Dispatchers.IO) {
+                                            val state = application.agentTaskCoordinator.state(entry.state.taskId)
+                                            if (state?.status !in setOf(
+                                                    app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                                                    app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                                                    app.nestro.agent.AgentTaskStatus.PAUSED
+                                                )
+                                            ) {
+                                                val separator = entry.state.input.indexOf('\n')
+                                                if (separator > 0) {
+                                                    application.agentApprovalCoordinator.endScope(
+                                                        entry.state.input.substring("request_id=".length, separator)
+                                                    )
+                                                }
+                                            }
+                                            reloadAudit()
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            ) { Text("恢复插件任务并重新审批") }
                         }
                     }
                 }
