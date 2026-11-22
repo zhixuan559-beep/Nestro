@@ -30,6 +30,24 @@ class UserMemoryCorrectionTest {
         )
 
     @Test
+    fun manualMemoryCreationIsProjectScopedSafeAndDeduplicated() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.dao()
+            dao.putProjects(listOf(ProjectEntity("project-a", "项目 A", "", 1L)))
+            val content = "当前项目默认使用 Kotlin 和 Jetpack Compose"
+            assertTrue(UserMemoryStore.saveManual(dao, "project-a", content, "project"))
+            assertFalse(UserMemoryStore.saveManual(dao, "project-a", content, "project"))
+            assertEquals(1, dao.userMemories("project-a").size)
+            assertFalse(UserMemoryStore.isSafeContent("项目联系人手机号 13812345678"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
     fun explicitCorrectionReplacesOnlyTheNamedMemoryInItsOwnerProject() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
             .allowMainThreadQueries()
