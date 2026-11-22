@@ -222,6 +222,7 @@ object WorkflowEngine {
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
         onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
+        onStepCompleted:suspend (Int,WorkflowStepRun,String)->Unit={ _, _, _ -> },
         requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> false }
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
