@@ -15,7 +15,8 @@ internal data class ModelConfig(
     val model: String,
     val apiKey: String,
     val reasoningEffort: String? = null,
-    val protocol: ModelApiProtocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS
+    val protocol: ModelApiProtocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
+    val contextWindowTokens: Int? = null
 )
 
 internal object LocalVault {
