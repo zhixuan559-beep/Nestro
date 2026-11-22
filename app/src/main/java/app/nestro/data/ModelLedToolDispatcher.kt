@@ -106,9 +106,9 @@ internal class ModelLedToolDispatcher(
         // Phone Agent registers short-lived device-action handlers while executing a task;
         // those task-local controls must never leak into ordinary chat tool discovery.
         val candidates = catalog.list()
-            .filterNot { it.id.startsWith("phone.") }
+            .filterNot { it.id.startsWith("phone.") || it.id == "phone_agent.plan" }
             .filter(visibleToolFilter)
-            .filter { it.id !in setOf("phone_agent.plan", "phone_agent.execute") || taskModeEnabled }
+            .filter { it.id != "phone_agent.execute" || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
