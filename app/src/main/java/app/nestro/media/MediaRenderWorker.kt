@@ -33,9 +33,9 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result {
         val projectId = inputData.getString(KEY_PROJECT_ID) ?: return Result.failure()
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
-        val app = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
+        val nestroApp = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
         return try {
-            app.agentTaskCoordinator.runInline(
+            nestroApp.agentTaskCoordinator.runInline(
                 taskId = "media-render:$taskId",
                 owner = "media_render",
                 initialCheckpoint = "media_render:$projectId:$taskId",
