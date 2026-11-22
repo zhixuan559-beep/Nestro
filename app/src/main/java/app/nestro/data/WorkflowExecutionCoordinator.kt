@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentTaskMetadata
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
@@ -80,7 +81,13 @@ class WorkflowExecutionCoordinator(
         return taskCoordinator.runInline(
             taskId = taskId,
             owner = "workflow",
-            initialCheckpoint = initialCheckpoint
+            initialCheckpoint = initialCheckpoint,
+            metadata = AgentTaskMetadata(
+                kind = "workflow",
+                capabilityId = workflow.id,
+                title = workflow.id.take(160),
+                input = input.take(12_000)
+            )
         ) { taskContext ->
             val completedRuns = resumeRuns.toMutableList()
             val result = WorkflowEngine.run(
