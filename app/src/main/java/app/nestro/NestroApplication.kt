@@ -657,7 +657,7 @@ class NestroApplication : Application() {
     }
     internal val automaticMemoryExtractionCoordinator: AutomaticMemoryExtractionCoordinator by lazy {
         AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { configs, messages ->
+            extractCandidates = { configs, messages, existingMemories ->
                 val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
                 val profiles = ModelProfileCatalogCodec.decode(
                     preferences.getString("model_profiles_v1", "[]").orEmpty()
@@ -667,6 +667,7 @@ class NestroApplication : Application() {
                     chatExecutionService,
                     configs,
                     messages,
+                    existingMemories = existingMemories,
                     onUsage = { used, input, output ->
                         recordBackgroundModelUsage(preferences, registry, used, input, output, providerReported = false)
                     },
@@ -677,7 +678,8 @@ class NestroApplication : Application() {
             },
             saveCandidates = { projectId, conversationId, messageId, candidates, mutationVersion ->
                 userMemoryRepository.saveCandidates(projectId, conversationId, messageId, candidates, mutationVersion)
-            }
+            },
+            loadExistingMemories = { projectId -> userMemoryRepository.list(projectId) }
         )
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
