@@ -252,7 +252,7 @@ class WorkflowEngineTest {
                 userInput = "研究目标",
                 invokeModel = { step, _ ->
                     if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
-                    bothStarted.await()
+                    kotlinx.coroutines.withTimeout(2_000) { bothStarted.await() }
                     if (step.id == "research-b") error("B 暂时失败")
                     "研究 A已完成"
                 },
