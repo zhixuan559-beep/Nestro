@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 静态审计基线：`integration/19-modules`，HEAD `b394e60f023fc8354d55bbec046cecac30e46ca1`（2026-11-22 16:49 UTC）。
+> 静态审计基线：`integration/19-modules`，HEAD `30c8f098d57a7e8acb4cc59368375f057ca62185`（2026-11-22 17:11 UTC；当前业务源码基线仍为 `b394e60f023fc8354d55bbec046cecac30e46ca1`，之后提交仅更新审计文档）。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。本地图正在按新基线重新核对；不得将旧代码地图当作当前完整审计结果。
 >
 > 当前树：433 个 Git tree 条目，其中 Kotlin 源码/测试文件 328 个（主源码 202 个、JVM 测试 93 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
@@ -41,8 +41,8 @@
 ### 创作与执行混合调度
 
 - Phone Agent：`PhoneAgentTaskService` → `PhoneAgentWorkScheduler` → `PhoneAgentWorker` → `PhoneAgentExecutor`。
-- 媒体分析：`media.ai.run` → `MediaAiTaskStore` → `MediaAiTaskScheduler/Worker` → `MediaIntelligenceProvider`。
-- 视频生成：`media.video.generate` → 同一 Media AI 持久任务队列 → `MediaVideoGenerationClient` → 项目素材导入。
+- 媒体分析：`media.ai.run/status` → `MediaAiTaskStore` → `MediaAiTaskScheduler/Worker` → `MediaIntelligenceProvider`；执行状态另由 `AgentTaskCoordinator.runInline` 统一管理，领域任务结果保存在 MediaAiTaskStore。
+- 视频生成：`media.video.generate/status` → MediaAiTaskStore/Worker → `MediaVideoGenerationClient` → 项目素材导入；任务创建后立即返回 task_id。
 - 专家创作：`expert_team.run` → `ExpertTeamExecutionCoordinator` → `ExpertProjectPlanExecutor`，按 DAG 并行工作包执行。
 - 主模型提示要求先启动可并行的后台任务，再运行独立专家工作；依赖素材的下游任务必须等待任务终态并核实素材已导入。
 
@@ -64,13 +64,17 @@
 
 ### 日历
 
-当前 `CalendarReminderScheduler` / Worker 负责按时间与重复规则触发提醒、通知和后续重复排程；当前源码尚未把到期日历事件连接到 AgentTask/Expert DAG/Phone Agent/Workflow 自动执行，也没有执行结果回写。日历是任务调度辅助能力，最终 UI 不应做成独立主页面。
+当前 `CalendarReminderScheduler` / Worker 按 occurrence 生成确定性 taskId/idempotencyKey，入队 `AgentTaskCoordinator`；`NestroApplication` 注册 `calendar_automation` handler，经 `ChatRequestExecutionCoordinator` 进入主模型工具链，结果/错误/状态回写 `CalendarEvent`，支持暂停/恢复/取消与进程恢复。当前缺延迟/任意时间条件模型、独立 retryCount/业务错误分类退避；calendar handler 当前不直接启用 expertTeam 或 workflow.run。日历是辅助调度能力，最终 UI 是否收敛为轻量入口仍待产品形态审定。
 
-## 当前结构性缺口
+## 当前结构性缺口（按最新源码回读，仍在总审计中）
 
-- 统一能力中心尚未提供完整的能力总览、项目授权和任务审计 UI；旧 PR #1 的 CapabilityTaskEngine 不应整套恢复，需把必要的幂等、重试、元数据能力补入当前 AgentTaskCoordinator。
-- 插件工作流目前整体确认后，内部 EXTERNAL_WRITE 步骤直接 Allow；审批 UI 是否展示完整步骤和参数仍需核验；插件执行缺少共享 AgentTaskCoordinator 的步骤 checkpoint/resume。
-- 日历到期触发仍以通知为主，尚未调度实际 Agent/Workflow 任务。
-- ChatMessage 原生多模态 parts、通用视频问答、非语音音频理解仍缺。
-- 记忆全局/项目/会话上下文缓存仍未实现；embeddingCache 只是向量计算缓存。
-- 当前所有新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
+- 统一任务机的通用 retry 默认值为 2；WorkflowExecutionCoordinator 与 ExpertTeamExecutionCoordinator 的 runInline 调用沿用默认值。Workflow 工具感知步骤可能包含外部副作用，需补 task/step retry-safety 契约，避免不确定结果后整段重放。MCP、媒体 AI、媒体渲染、日历和生成式插件路径已显式将统一任务重试设为 0。
+- 模块16已有生成式插件 runInline、步骤 checkpoint、恢复 UI、统一审批与项目能力授权/调用审计；仍缺统一跨模块任务总览收敛、任意代码插件沙箱和完整 Android VoiceInteractionService。
+- 模块7自动记忆写入缺少 DAO 事务内 project/conversation/message 归属校验；独立全局/项目/会话记忆上下文缓存仍未实现。手动 global_memory_v1 与自动结构化记忆是不同能力。
+- 模块8缺 TRAVEL 专用路线规划及主屏导航授权链路；虚拟屏通用接管已存在。
+- 模块17仍限单视频轨/最多单音频轨；多轨/PIP、转场、速度曲线、关键帧、字幕烧录和高级混音缺失。
+- 模块18已接统一任务机与主模型工具链，但缺延迟/任意时间条件触发、独立 retryCount/错误分类退避；目前不直接调度 expert DAG/workflow。
+- 模块3仍缺按真实模型 context-window 动态预算；原生工具并发只覆盖显式声明的安全只读工具。
+- ChatMessage 原生多模态 parts、通用视频问答、非语音音频事件理解仍未实现；现有媒体素材导入桥接与 media.ai.run 能力不可夸大。
+- 模块7记忆归属校验、模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
+- 全部新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
