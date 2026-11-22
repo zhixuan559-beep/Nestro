@@ -518,3 +518,10 @@
 - 旧分支还支持 `setShareAcrossProjects` 与显式共享记忆；当前 `UserMemoryEntity` 没有共享字段，检索仅按当前项目。此项需确认是否为用户已接受的产品边界：若项目严格隔离是最终决定，则保留现状；若仍需显式共享，必须重新设计受审计的授权，不可直接复制旧实现。
 - PR #1 的 `CapabilityRegistryStore/CapabilityTaskEngine/CapabilityCenterPage` 是旧版独立能力注册/任务队列体系；当前整合版已使用 `AgentToolCatalog/AgentRuntime/AgentTaskCoordinator`。不应整套合并回去，但旧版的 retry/backoff/idempotency、项目能力目录/审计 UI 可能包含未迁移的产品能力，需逐项映射到新基座。
 
+
+### 模块16 用户可见能力中心/任务总览差异
+- 当前 `CapabilityDirectoryPage` 主要展示内置能力说明、Skill 包、社区目录签名/信任根和安装状态；它没有旧版 `CapabilityCenterPage` 的通用能力逐项目授权开关、统一能力审计记录和跨模块任务队列。
+- 当前 `AgentToolCatalog` 是进程内工具定义目录，`AgentToolLeaseRegistry/AgentCapabilityRegistry` 是执行期临时租约；它们不等于持久化的用户级/项目级能力注册表。MCP 有独立逐工具持久授权，但其他内置能力没有同一套通用开关/审计 UI。
+- 旧 PR #1 的 `CapabilityCenterPage` 依赖旧 `CapabilityRegistryStore/CapabilityTaskEngine` 和独立 capability_tasks 表；这些旧类/表当前未进入 integration。不能整套合并回来造成第二套工具目录和任务队列。
+- 后续应在现有 `AgentToolCatalog/AgentTaskCoordinator` 上设计新的能力总览页：统一展示能力可用性/权限/来源、项目授权、任务状态/最近事件和审计；任务数据直接读取统一状态源，不重新建 CapabilityTaskEngine。
+
