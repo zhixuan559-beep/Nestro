@@ -59,4 +59,5 @@ internal class WorkflowUiState(preferences: SharedPreferences) {
     val workflowPaused: MutableState<Boolean> = mutableStateOf(false)
     val workflowPauseGate: MutableState<CompletableDeferred<Unit>?> = mutableStateOf(null)
     val workflowApprovalPrompt: MutableState<WorkflowApprovalPrompt?> = mutableStateOf(null)
+    val workflowApprovalVisible: MutableState<Boolean> = mutableStateOf(false)
 }
