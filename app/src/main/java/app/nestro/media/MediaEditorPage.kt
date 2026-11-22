@@ -54,6 +54,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
 import java.io.ByteArrayOutputStream
 import org.json.JSONArray
 import org.json.JSONObject
@@ -90,6 +92,8 @@ fun MediaEditorPage(
     var mediaAiProgress by remember(projectId) { mutableStateOf(0f) }
     var mediaAiRunning by remember(projectId) { mutableStateOf(false) }
     var isSaving by remember(projectId) { mutableStateOf(false) }
+    var pendingMediaArchiveUri by remember(projectId) { mutableStateOf<Uri?>(null) }
+    var showMediaArchiveImportConfirm by remember(projectId) { mutableStateOf(false) }
     val player = remember(context) { CompositionPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
     val assetPreviewPlayer = remember(context) { ExoPlayer.Builder(context).build() }
@@ -344,6 +348,37 @@ fun MediaEditorPage(
         }
     }
 
+    val mediaArchiveExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val archive = File(context.cacheDir, "media-project-${UUID.randomUUID()}.zip")
+                    try {
+                        MediaProjectStore.exportProjectArchive(context, projectId, archive)
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            archive.inputStream().use { input -> input.copyTo(output) }
+                        } ?: error("无法写入媒体项目备份")
+                    } finally {
+                        archive.delete()
+                    }
+                }
+            }
+            status = if (result.isSuccess) "媒体项目备份已导出，包含时间线和原始素材。" else
+                "媒体项目备份失败：" + (result.exceptionOrNull()?.message ?: "未知错误")
+        }
+    }
+
+    val mediaArchiveImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pendingMediaArchiveUri = uri
+            showMediaArchiveImportConfirm = true
+        }
+    }
+
     val videoExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri: Uri? ->
         if (uri != null && exportTaskId.isNotBlank()) scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -479,6 +514,8 @@ fun MediaEditorPage(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { importLauncher.launch(arrayOf("video/*", "audio/*", "image/*")) }) { Text("导入素材") }
+            OutlinedButton(onClick = { mediaArchiveExportLauncher.launch("nestro-media-$projectId.zip") }) { Text("备份工程") }
+            OutlinedButton(onClick = { mediaArchiveImportLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("恢复工程") }
             OutlinedButton(onClick = { scope.launch { runCatching { reload() }.onFailure { status = it.message ?: "刷新失败" } } }) { Text("刷新") }
         }
         Card(Modifier.fillMaxWidth()) {
@@ -801,4 +838,75 @@ fun MediaEditorPage(
 private fun formatDuration(ms: Long): String {
     val seconds = ms.coerceAtLeast(0) / 1_000
     return "%02d:%02d".format(seconds / 60, seconds % 60)
+    if (showMediaArchiveImportConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                showMediaArchiveImportConfirm = false
+                pendingMediaArchiveUri = null
+            },
+            title = { Text("恢复媒体工程") },
+            text = {
+                Text("将替换当前项目的媒体时间线、素材索引和原始素材文件。当前项目的其他聊天、知识库和作品数据不会改变。请先确认没有正在运行的渲染任务。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingMediaArchiveUri
+                    showMediaArchiveImportConfirm = false
+                    pendingMediaArchiveUri = null
+                    if (uri != null) scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                require(tasks.none { it.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING, MediaRenderStatus.PAUSED) }) {
+                                    "当前项目仍有未结束的渲染任务，请结束任务后再恢复"
+                                }
+                                require(mediaAiTasks.none { it.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING) }) {
+                                    "当前项目仍有媒体 AI 任务，请等待任务结束后再恢复"
+                                }
+                                val archive = File(context.cacheDir, "media-import-${UUID.randomUUID()}.zip")
+                                try {
+                                    context.contentResolver.openInputStream(uri)?.use { input ->
+                                        FileOutputStream(archive).use { output ->
+                                            val buffer = ByteArray(64 * 1024)
+                                            var total = 0L
+                                            while (true) {
+                                                val count = input.read(buffer)
+                                                if (count < 0) break
+                                                total += count
+                                                require(total <= 2_000_000_000L) { "媒体项目备份超过 2 GB 限制" }
+                                                output.write(buffer, 0, count)
+                                            }
+                                            output.fd.sync()
+                                        }
+                                    } ?: error("无法读取所选媒体项目备份")
+                                    MediaProjectStore.importProjectArchive(
+                                        context = context,
+                                        archive = archive,
+                                        targetProjectId = projectId,
+                                        replaceExisting = true
+                                    )
+                                } finally {
+                                    archive.delete()
+                                }
+                            }
+                        }
+                        result.onSuccess {
+                            reload()
+                            selectedAssetId = ""
+                            status = "媒体工程恢复完成：时间线和原始素材已恢复。"
+                        }.onFailure {
+                            status = "媒体工程恢复失败：" + (it.message ?: "备份文件无效")
+                        }
+                    }
+                }) { Text("确认替换") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showMediaArchiveImportConfirm = false
+                    pendingMediaArchiveUri = null
+                }) { Text("取消") }
+            }
+        )
+    }
+
+
 }
