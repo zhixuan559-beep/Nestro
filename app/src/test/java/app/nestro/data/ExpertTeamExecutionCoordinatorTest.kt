@@ -164,9 +164,9 @@ class ExpertTeamExecutionCoordinatorTest {
         val plan = ExpertProjectPlan(
             projectGoal = "完成项目研究",
             packages = listOf(
-                ExpertWorkPackage("research", "研究员", "完成研究"),
-                ExpertWorkPackage("strategy", "策略师", "形成策略", listOf("research")),
-                ExpertWorkPackage("copy", "文案官", "形成文案", listOf("research"))
+                ExpertWorkPackage("research", "研究员", "完成研究", acceptanceCriteria = "研究成果"),
+                ExpertWorkPackage("strategy", "策略师", "形成策略", listOf("research"), "策略成果"),
+                ExpertWorkPackage("copy", "文案官", "形成文案", listOf("research"), "文案成果")
             ),
             finalAcceptanceCriteria = "结果完整"
         )
