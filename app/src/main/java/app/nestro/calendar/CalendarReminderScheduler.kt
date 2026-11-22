@@ -183,20 +183,32 @@ class CalendarAutomationWorker(
                 taskId = taskId,
                 idempotencyKey = idempotencyKey
             )
-            app.agentTaskCoordinator.enqueue(
-                taskId = taskId,
-                owner = "calendar_automation",
-                metadata = AgentTaskMetadata(
-                    projectId = event.automationProjectId,
-                    conversationId = "calendar-$eventId",
-                    kind = "calendar_automation",
-                    capabilityId = "calendar.schedule",
-                    title = event.title.take(160),
-                    input = input
-                ),
-                idempotencyKey = idempotencyKey,
-                maxRetries = 0
-            )
+            try {
+                app.agentTaskCoordinator.enqueue(
+                    taskId = taskId,
+                    owner = "calendar_automation",
+                    metadata = AgentTaskMetadata(
+                        projectId = event.automationProjectId,
+                        conversationId = "calendar-$eventId",
+                        kind = "calendar_automation",
+                        capabilityId = "calendar.schedule",
+                        title = event.title.take(160),
+                        input = input
+                    ),
+                    idempotencyKey = idempotencyKey,
+                    maxRetries = 0
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (runAttemptCount < 3) return Result.retry()
+                repository.recordAutomationResult(
+                    eventId,
+                    "FAILED",
+                    error = (error.message ?: "统一任务机接收日历任务失败").take(2_000)
+                )
+                return Result.failure()
+            }
         }
         val persistedStatus = when (dispatched.status) {
             app.nestro.agent.AgentTaskStatus.CREATED,
