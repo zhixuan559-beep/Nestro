@@ -383,6 +383,7 @@ fun NestroApp(initialPage: String = "home") {
             val decision = CompletableDeferred<app.nestro.agent.AgentApprovalDecision>()
             withContext(Dispatchers.Main.immediate) {
                 workflowUiState.agentApprovalPrompt.value = UnifiedApprovalPrompt(request, decision)
+                workflowUiState.workflowApprovalVisible.value = true
             }
             try {
                 decision.await()
@@ -390,6 +391,7 @@ fun NestroApp(initialPage: String = "home") {
                 withContext(Dispatchers.Main.immediate) {
                     if (workflowUiState.agentApprovalPrompt.value?.decision === decision) {
                         workflowUiState.agentApprovalPrompt.value = null
+                        workflowUiState.workflowApprovalVisible.value = false
                     }
                 }
             }
@@ -411,6 +413,7 @@ fun NestroApp(initialPage: String = "home") {
     var workflowPaused by workflowUiState.workflowPaused
     var workflowPauseGate by workflowUiState.workflowPauseGate
     var agentApprovalPrompt by workflowUiState.agentApprovalPrompt
+    var workflowApprovalVisible by workflowUiState.workflowApprovalVisible
     val dataTransferUiState = remember { DataTransferUiState() }
     var backupStatus by dataTransferUiState.backupStatus
     var pendingBackupUri by dataTransferUiState.pendingBackupUri
@@ -4158,9 +4161,26 @@ fun NestroApp(initialPage: String = "home") {
         )
     }
 
-    agentApprovalPrompt?.let { approval ->
+    if (agentApprovalPrompt != null && !workflowApprovalVisible) {
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("有一项任务操作等待授权", color = Ink, modifier = Modifier.weight(1f))
+                TextButton(onClick = { workflowApprovalVisible = true }) { Text("查看审批", color = Mint) }
+            }
+        }
+    }
+
+    if (agentApprovalPrompt != null && workflowApprovalVisible) {
+        val approval = requireNotNull(agentApprovalPrompt)
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = { workflowApprovalVisible = false },
             title = { Text("任务操作需要授权", color = Ink) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -4180,9 +4200,12 @@ fun NestroApp(initialPage: String = "home") {
                 }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    approval.decision.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
-                }) { Text("拒绝", color = Muted) }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { workflowApprovalVisible = false }) { Text("稍后处理", color = Muted) }
+                    TextButton(onClick = {
+                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
+                    }) { Text("拒绝", color = Muted) }
+                }
             }
         )
     }
