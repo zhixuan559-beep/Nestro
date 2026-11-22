@@ -5,6 +5,8 @@
 package app.nestro.phone.virtualdisplay.mika
 
 import android.net.Uri
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -58,6 +60,7 @@ object MikaHelperMain {
                     // App process death is the expected signal to release virtual displays.
                 }
                 runCatching { service.releaseAll() }
+                if (shouldExitForStoppedOrMissingApp(shellContext, packageName)) exitProcess(0)
                 Thread.sleep(retryDelay)
             }
         }
@@ -95,6 +98,16 @@ object MikaHelperMain {
     } catch (t: Throwable) {
         Log.w(TAG, "helper handoff retry: " + t.javaClass.simpleName)
         null
+    }
+
+    private fun shouldExitForStoppedOrMissingApp(context: android.content.Context, packageName: String): Boolean = try {
+        val info = context.packageManager.getApplicationInfo(packageName, 0)
+        info.flags and ApplicationInfo.FLAG_STOPPED != 0
+    } catch (_: PackageManager.NameNotFoundException) {
+        true
+    } catch (t: Throwable) {
+        Log.w(TAG, "cannot inspect app stop state; keeping helper alive", t)
+        false
     }
 
     /** Keep only the most recently accepted helper for this app package. */
