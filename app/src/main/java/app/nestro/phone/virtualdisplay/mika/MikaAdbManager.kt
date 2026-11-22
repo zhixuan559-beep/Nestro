@@ -5,6 +5,7 @@
 package app.nestro.phone.virtualdisplay.mika
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import app.nestro.phone.virtualdisplay.mika.adb.AdbConnection
 import app.nestro.phone.virtualdisplay.mika.adb.AdbPairing
@@ -39,6 +40,7 @@ class MikaAdbManager(context: Context) {
 
     /** Launch the shell-UID helper through the already paired local adbd service. */
     suspend fun launchHelper(): Boolean = withContext(Dispatchers.IO) {
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { "Isolated shell helper requires Android 12 or later" }
         val discovered = finder.findPorts(AdbServiceTypes.CONNECT, 3_000L)
         val candidates = (discovered + (systemTlsPort()?.let(::listOf) ?: emptyList())).distinct()
         if (candidates.isEmpty()) throw IOException("No local wireless-debugging connect port was found")
