@@ -49,7 +49,8 @@ category 只能是 preference、workflow、project、constraint。
 
 internal class AutomaticMemoryExtractionCoordinator(
     private val extractCandidates: (List<ModelConfig>, List<String>) -> List<MemoryCandidate>,
-    private val saveCandidates: suspend (String, String, String, List<MemoryCandidate>) -> Unit
+    private val saveCandidates: suspend (String, String, String, List<MemoryCandidate>, MemoryMutationToken) -> Unit,
+    private val captureMutationVersion: (String) -> MemoryMutationToken = UserMemoryStore::mutationVersion
 ) {
     suspend fun extractAndSave(
         enabled: Boolean,
@@ -60,9 +61,15 @@ internal class AutomaticMemoryExtractionCoordinator(
         messageId: String
     ) {
         if (!enabled || messageId.isBlank() || !shouldExtractAutomaticMemory(prompt) || !UserMemoryStore.isSafeContent(prompt)) return
+        // Capture before the network/model extraction. If the user edits, deletes,
+        // clears, disables memory or restores a backup while extraction is running,
+        // saveCandidates rejects this stale result instead of resurrecting old data.
+        val mutationVersion = captureMutationVersion(projectId)
         val candidates = runCatchingCancellable { extractCandidates(modelConfigs, listOf(prompt)) }.getOrDefault(emptyList())
         if (candidates.isNotEmpty()) {
-            runCatchingCancellable { saveCandidates(projectId, conversationId, messageId, candidates) }
+            runCatchingCancellable {
+                saveCandidates(projectId, conversationId, messageId, candidates, mutationVersion)
+            }
         }
     }
 }
