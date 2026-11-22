@@ -129,6 +129,20 @@ internal object ProjectResourceScopeStore {
         return owners.filterNot { it == activeProjectId }.all { it in writableSourceProjectIds }
     }
 
+    /** Assign scope for a newly-created resource without overwriting a stale/shared key. */
+    fun assignNewResourceToProject(
+        scopes: Map<String, Set<String>>,
+        kind: ProjectResourceKind,
+        resourceId: String,
+        projectId: String
+    ): Map<String, Set<String>> {
+        require(resourceId.isNotBlank() && resourceId.length <= 200) { "资源 ID 无效" }
+        require(projectId.isNotBlank() && projectId != GLOBAL) { "项目 ID 无效" }
+        val key = resourceKey(kind, resourceId)
+        require(key !in scopes) { "新资源范围已存在，拒绝覆盖" }
+        return setProjectScope(scopes, kind, resourceId, setOf(projectId))
+    }
+
     fun setProjectScope(
         scopes: Map<String, Set<String>>,
         kind: ProjectResourceKind,
