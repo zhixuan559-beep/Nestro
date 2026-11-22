@@ -342,7 +342,9 @@ class AgentTaskCoordinator(
         val state = AgentTaskState(
             taskId = taskId,
             owner = inlineHandlerId(owner, taskId),
-            status = AgentTaskStatus.QUEUED,
+            // Keep the pre-registered task CREATED; runInline must perform the
+            // QUEUED transition so it actually enters the coordinator consumer.
+            status = AgentTaskStatus.CREATED,
             checkpoint = checkpoint.take(64_000),
             projectId = metadata.projectId,
             conversationId = metadata.conversationId,
