@@ -323,7 +323,7 @@ object WorkflowEngine {
             val group = active.subList(groupStart, cursor)
             val ready = mutableListOf<Pair<Int, WorkflowStep>>()
             group.forEachIndexed { offset, step ->
-                val index = groupStart + offset
+                val index = workflow.steps.indexOfFirst { it.id == step.id }
                 when {
                     step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput) -> {
                         val skipped = WorkflowStepRun(step.id, step.title, "skipped", 0, error = "条件未满足")
