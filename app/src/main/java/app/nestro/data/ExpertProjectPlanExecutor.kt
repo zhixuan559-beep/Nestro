@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -8,6 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 /** A model-authored, bounded work package in an autonomous expert project. */
 data class ExpertWorkPackage(
@@ -189,9 +191,11 @@ object ExpertProjectPlanExecutor {
                         }
                         // Persist each package as soon as it completes. A sibling that
                         // hangs or is cancelled must not erase already completed work.
-                        resultMutex.withLock {
-                            results[row.packageId] = row
-                            onPackageResult(results.values.toList())
+                        withContext(NonCancellable) {
+                            resultMutex.withLock {
+                                results[row.packageId] = row
+                                onPackageResult(results.values.toList())
+                            }
                         }
                     }
                 }.awaitAll()
