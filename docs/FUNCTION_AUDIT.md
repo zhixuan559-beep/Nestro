@@ -1057,3 +1057,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 媒体领域 JSON 仍保留兼容性 status 字段及旧任务回退值；新执行路径以统一任务状态为准，需在最终验收时覆盖旧版本迁移、进程被杀、Worker 重试、暂停/取消竞态和结果消费。
 - 日历自动任务仍需在最终验收中验证重复 occurrence、设备重启、Worker 重试、事件编辑/删除与正在执行任务的取消竞态。
 - 本轮没有运行 Gradle 构建、JVM 测试、Android instrumentation、模拟器或真机测试。已修改/新增测试源码但尚未执行；严格遵守“十九模块代码全部补齐整合后统一构建测试”的顺序。
+
+
+## 2026-11-22 第二次静态回读补记（代码 HEAD `45d5e0451d248e2ad933fa7d08bda0033fc73aa7`）
+
+- **统一任务机 WAITING_FOR_TASK 状态修复：** 发现任务处理器正常返回时，队列消费者的成功收尾逻辑会把 `WAITING_FOR_TASK` 覆盖为 `COMPLETED`；`runInline` 的取消收尾也未完整保留该状态，外部调度恢复入口也不接受它。现已在队列正常结束、inline 取消保留、外部调度重新派发和 trace 记录路径统一保留/恢复 `WAITING_FOR_TASK`。新增回归测试覆盖 inline handler 在等待子任务时返回，任务不能被错误完成。
+- **审批异常状态：** `DefaultAgentRuntime` 现在区分 `AgentApprovalPendingException` 与普通取消；前者保留 `WAITING_FOR_USER` 和审批原因，普通取消仍进入暂停恢复路径。新增运行时回归测试源码。
+- **工作流恢复安全边界：** 恢复同一 taskId 前，校验原输入和保存的工作流定义指纹；定义或输入变化时不续跑旧检查点，界面提示并允许取消旧任务。任务处于 CREATED/QUEUED/RUNNING/RETRY_WAIT 时禁止重复启动；仅对确实处于等待/暂停的同一任务开放续跑。
+- **日历事件修改取消：** 事件修改、完成或删除时，按持久任务输入中的 eventId 查找并取消该事件所有仍活动的自动任务，而不只取消最近一次 lastTaskId，避免重复日程发生重叠时遗留旧任务。
+- 上述均为源码静态核对和代码/测试源码更新；没有运行 Gradle、JVM、Android instrumentation、模拟器或真机测试。
