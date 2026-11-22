@@ -313,3 +313,11 @@
 - 语音 Provider 配置和接口测试源码存在；当前旧 main 分支的 `TtsCapability` 不在整合分支中，整合版控制器已有设备语言枚举与 setLanguage 能力，暂不恢复旧 helper。
 - 真实音频设备路由、厂商系统行为、实时会话稳定性、耳机/扬声器切换与功耗仍待设备验收。
 
+
+## 2026-11-22 UI 入口与历史代码清理风险初查
+
+- 当前 `NestroApp.kt` 仍约 4,505 行、331 KB，是最大的 UI 聚合入口；已有部分状态/协调逻辑拆到 `ChatExecutionUiState`、`WorkflowUiState`、`ProjectSpaceUiState`、各类 coordinator/repository，但主要页面编排仍集中在该文件。
+- 对该文件的函数声明扫描未发现重复函数名；这不代表没有重复业务逻辑或未使用分支。后续需要按页面入口、状态 owner、事件回调和 coordinator 调用链识别可安全抽取的部分，不能仅因文件很大就机械拆分。
+- 当前未进行完整 Kotlin 引用图/未使用符号扫描；由于无法仅凭文件名或旧分支存在与否判定死代码，本轮没有删除任何源码、资源或依赖。
+- 清理阶段的准入条件：先确认全仓引用、反射/序列化/Compose route/Manifest/WorkManager/备份迁移等隐式入口，再删除；每批清理保留可回滚提交并做差异核对。
+
