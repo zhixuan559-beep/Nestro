@@ -257,8 +257,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
-                                    PhoneAgentService.activeService?.let(displayController::restoreAccessibilityEnvironment)
-                                    taskMessage = "已切回主屏执行环境"
+                                    val service = PhoneAgentService.activeService
+                                    taskMessage = if (service != null && displayController.restoreAccessibilityEnvironment(service)) "已切回主屏执行环境" else "主屏执行环境切换失败，当前执行环境保持不变"
                                 },
                                 modifier = Modifier.weight(1f)
                             ) { Text("恢复主屏执行") }
@@ -277,8 +277,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                 if (displayController.virtualExecutionPreferred && (virtualSession == null || helperBinder == null)) {
                     OutlinedButton(
                         onClick = {
-                            PhoneAgentService.activeService?.let(displayController::restoreAccessibilityEnvironment)
-                            taskMessage = "已明确切回主屏执行环境"
+                            val service = PhoneAgentService.activeService
+                            taskMessage = if (service != null && displayController.restoreAccessibilityEnvironment(service)) "已明确切回主屏执行环境" else "主屏执行环境切换失败，当前执行环境保持不变"
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("恢复主屏执行") }

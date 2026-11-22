@@ -37,7 +37,12 @@ class MikaPhoneAgentExecutionEnvironment(
     override fun handoffToUser(taskId: String, reason: String): Boolean = runBlocking(Dispatchers.IO) {
         val taskIdOnDisplay = session.topTaskId()
         if (taskIdOnDisplay < 0 || !session.moveTaskToMain(taskIdOnDisplay)) return@runBlocking false
-        preferences.edit().putInt(handoffKey(taskId), taskIdOnDisplay).commit()
+        val saved = preferences.edit().putInt(handoffKey(taskId), taskIdOnDisplay).commit()
+        if (!saved) {
+            session.moveTaskBack(taskIdOnDisplay)
+            return@runBlocking false
+        }
+        true
     }
 
     override fun resumeAfterUserHandoff(taskId: String): Boolean = runBlocking(Dispatchers.IO) {
