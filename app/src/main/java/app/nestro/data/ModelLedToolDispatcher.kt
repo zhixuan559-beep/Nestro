@@ -346,7 +346,7 @@ ${prompt.take(8_000)}
                     )
                 } else if (!result.success) {
                     val detail = result.error.ifBlank { result.output }.take(3_000)
-                    toolContext.append("[工具 ${spec.id} 执行失败] ").append(detail).append("\n")
+                    synchronized(toolContext) { toolContext.append("[工具 ${spec.id} 执行失败] ").append(detail).append("\n") }
                     NativeToolCallResult("工具执行失败：$detail")
                 } else {
                     val output = result.output.take(8_000)
@@ -358,7 +358,7 @@ ${prompt.take(8_000)}
                         generatedVideoAssetId = Regex("素材 ID：([A-Fa-f0-9-]{36})")
                             .find(output)?.groupValues?.getOrNull(1).orEmpty().ifBlank { generatedVideoAssetId }
                     }
-                    toolContext.append("[工具 ${spec.id} 执行成功] ").append(output.take(3_000)).append("\n")
+                    synchronized(toolContext) { toolContext.append("[工具 ${spec.id} 执行成功] ").append(output.take(3_000)).append("\n") }
                     NativeToolCallResult(output)
                 }
             }
@@ -375,7 +375,7 @@ ${prompt.take(8_000)}
             )
         } catch (nativeError: Throwable) {
             if (nativeError is kotlinx.coroutines.CancellationException) throw nativeError
-            if (nativeToolCallsExecuted > 0 || nativeError !is NativeToolCallingUnsupportedException) {
+            if (nativeToolCallsExecuted.get() > 0 || nativeError !is NativeToolCallingUnsupportedException) {
                 markTerminal(AgentTaskStatus.FAILED, nativeError.message ?: "原生工具执行中断")
                 throw nativeError
             }
