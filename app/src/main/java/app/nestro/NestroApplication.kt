@@ -811,7 +811,8 @@ class NestroApplication : Application() {
                 val conversationId = "calendar-$eventId".take(120)
                 val requestId = taskContext.taskId
                 var latestPartialAnswer = ""
-                val execution = chatRequestExecutionCoordinator.execute(
+                val execution = try {
+                    chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
                         requestId = requestId,
                         conversationId = conversationId,
@@ -850,7 +851,11 @@ class NestroApplication : Application() {
                     onPartialAnswer = { partial ->
                         latestPartialAnswer = partial.take(24_000)
                     }
-                )
+                    )
+                } catch (pending: AgentApprovalPendingException) {
+                    taskContext.waitForUser(pending.message.orEmpty().take(2_000))
+                    throw pending
+                }
                 val finalText = execution.finalization.finalText.take(8_000)
                 taskContext.checkpoint("calendar_output:" + finalText.ifBlank { latestPartialAnswer }.take(24_000))
                 when (execution.finalization.status.name) {
