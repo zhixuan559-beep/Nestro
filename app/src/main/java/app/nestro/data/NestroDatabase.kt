@@ -341,8 +341,45 @@ interface NestroDao {
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
     suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
 
+    @Query("SELECT * FROM user_memories WHERE id = :id AND projectId = :projectId LIMIT 1")
+    suspend fun userMemoryById(id: String, projectId: String): UserMemoryEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint AND id != :excludeId)")
+    suspend fun userMemoryFingerprintExists(projectId: String, fingerprint: String, excludeId: String): Boolean
+
+    @Query("UPDATE user_memories SET content = :content, fingerprint = :fingerprint, sourceConversationId = :conversationId, sourceMessageId = :messageId, confidence = :confidence, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId AND category = :category")
+    suspend fun replaceUserMemoryContent(
+        id: String, projectId: String, category: String, content: String, fingerprint: String,
+        conversationId: String, messageId: String, confidence: Double, updatedAt: Long
+    ): Int
+
+    @Transaction
+    suspend fun replaceUserMemoryIfUnconflicted(
+        id: String, projectId: String, category: String, content: String, fingerprint: String,
+        conversationId: String, messageId: String, confidence: Double, updatedAt: Long
+    ): Boolean {
+        val current = userMemoryById(id, projectId) ?: return false
+        if (current.category != category) return false
+        if (userMemoryFingerprintExists(projectId, fingerprint, id)) return false
+        return replaceUserMemoryContent(
+            id, projectId, category, content, fingerprint, conversationId, messageId, confidence, updatedAt
+        ) > 0
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
+
+    @Transaction
+    suspend fun upsertUserMemoryByFingerprint(memory: UserMemoryEntity): UserMemoryEntity {
+        val existing = userMemoryByFingerprint(memory.projectId, memory.fingerprint)
+        val updated = memory.copy(
+            id = existing?.id ?: memory.id,
+            createdAt = existing?.createdAt ?: memory.createdAt,
+            shareAcrossProjects = existing?.shareAcrossProjects ?: memory.shareAcrossProjects
+        )
+        putUserMemory(updated)
+        return updated
+    }
 
     @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
     suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
