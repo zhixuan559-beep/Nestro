@@ -410,10 +410,17 @@ object UserMemoryStore {
             Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{17}[0-9Xx](?!\\d)").containsMatchIn(value) ||
             Regex("(?<!\\d)\\d{16,19}(?!\\d)").containsMatchIn(value) ||
+            Regex("""(?i)\\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|ya29\\.[A-Za-z0-9_-]{20,}|mfa\\.[A-Za-z0-9_-]{40,}|xox[baprs]-[A-Za-z0-9-]{10,})\\b""").containsMatchIn(value) ||
+            Regex("""(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{16,}""").containsMatchIn(value) ||
+            Regex("""\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b""").containsMatchIn(value) ||
+            Regex("""(?i)\\b(?:api[\\s_-]?key|access[\\s_-]?token|refresh[\\s_-]?token|private[\\s_-]?key|password|passcode|secret|medical history|medical condition|health condition|diagnosis|allergy|medication|prescription|symptom|illness|disability|religion|political affiliation|sexual orientation|ethnicity|race|union membership|trade union|criminal history|sex life|sexual activity|social security number|national insurance number|tax id|home address|date of birth|salary|income|debt|bank account|passport|national id)\\b""").containsMatchIn(value) ||
+            Regex("""(?:我住在|家庭住址|详细地址|收货地址|住址是).{0,48}(?:省|市|区|县|路|街|巷|号|栋|单元|室)""").containsMatchIn(value) ||
             listOf(
-                "密码", "验证码", "银行卡", "身份证", "病史", "疾病", "诊断", "症状", "用药",
-                "宗教", "政治立场", "性取向", "住址", "家庭住址", "出生日期", "生日",
-                "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资"
+                "密码", "口令", "密钥", "令牌", "验证码", "银行卡", "身份证", "护照",
+                "病史", "疾病", "病情", "健康状况", "诊断", "症状", "过敏", "用药", "用药记录", "药物史",
+                "宗教", "政治立场", "性取向", "性行为", "性生活", "种族", "民族", "工会",
+                "犯罪记录", "犯罪史", "住址", "家庭住址", "详细地址", "收货地址", "门牌号",
+                "出生日期", "生日", "年龄", "收入", "负债", "欠款", "征信", "债务", "工资", "薪资"
             ).any { value.contains(it, true) }
 
     internal fun fingerprint(value: String): String =

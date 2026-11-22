@@ -40,6 +40,37 @@ class UserMemoryStoreTest {
     }
 
     @Test
+    fun blocksCredentialsAddressesAndSensitivePersonalCategories() {
+        val blocked = listOf(
+            "项目密钥是 sk-12345678901234567890abcdef",
+            "GitHub token 是 github_pat_123456789012345678901234",
+            "Google API key 是 AIza12345678901234567890123456789012",
+            "AWS access key 是 AKIA1234567890ABCDEF",
+            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456",
+            "JWT eyJabcdefgh.ijklmnop.qrstuvwx",
+            "请记住我的种族身份",
+            "请记住我的工会成员身份",
+            "Please remember my political affiliation",
+            "My trade union membership",
+            "My criminal history",
+            "My sex life",
+            "我的家庭住址在某某路 123 号",
+            "我住在人民路 123 号",
+            "我对青霉素过敏",
+            "My allergy is penicillin",
+            "My passport number is X12345678"
+        )
+        blocked.forEach { assertFalse("Should block: $it", UserMemoryStore.isSafeContent(it)) }
+    }
+
+    @Test
+    fun fingerprintIsStableAndCategorySensitive() {
+        val first = UserMemoryStore.fingerprint("preference|我偏好简洁表达")
+        assertEquals(first, UserMemoryStore.fingerprint("preference|我偏好简洁表达"))
+        assertFalse(first == UserMemoryStore.fingerprint("workflow|我偏好简洁表达"))
+    }
+
+    @Test
     fun bm25RanksSpecificChineseMemoryAboveGenericAndOlderMemory() {
         val now = 2_000_000_000_000L
         val generic = memory("generic", "我喜欢简洁表达", updatedAt = now - 400L * 86_400_000L)
