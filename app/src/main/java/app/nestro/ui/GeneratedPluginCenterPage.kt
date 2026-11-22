@@ -361,6 +361,31 @@ internal fun GeneratedPluginCenterPage(
                                     }
                                 }
                             ) { Text("恢复插件任务并重新审批") }
+                            OutlinedButton(
+                                enabled = !busy,
+                                onClick = {
+                                    busy = true
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                application.agentTaskCoordinator.cancel(entry.state.taskId)
+                                                val separator = entry.state.input.indexOf('\\n')
+                                                if (separator > 0) {
+                                                    application.agentApprovalCoordinator.endScope(
+                                                        entry.state.input.substring("request_id=".length, separator)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        status = result.fold(
+                                            { "插件待恢复任务已终止。" },
+                                            { "终止插件任务失败：" + (it.message ?: "未知错误") }
+                                        )
+                                        reloadAudit()
+                                        busy = false
+                                    }
+                                }
+                            ) { Text("终止任务") }
                         }
                     }
                 }
