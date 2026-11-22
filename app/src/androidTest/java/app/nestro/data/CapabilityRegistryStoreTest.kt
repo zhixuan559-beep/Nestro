@@ -47,6 +47,22 @@ class CapabilityRegistryStoreTest {
     }
 
     @Test
+    fun capabilityCatalogPreservesPresentationAndNavigationMetadata() {
+        preferences.edit().clear().commit()
+        val item = descriptor().copy(
+            status = "已配置",
+            detail = "模型服务已连接",
+            route = "models"
+        )
+        CapabilityRegistryStore.registerAll(preferences, listOf(item))
+
+        val restored = CapabilityRegistryStore.find(preferences, item.id)
+        assertEquals("已配置", restored?.status)
+        assertEquals("模型服务已连接", restored?.detail)
+        assertEquals("models", restored?.route)
+    }
+
+    @Test
     fun malformedGrantStorageFailsClosedEvenForDefaultGrantedCapabilities() {
         preferences.edit().clear().commit()
         CapabilityRegistryStore.registerAll(preferences, listOf(descriptor(defaultGranted = true)))
