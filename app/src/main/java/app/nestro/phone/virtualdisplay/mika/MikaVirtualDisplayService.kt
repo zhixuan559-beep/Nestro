@@ -178,6 +178,12 @@ internal class MikaVirtualDisplayService(
         releaseDisplay(displayId)
     }
 
+    override fun identity(): IntArray = intArrayOf(Process.myUid(), Process.myPid())
+
+    override fun releaseAll() {
+        displays.keys.toList().forEach(::releaseDisplay)
+    }
+
     private fun inject(event: android.view.InputEvent): Boolean = runCatching {
         val manager = runCatching {
             Class.forName("android.hardware.input.InputManagerGlobal").getMethod("getInstance").invoke(null)
