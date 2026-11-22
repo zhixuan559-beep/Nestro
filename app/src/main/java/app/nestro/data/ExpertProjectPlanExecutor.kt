@@ -132,13 +132,14 @@ object ExpertProjectPlanExecutor {
             val pendingWave = wave.filterNot { it.id in results }
             if (pendingWave.isEmpty()) continue
             if (shouldStop()) throw CancellationException("用户停止专家项目")
+            val priorResults = resultMutex.withLock { results.toMap() }
             coroutineScope {
                 pendingWave.map { item ->
                     async {
                         val row = semaphore.withPermit {
                             if (shouldStop()) throw CancellationException("用户停止专家项目")
                             val failedDependency = item.dependsOn.firstOrNull {
-                                results[it]?.status != "success"
+                                priorResults[it]?.status != "success"
                             }
                             if (failedDependency != null) {
                                 val blocked = ExpertWorkPackageResult(
@@ -152,7 +153,7 @@ object ExpertProjectPlanExecutor {
                             } else {
                                 onPackage(item.id, "running", "")
                                 val dependencyContext = item.dependsOn.joinToString("\n\n") { dependencyId ->
-                                    val dependency = results.getValue(dependencyId)
+                                    val dependency = priorResults.getValue(dependencyId)
                                     "【前置成果 $dependencyId】\n${dependency.output.take(4_000)}"
                                 }
                                 item.dependsOn.forEach { dependencyId ->
