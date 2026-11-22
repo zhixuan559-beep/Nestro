@@ -410,7 +410,6 @@ fun NestroApp(initialPage: String = "home") {
     var runningWorkflowId by workflowUiState.runningWorkflowId
     var workflowPaused by workflowUiState.workflowPaused
     var workflowPauseGate by workflowUiState.workflowPauseGate
-    var workflowApprovalPrompt by workflowUiState.workflowApprovalPrompt
     var agentApprovalPrompt by workflowUiState.agentApprovalPrompt
     val dataTransferUiState = remember { DataTransferUiState() }
     var backupStatus by dataTransferUiState.backupStatus
@@ -1884,8 +1883,8 @@ fun NestroApp(initialPage: String = "home") {
                                              stopRequested = true
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
-                                             workflowApprovalPrompt?.decision?.complete(WorkflowApprovalChoice.REJECT)
-                                             workflowApprovalPrompt = null
+                                             agentApprovalPrompt?.decision?.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
+                                             agentApprovalPrompt = null
                                              appRuntime.chatExecutionService.cancel()
                                              workflowRunStatus = "正在停止工作流…"
                                          }) { Text("停止", color = ColorStop) }
