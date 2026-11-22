@@ -1934,6 +1934,9 @@ fun NestroApp(initialPage: String = "home") {
                                                  savedWorkflowInputForCard == workflowInputDraft.trim() &&
                                                  (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
                                                      prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow)))
+                                             if (hasPendingSavedWorkflow && !canResumeSavedWorkflow) {
+                                                 Text("上次输入或工作流定义已变化，不能安全续跑原任务；可取消旧任务后重新运行。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                             }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
@@ -2168,9 +2171,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                  workflowRunStatus = "取消工作流失败：" + (result.exceptionOrNull()?.message ?: "未知错误")
                                                              }
                                                          }
-                                                     }) {
-                                                         Text(if (canResumeSavedWorkflow) "取消待恢复任务" else "取消旧版工作流任务", color = ColorStop)
-                                                     }
+                                                     }) { Text("取消待恢复任务", color = ColorStop) }
                                                  }
                                                  TextButton(onClick = {
                                                      if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
