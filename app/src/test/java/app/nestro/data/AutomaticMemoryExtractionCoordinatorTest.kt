@@ -57,7 +57,7 @@ class AutomaticMemoryExtractionCoordinatorTest {
     fun skipsBlankMessageIdsAndSensitivePromptsBeforeCallingExtractor() = kotlinx.coroutines.runBlocking {
         var extractionCalls = 0
         val coordinator = AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { _, _ -> extractionCalls += 1; emptyList() },
+            extractCandidates = { _, _, _ -> extractionCalls += 1; emptyList() },
             saveCandidates = { _, _, _, _, _ -> }
         )
         val ordinaryPrompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。"
