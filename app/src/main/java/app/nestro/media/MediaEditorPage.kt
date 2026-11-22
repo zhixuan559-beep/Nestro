@@ -779,11 +779,14 @@ fun MediaEditorPage(
                         val result = withContext(Dispatchers.IO) {
                             runCatching { MediaRenderTaskStore.create(context, projectId) }
                         }
-                        result.onSuccess { task ->
+                        if (result.isSuccess) {
+                            val task = result.getOrThrow()
                             tasks = listOf(task) + tasks
-                            status = "导出任务已排队；暂停后恢复会从头重新渲染。"
+                            status = "导出任务已登记到统一任务机并排队；暂停后恢复会从头重新渲染。"
                             MediaRenderScheduler.enqueue(context, projectId, task.id)
-                        }.onFailure { status = "无法创建导出任务：" + (it.message ?: "未知错误") }
+                        } else {
+                            status = "无法创建导出任务：" + (result.exceptionOrNull()?.message ?: "未知错误")
+                        }
                     }
                 }) { Text("导出 MP4") }
         }
