@@ -3255,7 +3255,7 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                         }
-                        "calendar" -> CalendarPage(appRuntime.calendarRepository)
+                        "calendar" -> CalendarPage(appRuntime.calendarRepository, activeProjectId)
                         "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
