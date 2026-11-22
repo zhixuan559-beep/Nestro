@@ -42,6 +42,19 @@ class CalendarRulesTest {
         assertNull(CalendarRules.nextOccurrenceStart(event(start), System.currentTimeMillis()))
     }
 
+    @Test fun automationOnlyEventSchedulesAtOccurrenceWithoutNotification() {
+        val start = ZonedDateTime.now().plusMinutes(30)
+        val event = event(start, reminder = -1).copy(
+            automationPrompt = "执行项目日报",
+            automationProjectId = "project-a"
+        )
+        assertEquals(
+            start.toInstant().toEpochMilli(),
+            CalendarRules.nextOccurrenceStart(event, System.currentTimeMillis())
+        )
+        assertNull(CalendarRules.nextOccurrenceStart(event(start, reminder = -1), System.currentTimeMillis()))
+    }
+
     @Test fun dailyReminderAdvancesByLocalCalendarDay() {
         val zone = ZoneId.systemDefault()
         val now = ZonedDateTime.now(zone).withHour(8).withMinute(45).withSecond(0).withNano(0)
