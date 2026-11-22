@@ -11,8 +11,8 @@ class ChatNetworkPolicyTest {
     @Test
     fun usesBoundedTimeoutDefaults() {
         val policy = ChatNetworkPolicy.timeoutPolicy()
-        assertTrue(policy.connectMs in 1_000..120_000)
-        assertTrue(policy.readMs in 1_000..300_000)
+        assertTrue(policy.connectMs in 1_000L..120_000L)
+        assertTrue(policy.readMs in 1_000L..300_000L)
         assertTrue(policy.callMs >= policy.readMs)
     }
 

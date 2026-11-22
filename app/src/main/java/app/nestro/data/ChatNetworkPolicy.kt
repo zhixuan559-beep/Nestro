@@ -8,8 +8,8 @@ data class ChatTimeoutPolicy(
     val callMs: Long = 180_000
 ) {
     init {
-        require(connectMs in 1_000..120_000)
-        require(readMs in 1_000..300_000)
+        require(connectMs in 1_000L..120_000L)
+        require(readMs in 1_000L..300_000L)
         require(callMs >= readMs)
     }
 }
@@ -24,7 +24,7 @@ object ChatNetworkPolicy {
     fun timeoutPolicy() = ChatTimeoutPolicy()
 
     fun retryPlan(error: Throwable, attempt: Int): ChatRetryPlan? {
-        if (attempt >= MAX_ATTEMPTS || error is CancellationException) return null
+        if (attempt !in 0 until MAX_ATTEMPTS || error is CancellationException) return null
         if (!ChatRequestPolicy.shouldRetry(error)) return null
         return ChatRetryPlan(attempt + 1, MAX_ATTEMPTS, BASE_RETRY_DELAY_MS * (1L shl attempt))
     }

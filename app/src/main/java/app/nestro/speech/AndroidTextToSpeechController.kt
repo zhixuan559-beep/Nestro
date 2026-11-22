@@ -74,7 +74,7 @@ class AndroidTextToSpeechController(
 
     /** Returns installed Chinese voices from the active on-device TTS engine. */
     fun availableChineseVoices(): List<TtsVoiceOption> =
-        if (closed || !initialized) emptyList() else engine?.let(TtsCapability::chineseVoices).orEmpty()
+        if (closed || !initialized) emptyList() else engine?.let { TtsCapability.chineseVoices(it) }.orEmpty()
 
     /** Checks whether the active engine can synthesize the requested locale. */
     fun isLocaleAvailable(locale: Locale): Boolean =
