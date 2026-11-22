@@ -3867,6 +3867,35 @@ fun NestroApp(initialPage: String = "home") {
                                     if (stepIndex == index) item.copy(repeatCount = item.repeatCount % 3 + 1) else item
                                 }
                             }) { Text("本步骤循环：${step.repeatCount} 次", color = Mint) }
+                            OutlinedTextField(
+                                value = step.condition,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(condition = value.take(200)) else item
+                                    }
+                                },
+                                label = { Text("执行条件：always / nonblank / contains:关键词 / not_contains:关键词") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = step.parallelGroup,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(parallelGroup = value.trim().take(40)) else item
+                                    }
+                                },
+                                label = { Text("并行组名称（连续相同步骤并行；留空为顺序执行）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            TextButton(onClick = {
+                                workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                    if (stepIndex == index) item.copy(approvalRequired = !item.approvalRequired) else item
+                                }
+                            }) {
+                                Text(if (step.approvalRequired) "执行前审批：开启" else "执行前审批：关闭", color = if (step.approvalRequired) Mint else Muted)
+                            }
                         }
                     }
                     OutlinedButton(
