@@ -129,7 +129,7 @@ object PhoneAgentWorkScheduler {
             putBoolean(cancelKey(taskId), true)
             if (stopCurrent) putBoolean(stopKey(taskId), true)
         }.apply()
-        if (stopCurrent) PhoneAgentService.activeService?.requestTaskStop(taskId)
+        if (stopCurrent) PhoneAgentExecutionEnvironmentProvider.active?.requestTaskStop(taskId)
     }
 
     internal fun cancelKey(taskId: String) = "phone_agent_cancel_requested_$taskId"
