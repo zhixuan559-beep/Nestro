@@ -954,7 +954,21 @@ class NestroApplication : Application() {
         }
     }
 
-    val agentApprovalCoordinator: AgentApprovalCoordinator by lazy { AgentApprovalCoordinator() }
+    val agentApprovalCoordinator: AgentApprovalCoordinator by lazy {
+        AgentApprovalCoordinator { record ->
+            database.dao().putAgentApprovalAudit(
+                app.nestro.data.AgentApprovalAuditEntity(
+                    id = record.id,
+                    scopeId = record.scopeId,
+                    toolId = record.toolId,
+                    reason = record.reason,
+                    status = record.status,
+                    createdAt = record.createdAt,
+                    updatedAt = record.updatedAt
+                )
+            )
+        }
+    }
 
     val agentTaskCoordinator: AgentTaskCoordinator by lazy {
         val dao = database.dao()
