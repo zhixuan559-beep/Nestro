@@ -1016,7 +1016,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 ## 2026-11-22 第二阶段续作：审批恢复、日历 occurrence 与受限并发
 
-本轮代码改动已落入 `integration/19-modules`；代码更新后的 HEAD 为 `2f2bed758100ec2c1430d302ded710d73868020d`，本节审计记录随后提交为 `47dcc14708153570e07d9423b3d17ddb6131dbfb`。
+本轮代码改动已落入 `integration/19-modules`；代码更新后的 HEAD 为 `2f2bed758100ec2c1430d302ded710d73868020d`，审计记录已随后更新到当前分支。
 
 - **MCP 审批恢复入口：** `McpToolCenterService` 增加按原 taskId 恢复能力，从统一任务状态读取 capabilityId 与参数，再用同一 `runInline` owner 重新注册执行；MCP 页面轮询并显示 WAITING_FOR_USER/PAUSED 任务，恢复时重新走审批。显式拒绝的 FAILED 任务不提供自动重放入口。
 - **日历调度记录：** `CalendarDatabase` 从 v2 升至 v3，新增 `nextRunAt`、`lastRunAt`、`lastTaskId`、`lastIdempotencyKey`；Worker 在向统一任务机提交 occurrence 前写入调度记录，再以 `eventId + occurrenceStart` 幂等键 enqueue。系统日历导入和编辑保存会保留这些字段。
