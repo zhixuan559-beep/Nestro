@@ -212,26 +212,28 @@ internal class ModelLedToolDispatcher(
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
         val existingChatTask = stateStore.get(taskId)
         val savedCheckpoint = existingChatTask?.checkpoint.orEmpty()
-        when (existingChatTask?.status) {
-            AgentTaskStatus.COMPLETED -> {
-                if (existingChatTask.resultSummary.isNotBlank()) {
-                    return ModelToolDispatchResult(
-                        directReply = existingChatTask.resultSummary,
-                        streamedToUi = false
-                    )
+        if (existingChatTask != null) {
+            when (existingChatTask.status) {
+                AgentTaskStatus.COMPLETED -> {
+                    if (existingChatTask.resultSummary.isNotBlank()) {
+                        return ModelToolDispatchResult(
+                            directReply = existingChatTask.resultSummary,
+                            streamedToUi = false
+                        )
+                    }
                 }
+                AgentTaskStatus.CANCELLED -> return ModelToolDispatchResult(
+                    directReply = "该聊天工具任务此前已取消，不会自动重放。",
+                    streamedToUi = false
+                )
+                AgentTaskStatus.RUNNING,
+                AgentTaskStatus.QUEUED,
+                AgentTaskStatus.RETRY_WAIT -> return ModelToolDispatchResult(
+                    directReply = "相同请求的工具任务仍在执行或排队，已阻止重复启动。",
+                    streamedToUi = false
+                )
+                else -> Unit
             }
-            AgentTaskStatus.CANCELLED -> return ModelToolDispatchResult(
-                directReply = "该聊天工具任务此前已取消，不会自动重放。",
-                streamedToUi = false
-            )
-            AgentTaskStatus.RUNNING,
-            AgentTaskStatus.QUEUED,
-            AgentTaskStatus.RETRY_WAIT -> return ModelToolDispatchResult(
-                directReply = "相同请求的工具任务仍在执行或排队，已阻止重复启动。",
-                streamedToUi = false
-            )
-            else -> Unit
         }
         if (savedCheckpoint.startsWith("mcp:v1:executing:")) {
             val reason = "MCP 外部调用在中断前已开始，但结果未可靠落盘；为避免重复写入，系统未自动重放。请核对服务端结果后重新发起。"
