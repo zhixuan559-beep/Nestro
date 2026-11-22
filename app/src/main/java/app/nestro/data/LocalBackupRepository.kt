@@ -488,13 +488,28 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             "Agent 任务状态 ID 缺失、过长或重复"
         }
         require(state.owner.isNotBlank() && state.owner.length <= 80 && state.status in validAgentTaskStatuses &&
-            state.currentStep >= 0 && state.checkpoint.length <= 64_000 && state.lastError.length <= 2_000) {
+            state.currentStep >= 0 && state.checkpoint.length <= 64_000 && state.lastError.length <= 2_000 &&
+            state.projectId.length <= 120 && state.conversationId.length <= 120 &&
+            state.kind.length <= 60 && state.capabilityId.length <= 100 &&
+            state.title.length <= 160 && state.input.length <= 12_000 && state.resultSummary.length <= 8_000 &&
+            (state.idempotencyKey == null || state.idempotencyKey.length in 1..240) &&
+            state.attempts in 0..5 && state.maxRetries in 0..5 &&
+            state.availableAt >= 0L && state.startedAt >= 0L && state.finishedAt >= 0L) {
             "Agent 任务状态字段无效"
         }
-        agentPayloadChars += state.checkpoint.length.toLong() + state.lastError.length.toLong()
+        agentPayloadChars += state.checkpoint.length.toLong() + state.lastError.length.toLong() +
+            state.projectId.length + state.conversationId.length + state.kind.length +
+            state.capabilityId.length + state.title.length + state.input.length +
+            state.resultSummary.length + (state.idempotencyKey?.length ?: 0)
         agentStateArray.put(JSONObject().put("taskId", state.taskId).put("owner", state.owner)
             .put("status", state.status).put("currentStep", state.currentStep)
-            .put("checkpoint", state.checkpoint).put("lastError", state.lastError).put("updatedAt", state.updatedAt))
+            .put("checkpoint", state.checkpoint).put("lastError", state.lastError).put("updatedAt", state.updatedAt)
+            .put("projectId", state.projectId).put("conversationId", state.conversationId)
+            .put("kind", state.kind).put("capabilityId", state.capabilityId)
+            .put("title", state.title).put("input", state.input).put("resultSummary", state.resultSummary)
+            .put("idempotencyKey", state.idempotencyKey ?: JSONObject.NULL)
+            .put("attempts", state.attempts).put("maxRetries", state.maxRetries)
+            .put("availableAt", state.availableAt).put("startedAt", state.startedAt).put("finishedAt", state.finishedAt))
     }
     val agentTraceIds = mutableSetOf<String>()
     val agentTraceArray = JSONArray()
@@ -963,21 +978,48 @@ private suspend fun applyLocalBackup(
         val taskId = item.requiredString("taskId")
         val owner = item.requiredString("owner")
         val sourceStatus = item.requiredString("status")
-        val status = if (sourceStatus in setOf("QUEUED", "RUNNING")) "PAUSED" else sourceStatus
+        val status = if (sourceStatus in setOf("QUEUED", "RUNNING", "RETRY_WAIT")) "PAUSED" else sourceStatus
         val currentStep = item.intOrDefault("currentStep", 0)
         val checkpoint = item.stringOrDefault("checkpoint", "")
         val sourceError = item.stringOrDefault("lastError", "")
         val lastError = if (status != sourceStatus && sourceError.isBlank()) {
             "备份恢复后任务已暂停，请核对状态后手动继续"
         } else sourceError
+        val projectId = item.stringOrDefault("projectId", "")
+        val conversationId = item.stringOrDefault("conversationId", "")
+        val kind = item.stringOrDefault("kind", "")
+        val capabilityId = item.stringOrDefault("capabilityId", "")
+        val title = item.stringOrDefault("title", "")
+        val input = item.stringOrDefault("input", "")
+        val resultSummary = item.stringOrDefault("resultSummary", "")
+        val idempotencyKey = item.opt("idempotencyKey")
+            .takeIf { it != null && it != JSONObject.NULL }
+            ?.toString()?.takeIf { it.isNotBlank() }
+        val attempts = item.intOrDefault("attempts", 0)
+        val maxRetries = item.intOrDefault("maxRetries", 2)
+        val availableAt = item.longOrDefault("availableAt", 0L)
+        val startedAt = item.longOrDefault("startedAt", 0L)
+        val finishedAt = item.longOrDefault("finishedAt", 0L)
         require(taskId.isNotBlank() && taskId.length <= 120 && owner.isNotBlank() && owner.length <= 80 &&
-            sourceStatus in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && sourceError.length <= 2_000) {
+            sourceStatus in validAgentTaskStatuses && currentStep >= 0 && checkpoint.length <= 64_000 && sourceError.length <= 2_000 &&
+            projectId.length <= 120 && conversationId.length <= 120 && kind.length <= 60 && capabilityId.length <= 100 &&
+            title.length <= 160 && input.length <= 12_000 && resultSummary.length <= 8_000 &&
+            (idempotencyKey == null || idempotencyKey.length in 1..240) &&
+            attempts in 0..5 && maxRetries in 0..5 && availableAt >= 0L && startedAt >= 0L && finishedAt >= 0L) {
             "Agent 任务状态字段无效"
         }
-        AgentTaskStateEntity(taskId, owner, status, currentStep, checkpoint, lastError,
-            item.longOrDefault("updatedAt", System.currentTimeMillis()))
+        AgentTaskStateEntity(
+            taskId, owner, status, currentStep, checkpoint, lastError,
+            item.longOrDefault("updatedAt", System.currentTimeMillis()),
+            projectId, conversationId, kind, capabilityId, title, input, resultSummary,
+            idempotencyKey, attempts, maxRetries, availableAt, startedAt, finishedAt
+        )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredAgentTaskStates.map { it.taskId }, "Agent 任务状态")
+    val restoredIdempotencyKeys = restoredAgentTaskStates.mapNotNull { it.idempotencyKey }
+    require(restoredIdempotencyKeys.distinct().size == restoredIdempotencyKeys.size) {
+        "Agent 任务幂等键重复"
+    }
     val restoredAgentTaskTraces = (0 until agentTraceRows.length()).map { index ->
         val item = agentTraceRows.getJSONObject(index)
         val id = item.requiredString("id")
