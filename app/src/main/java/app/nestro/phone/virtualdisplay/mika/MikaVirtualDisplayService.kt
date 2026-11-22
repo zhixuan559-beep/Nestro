@@ -263,10 +263,21 @@ internal class MikaVirtualDisplayService(
             ) as Int
         } catch (t: Throwable) {
             Log.w(TAG, "startActivityAsUser unavailable; falling back to am start", t)
-            val component = intent.component?.flattenToShortString() ?: return START_NOT_FOUND
-            val process = ProcessBuilder("am", "start", "--display", "$displayId", "-n", component)
-                .redirectErrorStream(true).start()
+            // Preserve implicit intents in the shell fallback. A VIEW intent often has no
+            // explicit component; requiring one here made URL launches fail on devices where
+            // the hidden startActivityAsUser overload is unavailable.
+            val command = buildList {
+                add("am"); add("start"); add("--display"); add(displayId.toString())
+                intent.action?.let { add("-a"); add(it) }
+                intent.data?.let { add("-d"); add(it.toString()) }
+                intent.`package`?.let { add("-p"); add(it) }
+                intent.component?.let { add("-n"); add(it.flattenToShortString()) }
+            }
+            if (command.size <= 4) return START_NOT_FOUND
+            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().use { it.readText().take(2_000) }
             if (process.waitFor() == 0) return START_OK
+            Log.w(TAG, "am start fallback failed: " + output.take(500))
             return START_ERROR
         }
         if (result >= 0) START_OK else START_ERROR
