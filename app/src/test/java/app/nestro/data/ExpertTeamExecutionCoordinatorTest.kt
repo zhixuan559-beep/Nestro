@@ -157,6 +157,74 @@ class ExpertTeamExecutionCoordinatorTest {
     }
 
     @Test
+    fun projectPlanCheckpointRetainsFingerprintAndResumesAfterCompletedWave() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = ExpertTeamExecutionCoordinator(tasks)
+        val plan = ExpertProjectPlan(
+            projectGoal = "完成项目研究",
+            packages = listOf(
+                ExpertWorkPackage("research", "研究员", "完成研究"),
+                ExpertWorkPackage("strategy", "策略师", "形成策略", listOf("research")),
+                ExpertWorkPackage("copy", "文案官", "形成文案", listOf("research"))
+            ),
+            finalAcceptanceCriteria = "结果完整"
+        )
+        val members = mapOf(
+            "研究员" to ExpertTeamMemberTask("研究员", "负责研究"),
+            "策略师" to ExpertTeamMemberTask("策略师", "负责策略"),
+            "文案官" to ExpertTeamMemberTask("文案官", "负责文案")
+        )
+        val parallelWaveStarted = CompletableDeferred<Unit>()
+        val firstRun = launch {
+            runCatching {
+                service.executeProjectPlan(
+                    teamId = "project-plan-resume",
+                    teamName = "项目团队",
+                    teamDescription = "分工执行",
+                    plan = plan,
+                    members = members,
+                    projectId = "project-1",
+                    taskId = "project-plan-resume-task",
+                    invokeMember = { member, _ ->
+                        if (member.name == "研究员") "研究成果已保存"
+                        else {
+                            parallelWaveStarted.complete(Unit)
+                            awaitCancellation()
+                        }
+                    }
+                )
+            }
+        }
+        withTimeout(2_000) { parallelWaveStarted.await() }
+        val checkpoint = states.get("project-plan-resume-task")?.checkpoint.orEmpty()
+        assertTrue(checkpoint.contains("\"planFingerprint\""))
+        assertTrue(checkpoint.contains("研究成果已保存"))
+        tasks.pause("project-plan-resume-task")
+        firstRun.join()
+        assertEquals(AgentTaskStatus.PAUSED, tasks.state("project-plan-resume-task")?.status)
+
+        val resumedCalls = mutableListOf<String>()
+        val resumed = service.executeProjectPlan(
+            teamId = "project-plan-resume",
+            teamName = "项目团队",
+            teamDescription = "分工执行",
+            plan = plan,
+            members = members,
+            projectId = "project-1",
+            taskId = "project-plan-resume-task",
+            invokeMember = { member, _ ->
+                resumedCalls += member.name
+                "${member.name} 已完成"
+            }
+        )
+        assertTrue(resumed.isSuccessful)
+        assertEquals(2, resumedCalls.size)
+        assertFalse("研究员" in resumedCalls)
+        tasks.close()
+    }
+
+    @Test
     fun leadHandoffResumesAtTheDelegatedExpertWithoutRepeatingTheLead() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
