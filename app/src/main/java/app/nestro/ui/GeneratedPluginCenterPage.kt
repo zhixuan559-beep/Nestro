@@ -2,7 +2,6 @@ package app.nestro.ui
 
 import android.content.Context
 import android.net.Uri
-import android.util.Base64
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
