@@ -151,7 +151,7 @@ internal class ModelLedToolDispatcher(
         val savedCheckpoint = existingChatTask?.checkpoint.orEmpty()
         if (savedCheckpoint.startsWith("mcp:v1:executing:")) {
             val reason = "MCP 外部调用在中断前已开始，但结果未可靠落盘；为避免重复写入，系统未自动重放。请核对服务端结果后重新发起。"
-            stateStore.put(existingChatTask.copy(
+            stateStore.put(requireNotNull(existingChatTask).copy(
                 status = AgentTaskStatus.FAILED,
                 lastError = reason,
                 updatedAt = System.currentTimeMillis()
@@ -159,7 +159,7 @@ internal class ModelLedToolDispatcher(
             throw IllegalStateException(reason)
         }
         if (savedCheckpoint.startsWith("mcp:v1:completed:")) {
-            val recoveredOutput = savedCheckpoint.substringAfter('\\n').take(8_000)
+            val recoveredOutput = savedCheckpoint.substringAfter('\n').take(8_000)
             stateStore.put(existingChatTask.copy(
                 status = AgentTaskStatus.COMPLETED,
                 resultSummary = recoveredOutput,
@@ -167,7 +167,7 @@ internal class ModelLedToolDispatcher(
                 updatedAt = System.currentTimeMillis()
             ))
             return ModelToolDispatchResult(
-                directReply = "MCP 工具已完成，恢复的结果如下：\\n$recoveredOutput",
+                directReply = "MCP 工具已完成，恢复的结果如下：\n$recoveredOutput",
                 streamedToUi = false
             )
         }
@@ -389,7 +389,7 @@ ${prompt.take(8_000)}
                 if (spec.id.startsWith("mcp_") && result.success) {
                     stateStore.get(taskId)?.let { current ->
                         stateStore.put(current.copy(
-                            checkpoint = "mcp:v1:completed:${spec.id}\\n" + result.output.take(8_000),
+                            checkpoint = "mcp:v1:completed:${spec.id}\n" + result.output.take(8_000),
                             resultSummary = result.output.take(8_000),
                             updatedAt = System.currentTimeMillis()
                         ))
