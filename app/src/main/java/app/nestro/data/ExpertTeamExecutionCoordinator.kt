@@ -39,11 +39,52 @@ class ExpertTeamExecutionCoordinator(
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
         invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
-    ): ExpertTeamRunResult = taskCoordinator.runInline(
-        taskId = taskId,
-        owner = "expert_team",
-        initialCheckpoint = "team:" + teamId + ":queued"
-    ) { taskContext ->
+    ): ExpertTeamRunResult {
+        val teamIdentity = JSONObject()
+            .put("teamId", teamId)
+            .put("projectId", projectId)
+            .put("teamName", teamName)
+            .put("teamDescription", teamDescription)
+            .put("task", task)
+            .put("strategy", strategy.name)
+            .put("members", JSONArray().apply {
+                members.forEach { member ->
+                    put(JSONObject().put("name", member.name)
+                        .put("rolePrompt", member.rolePrompt)
+                        .put("assignedTask", member.assignedTask))
+                }
+            }).toString()
+        val savedPayload = taskCoordinator.state(taskId)?.checkpoint
+            ?.takeIf { it.startsWith("team_run:") }
+            ?.removePrefix("team_run:")
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        if (savedPayload != null) {
+            require(savedPayload.optString("identity") == teamIdentity) {
+                "专家团队检查点与当前团队、任务或成员配置不匹配，已停止恢复"
+            }
+        }
+        val resumeMembers = savedPayload?.optJSONArray("members")?.let { rows ->
+            (0 until rows.length()).mapNotNull { index ->
+                val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                ExpertTeamMemberRun(
+                    name = row.optString("name"),
+                    status = row.optString("status"),
+                    attempts = row.optInt("attempts").coerceIn(0, 3),
+                    elapsedMillis = row.optLong("elapsedMillis").coerceAtLeast(0),
+                    output = row.optString("output").take(2_200),
+                    error = row.optString("error").take(500)
+                )
+            }
+        }.orEmpty()
+        val initialCheckpoint = "team_run:" + JSONObject()
+            .put("identity", teamIdentity)
+            .put("members", JSONArray())
+            .toString()
+        return taskCoordinator.runInline(
+            taskId = taskId,
+            owner = "expert_team",
+            initialCheckpoint = initialCheckpoint
+        ) { taskContext ->
         taskContext.checkpoint("team:" + teamId + ":running", 0)
         var eventSequence = 0L
         suspend fun emit(
@@ -89,6 +130,24 @@ class ExpertTeamExecutionCoordinator(
                 members = members,
                 maxParallel = 4,
                 shouldStop = shouldStop,
+                resumeMembers = resumeMembers,
+                onMemberResult = { rows ->
+                    taskContext.checkpoint(
+                        "team_run:" + JSONObject()
+                            .put("identity", teamIdentity)
+                            .put("members", JSONArray().apply {
+                                rows.forEach { row ->
+                                    put(JSONObject()
+                                        .put("name", row.name)
+                                        .put("status", row.status)
+                                        .put("attempts", row.attempts)
+                                        .put("elapsedMillis", row.elapsedMillis)
+                                        .put("output", row.output.take(2_200))
+                                        .put("error", row.error.take(500)))
+                                }
+                            }).toString()
+                    )
+                },
                 onMember = { name, status ->
                     onMember(name, status)
                     emit(when (status) { "running" -> "member_started"; "retrying" -> "member_retrying"; "success" -> "member_completed"; else -> "member_failed" },
@@ -120,8 +179,21 @@ class ExpertTeamExecutionCoordinator(
         }
         emit("team_completed", status = if (result.failedMembers == 0) "success" else "partial",
             message = "成功 " + result.successfulMembers + " 人，失败 " + result.failedMembers + " 人")
-        taskContext.checkpoint("team:" + teamId + ":finished", result.members.size)
+        taskContext.checkpoint(
+            "team_run:" + JSONObject()
+                .put("identity", teamIdentity)
+                .put("members", JSONArray().apply {
+                    result.members.forEach { row ->
+                        put(JSONObject()
+                            .put("name", row.name).put("status", row.status)
+                            .put("attempts", row.attempts).put("elapsedMillis", row.elapsedMillis)
+                            .put("output", row.output.take(2_200)).put("error", row.error.take(500)))
+                    }
+                }).toString(),
+            result.members.size
+        )
         result.copy(projectId = projectId)
+        }
     }
     suspend fun executeProjectPlan(
         teamId: String,
