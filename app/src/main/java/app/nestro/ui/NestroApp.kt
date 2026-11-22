@@ -1844,10 +1844,10 @@ fun NestroApp(initialPage: String = "home") {
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
                                                          val existingWorkflowTask = appRuntime.agentTaskCoordinator.state(workflowTaskId)
-                                                         val effectiveWorkflowTaskId = if (existingWorkflowTask?.status in setOf(
-                                                                 app.nestro.agent.AgentTaskStatus.COMPLETED,
-                                                                 app.nestro.agent.AgentTaskStatus.CANCELLED
-                                                             )) UUID.randomUUID().toString() else workflowTaskId
+                                                         val effectiveWorkflowTaskId = if (
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.COMPLETED ||
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.CANCELLED
+                                                         ) UUID.randomUUID().toString() else workflowTaskId
                                                          prefs.edit()
                                                              .putString("workflow_task_id_v1", effectiveWorkflowTaskId)
                                                              .putString("workflow_task_workflow_id_v1", workflow.id)
