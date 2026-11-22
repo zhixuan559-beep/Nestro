@@ -14,6 +14,7 @@ import android.os.Process
 import android.util.Log
 import com.wangzan101.mika.shell.IMikaShell
 import java.io.InputStream
+import java.io.File
 import java.io.InputStreamReader
 import java.io.BufferedReader
 import java.util.concurrent.CountDownLatch
@@ -38,13 +39,17 @@ object MikaHelperMain {
         val worker = HandlerThread("nestro-mika-helper").apply { start() }
         Handler(worker.looper).post {
             var nextNonce: String? = nonce
+            var retryDelay = RETRY_MS
             while (true) {
                 val attached = attach(shellContext, packageName, appUid, certificatePin, helperApkPath, service, nextNonce)
                 if (attached == null) {
-                    Thread.sleep(RETRY_MS)
+                    Thread.sleep(retryDelay)
+                    retryDelay = (retryDelay * 2).coerceAtMost(MAX_RETRY_MS)
                     continue
                 }
                 nextNonce = attached.second
+                retryDelay = RETRY_MS
+                killOtherInstances(packageName)
                 val died = CountDownLatch(1)
                 try {
                     attached.first.linkToDeath({ died.countDown() }, 0)
@@ -53,7 +58,7 @@ object MikaHelperMain {
                     // App process death is the expected signal to release virtual displays.
                 }
                 runCatching { service.releaseAll() }
-                Thread.sleep(RETRY_MS)
+                Thread.sleep(retryDelay)
             }
         }
         Looper.loop()
@@ -92,8 +97,22 @@ object MikaHelperMain {
         null
     }
 
+    /** Keep only the most recently accepted helper for this app package. */
+    private fun killOtherInstances(packageName: String) {
+        val currentPid = Process.myPid()
+        val expectedName = "$packageName:helper"
+        File("/proc").listFiles()?.forEach { entry ->
+            val pid = entry.name.toIntOrNull() ?: return@forEach
+            if (pid == currentPid) return@forEach
+            val command = runCatching { File(entry, "cmdline").readBytes() }.getOrNull() ?: return@forEach
+            val processName = String(command.takeWhile { it != 0.toByte() }.toByteArray())
+            if (processName == expectedName) runCatching { Process.killProcess(pid) }
+        }
+    }
+
     private const val TAG = "NestroMikaHelper"
     private const val RETRY_MS = 1_000L
+    private const val MAX_RETRY_MS = 30_000L
     private const val METHOD_ATTACH = "attach"
     private const val KEY_NONCE = "nonce"
     private const val KEY_BINDER = "binder"
