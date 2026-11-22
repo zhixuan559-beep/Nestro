@@ -13,8 +13,10 @@ import app.nestro.agent.AgentToolRequest
 import app.nestro.data.GeneratedPluginStore
 import app.nestro.data.GeneratedPluginWorkflowExecutor
 import app.nestro.data.GeneratedPluginPackageCodec
+import app.nestro.media.MediaAiTask
 import app.nestro.media.MediaAiTaskStore
 import app.nestro.media.MediaAiTaskStatus
+import app.nestro.media.MediaAiTaskScheduler
 import app.nestro.media.MediaProviderConfigStore
 import app.nestro.media.MediaVideoGeneration
 import kotlinx.coroutines.delay
@@ -216,7 +218,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.provider.list",
-                    description = "列出当前用户已配置的媒体服务商及聊天/视频模型能力。无需参数。",
+                    description = "列出当前用户已配置的媒体服务商及实际可用的媒体能力：图片理解、音频转写、视频场景分析、音频处理、视频生成。无需参数；仅报告配置字段实际支持的能力。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) {
@@ -227,7 +229,7 @@ class NestroApplication : Application() {
                     app.nestro.agent.AgentToolResult(
                         true,
                         output = providers.joinToString("\n") {
-                            "provider_id=${it.providerId}; name=${it.displayName}; chat_model=${it.model}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
+                            "provider_id=${it.providerId}; name=${it.displayName}; image_understanding=${it.model.isNotBlank()}; audio_transcription=${it.transcriptionModel.isNotBlank()}; video_scene_analysis=${it.model.isNotBlank() && it.scenePath.isNotBlank() && it.scenePath != "media/scenes"}; audio_processing=${it.model.isNotBlank() && it.audioProcessPath.isNotBlank() && it.audioProcessPath != "audio/process"}; video_generation=${it.videoGenerationModel.isNotBlank()}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
                         }
                     )
                 }
@@ -299,6 +301,98 @@ class NestroApplication : Application() {
                     true,
                     output = "任务 ID：${task.id}；状态：${task.status}；进度：${task.progress}%；素材 ID：${resultAssetId.ifBlank { "尚未生成" }}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}；提示词：${task.prompt}；错误：${task.error}"
                 )
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "media.ai.run",
+                    description = "对当前项目已导入素材执行媒体理解或处理。参数：asset_id（必填）；action（必填，image/transcribe/scenes/audio-clean）；prompt（图片理解时可选）；provider_id（可选）。image=图片内容理解；transcribe=音频/视频中的语音转写；scenes=视频场景分段与描述，不等于任意视频问答；audio-clean=降噪并生成新音频素材。会把素材发送到所选第三方服务商，可能产生费用。",
+                    permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
+                    requiresConfirmation = true
+                )
+            ) { arguments ->
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，已阻止跨项目媒体访问")
+                val assetId = arguments["asset_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "媒体分析缺少 asset_id")
+                val action = arguments["action"]?.trim()?.lowercase()
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "媒体分析缺少 action")
+                if (action !in setOf("image", "transcribe", "scenes", "audio-clean")) {
+                    return@register app.nestro.agent.AgentToolResult(false, error = "不支持的媒体操作；可选 image/transcribe/scenes/audio-clean")
+                }
+                val asset = runCatching {
+                    MediaProjectStore.listAssets(this@NestroApplication, projectId).firstOrNull { it.id == assetId }
+                }.getOrElse {
+                    return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "读取当前项目素材失败")
+                } ?: return@register app.nestro.agent.AgentToolResult(false, error = "素材不存在或不属于当前项目")
+                val kindAllowed = when (action) {
+                    "image" -> asset.kind == app.nestro.media.MediaAssetKind.IMAGE
+                    "transcribe" -> asset.kind in setOf(app.nestro.media.MediaAssetKind.AUDIO, app.nestro.media.MediaAssetKind.VIDEO)
+                    "scenes" -> asset.kind == app.nestro.media.MediaAssetKind.VIDEO
+                    "audio-clean" -> asset.kind in setOf(app.nestro.media.MediaAssetKind.AUDIO, app.nestro.media.MediaAssetKind.VIDEO)
+                    else -> false
+                }
+                if (!kindAllowed) return@register app.nestro.agent.AgentToolResult(false, error = "素材类型与所选媒体操作不匹配")
+                val providerStore = MediaProviderConfigStore(this@NestroApplication)
+                val providers = providerStore.list()
+                val supportsAction: (app.nestro.media.MediaProviderConfig) -> Boolean = { config ->
+                    when (action) {
+                        "image" -> config.model.isNotBlank()
+                        "transcribe" -> config.transcriptionModel.isNotBlank()
+                        "scenes" -> config.model.isNotBlank() && config.scenePath.isNotBlank() && config.scenePath != "media/scenes"
+                        "audio-clean" -> config.model.isNotBlank() && config.audioProcessPath.isNotBlank() && config.audioProcessPath != "audio/process"
+                        else -> false
+                    }
+                }
+                val requestedProviderId = arguments["provider_id"]?.trim()?.takeIf(String::isNotBlank)
+                val provider = if (requestedProviderId != null) {
+                    providers.firstOrNull { it.providerId == requestedProviderId && supportsAction(it) }
+                } else {
+                    providers.firstOrNull { it.providerId == providerStore.activeProviderId() && supportsAction(it) }
+                        ?: providers.firstOrNull(supportsAction)
+                } ?: return@register app.nestro.agent.AgentToolResult(
+                    false,
+                    error = if (requestedProviderId != null) "指定服务商未配置所需的 $action 能力" else "当前没有已配置且支持 $action 的媒体服务商；请先配置对应模型/API 路径"
+                )
+                val prompt = arguments["prompt"]?.trim().orEmpty().take(2_000)
+                val task = runCatching {
+                    MediaAiTaskStore.create(this@NestroApplication, projectId, asset.id, provider.providerId, action, prompt)
+                }.getOrElse {
+                    return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "媒体任务创建失败")
+                }
+                runCatching { MediaAiTaskScheduler.enqueue(this@NestroApplication, projectId, task.id) }
+                    .getOrElse {
+                        return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "媒体任务排队失败；任务 ID：${task.id}")
+                    }
+                var latest = task
+                for (attempt in 0 until 45) {
+                    delay(1_000)
+                    latest = MediaAiTaskStore.read(this@NestroApplication, projectId, task.id) ?: latest
+                    if (latest.status in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED)) break
+                }
+                when (latest.status) {
+                    MediaAiTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(true, output = formatMediaAiTask(latest))
+                    MediaAiTaskStatus.FAILED -> app.nestro.agent.AgentToolResult(false, error = latest.error.ifBlank { "媒体任务执行失败" })
+                    MediaAiTaskStatus.CANCELLED -> app.nestro.agent.AgentToolResult(false, error = "媒体任务已取消")
+                    else -> app.nestro.agent.AgentToolResult(
+                        true,
+                        output = "媒体任务已排队/正在执行，尚未完成。task_id=${task.id}; action=$action; asset_id=$assetId; progress=${latest.progress}%。可调用 media.ai.status 继续查询。"
+                    )
+                }
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "media.ai.status",
+                    description = "查询当前项目媒体理解/处理任务。参数：task_id（必填）。返回真实状态、进度及结果/新素材 ID。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围")
+                val taskId = arguments["task_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "查询媒体任务缺少 task_id")
+                val task = runCatching { MediaAiTaskStore.read(this@NestroApplication, projectId, taskId) }.getOrNull()
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "当前项目不存在该媒体任务")
+                app.nestro.agent.AgentToolResult(true, output = formatMediaAiTask(task))
             }
             registerInstalledGeneratedPlugins(this)
         }
@@ -593,4 +687,33 @@ class NestroApplication : Application() {
     }
 
 
+
+    private fun formatMediaAiTask(task: MediaAiTask): String {
+        val prefix = "任务 ID：${task.id}；操作：${task.action}；状态：${task.status}；进度：${task.progress}%"
+        if (task.status != MediaAiTaskStatus.COMPLETED) {
+            return (prefix + if (task.error.isNotBlank()) "；错误：${task.error}" else "；任务仍在后台执行").take(12_000)
+        }
+        val result = runCatching { org.json.JSONObject(task.resultJson) }.getOrNull()
+            ?: return "$prefix；任务完成，但结果数据格式无效。"
+        val output = when (result.optString("type")) {
+            "image" -> result.optString("text")
+            "transcribe" -> {
+                val cues = result.optJSONArray("cues") ?: org.json.JSONArray()
+                (0 until cues.length()).joinToString("\n") { index ->
+                    val cue = cues.optJSONObject(index) ?: return@joinToString ""
+                    "[${cue.optLong("startMs") / 1000}s-${cue.optLong("endMs") / 1000}s] ${cue.optString("text")}"
+                }
+            }
+            "scenes" -> {
+                val scenes = result.optJSONArray("scenes") ?: org.json.JSONArray()
+                (0 until scenes.length()).joinToString("\n") { index ->
+                    val scene = scenes.optJSONObject(index) ?: return@joinToString ""
+                    "[${scene.optLong("startMs") / 1000}s-${scene.optLong("endMs") / 1000}s] ${scene.optString("title")}：${scene.optString("description")}；建议字幕：${scene.optString("caption")}"
+                }
+            }
+            "audio" -> "处理后音频已导入当前项目素材库。素材 ID：${result.optString("assetId")}；名称：${result.optString("displayName")}"
+            else -> task.resultJson
+        }
+        return (prefix + "；结果：\n" + output).take(12_000)
+    }
 }
