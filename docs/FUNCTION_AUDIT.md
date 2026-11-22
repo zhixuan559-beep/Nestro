@@ -847,3 +847,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 未执行历史遗留/死代码扫描；该工作严格留待用户确认第一阶段整合完成后再开始。
 - 未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验证；按既定顺序留待后续统一验收。
 - 当前记录是历史分支整合进度，不代表第一阶段已经完成；仍需继续核对分叉分支中共享路径的独有语义，确认没有遗漏有效实现。
+
+
+## 2026-11-22 历史分支共享路径语义复核补记（续）
+
+本轮以最新整合分支 HEAD \`e0226cc7d58e41082eb5ec49dbf88dba744b7c02\` 为基准，针对仍有分叉提交的模块分支，进一步比较共享路径内容，而非仅依据文件路径判断。
+
+### 逐项复核结果
+
+- **模块6 知识库**：\`KnowledgeChunker.kt\`、\`KnowledgePdfOcr.kt\`、\`KnowledgeRepository.kt\`、\`KnowledgeSearchEngine.kt\`、\`KnowledgeStore.kt\`、\`KnowledgeTextDecoder.kt\`、\`KnowledgeVectorSearch.kt\`、\`KnowledgePage.kt\` 与模块6历史分支对应实现逐行内容一致。\`KnowledgeEmbeddingModelManager.kt\` 当前版本增加 attention-mask-aware mean pooling，对有效 token 向量按 attention mask 求均值，而非旧分支只取 CLS 向量；保留当前较新实现。PDF OCR、文本解码、向量搜索、嵌入模型管理及对应测试均已在当前树中。历史模块 CI 不覆盖当前统一 Android workflow。\n- **模块7 技能库**：旧 \`SkillCommunityInstallPlanner\`、\`SkillInstallPolicy\` 和旧依赖报告 API不整套迁入；当前使用回溯求解器、安装计划与依赖闭包检查。当前 \`SkillBundleParser\` / \`SkillCommunityClient\` 比旧分支增加严格 SemVer 2.0、签名者指纹、社区 HTTPS URL 结构约束、存储元数据校验及更完整的签名/信任管理。旧 \`CapabilityDirectoryPage\` / \`NestroApp\` 属早期页面和路由，当前页面已承接统一能力注册表、MCP、审计及其他模块接线，不以旧 UI 覆盖。\n- **模块8 Phone Agent**：分支差异集中在 instrumentation 脚本、Android workflow 和 Gradle 配置，没有新增 Phone Agent 主源码路径；当前主源码及专项策略/测试已在整合树中。旧 CI 配置不覆盖当前工作流。\n- **模块9 语音**：语音 Provider、Realtime、录音控制器、TTS 控制器及语音设置页共享源码逐行一致；不需重复迁入。\n- **模块13 MCP**：历史 MCP 客户端、工具中心、页面及调用入口已在整合树中；此前专项对照确认核心文件与审计可靠性修复分支一致。当前版本还包含项目授权与全局授权双重校验，不用历史页面覆盖。\n- **模块14 GitHub Workbench**：页面源码逐行一致；当前 \`GitWorkbench.kt\` 比历史分支多出凭据保存/删除失败后的旧凭据恢复校验，以及本地仓库索引同步锁等保护；保留当前版本。\n- **模块15 AI Coworkbench**：当前页面、服务、数据流分析器、报告解析器和静态分析器与历史分支逐行一致；不重复迁入。SBOM 脚本/测试和 workflow 变更以当前仓库文件及统一 CI 配置为准，不覆盖当前 workflow。\n- **main**：独有旧关键词路由、网络策略和 TTS 能力类已判定被当前架构替代，不整分支合并。\n\n以上是 GitHub 远程文件内容/树差异的静态比较，不代表 Gradle 编译、JVM 测试、Android instrumentation 或设备运行通过。没有删除历史分支，也没有开展全项目死代码扫描。仍需完成所有可见分支最终清单核对，并回读审计与分支 HEAD 后，才能标记第一阶段整合结束。\n
