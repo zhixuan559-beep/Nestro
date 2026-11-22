@@ -42,7 +42,7 @@ class PhoneAgentTaskService(
         plan: PhoneAgentPlanner.Plan
     ): PhoneAgentTaskEntity {
         val task = PhoneAgentTaskStore.create(database.dao(), projectId, conversationId, plan)
-        if (PhoneAgentService.activeService?.hasValidGrant() == true) enqueue(task.id)
+        if (PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true) enqueue(task.id)
         return task
     }
 
