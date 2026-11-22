@@ -51,19 +51,18 @@ class MikaHelperHandoffProvider : ContentProvider() {
             val prefs = ctx.getSharedPreferences(PREFS, 0)
             val expected = prefs.getString(KEY_NONCE_STORE, null) ?: return reject("no_pending_nonce")
             if (!constantTimeEquals(expected, nonce ?: "")) return reject("bad_nonce")
+            val deathRecipient = IBinder.DeathRecipient {
+                synchronized(lock) {
+                    if (_shell.value?.asBinder() === binder) _shell.value = null
+                }
+            }
+            val linked = runCatching { binder.linkToDeath(deathRecipient, 0); true }.getOrDefault(false)
+            if (!linked) return reject("dead_binder")
             val next = randomNonce()
             if (!prefs.edit().putString(KEY_NONCE_STORE, next).commit()) {
+                runCatching { binder.unlinkToDeath(deathRecipient, 0) }
                 return reject("nonce_rotation_persist_failed")
             }
-            val linked = runCatching {
-                binder.linkToDeath({
-                    synchronized(lock) {
-                        if (_shell.value?.asBinder() === binder) _shell.value = null
-                    }
-                }, 0)
-                true
-            }.getOrDefault(false)
-            if (!linked) return reject("dead_binder")
             _shell.value = shell
             return Bundle().apply {
                 putBoolean(KEY_ACCEPTED, true)
