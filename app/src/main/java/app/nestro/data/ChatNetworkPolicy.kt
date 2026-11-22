@@ -14,19 +14,19 @@ data class ChatTimeoutPolicy(
     }
 }
 
-data class ChatRetryPlan(val attempt: Int, val maxAttempts: Int, val delayMs: Long)
+data class ChatRetryPlan(val retryNumber: Int, val maxRetries: Int, val delayMs: Long)
 
 /** Network policy shared by chat completion and streaming requests. */
 object ChatNetworkPolicy {
-    const val MAX_ATTEMPTS = 2
+    const val MAX_RETRIES = 2
     const val BASE_RETRY_DELAY_MS = 800L
 
     fun timeoutPolicy() = ChatTimeoutPolicy()
 
     fun retryPlan(error: Throwable, attempt: Int): ChatRetryPlan? {
-        if (attempt !in 0 until MAX_ATTEMPTS || error is CancellationException) return null
+        if (attempt !in 0 until MAX_RETRIES || error is CancellationException) return null
         if (!ChatRequestPolicy.shouldRetry(error)) return null
-        return ChatRetryPlan(attempt + 1, MAX_ATTEMPTS, BASE_RETRY_DELAY_MS * (1L shl attempt))
+        return ChatRetryPlan(attempt + 1, MAX_RETRIES, BASE_RETRY_DELAY_MS * (1L shl attempt))
     }
 
     fun classify(error: Throwable): String {

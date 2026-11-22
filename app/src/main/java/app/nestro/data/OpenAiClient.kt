@@ -107,8 +107,8 @@ internal object OpenAiClient {
             withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
             configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
                 if (shouldStop()) throw IllegalStateException("用户停止生成")
-                var attempt = 0
-                while (attempt < ChatNetworkPolicy.MAX_ATTEMPTS) {
+                var retryCount = 0
+                while (true) {
                     if (shouldStop()) throw IllegalStateException("用户停止生成")
                     var emitted = false
                     try {
@@ -125,9 +125,9 @@ internal object OpenAiClient {
                         if (shouldStop()) throw IllegalStateException("用户停止生成", error)
                         if (emitted) throw error
                         lastError = error
-                        val retry = ChatNetworkPolicy.retryPlan(error, attempt)
+                        val retry = ChatNetworkPolicy.retryPlan(error, retryCount)
                         if (retry != null && !emitted) {
-                            attempt = retry.attempt
+                            retryCount = retry.retryNumber
                             delay(retry.delayMs)
                             continue
                         }
