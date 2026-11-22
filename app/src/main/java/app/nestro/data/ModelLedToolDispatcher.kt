@@ -379,14 +379,27 @@ ${prompt.take(8_000)}
                                     "__nestro_request_id" to requestId
                                 )
                                 if (id.startsWith("mcp_")) {
-                                    stateStore.get(taskId)?.let { current ->
-                                        stateStore.put(current.copy(
-                                            checkpoint = "mcp:v1:executing:$id",
-                                            updatedAt = System.currentTimeMillis()
-                                        ))
+                                    val savedOutput = findCompletedMcpCall(
+                                        stateStore.get(taskId)?.checkpoint.orEmpty(),
+                                        id,
+                                        invocationArguments
+                                    )
+                                    if (savedOutput != null) {
+                                        AgentToolResult(true, output = savedOutput)
+                                    } else {
+                                        saveMcpReplayCall(stateStore, taskId, id, invocationArguments, "EXECUTING")
+                                        val result = lease.access.invoke(id, invocationArguments)
+                                        if (result.success) {
+                                            saveMcpReplayCall(
+                                                stateStore, taskId, id, invocationArguments,
+                                                "COMPLETED", result.output
+                                            )
+                                        }
+                                        result
                                     }
+                                } else {
+                                    lease.access.invoke(id, invocationArguments)
                                 }
-                                lease.access.invoke(id, invocationArguments)
                             }
                         }
                 }
