@@ -386,7 +386,7 @@ fun MediaEditorPage(
         if (uri != null && exportTaskId.isNotBlank()) scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val task = MediaRenderTaskStore.read(context, projectId, exportTaskId) ?: error("导出任务不存在")
+                    val task = MediaRenderScheduler.read(context, projectId, exportTaskId) ?: error("导出任务不存在")
                     require(task.status == MediaRenderStatus.COMPLETED) { "任务尚未完成" }
                     val source = MediaProjectStore.exportFile(context, projectId, exportTaskId)
                     require(source.isFile && source.length() > 0) { "导出文件不存在" }
