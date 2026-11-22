@@ -144,7 +144,7 @@ internal class AutomaticMemoryExtractionCoordinator(
         // Include memories relevant to this correction/update, not only the newest 30.
         // Keep a small recent tail as context for facts that are not lexical matches.
         val relevantExisting = MemoryRecallRanker.rank(
-            extractionInput.joinToString("\\n"), existing, limit = 20
+            extractionInput.joinToString("\n"), existing, limit = 20
         )
         val existingForExtraction = (relevantExisting + existing.sortedByDescending { it.updatedAt }.take(10))
             .distinctBy { it.id }
