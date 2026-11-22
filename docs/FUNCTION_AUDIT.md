@@ -575,3 +575,29 @@
 - `main` 分支独有的三个旧 helper 已在前文说明：旧关键词路由与当前主模型原生工具调度重复；网络策略逻辑已由现有 ChatRequestPolicy/请求执行层承接；TTS Voice 排序暂未形成用户确认需求。均不直接恢复。
 - 以上是逐文件内容对照，不是整分支合并。分支提交图上的 ahead/behind 只反映提交图差异，不能证明功能是否缺失。
 
+
+
+## 2026-11-22 PR #1 / #3 与统一能力中心功能去向核对
+
+### PR 状态（GitHub 实时元数据）
+- PR #1 `WIP: Improve knowledge retrieval ranking`：Open + Draft，head `feature/knowledge-retrieval-ranking`，base `main`；未合并。
+- PR #3 `[Phase 2] Refactor feature state ownership — Batch A`：Open + Draft，head `refactor/phase-2-architecture`，base `feature/voice-system`；未合并。
+- 两个 PR 的 base 都不是当前 `integration/19-modules`。不能因为 PR 仍开着就把整个旧分支合入当前基线，也不能因为当前分支已有较新功能就不核对 PR 中的用户可见功能。
+
+### PR #1 中的旧统一能力中心
+旧分支包含 `CapabilityRegistryStore`、`CapabilityTaskEngine`、`CapabilityCenterPage` 及对应 Room 任务实体/事件表。当前整合分支树中不存在这些同名实现；当前抽查的 `CapabilityDirectoryPage` 实际承载 Skills/社区目录，`GeneratedPluginCenterPage` 承载声明式插件生命周期，二者均不能直接等同于旧 PR 的统一能力中心总览。
+
+**已确认需要纳入功能完整性审查的用户可见能力：**
+- 汇总显示模型、专家/团队、Skills、工作流、知识库、记忆、Phone Agent、MCP、GitHub、媒体等能力的可用/配置状态；
+- 能力搜索、授权/撤销、项目范围、确认要求与调用审计的统一查看入口；
+- 任务状态、最近事件、暂停/继续/取消的统一观察入口。
+
+**实现处理边界：**
+- 旧 `CapabilityTaskEngine` 不直接合并：当前 `AgentRuntime` + `AgentToolCatalog` + `AgentPermissionRouter` + `AgentTaskCoordinator` + Room 状态/Trace Store 已承担工具注册、按任务租约、逐次授权、持久任务状态、检查点、等待用户、暂停/继续/取消和进程恢复。复制旧任务引擎会产生第二套调度系统。
+- 但当前共享任务内核不等于旧能力中心的完整 UI/持久化授权目录；需以当前工具目录、权限路由、项目授权和任务 Trace 为数据源，评估是否缺少统一可视化/可管理入口。旧 PR 中的能力元数据/授权/审计数据模型只能作为需求参考，不能直接照搬。
+- 旧 `CapabilityCenterPage` 不能整页直接复制：它依赖旧 CapabilityRegistryStore、旧 capability task 表及旧路由；应复用现有 Nestro 页面导航、AgentToolCatalog、权限路由、MCP/插件/技能现有数据源，若确认缺口，再做最小 UI 接入。
+
+### PR #3 状态所有权重构
+- PR #3 的主要目标是从大型 Compose 根页面拆分模型管理 UI 状态；当前整合分支已存在 `ModelManagementUiState`、`ConversationUiState`、`ProjectSpaceUiState`、`WorkflowUiState`、`ExpertWorkspaceUiState` 等分离状态文件。
+- PR #3 以旧 `feature/voice-system` 为 base，当前 `integration/19-modules` 相对该旧分支已大幅演进；不得整分支合并或用其旧版 `NestroApp.kt` 覆盖当前根页面。后续应以当前文件继续审查剩余状态是否还有可安全拆分的部分。
+
