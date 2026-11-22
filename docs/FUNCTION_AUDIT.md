@@ -1106,7 +1106,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 以上为代码静态回读；没有运行构建或测试。
 
 
-## 2026-11-22 统一审批审计持久化（代码 HEAD `aebf89ce66f5bf231b3aac55780ce38558e92639`）
+## 2026-11-22 统一审批审计持久化（代码 HEAD `9ed2b825b68d15b4709809d8ba64bb5a8b761b98`）
 
 - NestroDatabase 升级至 version 16，新增 `agent_approval_audits` 表及 scope/status 索引，记录审批范围、工具、原因、PENDING 和最终决策。
 - AgentApprovalCoordinator 是工作流、插件、MCP 与模型工具授权共用的审批入口；审批前先持久化 PENDING，用户决定后写入 AUTHORIZED_ONCE、AUTHORIZED_TASK 或 REJECTED。审批审计写入失败时不放行外部工具执行。
