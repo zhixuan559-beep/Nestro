@@ -317,8 +317,8 @@ interface NestroDao {
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
 
-    @Query("SELECT * FROM user_memories WHERE projectId = :projectId OR shareAcrossProjects = 1 ORDER BY CASE WHEN projectId = :projectId THEN 0 ELSE 1 END, updatedAt DESC LIMIT :limit")
-    suspend fun userMemoriesForRecall(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+    @Query("SELECT * FROM user_memories WHERE projectId = :projectId OR (shareAcrossProjects = 1 AND projectId IN (:readableSourceProjectIds)) ORDER BY CASE WHEN projectId = :projectId THEN 0 ELSE 1 END, updatedAt DESC LIMIT :limit")
+    suspend fun userMemoriesForRecall(projectId: String, readableSourceProjectIds: List<String>, limit: Int = 200): List<UserMemoryEntity>
 
     @Query("UPDATE user_memories SET shareAcrossProjects = :enabled, updatedAt = :updatedAt WHERE id = :id AND projectId = :ownerProjectId")
     suspend fun setUserMemoryShareAcrossProjects(id: String, ownerProjectId: String, enabled: Boolean, updatedAt: Long): Int
