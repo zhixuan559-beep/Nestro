@@ -202,6 +202,8 @@ object PhoneAgentTaskStore {
         success: Boolean,
         detail: String
     ) {
+        val safeDetail = PhoneAgentRiskPolicy.redactSensitiveText(detail)
+        val detailLimit = if (safeDetail.contains("来源页面") && safeDetail.contains("授权标记")) 1_500 else 240
         dao.insertPhoneAgentTaskLog(
             PhoneAgentTaskLogEntity(
                 id = UUID.randomUUID().toString(),
@@ -209,7 +211,7 @@ object PhoneAgentTaskStore {
                 actionIndex = index,
                 action = PhoneAgentRiskPolicy.redactSensitiveText(action).take(60),
                 success = success,
-                detail = PhoneAgentRiskPolicy.redactSensitiveText(detail).take(240),
+                detail = safeDetail.take(detailLimit),
                 createdAt = System.currentTimeMillis()
             )
         )
