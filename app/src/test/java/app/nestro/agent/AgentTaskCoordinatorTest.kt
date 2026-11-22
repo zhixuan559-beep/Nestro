@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -683,6 +684,59 @@ class AgentTaskCoordinatorTest {
             assertEquals(1, maximumActive.get())
         } finally {
             release.complete(Unit)
+            coordinator.close()
+        }
+    }
+
+
+    @Test
+    fun parentTaskWaitsForChildAndResumesWhenChildCompletes() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            val parentId = "workflow-parent"
+            val childId = "media-ai-child"
+            coordinator.registerInlineTask(parentId, "workflow", metadata = AgentTaskMetadata(kind = "workflow"))
+            coordinator.registerInlineTask(childId, "media_ai", metadata = AgentTaskMetadata(kind = "media_ai"))
+            coordinator.transitionTask(parentId, AgentTaskStatus.RUNNING, "开始协作")
+            coordinator.transitionTask(childId, AgentTaskStatus.RUNNING, "媒体任务开始")
+
+            val waiting = async { coordinator.awaitTaskCompletion(parentId, childId, timeoutMillis = 3_000) }
+            withTimeout(2_000) {
+                while (states.get(parentId)?.status != AgentTaskStatus.WAITING_FOR_TASK) delay(10)
+            }
+            coordinator.transitionTask(childId, AgentTaskStatus.COMPLETED, "媒体任务完成", resultSummary = "素材已生成")
+            val result = waiting.await()
+
+            assertEquals(AgentTaskStatus.COMPLETED, result.status)
+            assertEquals(AgentTaskStatus.RUNNING, states.get(parentId)?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
+
+    @Test
+    fun parentTaskReflectsChildApprovalWaitAndResumesAfterChildApproval() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            val parentId = "calendar-parent"
+            val childId = "phone-agent-child"
+            coordinator.registerInlineTask(parentId, "calendar_automation", metadata = AgentTaskMetadata(kind = "calendar_automation"))
+            coordinator.registerInlineTask(childId, "phone_agent", metadata = AgentTaskMetadata(kind = "phone_agent"))
+            coordinator.transitionTask(parentId, AgentTaskStatus.RUNNING, "自动任务开始")
+            coordinator.transitionTask(childId, AgentTaskStatus.WAITING_FOR_USER, "手机需要用户接手")
+
+            val waiting = async { coordinator.awaitTaskCompletion(parentId, childId, timeoutMillis = 3_000) }
+            withTimeout(2_000) {
+                while (states.get(parentId)?.status != AgentTaskStatus.WAITING_FOR_USER) delay(10)
+            }
+            coordinator.transitionTask(childId, AgentTaskStatus.RUNNING, "用户已接手")
+            coordinator.transitionTask(childId, AgentTaskStatus.COMPLETED, "手机任务完成", resultSummary = "素材已导入")
+            waiting.await()
+
+            assertEquals(AgentTaskStatus.RUNNING, states.get(parentId)?.status)
+        } finally {
             coordinator.close()
         }
     }
