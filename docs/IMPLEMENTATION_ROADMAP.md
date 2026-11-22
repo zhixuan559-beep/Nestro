@@ -526,3 +526,32 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - 本次检索到的功能分支仍有多个（包括模块5/6/7/8/9/10/11/12/13/14/15/17/18、模块2 OAuth、phase2 optimization、staging 修复等）。分支仍存在不等于未整合；必须逐分支比较当前整合分支与功能分支的 ahead/behind、差异文件及关键实现内容。
 - 因此，本轮只完成了“报表补录与同步”，尚未完成“所有功能是否已合并”的提交祖先/差异证明，也尚未完成十九模块代码整体性审计。
 
+
+## 六、2026-11-22 首轮源码与分支核对记录（未完成全量审计）
+
+### 分支差异核对
+
+- 当前整合分支与 `feature/module-18-calendar`、`feature/module-17-smart-editing` 的比较显示：这两个功能分支没有领先于整合分支的独有提交；抽查的日历调度器与媒体渲染器文件在两边 blob 完全一致。此前“模块19仍在 feature/module-18-calendar、未合并”的旧描述已不适合作为当前状态依据。
+- 抽查 `feature/module-9-voice-system`、`feature/module-15-ai-coworkbench` 的关键实现文件，与整合分支 blob 完全一致。
+- `feature/module-6-knowledge-base`、`feature/module-13-mcp-tool-center`、`feature/module-14-github-workbench` 虽然与整合分支提交图分叉，但抽查的关键文件在整合分支已有更新版本：模块6采用 attention-mask masked mean pooling，而旧分支仍使用 CLS 向量；模块13整合分支增加损坏审计原文隔离保留；模块14整合分支增加凭据保存失败时的安全回滚与失败显式提示。这些差异不能误判成“功能未合并”，反而说明整合分支包含后续修正。
+- 模块8分支相对整合分支的差异文件集中在 Android CI 脚本/Workflow 与 Gradle 配置；尚需继续核对这些构建配置差异是否全部被整合分支后续提交吸收。
+- 当前已确认 PR #1/#3 仍开放 Draft；但 PR 状态和分支图不能代替完整文件级审计。全量分支核对尚未完成。
+
+### 最近新增需求的源码初查
+
+| 需求 | 当前源码证据 | 首轮判断 |
+|---|---|---|
+| 创作与手机执行混合调度 | `data/ModelLedToolDispatcher.kt` 顶层调度提示明确把创作、专家协作、手机执行视为可组合能力，描述多轮交替；`NestroApplication.kt` 注册 `phone_agent.execute`、`phone_agent.wait`、`media.project.assets`；`PhoneAgentExecutor.kt` 有 `DownloadAsset` 动作；`PhoneAgentService.downloadAsset()` 下载后调用 `MediaProjectStore.importAsset()` 并返回素材 ID；创作可用素材目录查询实际素材 | 核心链路代码已存在，不能重复新建。仍需核查模型工具参数/授权、实际任务入队、等待终态、文件读取/引用和多轮端到端测试 |
+| 专家团自主组织 | `ExpertProjectPlanExecutor.kt`、`ExpertTeamExecutionCoordinator.kt` 有 DAG、依赖、并行工作包、结构化交接、检查点及恢复数据；`NestroApp.kt` 接入项目计划执行 | 主体代码已存在；继续核查用户手动模式与自动模式入口、工具调用闭环、断点恢复边界 |
+| Mika 虚拟屏移植 | `phone/virtualdisplay/mika/` 下有 ADB、Binder helper、VirtualDisplay、执行环境适配；`PhoneAgentPage.kt` 接入实时帧浮动预览与触控输入 | 底层移植和页面接入已存在；当前 UI 与用户指定交互不完全一致，需修正而非重写 |
+| 虚拟屏具体交互 | 当前 `PhoneAgentFloatingPreview` 有标题栏“展开/收起”；点击标题栏折叠/展开；双击画面切换缩放；画面右下角 26dp 区域拖动时按纵向位移缩放；画面点击用于向虚拟屏注入触控 | 与用户要求的“无角标/按钮/手柄、点击窗口放大/缩小、角部上拉缩小下拉放大”不完全一致：标题栏文字和折叠入口仍存在；点击画面会执行触控而非缩放；应调整交互入口和手势映射 |
+| 工作流审批 | `NestroApp.kt` 有“授权一次 / 当前任务全部授权 / 拒绝”；任务级授权变量在单次工作流执行作用域内；未选择时 `CompletableDeferred.await()` 等待；弹窗 `onDismissRequest = {}`；`WorkflowExecutionCoordinator.kt` 传递审批回调并持久化工作流检查点 | 未发现默认自动拒绝；当前任务授权范围已在 UI 执行作用域内。但弹窗目前不可通过关闭手势退出（dismiss handler 为空），没有“关闭但保持等待”的独立入口；还需核查等待审批期间任务状态是否持久化为 WAITING_FOR_USER，而非仅 UI 挂起 |
+| 记忆关联本地缓存 | 当前首轮抽查尚未确认独立的全局/项目/会话缓存及记忆变更失效机制 | 待专项检索，不得把 BGE 语义检索/embedding cache 或 Prompt Cache 当作用户要求的记忆关联缓存 |
+
+### 本轮结论
+
+- 近期新增的混合调度不是从零开始：整合分支已经有主调度提示、Phone Agent 下载动作、自动导入媒体项目、等待任务和素材目录查询等实现线索。后续重点是核对链路是否真正闭环和测试是否覆盖，不另起一套调度器。
+- Mika 虚拟屏底层已经移植，但浮动窗口交互与用户最新明确的手势要求存在可定位差异。
+- 工作流审批已具备三种决策及任务级授权；“关闭弹窗但不作授权/拒绝”与等待状态持久化仍需补审。
+- 本节只记录首轮抽查，十九模块逐项审计、完整分支差异、冗余代码扫描、测试执行均未完成；不能据此宣布项目收口。
+
