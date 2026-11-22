@@ -161,6 +161,20 @@ data class AgentTaskStateEntity(
     @ColumnInfo(defaultValue = "0") val finishedAt: Long = 0L
 )
 
+@Entity(
+    tableName = "agent_approval_audits",
+    indices = [Index(value = ["scopeId", "updatedAt"]), Index(value = ["status", "updatedAt"])]
+)
+data class AgentApprovalAuditEntity(
+    @PrimaryKey val id: String,
+    val scopeId: String,
+    val toolId: String,
+    val reason: String,
+    val status: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
 @Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
 data class PhoneAgentTaskEntity(
     @PrimaryKey val id: String,
@@ -426,6 +440,15 @@ interface NestroDao {
             agentTaskState(state.taskId) ?: error("任务状态写入后无法回读")
         }
     }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAgentApprovalAudit(record: AgentApprovalAuditEntity)
+
+    @Query("SELECT * FROM agent_approval_audits ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recentAgentApprovalAudits(limit: Int = 100): List<AgentApprovalAuditEntity>
+
+    @Query("SELECT * FROM agent_approval_audits WHERE status = 'PENDING' ORDER BY createdAt ASC")
+    suspend fun pendingAgentApprovalAudits(): List<AgentApprovalAuditEntity>
 
     @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
     suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
@@ -794,8 +817,8 @@ interface NestroDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, KnowledgeChunkEmbeddingEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 15,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, KnowledgeChunkEmbeddingEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class, AgentApprovalAuditEntity::class],
+    version = 16,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
@@ -916,7 +939,15 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS agent_approval_audits (id TEXT NOT NULL, scopeId TEXT NOT NULL, toolId TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_approval_audits_scopeId_updatedAt ON agent_approval_audits(scopeId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_approval_audits_status_updatedAt ON agent_approval_audits(status, updatedAt)")
+            }
+        }
+
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
