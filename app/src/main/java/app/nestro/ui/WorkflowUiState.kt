@@ -11,9 +11,16 @@ import app.nestro.data.WorkflowRunHistoryCodec
 import app.nestro.data.WorkflowRunRecord
 import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
+import app.nestro.agent.AgentApprovalRequest
+import app.nestro.agent.AgentApprovalDecision
 import kotlinx.coroutines.CompletableDeferred
 
 internal enum class WorkflowApprovalChoice { AUTHORIZE_ONCE, AUTHORIZE_TASK, REJECT }
+
+internal data class UnifiedApprovalPrompt(
+    val request: AgentApprovalRequest,
+    val decision: CompletableDeferred<AgentApprovalDecision>
+)
 
 internal data class WorkflowApprovalPrompt(
     val stepTitle: String,
@@ -58,6 +65,7 @@ internal class WorkflowUiState(preferences: SharedPreferences) {
     val runningWorkflowId: MutableState<String> = mutableStateOf("")
     val workflowPaused: MutableState<Boolean> = mutableStateOf(false)
     val workflowPauseGate: MutableState<CompletableDeferred<Unit>?> = mutableStateOf(null)
+    val agentApprovalPrompt: MutableState<UnifiedApprovalPrompt?> = mutableStateOf(null)
     val workflowApprovalPrompt: MutableState<WorkflowApprovalPrompt?> = mutableStateOf(null)
     val workflowApprovalVisible: MutableState<Boolean> = mutableStateOf(false)
 }
