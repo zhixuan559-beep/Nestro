@@ -9,18 +9,21 @@ class AutomaticMemoryExtractionCoordinatorTest {
         val prompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。"
         var extractionCalls = 0
         val saved = mutableListOf<MemoryCandidate>()
+        val expectedVersion = MemoryMutationToken(7L, 3L)
         val coordinator = AutomaticMemoryExtractionCoordinator(
             extractCandidates = { _, messages ->
                 extractionCalls += 1
                 assertEquals(listOf(prompt), messages)
                 listOf(MemoryCandidate("preference", "偏好简洁直接的表达方式", 0.95))
             },
-            saveCandidates = { projectId, conversationId, messageId, candidates ->
+            saveCandidates = { projectId, conversationId, messageId, candidates, mutationVersion ->
                 assertEquals("project-1", projectId)
                 assertEquals("conversation-1", conversationId)
                 assertEquals("message-1", messageId)
+                assertEquals(expectedVersion, mutationVersion)
                 saved += candidates
-            }
+            },
+            captureMutationVersion = { expectedVersion }
         )
         coordinator.extractAndSave(
             enabled = true, prompt = prompt, modelConfigs = emptyList(),
@@ -36,7 +39,7 @@ class AutomaticMemoryExtractionCoordinatorTest {
         var extractionCalls = 0
         val coordinator = AutomaticMemoryExtractionCoordinator(
             extractCandidates = { _, _ -> extractionCalls += 1; emptyList() },
-            saveCandidates = { _, _, _, _ -> }
+            saveCandidates = { _, _, _, _, _ -> }
         )
         coordinator.extractAndSave(
             enabled = false, prompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。",
@@ -54,7 +57,7 @@ class AutomaticMemoryExtractionCoordinatorTest {
         var extractionCalls = 0
         val coordinator = AutomaticMemoryExtractionCoordinator(
             extractCandidates = { _, _ -> extractionCalls += 1; emptyList() },
-            saveCandidates = { _, _, _, _ -> }
+            saveCandidates = { _, _, _, _, _ -> }
         )
         val ordinaryPrompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。"
         coordinator.extractAndSave(
@@ -67,4 +70,30 @@ class AutomaticMemoryExtractionCoordinatorTest {
         )
         assertEquals(0, extractionCalls)
     }
+    @Test
+    fun capturesMemoryVersionBeforeExtractionAndPassesItToSave() = kotlinx.coroutines.runBlocking {
+        val initial = MemoryMutationToken(4L, 2L)
+        val changedDuringExtraction = MemoryMutationToken(5L, 2L)
+        var current = initial
+        var savedToken: MemoryMutationToken? = null
+        val coordinator = AutomaticMemoryExtractionCoordinator(
+            extractCandidates = { _, _ ->
+                current = changedDuringExtraction
+                listOf(MemoryCandidate("preference", "偏好简洁直接的表达方式", 0.95))
+            },
+            saveCandidates = { _, _, _, _, token -> savedToken = token },
+            captureMutationVersion = { current }
+        )
+        coordinator.extractAndSave(
+            enabled = true,
+            prompt = "我喜欢简洁直接的表达方式，以后写作请保持这个风格。",
+            modelConfigs = emptyList(),
+            projectId = "stale-extraction-project",
+            conversationId = "conversation",
+            messageId = "message"
+        )
+        assertEquals(initial, savedToken)
+        assertEquals(changedDuringExtraction, current)
+    }
+
 }
