@@ -55,7 +55,7 @@ private val calendarDateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Local
 private val calendarTimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
 
 @Composable
-fun CalendarPage(repository: CalendarRepository) {
+fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var events by remember { mutableStateOf(emptyList<CalendarEvent>()) }
@@ -318,7 +318,7 @@ fun CalendarPage(repository: CalendarRepository) {
             initial = editing,
             defaultDate = selectedDate,
             onDismiss = { showEditor = false },
-            onSave = { title, description, location, date, endDate, startTime, endTime, allDay, recurrence, reminder ->
+            onSave = { title, description, location, automationPrompt, date, endDate, startTime, endTime, allDay, recurrence, reminder ->
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
@@ -343,7 +343,9 @@ fun CalendarPage(repository: CalendarRepository) {
                                     updatedAt = System.currentTimeMillis(),
                                     sourceSystemEventId = old?.sourceSystemEventId,
                                     sourceSystemCalendarId = old?.sourceSystemCalendarId,
-                                    sourceSystemImported = old?.sourceSystemImported ?: false
+                                    sourceSystemImported = old?.sourceSystemImported ?: false,
+                                    automationPrompt = automationPrompt.take(12_000),
+                                    automationProjectId = if (automationPrompt.isBlank()) "" else activeProjectId
                                 )
                             )
                         }
@@ -374,11 +376,12 @@ private fun CalendarEventEditor(
     initial: CalendarEvent?,
     defaultDate: LocalDate,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, LocalDate, LocalDate, String, String, Boolean, String, Int) -> Unit
+    onSave: (String, String, String, String, LocalDate, LocalDate, String, String, Boolean, String, Int) -> Unit
 ) {
     var title by remember(initial) { mutableStateOf(initial?.title.orEmpty()) }
     var description by remember(initial) { mutableStateOf(initial?.description.orEmpty()) }
     var location by remember(initial) { mutableStateOf(initial?.location.orEmpty()) }
+    var automationPrompt by remember(initial) { mutableStateOf(initial?.automationPrompt.orEmpty()) }
     var date by remember(initial) {
         mutableStateOf(
             initial?.let { Instant.ofEpochMilli(it.startAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: defaultDate
@@ -427,6 +430,13 @@ private fun CalendarEventEditor(
                 }
                 OutlinedTextField(location, { location = it.take(300) }, label = { Text("地点（可选）" ) }, singleLine = true)
                 OutlinedTextField(description, { description = it.take(4000) }, label = { Text("备注（可选）") }, minLines = 2)
+                OutlinedTextField(
+                    automationPrompt,
+                    { automationPrompt = it.take(12_000) },
+                    label = { Text("到期自动执行（可选）") },
+                    placeholder = { Text("填写要交给主模型执行的目标；留空则只保留日程提醒") },
+                    minLines = 3
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("重复")
                     Spacer(Modifier.size(8.dp))
@@ -460,13 +470,14 @@ private fun CalendarEventEditor(
                     java.time.LocalTime.parse(endTime, calendarTimeFormat)
                 }.isSuccess
                 if (title.isBlank()) error = "请填写日程标题"
+                else if (automationPrompt.isNotBlank() && automationPrompt.trim().length < 2) error = "自动执行目标过短"
                 else if (endDate.isBefore(date)) error = "结束日期不能早于开始日期"
                 else if (!validTimes) error = "时间格式请使用 HH:mm"
                 else if (!validReminder) error = "提醒分钟数无效"
                 else if (!validRecurrence) error = "重复规则无效"
                 else {
                     error = ""
-                    onSave(title, description, location, date, endDate, startTime, endTime, allDay, recurrence, reminderValue!!)
+                    onSave(title, description, location, automationPrompt.trim(), date, endDate, startTime, endTime, allDay, recurrence, reminderValue!!)
                 }
             }) { Text("保存") }
         },
