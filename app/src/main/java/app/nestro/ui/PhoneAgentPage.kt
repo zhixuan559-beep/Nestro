@@ -13,6 +13,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.roundToInt
 
 @Composable
 internal fun PhoneAgentPage(context: Context, projectId: String) {
@@ -41,6 +45,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     var pairingCode by remember { mutableStateOf("") }
     var virtualSession by remember { mutableStateOf(displayController.currentSession()) }
     var previewScale by remember { mutableFloatStateOf(0.68f) }
+    var floatingPreviewCollapsed by remember { mutableStateOf(false) }
+    var floatingPreviewOffset by remember { mutableStateOf(Offset.Zero) }
     val frameFlow = remember(virtualSession) { virtualSession?.frames ?: MutableStateFlow<android.graphics.Bitmap?>(null) }
     val virtualFrame by frameFlow.collectAsState()
     val executionAvailable = PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
@@ -70,6 +76,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         }
     }
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     Column(
         Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -197,57 +204,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                 else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
                             }) { Text("使用隔离屏", color = Mint) }
                         }
-                        virtualFrame?.let { bitmap ->
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "隔离虚拟屏实时画面",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .width(180.dp * previewScale)
-                                    .height(320.dp * previewScale)
-                                    .pointerInput(virtualSession) {
-                                        val session = virtualSession ?: return@pointerInput
-                                        detectTapGestures(
-                                            onDoubleTap = {
-                                                previewScale = if (previewScale < 1f) 1.4f else 0.68f
-                                            },
-                                            onTap = { offset ->
-                                                launch {
-                                                    session.pipInput.tap(
-                                                        (offset.x / size.width).coerceIn(0f, 1f),
-                                                        (offset.y / size.height).coerceIn(0f, 1f)
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                    .pointerInput(virtualSession) {
-                                        val session = virtualSession ?: return@pointerInput
-                                        var resizing = false
-                                        val points = mutableListOf<Pair<Float, Float>>()
-                                        val corner = 26.dp.toPx()
-                                        detectDragGestures(
-                                            onDragStart = { start ->
-                                                resizing = start.x >= size.width - corner && start.y >= size.height - corner
-                                                points.clear()
-                                                if (!resizing) points += (start.x / size.width).coerceIn(0f, 1f) to (start.y / size.height).coerceIn(0f, 1f)
-                                            },
-                                            onDragEnd = {
-                                                if (!resizing && points.size >= 2) {
-                                                    val path = points.toList()
-                                                    launch { session.pipInput.swipe(path, 500L) }
-                                                }
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                if (resizing) previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
-                                                else points += (change.position.x / size.width).coerceIn(0f, 1f) to (change.position.y / size.height).coerceIn(0f, 1f)
-                                                change.consume()
-                                            }
-                                        )
-                                    }
-                            )
-                        } ?: Text("正在等待隔离屏画面帧…", color = Muted, style = MaterialTheme.typography.bodySmall)
-                        Text("单击可操作应用，双击切换预览放大；拖动可滑动，右下角向上拖动缩小、向下拖动放大。预览缩放不改变虚拟屏真实分辨率。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        Text("实时画面已独立悬浮；可拖动标题栏移动窗口，点标题栏折叠为任务胶囊。", color = Muted, style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
@@ -429,5 +386,118 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             }
         }
         Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。网页检索会向搜索服务发送检索词，含手机号、邮箱、卡号等敏感信息会被拦截。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
+    }
+    if (virtualSession != null) {
+        val density = LocalDensity.current
+        val previewWidthDp = 180.dp * previewScale
+        val previewHeightDp = 320.dp * previewScale
+        val panelWidthDp = if (floatingPreviewCollapsed) 164.dp else previewWidthDp
+        val panelHeightDp = 34.dp + if (floatingPreviewCollapsed) 0.dp else previewHeightDp
+        val maxWidthPx = with(density) { maxWidth.toPx() }
+        val maxHeightPx = with(density) { maxHeight.toPx() }
+        val panelWidthPx = with(density) { panelWidthDp.toPx() }
+        val panelHeightPx = with(density) { panelHeightDp.toPx() }
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(14.dp),
+            tonalElevation = 8.dp,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset { IntOffset(floatingPreviewOffset.x.roundToInt(), floatingPreviewOffset.y.roundToInt()) }
+                .width(panelWidthDp)
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                        .pointerInput(virtualSession, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, panelWidthPx, panelHeightPx) {
+                            detectDragGestures { change, dragAmount ->
+                                val minX = -(maxWidthPx - panelWidthPx).coerceAtLeast(0f)
+                                val minY = -(maxHeightPx - panelHeightPx).coerceAtLeast(0f)
+                                floatingPreviewOffset = Offset(
+                                    (floatingPreviewOffset.x + dragAmount.x).coerceIn(minX, 0f),
+                                    (floatingPreviewOffset.y + dragAmount.y).coerceIn(minY, 0f)
+                                )
+                                change.consume()
+                            }
+                        }
+                        .pointerInput(virtualSession, floatingPreviewCollapsed) {
+                            detectTapGestures { floatingPreviewCollapsed = !floatingPreviewCollapsed }
+                        }
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (floatingPreviewCollapsed) "Phone Agent · 执行中" else "Phone Agent",
+                        color = Mint,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(if (floatingPreviewCollapsed) "展开" else "收起", color = Muted, style = MaterialTheme.typography.labelSmall)
+                }
+                if (!floatingPreviewCollapsed) {
+                    val session = virtualSession
+                    val bitmap = virtualFrame
+                    if (session != null && bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "隔离虚拟屏悬浮实时画面",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .width(previewWidthDp)
+                                .height(previewHeightDp)
+                                .pointerInput(session, previewScale) {
+                                    detectTapGestures(
+                                        onDoubleTap = {
+                                            previewScale = if (previewScale < 1f) 1.4f else 0.68f
+                                        },
+                                        onTap = { offset ->
+                                            launch {
+                                                session.pipInput.tap(
+                                                    (offset.x / size.width).coerceIn(0f, 1f),
+                                                    (offset.y / size.height).coerceIn(0f, 1f)
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                                .pointerInput(session, previewScale) {
+                                    var resizing = false
+                                    val points = mutableListOf<Pair<Float, Float>>()
+                                    val corner = 26.dp.toPx()
+                                    detectDragGestures(
+                                        onDragStart = { start ->
+                                            resizing = start.x >= size.width - corner && start.y >= size.height - corner
+                                            points.clear()
+                                            if (!resizing) {
+                                                points += (start.x / size.width).coerceIn(0f, 1f) to
+                                                    (start.y / size.height).coerceIn(0f, 1f)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            if (!resizing && points.size >= 2) {
+                                                val path = points.toList()
+                                                launch { session.pipInput.swipe(path, 500L) }
+                                            }
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            if (resizing) {
+                                                previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
+                                            } else {
+                                                points += (change.position.x / size.width).coerceIn(0f, 1f) to
+                                                    (change.position.y / size.height).coerceIn(0f, 1f)
+                                            }
+                                            change.consume()
+                                        }
+                                    )
+                                }
+                        )
+                    } else {
+                        Text("正在等待隔离屏画面帧…", color = Muted, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
     }
 }
