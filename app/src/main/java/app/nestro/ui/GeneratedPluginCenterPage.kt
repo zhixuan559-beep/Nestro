@@ -53,13 +53,19 @@ internal fun GeneratedPluginCenterPage(
     var request by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
     var updateTarget by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
-    var plugins by remember { mutableStateOf(store.list(application.agentToolCatalog)) }
+    var plugins by remember {
+        mutableStateOf(run {
+            store.list(application.agentToolCatalog)
+            store.list()
+        })
+    }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("插件以声明式工作流安装，不执行任意代码。") }
     var pluginToExport by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
 
     fun reload() {
-        plugins = store.list(application.agentToolCatalog)
+        store.list(application.agentToolCatalog)
+        plugins = store.list()
     }
 
     val pluginExportLauncher = rememberLauncherForActivityResult(
@@ -229,6 +235,15 @@ internal fun GeneratedPluginCenterPage(
                         Text("${plugin.name} · v${plugin.version}", style = MaterialTheme.typography.titleSmall)
                         Text(plugin.id, style = MaterialTheme.typography.labelSmall)
                         Text(plugin.description, style = MaterialTheme.typography.bodySmall)
+                        val compatibility = runCatching {
+                            GeneratedPluginPackageValidator.validate(plugin, application.agentToolCatalog)
+                        }
+                        Text(
+                            if (compatibility.isSuccess) "工具依赖匹配"
+                            else "依赖不兼容：${compatibility.exceptionOrNull()?.message ?: "请重新审查插件"}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (compatibility.isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
                         Text("${plugin.steps.size} 个步骤 · ${plugin.inputs.size} 个输入参数", style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = {
