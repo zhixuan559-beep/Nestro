@@ -32,12 +32,13 @@ object MikaHelperMain {
         if (nonce.isNullOrBlank() || Process.myUid() != MikaShellContext.SHELL_UID) exitProcess(2)
 
         Looper.prepareMainLooper()
+        val shellContext = MikaShellContext.create()
+        val service = MikaVirtualDisplayService(appUid)
         val worker = HandlerThread("nestro-mika-helper").apply { start() }
         Handler(worker.looper).post {
-            val service = MikaVirtualDisplayService(appUid)
             var nextNonce: String? = nonce
             while (true) {
-                val attached = attach(packageName, appUid, certificatePin, service, nextNonce)
+                val attached = attach(shellContext, packageName, appUid, certificatePin, service, nextNonce)
                 if (attached == null) {
                     Thread.sleep(RETRY_MS)
                     continue
@@ -58,13 +59,13 @@ object MikaHelperMain {
     }
 
     private fun attach(
+        context: android.content.Context,
         packageName: String,
         appUid: Int,
         certificatePin: String,
         service: IMikaShell,
         nonce: String?,
     ): Pair<IBinder, String>? = try {
-        val context = MikaShellContext.create()
         val identity = service.identity()
         if (identity.size < 2 || identity[0] != Process.myUid() || identity[1] != Process.myPid()) return null
         val extras = Bundle().apply {
