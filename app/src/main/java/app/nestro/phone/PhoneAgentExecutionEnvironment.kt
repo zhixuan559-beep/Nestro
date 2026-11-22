@@ -21,6 +21,12 @@ interface PhoneAgentExecutionEnvironment {
     fun verifyVisibleText(expected: String): Boolean
     fun activePackageName(): String?
     fun screenTextChanged(before: String): Boolean
+
+    /** Explicitly move the current app task to the real display for user takeover. */
+    fun handoffToUser(taskId: String, reason: String): Boolean = true
+
+    /** Return a handed-off task to the selected execution display after user confirmation. */
+    fun resumeAfterUserHandoff(taskId: String): Boolean = true
 }
 
 /**
