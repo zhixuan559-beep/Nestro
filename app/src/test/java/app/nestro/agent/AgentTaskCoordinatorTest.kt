@@ -12,8 +12,93 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.IOException
 
 class AgentTaskCoordinatorTest {
+    @Test
+    fun idempotencyKeyReturnsExistingTaskAndPreservesProjectMetadata() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        registry.register("idempotent") {
+            calls.incrementAndGet()
+            started.complete(Unit)
+            release.await()
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val first = coordinator.enqueue(
+            "first-task",
+            "idempotent",
+            metadata = AgentTaskMetadata(projectId = "project-a", kind = "publish", title = "发布任务"),
+            idempotencyKey = "project-a:publish:source-42"
+        )
+        started.await()
+        val duplicate = coordinator.enqueue(
+            "second-task",
+            "idempotent",
+            idempotencyKey = "project-a:publish:source-42"
+        )
+        release.complete(Unit)
+
+        withTimeout(2_000) {
+            while (states.get("first-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals("first-task", first.taskId)
+        assertEquals("first-task", duplicate.taskId)
+        assertEquals("project-a", states.get("first-task")?.projectId)
+        assertEquals("publish", states.get("first-task")?.kind)
+        assertEquals(1, calls.get())
+        coordinator.close()
+    }
+
+    @Test
+    fun retryableFailureUsesBackoffAndRetriesWithinConfiguredLimit() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("retryable") {
+            if (calls.incrementAndGet() == 1) {
+                throw RetryableAgentTaskException("temporary network failure", IOException())
+            }
+        }
+        val traces = InMemoryAgentTaskTraceStore()
+        val coordinator = AgentTaskCoordinator(states, registry, this, traces)
+
+        coordinator.enqueue("retry-task", "retryable", maxRetries = 1)
+        withTimeout(4_000) {
+            while (states.get("retry-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+
+        assertEquals(2, calls.get())
+        assertEquals(1, states.get("retry-task")?.attempts)
+        assertTrue(traces.recent("retry-task").any { it.event == "retry_scheduled" })
+        coordinator.close()
+    }
+
+    @Test
+    fun nonRetryableFailureDoesNotEnterRetryQueue() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("nonretryable") {
+            calls.incrementAndGet()
+            throw IllegalArgumentException("invalid task")
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        coordinator.enqueue("no-retry-task", "nonretryable", maxRetries = 3)
+        withTimeout(2_000) {
+            while (states.get("no-retry-task")?.status != AgentTaskStatus.FAILED) delay(10)
+        }
+
+        assertEquals(1, calls.get())
+        assertEquals(0, states.get("no-retry-task")?.attempts)
+        coordinator.close()
+    }
+
     @Test
     fun checkpointTracePropagatesCoroutineCancellation() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
