@@ -277,19 +277,41 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
 
 object MediaAiTaskScheduler {
     private fun unique(projectId:String,taskId:String)="media-ai-$projectId-$taskId"
-    fun enqueue(context:Context,projectId:String,taskId:String) {
+
+    suspend fun enqueue(context:Context,projectId:String,taskId:String) {
+        val app = context.applicationContext as? app.nestro.NestroApplication
+            ?: error("媒体任务无法连接统一任务机")
+        val task = MediaAiTaskStore.read(context, projectId, taskId)
+            ?: error("媒体 AI 任务不存在")
+        app.agentTaskCoordinator.registerInlineTask(
+            taskId = "media-ai:$taskId",
+            owner = "media_ai",
+            checkpoint = "media_ai:$projectId:$taskId",
+            metadata = app.nestro.agent.AgentTaskMetadata(
+                projectId = projectId,
+                kind = "media_ai",
+                capabilityId = "media.ai.run",
+                title = "媒体 AI：${task.action}",
+                input = taskId
+            )
+        )
         val request=OneTimeWorkRequestBuilder<MediaAiTaskWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(MediaAiTaskWorker.KEY_PROJECT to projectId,MediaAiTaskWorker.KEY_TASK to taskId)).build()
         WorkManager.getInstance(context).enqueueUniqueWork(unique(projectId,taskId),ExistingWorkPolicy.KEEP,request)
     }
-    fun recover(context:Context,projectId:String) {
+
+    suspend fun recover(context:Context,projectId:String) {
         MediaAiTaskStore.recoverable(context,projectId).forEach { enqueue(context,projectId,it.id) }
     }
-    fun cancel(context:Context,projectId:String,taskId:String) {
+
+    suspend fun cancel(context:Context,projectId:String,taskId:String) {
         val task=MediaAiTaskStore.read(context,projectId,taskId) ?: return
         require(task.status in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) { "当前媒体 AI 任务不可取消" }
         MediaAiTaskStore.update(context,projectId,taskId,status=MediaAiTaskStatus.CANCELLED)
+        val app = context.applicationContext as? app.nestro.NestroApplication
+            ?: error("媒体任务无法连接统一任务机")
+        app.agentTaskCoordinator.cancel("media-ai:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(unique(projectId,taskId))
     }
 }
