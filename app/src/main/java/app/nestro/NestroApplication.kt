@@ -860,19 +860,16 @@ class NestroApplication : Application() {
                 }
                 val finalText = execution.finalization.finalText.take(8_000)
                 taskContext.checkpoint("calendar_output:" + finalText.ifBlank { latestPartialAnswer }.take(24_000))
-                when (execution.finalization.status.name) {
-                    "SUCCESS" -> {
-                        val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
-                        if (child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准")) {
-                            taskContext.fail(child.lastError)
-                        } else {
-                            taskContext.transition(
-                                AgentTaskStatus.COMPLETED,
-                                resultSummary = finalText
-                            )
-                        }
-                    }
-                    "STOPPED" -> taskContext.cancel("日历自动任务已停止")
+                val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
+                when {
+                    child?.status == AgentTaskStatus.WAITING_FOR_USER ->
+                        taskContext.waitForUser(child.lastError.ifBlank { "日历自动任务等待工具审批" })
+                    child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准") ->
+                        taskContext.fail(child.lastError)
+                    execution.finalization.status.name == "SUCCESS" ->
+                        taskContext.transition(AgentTaskStatus.COMPLETED, resultSummary = finalText)
+                    execution.finalization.status.name == "STOPPED" ->
+                        taskContext.cancel("日历自动任务已停止")
                     else -> taskContext.fail(finalText.ifBlank { "日历自动任务执行失败" })
                 }
             }
