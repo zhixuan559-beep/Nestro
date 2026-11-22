@@ -127,4 +127,26 @@ class ConversationPreferencesStoreTest {
         }
     }
 
+    @Test
+    fun roomAuthoritativePathStillValidatesSnapshotsBeforeReturning() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("room_snapshot_validation_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().putBoolean("room_storage_initialized", true).commit()
+            val invalid = listOf(
+                ConversationRecord(
+                    "c-invalid", "无效角色", 1L,
+                    listOf(ChatMessage("m-invalid", "tool", "不允许持久化的消息角色")),
+                    "default"
+                )
+            )
+            assertTrue(runCatching {
+                ConversationPreferencesStore.saveConversationList(prefs, invalid)
+            }.isFailure)
+            assertEquals(null, prefs.getString("conversations_v1", null))
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
 }
