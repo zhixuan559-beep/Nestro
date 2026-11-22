@@ -4,7 +4,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 
 /** A model-authored, bounded work package in an autonomous expert project. */
@@ -112,6 +114,7 @@ object ExpertProjectPlanExecutor {
         require(maxParallel in 1..4) { "并发上限必须在 1 到 4 之间" }
         validate(plan, availableMembers)
         val semaphore = Semaphore(maxParallel)
+        val resultMutex = Mutex()
         require(resumeResults.map { it.packageId }.distinct().size == resumeResults.size &&
             resumeResults.all { row ->
                 val packageDefinition = plan.packages.firstOrNull { it.id == row.packageId }
@@ -129,23 +132,23 @@ object ExpertProjectPlanExecutor {
             val pendingWave = wave.filterNot { it.id in results }
             if (pendingWave.isEmpty()) continue
             if (shouldStop()) throw CancellationException("用户停止专家项目")
-            val waveResults = coroutineScope {
+            coroutineScope {
                 pendingWave.map { item ->
                     async {
-                        semaphore.withPermit {
+                        val row = semaphore.withPermit {
                             if (shouldStop()) throw CancellationException("用户停止专家项目")
                             val failedDependency = item.dependsOn.firstOrNull {
                                 results[it]?.status != "success"
                             }
                             if (failedDependency != null) {
-                                val skipped = ExpertWorkPackageResult(
+                                val blocked = ExpertWorkPackageResult(
                                     packageId = item.id,
                                     memberName = item.memberName,
                                     status = "blocked",
                                     error = "依赖工作包 $failedDependency 未成功完成"
                                 )
-                                onPackage(item.id, skipped.status, skipped.error)
-                                skipped
+                                onPackage(item.id, blocked.status, blocked.error)
+                                blocked
                             } else {
                                 onPackage(item.id, "running", "")
                                 val dependencyContext = item.dependsOn.joinToString("\n\n") { dependencyId ->
@@ -183,12 +186,14 @@ object ExpertProjectPlanExecutor {
                                 }.also { onPackage(item.id, it.status, it.output.ifBlank { it.error }) }
                             }
                         }
+                        // Persist each package as soon as it completes. A sibling that
+                        // hangs or is cancelled must not erase already completed work.
+                        resultMutex.withLock {
+                            results[row.packageId] = row
+                            onPackageResult(results.values.toList())
+                        }
                     }
                 }.awaitAll()
-            }
-            waveResults.forEach { row ->
-                results[row.packageId] = row
-                onPackageResult(results.values.toList())
             }
         }
         return ExpertProjectExecutionResult(
