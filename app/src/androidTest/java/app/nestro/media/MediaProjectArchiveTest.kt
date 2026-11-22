@@ -31,7 +31,11 @@ class MediaProjectArchiveTest {
             val asset = MediaProjectStore.importGeneratedFile(
                 context, sourceProject, sourceImage, MediaAssetKind.IMAGE
             )
-            val originalTimeline = MediaProjectStore.readTimeline(context, sourceProject)
+            val emptyTimeline = MediaProjectStore.readTimeline(context, sourceProject)
+            val editedTimeline = MediaTimelinePolicy.addClip(emptyTimeline, "video-main", asset)
+            val originalTimeline = MediaProjectStore.saveTimeline(
+                context, editedTimeline, emptyTimeline.revision
+            )
             val exported = MediaProjectStore.exportProjectArchive(context, sourceProject, archive)
             assertEquals(true, exported.isFile)
 
@@ -40,6 +44,10 @@ class MediaProjectArchiveTest {
             )
             assertEquals(restoredProject, restoredTimeline.projectId)
             assertEquals(originalTimeline.tracks.map { it.kind }, restoredTimeline.tracks.map { it.kind })
+            assertEquals(
+                originalTimeline.tracks.map { track -> track.clips.map { it.assetId } },
+                restoredTimeline.tracks.map { track -> track.clips.map { it.assetId } }
+            )
 
             val restoredAsset = MediaProjectStore.listAssets(context, restoredProject).single()
             assertEquals(asset.byteSize, restoredAsset.byteSize)
