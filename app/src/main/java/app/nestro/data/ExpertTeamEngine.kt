@@ -86,7 +86,10 @@ object ExpertTeamEngine {
         require(maxRetries in 0..2 && timeoutMillis in 5_000..120_000 && maxParallel in 1..4) { "团队执行参数超出安全范围" }
         val started=System.currentTimeMillis()
         val semaphore=Semaphore(maxParallel)
-        require(resumeMembers.all { saved -> members.any { it.name == saved.name } }) { "恢复记录包含当前团队之外的成员" }
+        require(resumeMembers.map { it.name }.distinct().size == resumeMembers.size &&
+            resumeMembers.all { saved ->
+                members.any { it.name == saved.name } && saved.status in setOf("success", "failed")
+            }) { "恢复记录包含重复、未知成员或无效状态" }
         val resultsByName = linkedMapOf<String, ExpertTeamMemberRun>()
         resumeMembers.filter { it.status == "success" }.forEach { resultsByName[it.name] = it }
         val resultMutex = Mutex()
