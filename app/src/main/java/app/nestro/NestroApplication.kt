@@ -440,6 +440,13 @@ class NestroApplication : Application() {
                 val inputs = rawArguments.filterKeys { it in inputNames }
                 val taskId = "plugin-${plugin.id}-${java.util.UUID.randomUUID()}".take(120)
                 val states = RoomAgentTaskStateStore(database.dao())
+                val requestId = rawArguments["__nestro_request_id"]?.trim()?.take(120).orEmpty().ifBlank { taskId }
+                val inputFingerprint = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(inputs.toSortedMap().entries.joinToString("|") { "${it.key}=${it.value}" }.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+                val idempotencyKey = "plugin:" + java.security.MessageDigest.getInstance("SHA-256")
+                    .digest("$projectId|${plugin.id}|$requestId|$inputFingerprint".toByteArray())
+                    .joinToString("") { "%02x".format(it) }
                 val initialTaskState = app.nestro.agent.AgentTaskState(
                     taskId = taskId,
                     owner = "generated-plugin:${plugin.id}",
@@ -449,10 +456,16 @@ class NestroApplication : Application() {
                     capabilityId = plugin.id,
                     title = plugin.name.take(160),
                     input = inputs.keys.sorted().joinToString(",").take(1_000),
-                    idempotencyKey = "plugin:" + projectId + ":" + plugin.id + ":" + taskId,
+                    idempotencyKey = idempotencyKey,
                     startedAt = System.currentTimeMillis()
                 )
-                states.putIfAbsent(initialTaskState)
+                val canonicalTask = states.putIfAbsent(initialTaskState)
+                if (canonicalTask.taskId != taskId) {
+                    return@register app.nestro.agent.AgentToolResult(
+                        true,
+                        output = "该插件请求已存在，已阻止重复执行。task_id=${canonicalTask.taskId}; status=${canonicalTask.status.name}"
+                    )
+                }
                 suspend fun updatePluginTaskState(status: app.nestro.agent.AgentTaskStatus, error: String = "") {
                     val current = states.get(taskId) ?: initialTaskState
                     val terminal = status in setOf(
