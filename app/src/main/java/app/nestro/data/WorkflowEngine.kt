@@ -205,6 +205,11 @@ object WorkflowDefinitionCodec {
             require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
             require(it.condition.length<=200) { "条件不能超过 200 个字符" }
             require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
+            if(it.parallelGroup.isNotBlank()) {
+                require(workflow.steps.count { step -> step.enabled && step.parallelGroup == it.parallelGroup } in 2..4) {
+                    "并行组“${it.parallelGroup}”必须包含 2 到 4 个启用步骤"
+                }
+            }
             if(it.kind != WorkflowStepKind.PROMPT) {
                 require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
             }
@@ -265,7 +270,12 @@ object WorkflowEngine {
                     onStep(index + 1, step.copy(title = if (iteration == 1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
                     try {
                         result = kotlinx.coroutines.withTimeout(step.timeoutSeconds * 1000L) {
-                            invokeModel(step, prompt).trim()
+                            invokeModel(step, prompt).trim().let { output ->
+                                if (step.parallelGroup.isNotBlank()) {
+                                    require(output.length <= 8_000) { "并行步骤“${step.title}”输出超过 8,000 字符上限" }
+                                }
+                                output.take(24_000)
+                            }
                         }
                         require(result.isNotBlank()) { "模型返回了空结果" }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -350,9 +360,16 @@ object WorkflowEngine {
             }
             val groupInput = previousOutput
             previousOutput = if (groupName.isNotBlank()) {
-                val groupIds = group.map { it.id }.toSet()
-                runs.filter { it.stepId in groupIds }
-                    .sortedBy { row -> group.indexOfFirst { it.id == row.stepId } }
+                val originalActive = workflow.steps.filter { it.enabled }
+                val originalIndex = originalActive.indexOfFirst { it.id == group.first().second.id }
+                require(originalIndex >= 0) { "并行组恢复位置无效" }
+                var fullStart = originalIndex
+                while (fullStart > 0 && originalActive[fullStart - 1].parallelGroup == groupName) fullStart--
+                var fullEnd = originalIndex + 1
+                while (fullEnd < originalActive.size && originalActive[fullEnd].parallelGroup == groupName) fullEnd++
+                val groupIds = originalActive.subList(fullStart, fullEnd).map { it.id }.toSet()
+                runs.filter { it.stepId in groupIds && it.status != "skipped" }
+                    .sortedBy { row -> originalActive.indexOfFirst { it.id == row.stepId } }
                     .joinToString("\n\n") { row ->
                         "【并行步骤：${row.title}】\n${row.output.ifBlank { row.error }}"
                     }.take(24_000)
