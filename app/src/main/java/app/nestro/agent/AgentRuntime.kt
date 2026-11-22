@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 
 /**
  * Shared execution boundary for all Nestro agent surfaces.
@@ -402,7 +403,19 @@ data class AgentApprovalRequest(
  */
 class AgentApprovalPendingException(message: String) : CancellationException(message)
 
-class AgentApprovalCoordinator {
+data class AgentApprovalAuditRecord(
+    val id: String,
+    val scopeId: String,
+    val toolId: String,
+    val reason: String,
+    val status: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+class AgentApprovalCoordinator(
+    private val persistAudit: suspend (AgentApprovalAuditRecord) -> Unit = {}
+) {
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
     @Volatile private var handler: (suspend (AgentApprovalRequest) -> AgentApprovalDecision)? = null
@@ -418,8 +431,29 @@ class AgentApprovalCoordinator {
         val lock = requestLocks.computeIfAbsent(scopeId) { Mutex() }
         return lock.withLock {
             if (scopeId in taskWideGrants) return@withLock AgentApprovalDecision.AUTHORIZE_TASK
+            val now = System.currentTimeMillis()
+            val auditId = UUID.nameUUIDFromBytes(
+                "$scopeId\\n$toolId\\n$reason".toByteArray(Charsets.UTF_8)
+            ).toString()
+            val pendingAudit = AgentApprovalAuditRecord(
+                id = auditId,
+                scopeId = scopeId,
+                toolId = toolId,
+                reason = reason.take(2_000),
+                status = "PENDING",
+                createdAt = now,
+                updatedAt = now
+            )
+            persistAudit(pendingAudit)
             val approvalHandler = handler ?: return@withLock null
-            when (val decision = approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))) {
+            val decision = approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))
+            val decisionStatus = when (decision) {
+                AgentApprovalDecision.AUTHORIZE_ONCE -> "AUTHORIZED_ONCE"
+                AgentApprovalDecision.AUTHORIZE_TASK -> "AUTHORIZED_TASK"
+                AgentApprovalDecision.REJECT -> "REJECTED"
+            }
+            persistAudit(pendingAudit.copy(status = decisionStatus, updatedAt = System.currentTimeMillis()))
+            when (decision) {
                 AgentApprovalDecision.AUTHORIZE_ONCE -> AgentApprovalDecision.AUTHORIZE_ONCE
                 AgentApprovalDecision.AUTHORIZE_TASK -> {
                     taskWideGrants += scopeId
