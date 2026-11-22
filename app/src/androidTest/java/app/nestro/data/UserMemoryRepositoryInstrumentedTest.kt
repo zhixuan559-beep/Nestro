@@ -127,11 +127,15 @@ class UserMemoryRepositoryInstrumentedTest {
                 listOf(MemoryCandidate("preference", "偏好清晰直接的表达方式", 0.95))
             )
             assertTrue("自动提取更新同一条记忆时不得撤销用户的共享授权", repository.list("project-a").single().shareAcrossProjects)
-            assertEquals("source-memory", repository.recall("project-b", "清晰直接的表达方式").memories.single().id)
+            assertTrue("共享记忆还必须满足目标项目对来源项目的读取授权", repository.recall("project-b", "清晰直接的表达方式").memories.isEmpty())
+            assertEquals(
+                "source-memory",
+                repository.recall("project-b", "清晰直接的表达方式", setOf("project-a")).memories.single().id
+            )
             assertTrue("共享记忆不应复制到目标项目列表", repository.list("project-b").isEmpty())
 
             assertTrue(repository.setShareAcrossProjects("source-memory", "project-a", false))
-            assertTrue("撤销后目标项目立即无法召回", repository.recall("project-b", "清晰直接的表达方式").memories.isEmpty())
+            assertTrue("撤销后目标项目立即无法召回", repository.recall("project-b", "清晰直接的表达方式", setOf("project-a")).memories.isEmpty())
             assertEquals(1, repository.list("project-a").size)
         } finally {
             database.close()
