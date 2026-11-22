@@ -12,6 +12,9 @@ data class CapabilityDescriptor(
     val description: String,
     val version: String = "1.0",
     val source: String = "builtin",
+    val status: String = "已接入",
+    val detail: String = "",
+    val route: String? = null,
     val available: Boolean = true,
     val projectScoped: Boolean = true,
     val requiresConfirmation: Boolean = true,
@@ -70,6 +73,7 @@ object CapabilityRegistryStore {
     private fun encode(item: CapabilityDescriptor) = JSONObject()
         .put("id", item.id).put("title", item.title).put("category", item.category)
         .put("description", item.description).put("version", item.version).put("source", item.source)
+        .put("status", item.status).put("detail", item.detail).put("route", item.route)
         .put("available", item.available).put("project_scoped", item.projectScoped)
         .put("requires_confirmation", item.requiresConfirmation).put("default_granted", item.defaultGranted)
 
@@ -80,7 +84,11 @@ object CapabilityRegistryStore {
         return CapabilityDescriptor(
             id = id, title = title.take(80), category = row.optString("category").take(60),
             description = row.optString("description").take(500), version = row.optString("version", "1.0").take(40),
-            source = row.optString("source", "builtin").take(80), available = row.optBoolean("available", true),
+            source = row.optString("source", "builtin").take(80),
+            status = row.optString("status", "已接入").take(30),
+            detail = row.optString("detail").take(200),
+            route = row.optString("route").takeIf { it.isNotBlank() && it.length <= 120 },
+            available = row.optBoolean("available", true),
             projectScoped = row.optBoolean("project_scoped", true),
             requiresConfirmation = row.optBoolean("requires_confirmation", true),
             defaultGranted = row.optBoolean("default_granted", false)
