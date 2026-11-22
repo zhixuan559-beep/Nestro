@@ -18,6 +18,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 object MediaProjectStore {
     const val MAX_ASSET_BYTES = 1_000_000_000L
@@ -456,6 +459,176 @@ object MediaProjectStore {
         val file = File(directory, "export-" + taskId + ".mp4").canonicalFile
         require(file.parentFile == directory.canonicalFile) { "导出路径越界" }
         return file
+    }
+
+    /**
+     * Exports a complete editable media project (manifest + original binary assets).
+     * Rendered exports and transient task files are intentionally excluded.
+     */
+    @Synchronized
+    fun exportProjectArchive(context: Context, projectId: String, destination: File): File {
+        safeProjectId(projectId)
+        val assets = listAssets(context, projectId)
+        val manifest = readManifest(context, projectId)
+        val manifestBytes = manifest.toString().toByteArray(Charsets.UTF_8)
+        val target = destination.canonicalFile
+        require(target.parentFile?.isDirectory == true || target.parentFile?.mkdirs() == true) {
+            "无法创建媒体项目备份目录"
+        }
+        val staging = File(target.parentFile, ".${target.name}.${UUID.randomUUID()}.tmp")
+        var totalBytes = manifestBytes.size.toLong()
+        try {
+            ZipOutputStream(FileOutputStream(staging)).use { zip ->
+                zip.putNextEntry(ZipEntry("project.json"))
+                zip.write(manifestBytes)
+                zip.closeEntry()
+                assets.forEach { asset ->
+                    val source = assetFile(context, asset)
+                    require(source.isFile && source.length() == asset.byteSize) { "素材缺失或大小异常：${asset.displayName}" }
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var copied = 0L
+                    zip.putNextEntry(ZipEntry("assets/${asset.fileName}"))
+                    FileInputStream(source).use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            copied += count
+                            totalBytes += count
+                            require(totalBytes <= 2_000_000_000L) { "媒体项目备份超过 2 GB 限制" }
+                            digest.update(buffer, 0, count)
+                            zip.write(buffer, 0, count)
+                        }
+                    }
+                    zip.closeEntry()
+                    require(copied == asset.byteSize &&
+                        digest.digest().joinToString("") { "%02x".format(it) }.equals(asset.sha256, true)) {
+                        "素材完整性校验失败：${asset.displayName}"
+                    }
+                }
+            }
+            require(staging.renameTo(target) || run {
+                staging.copyTo(target, overwrite = true)
+                staging.delete()
+            }) { "无法完成媒体项目备份文件写入" }
+            return target
+        } catch (error: Throwable) {
+            staging.delete()
+            throw error
+        }
+    }
+
+    /**
+     * Imports a complete media project into a new project ID. Existing project
+     * directories are never overwritten; every asset is size- and hash-verified.
+     */
+    @Synchronized
+    fun importProjectArchive(context: Context, archive: File, targetProjectId: String): MediaTimeline {
+        safeProjectId(targetProjectId)
+        require(archive.isFile && archive.length() in 1..2_000_000_000L) { "媒体项目备份不存在或超出 2 GB 限制" }
+        val mediaRoot = File(context.filesDir, "media-editor").canonicalFile
+        require(mediaRoot.mkdirs() || mediaRoot.isDirectory)
+        val target = projectDir(context, targetProjectId)
+        require(!target.exists()) { "目标媒体项目已存在，拒绝覆盖" }
+        val staging = File(mediaRoot, ".import-${UUID.randomUUID()}").canonicalFile
+        require(staging.parentFile == mediaRoot && staging.mkdirs()) { "无法创建媒体项目导入暂存目录" }
+        try {
+            var manifestRaw: String? = null
+            val extracted = linkedMapOf<String, File>()
+            var totalBytes = 0L
+            ZipInputStream(FileInputStream(archive)).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    require(!entry.isDirectory) { "媒体项目备份包含不支持的目录项" }
+                    when {
+                        entry.name == "project.json" -> {
+                            require(manifestRaw == null) { "媒体项目备份包含重复索引" }
+                            val bytes = zip.readBytes()
+                            require(bytes.size in 1..MAX_MANIFEST_BYTES.toInt()) { "媒体项目索引超出大小限制" }
+                            manifestRaw = bytes.toString(Charsets.UTF_8)
+                        }
+                        entry.name.startsWith("assets/") -> {
+                            val fileName = entry.name.removePrefix("assets/")
+                            require(fileName.matches(Regex("^[A-Fa-f0-9-]{36}\\.[A-Za-z0-9]{2,5}$")) &&
+                                extracted[fileName] == null) { "媒体项目备份包含无效或重复素材路径" }
+                            val file = File(File(staging, "assets"), fileName).canonicalFile
+                            val assetDirectory = File(staging, "assets").canonicalFile
+                            require(file.parentFile == assetDirectory) { "媒体项目素材路径越界" }
+                            require(assetDirectory.mkdirs() || assetDirectory.isDirectory)
+                            val available = StatFs(mediaRoot.absolutePath).availableBytes
+                            FileOutputStream(file).use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    val count = zip.read(buffer)
+                                    if (count < 0) break
+                                    totalBytes += count
+                                    require(totalBytes <= 2_000_000_000L &&
+                                        totalBytes + 64L * 1024 * 1024 < available) { "设备空间不足或媒体项目备份超出容量限制" }
+                                    output.write(buffer, 0, count)
+                                }
+                                output.fd.sync()
+                            }
+                            extracted[fileName] = file
+                        }
+                        else -> error("媒体项目备份包含未知文件：${entry.name}")
+                    }
+                    zip.closeEntry()
+                }
+            }
+            val manifest = JSONObject(requireNotNull(manifestRaw) { "媒体项目备份缺少索引" })
+            val sourceProjectId = manifest.optString("projectId")
+            require(manifest.optInt("schemaVersion") == 1 &&
+                sourceProjectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))) { "媒体项目索引版本或来源项目无效" }
+            val rows = manifest.optJSONArray("assets") ?: JSONArray()
+            require(rows.length() <= MAX_ASSETS && rows.length() == extracted.size) { "媒体项目素材数量与索引不一致" }
+            val importedAssets = mutableListOf<MediaAsset>()
+            val rewrittenAssets = JSONArray()
+            for (index in 0 until rows.length()) {
+                val sourceAsset = MediaProjectCodec.decodeAsset(rows.getJSONObject(index))
+                require(sourceAsset.projectId == sourceProjectId &&
+                    extracted.containsKey(sourceAsset.fileName) &&
+                    sourceAsset.byteSize in 1..MAX_ASSET_BYTES) { "媒体项目素材元数据无效" }
+                val file = extracted.getValue(sourceAsset.fileName)
+                require(file.isFile && file.length() == sourceAsset.byteSize) { "媒体素材大小校验失败：${sourceAsset.displayName}" }
+                val digest = MessageDigest.getInstance("SHA-256")
+                FileInputStream(file).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                require(digest.digest().joinToString("") { "%02x".format(it) }.equals(sourceAsset.sha256, true)) {
+                    "媒体素材 SHA-256 校验失败：${sourceAsset.displayName}"
+                }
+                val imported = sourceAsset.copy(projectId = targetProjectId)
+                importedAssets += imported
+                rewrittenAssets.put(MediaProjectCodec.encodeAsset(imported))
+            }
+            require(importedAssets.map { it.id }.distinct().size == importedAssets.size) { "媒体项目包含重复素材 ID" }
+            val timeline = MediaProjectCodec.decodeTimeline(manifest.getJSONObject("timeline")).copy(projectId = targetProjectId)
+            MediaTimelinePolicy.validate(timeline, importedAssets)
+            manifest.put("projectId", targetProjectId)
+                .put("assets", rewrittenAssets)
+                .put("timeline", MediaProjectCodec.encodeTimeline(timeline))
+            listOf("undo", "redo").forEach { key ->
+                val history = manifest.optJSONArray(key) ?: JSONArray()
+                val rewritten = JSONArray()
+                for (index in 0 until history.length()) {
+                    rewritten.put(MediaProjectCodec.encodeTimeline(
+                        MediaProjectCodec.decodeTimeline(history.getJSONObject(index)).copy(projectId = targetProjectId)
+                    ))
+                }
+                manifest.put(key, rewritten)
+            }
+            writeAtomically(File(staging, "project.json"), manifest.toString().toByteArray(Charsets.UTF_8))
+            require(staging.renameTo(target)) { "无法提交媒体项目导入结果" }
+            return timeline
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            throw error
+        }
     }
 
     @Synchronized
