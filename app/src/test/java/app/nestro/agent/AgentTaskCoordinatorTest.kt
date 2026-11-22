@@ -569,4 +569,94 @@ class AgentTaskCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun independentTaskKindsRunConcurrentlyWithinTheGlobalLimit() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val release = CompletableDeferred<Unit>()
+        val started = AtomicInteger()
+        val active = AtomicInteger()
+        val maximumActive = AtomicInteger()
+        val kinds = listOf("workflow", "calendar_automation", "media_ai")
+        kinds.forEach { kind ->
+            registry.register(kind) {
+                val current = active.incrementAndGet()
+                maximumActive.updateAndGet { previous -> maxOf(previous, current) }
+                started.incrementAndGet()
+                try {
+                    release.await()
+                } finally {
+                    active.decrementAndGet()
+                }
+            }
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        try {
+            kinds.forEach { kind ->
+                coordinator.enqueue(
+                    taskId = "parallel-$kind",
+                    owner = kind,
+                    metadata = AgentTaskMetadata(kind = kind)
+                )
+            }
+            withTimeout(2_000) {
+                while (started.get() < 3) delay(10)
+            }
+            assertEquals(3, maximumActive.get())
+            release.complete(Unit)
+            withTimeout(2_000) {
+                while (kinds.any { states.get("parallel-$it")?.status != AgentTaskStatus.COMPLETED }) delay(10)
+            }
+        } finally {
+            release.complete(Unit)
+            coordinator.close()
+        }
+    }
+
+    @Test
+    fun phoneAgentLaneRemainsSingleExecutionWhileOtherKindsCanRun() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val release = CompletableDeferred<Unit>()
+        val started = AtomicInteger()
+        val active = AtomicInteger()
+        val maximumActive = AtomicInteger()
+        registry.register("phone_agent") {
+            val current = active.incrementAndGet()
+            maximumActive.updateAndGet { previous -> maxOf(previous, current) }
+            started.incrementAndGet()
+            try {
+                release.await()
+            } finally {
+                active.decrementAndGet()
+            }
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        try {
+            repeat(2) { index ->
+                coordinator.enqueue(
+                    taskId = "phone-lane-$index",
+                    owner = "phone_agent",
+                    metadata = AgentTaskMetadata(kind = "phone_agent")
+                )
+            }
+            withTimeout(2_000) {
+                while (started.get() < 1) delay(10)
+            }
+            delay(80)
+            assertEquals(1, started.get())
+            assertEquals(1, maximumActive.get())
+            release.complete(Unit)
+            withTimeout(2_000) {
+                while ((0..1).any { states.get("phone-lane-$it")?.status != AgentTaskStatus.COMPLETED }) delay(10)
+            }
+            assertEquals(2, started.get())
+            assertEquals(1, maximumActive.get())
+        } finally {
+            release.complete(Unit)
+            coordinator.close()
+        }
+    }
+
 }
