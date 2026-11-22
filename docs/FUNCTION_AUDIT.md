@@ -1,7 +1,7 @@
 # NESTRO 十九模块统一功能核对（第一轮）
 
 核对分支：`integration/19-modules`  
-核对基线：`5cdcab4cad1bf62b6e7b108827272d646aab4dc4`  
+核对基线：`6083f6ad026d73c0e5ad5a04d50d98c7f3baf9e3`（本轮报表同步后的整合分支基线）  
 日期：2026-11-22
 
 > 本文是源码与现有设计文档的第一轮静态功能核对，不代表 Kotlin 编译、单元测试、Android instrumentation、模拟器、真机或外部 API 验收已通过。代码已存在、接线已存在、运行验证通过是三个不同状态。
@@ -139,3 +139,39 @@
 - 未触发 GitHub Actions Workflow。
 - 未运行模拟器或真机测试。
 - 未把未验证功能标记为验收通过。
+
+## 2026-11-22 最近对话需求补录与当前源码抽查
+
+### 更新前历史报表漏记的需求
+
+原第一轮审计没有完整记录以下用户明确要求；现已同步到 `IMPLEMENTATION_ROADMAP.md`，并纳入本审计后续验收：
+- 创作型专家任务与 Phone Agent 执行任务混合调度：创作需要网络素材时，由主模型调用手机 Agent 搜索/下载，文件自动导入当前项目素材库，素材 ID/元信息回交创作任务；允许创作与手机执行按依赖多轮交替、串并行组合，直至最终交付。
+- Mika 虚拟屏具体移植和交互要求：竖屏、缩小悬浮、实时画面和交互接管；不显示角标/按钮/手柄；点击窗口放大/缩小；角部上拉缩小、下拉放大；仅缩放预览尺寸，不破坏虚拟显示分辨率/DPI和输入坐标。
+- 工作流审批三项选择：授权一次、当前任务全部授权（仅本次任务）、拒绝；未选择保持等待；关闭弹窗不产生授权/拒绝结果。
+- 专家团双入口：用户手动组队操作，以及主模型根据项目目标自主拆解、选专家、分派 DAG、并行执行、汇总验收；主模型可按需协调专家与 Phone Agent，不把两种能力设成互斥模式。
+- 普通聊天按需调度、专家入口加载必需 Skill/插件，以及与记忆生命周期关联的本地缓存（全局/项目/会话范围、记忆变更失效/更新）；不得混同 BGE embedding cache 或 Prompt Cache。
+
+### 已抽查的实现证据
+
+- **混合调度主链路已存在，不应重建第二套调度器。** `ModelLedToolDispatcher.kt` 的主模型系统提示明确规定创作/专家/手机执行可组合并多轮交替；`NestroApplication.kt` 注册 `phone_agent.execute`、`phone_agent.wait`、`media.project.assets`；`PhoneAgentExecutor.kt` 包含 `DownloadAsset` 动作；`PhoneAgentService.downloadAsset()` 使用系统 DownloadManager 下载后调用 `MediaProjectStore.importAsset()`，并返回实际素材 ID、文件信息和来源；素材目录工具可供创作任务查询项目素材。当前判断：源码主链路已落地；端到端多轮协作、任务入队/等待/取消、素材可读性和专家实际消费文件仍需测试/逐调用点核验。
+- **Mika 虚拟屏底层已存在。** `phone/virtualdisplay/mika/` 包含 ADB、helper/Binder、VirtualDisplay 和 Phone Agent execution environment；`PhoneAgentPage.kt` 接入实时帧悬浮预览及触控输入。当前浮窗仍有“Phone Agent / 展开 / 收起”标题栏；点击标题栏折叠/展开，双击画面缩放，画面点击执行触控，右下角拖动区域调整尺寸。与用户指定的“无按钮/角标/手柄、点击窗口放大/缩小”的交互不一致；纵向拖动目前正向位移增大 previewScale（下拉放大、上拉缩小），需保留该方向并调整入口/显示元素。
+- **工作流审批已有三种显式决策。** `NestroApp.kt` 显示“授权一次 / 当前任务全部授权 / 拒绝”；任务级授权变量限定在一次工作流运行作用域；未选择时等待 `CompletableDeferred`。当前弹窗 `onDismissRequest = {}`，因此返回键/点击外部不能关闭；若用户要求“关闭但保持等待”，当前缺少独立关闭入口。另需核查等待期间持久任务状态是否写成 `WAITING_FOR_USER`，而非 UI 协程挂起时仍显示 RUNNING。
+- **专家自主项目与团队检查点已有代码。** `ExpertProjectPlanExecutor.kt`、`ExpertTeamExecutionCoordinator.kt` 已包含 DAG/依赖/并行工作包、结构化交接、成员结果检查点和恢复逻辑；`NestroApp.kt` 已接入项目计划执行。仍需核对手动组队入口、自动组队入口、工具调用及恢复是否全链路接通。
+- **记忆关联本地缓存尚未确认。** 目前仅确认 BGE 本地语义检索/embedding 相关实现；这不等于用户要求的记忆缓存。需继续搜索是否存在按全局/项目/会话作用域缓存，以及记忆新增、修改、删除、清空后的失效/刷新。
+
+### 分支核对补充
+
+- `feature/module-18-calendar`、`feature/module-17-smart-editing` 相对 `integration/19-modules` 没有领先提交；抽查的日历提醒调度器与媒体渲染器文件 blob 一致。
+- `feature/module-9-voice-system`、`feature/module-15-ai-coworkbench` 抽查关键源码与整合分支 blob 一致。
+- 模块6/13/14 分支虽然提交图分叉，但抽查发现整合分支含有更晚的源码修正：BGE masked mean pooling、MCP 损坏审计原文隔离、Git 凭据保存失败安全回滚。因此不能将分支 ahead/behind 数量直接当成功能缺失数量。
+- PR #1 和 PR #3 仍是开放 Draft；PR #2 已关闭但未合并。PR/分支状态与 integration 内容是否吸收必须分开记录。
+
+### 当前首轮审计的明确边界
+
+本节是定向源码抽查，不代表十九模块全量逐项完成。仍需：
+1. 逐模块把每项功能映射到实现文件、UI 入口、服务调用、持久化、异常/恢复和测试。
+2. 逐功能分支比较文件内容，排除未吸收的独有修复，同时识别整合分支上的更新版本。
+3. 专项核验混合调度、Mika UI 手势、审批等待状态、专家工具能力和记忆缓存。
+4. 全面检查重复实现、死代码、旧入口、重复状态源和历史垃圾代码。
+5. 按用户既定顺序，源码收口后才设计完整 APP 操作界面，之后统一构建和测试。
+
