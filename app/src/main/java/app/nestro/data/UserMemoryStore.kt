@@ -129,8 +129,24 @@ object UserMemoryStore {
         }
     }
 
+    suspend fun setShareAcrossProjects(
+        dao: NestroDao,
+        id: String,
+        ownerProjectId: String,
+        enabled: Boolean
+    ): Boolean {
+        require(id.isNotBlank() && ownerProjectId.isNotBlank()) { "记忆 ID 或所属项目无效" }
+        return mutationLock(ownerProjectId).withLock {
+            val updated = dao.setUserMemoryShareAcrossProjects(
+                id, ownerProjectId, enabled, System.currentTimeMillis()
+            )
+            if (updated > 0) bumpMutationVersion(ownerProjectId)
+            updated > 0
+        }
+    }
+
     suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall =
-        recall(dao.userMemories(projectId, 200), query, limit)
+        recall(dao.userMemoriesForRecall(projectId, 200), query, limit)
 
     fun recall(memories: List<UserMemoryEntity>, query: String, limit: Int = 6): MemoryRecall {
         if (limit <= 0) return MemoryRecall("", emptyList())
@@ -197,7 +213,7 @@ object UserMemoryStore {
 
     private fun buildRecall(ranked: List<UserMemoryEntity>): MemoryRecall {
         val context = ranked.joinToString("\n") {
-            "- [${it.category}] ${it.content} (memoryId=${it.id}, sourceConversationId=${it.sourceConversationId}, sourceMessageId=${it.sourceMessageId})"
+            "- [${it.category}] ${it.content} (memoryId=${it.id}, sourceProjectId=${it.projectId}, sourceConversationId=${it.sourceConversationId}, sourceMessageId=${it.sourceMessageId})"
         }.take(2600)
         return MemoryRecall(
             if (context.isBlank()) "" else "当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\n$context",
