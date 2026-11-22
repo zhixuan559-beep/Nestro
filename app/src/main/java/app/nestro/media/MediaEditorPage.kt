@@ -115,8 +115,11 @@ fun MediaEditorPage(
     LaunchedEffect(projectId) {
         runCatching { reload() }.onFailure { status = "读取媒体项目失败：" + (it.message ?: "索引损坏") }
         withContext(Dispatchers.IO) { MediaAiTaskScheduler.recover(context, projectId) }
-        val pendingResults = withContext(Dispatchers.IO) { MediaAiTaskStore.pendingResults(context, projectId) }
-        val interrupted = withContext(Dispatchers.IO) { MediaAiTaskStore.recoverable(context, projectId) }
+        val unifiedTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
+        val pendingResults = unifiedTasks.filter { it.status == MediaAiTaskStatus.COMPLETED && !it.resultConsumed }
+        val interrupted = unifiedTasks.filter {
+            it.status == MediaAiTaskStatus.QUEUED || it.status == MediaAiTaskStatus.RUNNING
+        }
         if (activeMediaAiTaskId.isBlank()) activeMediaAiTaskId = pendingResults.firstOrNull()?.id ?: interrupted.firstOrNull()?.id.orEmpty()
         while (isActive) {
             tasks = withContext(Dispatchers.IO) { MediaRenderScheduler.list(context, projectId) }
