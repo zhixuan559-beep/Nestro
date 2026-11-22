@@ -178,7 +178,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                                 scope.launch {
                                     loading = true
                                     try {
-                                        withContext(Dispatchers.IO) { service.setServerEnabled(server.id, enabled) }
+                                        withContext(Dispatchers.IO) { service.setServerEnabledWithRecovery(server.id, enabled) }
                                     } catch (cancelled: CancellationException) {
                                         throw cancelled
                                     } catch (error: Exception) {
@@ -291,7 +291,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                                 scope.launch {
                                     loading = true
                                     try {
-                                        withContext(Dispatchers.IO) { service.setToolGranted(tool.id, enabled) }
+                                        withContext(Dispatchers.IO) { service.setToolGrantedWithRecovery(tool.id, enabled) }
                                     } catch (cancelled: CancellationException) {
                                         throw cancelled
                                     } catch (error: Exception) {
@@ -466,7 +466,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                     scope.launch {
                         loading = true
                         try {
-                            withContext(Dispatchers.IO) { service.deleteServer(id) }
+                            withContext(Dispatchers.IO) { service.deleteServerWithRecovery(id) }
                             status = "服务及关联凭据已删除。"
                         } catch (cancelled: CancellationException) {
                             throw cancelled
