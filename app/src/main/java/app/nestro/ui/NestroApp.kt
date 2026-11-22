@@ -1920,19 +1920,20 @@ fun NestroApp(initialPage: String = "home") {
                                              workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}", color = Mint, style = MaterialTheme.typography.bodySmall) }
                                              val savedWorkflowTaskIdForCard = prefs.getString("workflow_task_id_v1", "").orEmpty()
                                              val savedWorkflowInputForCard = prefs.getString("workflow_resume_input_v1", "").orEmpty()
-                                             val canResumeSavedWorkflow = savedWorkflowTaskState?.let { task ->
+                                             val hasPendingSavedWorkflow = savedWorkflowTaskState?.let { task ->
                                                  task.taskId == savedWorkflowTaskIdForCard &&
                                                      prefs.getString("workflow_task_workflow_id_v1", "").orEmpty() == workflow.id &&
                                                      task.capabilityId == workflow.id &&
-                                                     savedWorkflowInputForCard == workflowInputDraft.trim() &&
-                                                     (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
-                                                         prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow))) &&
                                                      task.status in setOf(
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
                                                          app.nestro.agent.AgentTaskStatus.PAUSED
                                                      )
                                              } == true
+                                             val canResumeSavedWorkflow = hasPendingSavedWorkflow &&
+                                                 savedWorkflowInputForCard == workflowInputDraft.trim() &&
+                                                 (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
+                                                     prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow)))
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
@@ -2144,7 +2145,7 @@ fun NestroApp(initialPage: String = "home") {
                                                          }
                                                      )
                                                  }
-                                                 if (canResumeSavedWorkflow) {
+                                                 if (hasPendingSavedWorkflow) {
                                                      TextButton(onClick = {
                                                          scope.launch {
                                                              val result = withContext(Dispatchers.IO) {
@@ -2167,7 +2168,9 @@ fun NestroApp(initialPage: String = "home") {
                                                                  workflowRunStatus = "取消工作流失败：" + (result.exceptionOrNull()?.message ?: "未知错误")
                                                              }
                                                          }
-                                                     }) { Text("取消待恢复任务", color = ColorStop) }
+                                                     }) {
+                                                         Text(if (canResumeSavedWorkflow) "取消待恢复任务" else "取消旧版工作流任务", color = ColorStop)
+                                                     }
                                                  }
                                                  TextButton(onClick = {
                                                      if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
