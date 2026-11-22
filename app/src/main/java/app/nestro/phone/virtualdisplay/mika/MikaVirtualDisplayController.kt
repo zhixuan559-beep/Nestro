@@ -152,9 +152,16 @@ class MikaVirtualDisplayController(context: Context) {
         }
 
         override fun close() {
-            if (activeSession === this) activeSession = null
-            activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
-            activeEnvironment = null
+            // A stale Session may be closed after a replacement session has become active.
+            // It must release only its own display, never detach the replacement session's
+            // Phone Agent environment.
+            val isCurrentSession = activeSession === this
+            if (isCurrentSession) {
+                activeSession = null
+                activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
+                activeEnvironment = null
+                activeAccessibilityService = null
+            }
             // Closing the isolated session must not silently fall back to the user's real screen.
             // The user can explicitly restore main-screen execution from the Phone Agent page.
             // MikaAgentDisplay.release() already releases the remote display; calling
