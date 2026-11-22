@@ -238,6 +238,13 @@ object WorkflowEngine {
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
+        require(resumeOutput.length <= 24_000 &&
+            resumeCompletedRuns.map { it.stepId }.distinct().size == resumeCompletedRuns.size &&
+            resumeCompletedRuns.all { row ->
+                workflow.steps.any { it.id == row.stepId } &&
+                    row.status in setOf("success", "skipped", "failed") &&
+                    row.output.length <= 8_000 && row.error.length <= 2_000
+            }) { "工作流恢复数据无效或超出长度限制" }
         var previousOutput = resumeOutput
         val outputs = resumeCompletedRuns.map { it.output }.toMutableList()
         val runs = resumeCompletedRuns.toMutableList()
