@@ -9,6 +9,9 @@ import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.InMemoryAgentTaskStateStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -91,6 +94,66 @@ class ExpertTeamExecutionCoordinatorTest {
             AgentCapabilityRegistry.unregister("expert_team", "文案")
             coordinator.close()
         }
+    }
+
+    @Test
+    fun parallelTeamResumesOnlyMembersMissingFromDurableCheckpoint() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = ExpertTeamExecutionCoordinator(tasks)
+        val members = listOf(
+            ExpertTeamMemberTask("研究员", "负责研究", "核验资料"),
+            ExpertTeamMemberTask("策略师", "负责策略", "形成策略")
+        )
+        val secondMemberStarted = CompletableDeferred<Unit>()
+        val firstRun = launch {
+            runCatching {
+                service.execute(
+                    teamId = "team-resume",
+                    teamName = "恢复团队",
+                    teamDescription = "独立并行分工",
+                    task = "完成项目研究",
+                    members = members,
+                    strategy = ExpertTeamSchedulingStrategy.PARALLEL_WORK_PACKAGES,
+                    taskId = "expert-team-resume-task",
+                    invokeMember = { member, _ ->
+                        if (member.name == "研究员") "研究员已完成"
+                        else {
+                            secondMemberStarted.complete(Unit)
+                            awaitCancellation()
+                        }
+                    }
+                )
+            }
+        }
+        withTimeout(2_000) { secondMemberStarted.await() }
+        withTimeout(2_000) {
+            while (states.get("expert-team-resume-task")?.checkpoint?.contains("研究员已完成") != true) {
+                delay(10)
+            }
+        }
+        tasks.pause("expert-team-resume-task")
+        firstRun.join()
+        assertEquals(AgentTaskStatus.PAUSED, tasks.state("expert-team-resume-task")?.status)
+
+        val resumedCalls = mutableListOf<String>()
+        val result = service.execute(
+            teamId = "team-resume",
+            teamName = "恢复团队",
+            teamDescription = "独立并行分工",
+            task = "完成项目研究",
+            members = members,
+            strategy = ExpertTeamSchedulingStrategy.PARALLEL_WORK_PACKAGES,
+            taskId = "expert-team-resume-task",
+            invokeMember = { member, _ ->
+                resumedCalls += member.name
+                "${member.name}已完成"
+            }
+        )
+        assertEquals(listOf("策略师"), resumedCalls)
+        assertEquals(2, result.successfulMembers)
+        assertEquals(AgentTaskStatus.COMPLETED, tasks.state("expert-team-resume-task")?.status)
+        tasks.close()
     }
 
 }
