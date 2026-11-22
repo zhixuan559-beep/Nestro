@@ -14,6 +14,7 @@ internal data class ChatRequestExecutionRequest(
     val baseSystemContext: String,
     val taskModeEnabled: Boolean,
     val expertTeamEnabled: Boolean = false,
+    val parentTaskId: String? = null,
     val temperature: Double?,
     val maxTokens: Int?,
     val previousAssistant: ChatMessage?,
@@ -83,6 +84,7 @@ internal class ChatRequestExecutionCoordinator(
                         shouldStop = request.shouldStop,
                         taskModeEnabled = request.taskModeEnabled,
                         expertTeamEnabled = request.expertTeamEnabled,
+                        parentTaskId = request.parentTaskId,
                         planPhoneAgent = { arguments ->
                             try {
                                 planPhoneAgent(arguments)
