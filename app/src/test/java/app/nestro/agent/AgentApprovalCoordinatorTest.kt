@@ -1,6 +1,9 @@
 package app.nestro.agent
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -92,6 +95,31 @@ class AgentApprovalCoordinatorTest {
         assertEquals("request-3", resumedScope)
         assertEquals(AgentApprovalDecision.AUTHORIZE_ONCE, afterRestart.authorize("request-3", "external.write", "需要确认"))
         assertEquals("CONSUMED_ONCE", store.records.single().status)
+    }
+
+    @Test
+    fun independentApprovalRequestsCanQueueAndResolveConcurrently() = runBlocking {
+        val store = MemoryApprovalStore()
+        val approvals = store.coordinator()
+        val twoRequestsEnqueued = CompletableDeferred<Unit>()
+        val enqueued = mutableListOf<String>()
+        approvals.setHandler { request ->
+            synchronized(enqueued) {
+                enqueued += request.toolId
+                if (enqueued.size == 2) twoRequestsEnqueued.complete(Unit)
+            }
+        }
+
+        val first = async { approvals.authorize("scope-a", "tool-a", "需要确认") }
+        val second = async { approvals.authorize("scope-b", "tool-b", "需要确认") }
+        withTimeout(2_000) { twoRequestsEnqueued.await() }
+
+        val pending = approvals.pendingRequests()
+        assertEquals(2, pending.size)
+        assertTrue(approvals.respond(pending.single { it.toolId == "tool-b" }.id, AgentApprovalDecision.AUTHORIZE_ONCE))
+        assertEquals(AgentApprovalDecision.AUTHORIZE_ONCE, withTimeout(2_000) { second.await() })
+        assertTrue(approvals.respond(pending.single { it.toolId == "tool-a" }.id, AgentApprovalDecision.REJECT))
+        assertEquals(AgentApprovalDecision.REJECT, withTimeout(2_000) { first.await() })
     }
 
     @Test

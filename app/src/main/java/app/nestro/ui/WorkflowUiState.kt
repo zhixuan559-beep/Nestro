@@ -75,4 +75,13 @@ internal class WorkflowUiState(preferences: SharedPreferences) {
             agentApprovalPrompt.value = UnifiedApprovalPrompt(request)
         }
     }
+
+    fun deferCurrentApproval() {
+        val current = agentApprovalPrompt.value?.request ?: return
+        val queue = agentApprovalRequests.value
+        if (queue.size < 2) return
+        val rotated = queue.filterNot { it.id == current.id } + current
+        agentApprovalRequests.value = rotated
+        agentApprovalPrompt.value = rotated.firstOrNull()?.let(::UnifiedApprovalPrompt)
+    }
 }

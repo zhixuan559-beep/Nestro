@@ -531,15 +531,16 @@ class AgentApprovalCoordinator(
             activeRequests[record.id] = ActiveApproval(record, deferred)
             try {
                 if (pending == null) persistAudit(record)
-                promptMutex.withLock promptLock@{
-                    if (deferred.isCompleted) {
-                        consumeDecision(record, deferred.await())
-                    } else {
-                        val approvalHandler = handler ?: return@promptLock null
-                        approvalHandler(record.toRequest())
-                        consumeDecision(record, deferred.await())
+                val approvalHandler = handler
+                if (approvalHandler == null && !deferred.isCompleted) return@scopeLock null
+                if (approvalHandler != null && !deferred.isCompleted) {
+                    // Serialize only the UI enqueue operation, never the user's wait.
+                    // Other tasks can publish approvals and receive decisions concurrently.
+                    promptMutex.withLock {
+                        if (!deferred.isCompleted) approvalHandler(record.toRequest())
                     }
                 }
+                consumeDecision(record, deferred.await())
             } finally {
                 activeRequests.remove(record.id)
             }

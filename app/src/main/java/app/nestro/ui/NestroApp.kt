@@ -4365,7 +4365,10 @@ fun NestroApp(initialPage: String = "home") {
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { workflowApprovalVisible = false }) { Text("稍后处理", color = Muted) }
+                    TextButton(onClick = {
+                        workflowUiState.deferCurrentApproval()
+                        workflowApprovalVisible = workflowUiState.agentApprovalRequests.value.size > 1
+                    }) { Text("稍后处理", color = Muted) }
                     TextButton(onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) {
