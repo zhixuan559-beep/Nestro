@@ -91,6 +91,44 @@ class UserMemoryRepositoryInstrumentedTest {
     }
 
     @Test
+    fun automaticCandidatesRequireAnExistingUserMessageInTheSameProject() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("project-a", "项目 A", "", 1L),
+                ProjectEntity("project-b", "项目 B", "", 1L)
+            ))
+            dao.putConversation(ConversationEntity("conversation-a", "来源会话 A", 200L, "project-a"))
+            dao.putConversation(ConversationEntity("conversation-b", "来源会话 B", 200L, "project-b"))
+            dao.putMessages(listOf(
+                MessageEntity("message-a", "conversation-a", 0, "user", "偏好清晰直接的表达方式"),
+                MessageEntity("message-b", "conversation-b", 0, "user", "偏好清晰直接的表达方式")
+            ))
+            val repository = UserMemoryRepository(database)
+            val candidate = listOf(
+                MemoryCandidate("preference", "偏好清晰直接的表达方式", 0.95)
+            )
+
+            assertEquals(0, repository.saveCandidates("project-b", "conversation-a", "message-a", candidate))
+            assertEquals(0, repository.saveCandidates("project-a", "conversation-a", "missing-message", candidate))
+            assertEquals(0, repository.saveCandidates("project-a", "conversation-b", "message-b", candidate))
+            assertEquals(0, repository.saveCandidates("missing-project", "conversation-a", "message-a", candidate))
+            assertTrue(repository.list("project-a").isEmpty())
+            assertTrue(repository.list("project-b").isEmpty())
+
+            assertEquals(1, repository.saveCandidates("project-a", "conversation-a", "message-a", candidate))
+            assertEquals(1, repository.list("project-a").size)
+            assertTrue(repository.list("project-b").isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun importRejectsInvalidPayloadWithoutChangingExistingProjectData() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
@@ -116,6 +154,10 @@ class UserMemoryRepositoryInstrumentedTest {
             dao.putProjects(listOf(
                 ProjectEntity("project-a", "项目 A", "", 1L),
                 ProjectEntity("project-b", "项目 B", "", 1L)
+            ))
+            dao.putConversation(ConversationEntity("conversation-a", "来源会话", 200L, "project-a"))
+            dao.putMessages(listOf(
+                MessageEntity("message-a", "conversation-a", 0, "user", "偏好清晰直接的表达方式")
             ))
             dao.putUserMemory(memory())
             val repository = UserMemoryRepository(database)
