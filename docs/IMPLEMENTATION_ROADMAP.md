@@ -62,7 +62,7 @@
 - `AgentTaskCoordinator` 是跨模块任务生命周期的统一基座：任务 ID 幂等、排队/运行/等待用户/暂停/失败/完成/取消、checkpoint、事件追踪、重启恢复和重新入队由同一状态机管理；当前仅支持上层显式 resume，统一的最大重试次数/退避/错误分类/幂等安全重试策略仍待补齐。
 - 模块可保留领域数据（例如 Phone Agent 动作日志、媒体任务参数/进度、日历触发规则），但不得各自再造一套互不关联的通用任务状态机；领域状态需与统一任务 ID/状态/取消/恢复同步。
 - WorkManager 负责可靠的后台唤醒与系统约束执行，不应替代统一任务状态源；时间调度触发后应将任务交给统一基座。
-- 当前审计已发现：Phone Agent 同时使用领域任务表和 AgentTaskCoordinator；媒体 AI 任务使用独立 JSON 文件状态 + WorkManager，尚未接入 AgentTaskCoordinator；日历提醒仅 WorkManager 通知，也未接入统一任务基座。后续需先做状态映射与边界设计，再最小改造接线，不要重复建设新的队列或任务数据库。
+- 当前审计已发现：Phone Agent 同时使用领域任务表和 AgentTaskCoordinator；媒体 AI 任务使用独立 JSON 文件状态 + WorkManager，尚未接入 AgentTaskCoordinator；日历提醒仅 WorkManager 通知，也未接入统一任务基座；生成式插件执行自行写 RoomAgentTaskStateStore，没有通过 AgentTaskCoordinator，也没有可恢复步骤 handler。工作流已接入 AgentTaskCoordinator，但审批等待状态未显式写入 WAITING_FOR_USER。后续需先做状态映射与边界设计，再最小改造接线，不要重复建设新的队列或任务数据库。
 - 验收必须验证跨模块同一任务 ID 的状态一致性、重复触发幂等、等待审批、暂停/恢复、取消、异常重试、进程重启恢复和结果回传。
 
 ### J. 主模型场景路由与虚拟屏/主屏交接（2026-11-21 用户明确举例）
