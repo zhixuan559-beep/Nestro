@@ -29,6 +29,7 @@ internal object ProjectAccessControlStore {
                 when (values.opt(i)) { "read" -> Access.READ; "write" -> Access.WRITE; else -> error("授权范围包含未知权限") }
             }.toSet()
             require(access.isNotEmpty() && access.size == values.length()) { "授权范围为空或存在重复项" }
+            require(Access.WRITE !in access || Access.READ in access) { "WRITE 授权必须同时包含 READ" }
             val timestamp = row.opt("granted_at") as? Number ?: error("授权时间无效")
             require(timestamp.toDouble().isFinite() && timestamp.toDouble() % 1.0 == 0.0 && timestamp.toLong() >= 0L) { "授权时间无效" }
             Grant(source, target, access, timestamp.toLong())
@@ -43,7 +44,8 @@ internal object ProjectAccessControlStore {
         val rows = JSONArray()
         grants.forEach { grant ->
             require(grant.sourceProjectId.isNotBlank() && grant.targetProjectId.isNotBlank() && grant.sourceProjectId != grant.targetProjectId &&
-                grant.sourceProjectId.length <= MAX_ID && grant.targetProjectId.length <= MAX_ID && grant.access.isNotEmpty() && grant.grantedAt >= 0L) { "授权参数无效" }
+                grant.sourceProjectId.length <= MAX_ID && grant.targetProjectId.length <= MAX_ID && grant.access.isNotEmpty() && grant.grantedAt >= 0L &&
+                (Access.WRITE !in grant.access || Access.READ in grant.access)) { "授权参数无效或 WRITE 未包含 READ" }
             rows.put(JSONObject().put("source", grant.sourceProjectId).put("target", grant.targetProjectId)
                 .put("access", JSONArray().apply { grant.access.sortedBy { it.key }.forEach { put(it.key) } })
                 .put("granted_at", grant.grantedAt))
