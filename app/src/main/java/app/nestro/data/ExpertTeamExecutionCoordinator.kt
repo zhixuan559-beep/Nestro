@@ -78,14 +78,20 @@ class ExpertTeamExecutionCoordinator(
         }.orEmpty()
         val initialCheckpoint = "team_run:" + JSONObject()
             .put("identity", teamIdentity)
-            .put("members", JSONArray())
-            .toString()
+            .put("members", JSONArray().apply {
+                resumeMembers.forEach { row ->
+                    put(JSONObject()
+                        .put("name", row.name).put("status", row.status)
+                        .put("attempts", row.attempts).put("elapsedMillis", row.elapsedMillis)
+                        .put("output", row.output.take(2_200)).put("error", row.error.take(500)))
+                }
+            }).toString()
         return taskCoordinator.runInline(
             taskId = taskId,
             owner = "expert_team",
             initialCheckpoint = initialCheckpoint
         ) { taskContext ->
-        taskContext.checkpoint("team:" + teamId + ":running", 0)
+        taskContext.checkpoint(initialCheckpoint, resumeMembers.size)
         var eventSequence = 0L
         suspend fun emit(
             type: String,
