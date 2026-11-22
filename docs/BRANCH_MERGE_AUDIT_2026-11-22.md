@@ -5,7 +5,7 @@
 - Repository: `zhixuan559-beep/Nestro`
 - Integration target: `integration/19-modules`
 - Baseline at audit time: `7449ef3211ecb2ebc2043abac956a5860274063b`
-- Branch inventory: 28 branches returned by GitHub branch search.
+- Branch inventory: 29 branches returned by GitHub branch listing and compared against the integration target.
 - This is a functional merge audit, not the 19-module feature audit or acceptance report.
 - No source branch was deleted. No build, JVM test, Android instrumentation test, emulator test, or device test was run; those remain deferred to the agreed unified verification stage.
 
@@ -59,7 +59,7 @@ The PR was not merged wholesale. Its independent behaviors were mapped into the 
    - Added Android instrumentation coverage for grants, revocation, fail-closed behavior, metadata round-trip, and MCP overrides.
    - A second authorization path in the model-led text-protocol fallback was found during call-site review and brought under the same project capability gate; both native and compatibility execution paths now enforce it.
    - Propagated the chat request identity to tool execution and derived generated-plugin idempotency keys from project, plugin, request identity, and a SHA-256 fingerprint of declared inputs. Duplicate plugin requests return the canonical persisted task instead of executing again; successful output is saved to the shared task result summary.
-   - The legacy CapabilityCenterPage UI was not copied in this phase; the descriptor metadata required by that UI is retained for the later unified UI design.
+   - The legacy CapabilityCenterPage UI was not copied. Project-level capability/MCP grant switches and audit visibility were integrated into the existing CapabilityDirectoryPage; descriptor status/detail/route metadata remains available for later visual refinement.
 
 2. **Unified task metadata, idempotency, and retry**
    - Extended the existing AgentTaskState/Room persistence with project, conversation, task kind, capability, title/input/result summary, idempotency key, attempts, retry limit, availability time, and lifecycle timestamps.
@@ -88,7 +88,8 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 ## Verification boundary
 
 - GitHub commit refs, changed-file blobs, task/permission call sites, PR #1 patches, and the latest integration branch HEAD were read back.
-- The branch comparison against `f5cbffb9f1a06acb5f53cccc275541e5d9f43de0` reports 39 ahead / 0 behind.
+- The branch comparison against `f5cbffb9f1a06acb5f53cccc275541e5d9f43de0` reports 48 ahead / 0 behind after the latest idempotency, capability-control, task-summary, and audit updates.
+- All 28 non-integration branches were compared against the integration target. The two branches not listed in the initial 28-branch audit (`feature/modelscope-oauth` and `feature/phase2-optimization`) are behind with no ahead commits. Previously identified diverged branches remain subject to the file-level dispositions above; no source branch was deleted.
 - No GitHub Actions workflow run or check run exists for the current integration HEAD.
 - A local repository clone/build could not be started because the execution environment could not resolve `github.com`; compilation, JVM tests, Android instrumentation tests, emulator tests, and device tests remain **not run**.
 - No branch was deleted and PR #1 remains open + Draft; it was not merged wholesale.
