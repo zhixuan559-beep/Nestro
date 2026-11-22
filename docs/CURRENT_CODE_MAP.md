@@ -1,7 +1,7 @@
 # NESTRO 当前代码地图
 
-> 快照基线：`integration/19-modules`，Git tree `df32fd86f269f10ce2699def3e0c9a0eb976eda2`（2026-11-22）。
-> 当前树：354 个文件，其中 317 个 Kotlin 文件。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
+> 静态审计基线：`integration/19-modules`，HEAD `fdb1220125e608f4353902c5fc365853cf30e3a2`（2026-11-22）。
+> 当前树：361 个文件，其中 321 个 Kotlin 文件（主源码 199 个、JVM 测试 89 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
 > 功能是否完整以 `FUNCTION_AUDIT.md` 为准；十九模块需求范围以 `NESTRO_19_MODULES.md` 为准；未完成事项以 `IMPLEMENTATION_ROADMAP.md` 为准。
 
 ## 十九模块源码落点
@@ -23,7 +23,7 @@
 | 13 MCP 工具中心 | `mcp/McpStreamableHttpClient.kt`、`mcp/McpToolCenter.kt`、`mcp/McpToolCenterPage.kt` | `test/.../McpToolCenterTest.kt` |
 | 14 GitHub 工作台 | `git/GitWorkbench.kt`、`git/GitWorkbenchPage.kt` | `test/.../GitWorkbenchPolicyTest.kt`、`androidTest/.../GitAccountStoreTest.kt` |
 | 15 AI 共建工作台 | `coworkbench/AiCoworkbenchPage.kt`、`coworkbench/AiCoworkbenchService.kt`、`coworkbench/CoworkbenchDataFlowAnalyzer.kt`、`coworkbench/GitHubActionsCoworkbenchRunner.kt` | `test/.../CoworkbenchPolicyTest.kt`、`CoworkbenchStaticAnalyzerTest.kt`、`CoworkbenchReportParserTest.kt` |
-| 16 统一能力中心 | `agent/AgentRuntime.kt`、`agent/AgentTaskCoordinator.kt`、`agent/RoomAgentTaskStateStore.kt`、`agent/RoomAgentTaskTraceStore.kt`、`agent/AgentTaskTrace.kt` | `test/.../AgentRuntimeTest.kt`、`AgentTaskCoordinatorTest.kt` |
+| 16 统一能力中心 | `data/CapabilityRegistryStore.kt`、`agent/AgentRuntime.kt`、`agent/AgentTaskCoordinator.kt`、`agent/RoomAgentTaskStateStore.kt`、`agent/RoomAgentTaskTraceStore.kt`、`agent/AgentTaskTrace.kt` | `test/.../AgentRuntimeTest.kt`、`AgentTaskCoordinatorTest.kt`、`androidTest/.../CapabilityRegistryStoreTest.kt` |
 | 17 智能剪辑 | `media/MediaEditorPage.kt`、`media/MediaProjectStore.kt`、`media/MediaRenderEngine.kt`、`media/MediaRenderTaskStore.kt`、`media/MediaRenderWorker.kt`、`media/MediaVideoGenerationClient.kt` | `test/.../MediaProjectCodecTest.kt`、`androidTest/.../MediaProjectArchiveTest.kt` |
 | 18 日历调度 | `calendar/CalendarDatabase.kt`、`calendar/CalendarRepository.kt`、`calendar/CalendarRules.kt`、`calendar/CalendarProviderBridge.kt`、`calendar/CalendarReminderScheduler.kt`、`calendar/CalendarPage.kt` | `test/.../CalendarRulesTest.kt` |
 | 19 多模态与社区生态 | `media/MediaIntelligenceProvider.kt`、`media/MediaProviderConfigStore.kt`、`media/MediaAiTaskStore.kt`、`media/MediaVideoGenerationClient.kt`、`data/ModelLedToolDispatcher.kt`、`NestroApplication.kt` | `test/.../MediaProviderConfigTest.kt`、`androidTest/.../MediaAiTaskStoreTest.kt`、`MediaProviderConfigStoreTest.kt` |
