@@ -51,6 +51,7 @@ internal class NativeToolCallingUnsupportedException(message: String, cause: Thr
 internal object OpenAiClient {
     private const val MAX_NATIVE_TOOL_ROUNDS = 4
     private const val MAX_NATIVE_TOOL_CALLS = 8
+    private const val MAX_PARALLEL_NATIVE_TOOL_CALLS = 4
     private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
     private val requestConnections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
 
@@ -404,19 +405,28 @@ internal object OpenAiClient {
                         while (callIndex < calls.size) {
                             val candidate = calls[callIndex]
                             val candidateDefinition = toolNames.values.firstOrNull { it.id == candidate.second }
-                            if (candidateDefinition?.parallelSafe != true) break
+                            if (candidateDefinition?.parallelSafe != true ||
+                                batch.size >= MAX_PARALLEL_NATIVE_TOOL_CALLS
+                            ) break
                             batch += candidate
                             callIndex++
                         }
                         val results = kotlinx.coroutines.coroutineScope {
                             batch.map { call ->
-                                async { onToolCall(call.second, call.third) }
+                                async {
+                                    if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
+                                    val result = onToolCall(call.second, call.third)
+                                    if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
+                                    result
+                                }
                             }.awaitAll()
                         }
                         executed += batch.size
                         completedCalls += batch.zip(results)
                     } else {
+                        if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
                         val result = onToolCall(current.second, current.third)
+                        if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
                         executed++
                         completedCalls += current to result
                         callIndex++
