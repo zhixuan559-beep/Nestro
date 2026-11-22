@@ -269,11 +269,12 @@ object CapabilityRegistryStore {
     fun authorizeToolCall(
         prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
         parameterNames: List<String> = emptyList(),
-        defaultGranted: Boolean = false
+        defaultGranted: Boolean = false,
+        globallyEnabled: Boolean = true
     ): Boolean {
         if (!validProject(projectId)) return false
         val key = runCatching { CapabilityToolPolicy.grantKey(serviceId, toolName) }.getOrNull() ?: return false
-        val granted = runCatching {
+        val granted = globallyEnabled && runCatching {
             val project = objectAt(prefs, TOOL_GRANTS).optJSONObject(projectId)
             if (project?.has(key) == true) project.optBoolean(key, false) else defaultGranted
         }.getOrDefault(false)
