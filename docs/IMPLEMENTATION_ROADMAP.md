@@ -534,7 +534,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - 当前 GitHub 仍显示两个开放 Draft PR：
   - PR #1 `feature/knowledge-retrieval-ranking` → `main`，未合并。其 PR 描述仍写着“无语义向量检索、无扫描 PDF OCR”等旧限制，与当前整合路线图中已登记的本地 BGE 向量和 OCR 实现不一致；因此 PR 描述不能作为整合分支当前功能状态。
   - PR #3 `refactor/phase-2-architecture` → `feature/voice-system`，未合并且保持 Draft。PR 描述和代码地图记录的是分层重构批次，不应把它误判为十九模块功能都未进入整合基线，也不能把它视为已合并。
-- PR #2 已关闭但未合并；PR #4 至 #9 等历史 PR 的合并状态，须结合其目标分支与当前整合基线的提交祖先/文件差异判断，不能仅凭“merged”字段推断已进入 `integration/19-modules`。
+- PR #2 已关闭但未合并。PR #4 至 #9 的历史合并目标为 `refactor/phase-2-architecture`；当前该分支相对 `integration/19-modules` 为 behind 739、ahead 0，因此其分支提交已包含在当前整合基线中。仍需按当前源码判断后续是否有覆盖/替代实现，不能仅凭 PR 的 merged 字段推断功能验收完成。
 - 本次检索到的功能分支仍有多个（包括模块5/6/7/8/9/10/11/12/13/14/15/17/18、模块2 OAuth、phase2 optimization、staging 修复等）。分支仍存在不等于未整合；必须逐分支比较当前整合分支与功能分支的 ahead/behind、差异文件及关键实现内容。
 - 因此，本轮只完成了“报表补录与同步”，尚未完成“所有功能是否已合并”的提交祖先/差异证明，也尚未完成十九模块代码整体性审计。
 
