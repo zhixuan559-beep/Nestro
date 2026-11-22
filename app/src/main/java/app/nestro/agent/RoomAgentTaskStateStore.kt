@@ -36,7 +36,7 @@ class RoomAgentTaskStateStore(
         dao.agentTaskStateByIdempotencyKey(key)?.toState()
 
     override suspend fun put(state: AgentTaskState) {
-        dao.putAgentTaskState(state.toEntity())
+        dao.putAgentTaskStateChecked(state.toEntity())
     }
 
     override suspend fun putIfAbsent(state: AgentTaskState): AgentTaskState =
