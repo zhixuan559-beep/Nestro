@@ -51,6 +51,7 @@ object CalendarReminderScheduler {
             val automationRequest = OneTimeWorkRequestBuilder<CalendarAutomationWorker>()
                 .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to occurrenceStart))
                 .setInitialDelay((occurrenceStart - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+                .addTag("calendar-automation")
                 .addTag(automationTag(event.id))
                 .build()
             workManager.enqueueUniqueWork(
@@ -69,6 +70,7 @@ object CalendarReminderScheduler {
 
     fun cancelAll(context: Context) {
         WorkManager.getInstance(context).cancelAllWorkByTag("calendar-reminder")
+        WorkManager.getInstance(context).cancelAllWorkByTag("calendar-automation")
     }
 
     private fun workName(eventId: String) = "calendar-reminder-$eventId"
