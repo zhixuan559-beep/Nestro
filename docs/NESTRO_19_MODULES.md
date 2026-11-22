@@ -424,3 +424,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 已在自动记忆提取前事务性持久化当前会话消息；来源项目/会话/消息校验后才允许保存自动记忆。
 - 新增来源归属与跨项目覆盖拒绝的 instrumentation 测试源码。
 - 独立全局/项目/会话 memory-context cache 仍未实现；不要将 UserMemoryRepository 的 embeddingCache 当成该缓存。
+
+
+## 2026-11-22 17:32 UTC — 模块5资源归属安全补齐
+
+- 恢复 create-only `assignNewResourceToProject`，新资源创建时如果 scope key 已存在则拒绝覆盖旧归属。
+- 8 个新建资源入口已切换到该 API；现有资源的全局/项目范围切换保留原 update API。
+- 已新增单元测试源码，未运行。
