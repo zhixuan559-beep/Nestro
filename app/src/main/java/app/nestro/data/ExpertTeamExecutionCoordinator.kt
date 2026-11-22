@@ -8,6 +8,7 @@ import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 enum class ExpertTeamSchedulingStrategy {
     /** User assigns each member a work package; independent work runs concurrently. */
@@ -54,12 +55,15 @@ class ExpertTeamExecutionCoordinator(
                         .put("assignedTask", member.assignedTask))
                 }
             }).toString()
+        val teamFingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(teamIdentity.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
         val savedPayload = taskCoordinator.state(taskId)?.checkpoint
             ?.takeIf { it.startsWith("team_run:") }
             ?.removePrefix("team_run:")
             ?.let { runCatching { JSONObject(it) }.getOrNull() }
         if (savedPayload != null) {
-            require(savedPayload.optString("identity") == teamIdentity) {
+            require(savedPayload.optString("teamFingerprint") == teamFingerprint) {
                 "专家团队检查点与当前团队、任务或成员配置不匹配，已停止恢复"
             }
         }
@@ -77,7 +81,7 @@ class ExpertTeamExecutionCoordinator(
             }
         }.orEmpty()
         val initialCheckpoint = "team_run:" + JSONObject()
-            .put("identity", teamIdentity)
+            .put("teamFingerprint", teamFingerprint)
             .put("members", JSONArray().apply {
                 resumeMembers.forEach { row ->
                     put(JSONObject()
