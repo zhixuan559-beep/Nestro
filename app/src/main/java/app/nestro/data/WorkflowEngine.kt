@@ -4,7 +4,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 
 enum class WorkflowStepKind { PROMPT, EXPERT, SKILL }
 
@@ -404,7 +403,7 @@ object WorkflowEngine {
                 // Persist every successful sibling before surfacing the wave failure.
                 // The failed siblings remain absent from the checkpoint and are retried
                 // on resume; successful siblings are not repeated.
-                completed.forEach { (resultIndex, stepIndex, pair) ->
+                completed.forEach { (_, stepIndex, pair) ->
                     onStepCompleted(stepIndex + 1, pair.first, groupInput)
                 }
                 failures.forEach { (resultIndex, error) ->
