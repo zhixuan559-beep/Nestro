@@ -604,10 +604,19 @@ class AgentTaskCoordinator(
         val lane = kindPermits.computeIfAbsent(laneKey) {
             Semaphore(taskLaneLimit(state.kind))
         }
-        lane.withPermit {
+        if (!lane.tryAcquire()) {
+            // Do not park a worker on a busy resource lane: move this task to the
+            // queue tail so unrelated modules can continue using the other workers.
+            delay(40)
+            queue.send(taskId)
+            return
+        }
+        try {
             globalTaskPermits.withPermit {
                 executeQueuedInternal(taskId)
             }
+        } finally {
+            lane.release()
         }
     }
 
