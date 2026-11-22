@@ -169,6 +169,15 @@ class CalendarAutomationWorker(
             .put("occurrenceStart", occurrenceStart)
             .put("prompt", event.automationPrompt.take(12_000))
             .toString()
+        val idempotencyKey = "calendar:$eventId:$occurrenceStart"
+        val nextRunAt = CalendarRules.nextOccurrenceStart(event, occurrenceStart) ?: 0L
+        CalendarRepository(applicationContext).recordAutomationDispatch(
+            eventId = eventId,
+            nextRunAt = nextRunAt,
+            lastRunAt = System.currentTimeMillis(),
+            taskId = taskId,
+            idempotencyKey = idempotencyKey
+        )
         app.agentTaskCoordinator.enqueue(
             taskId = taskId,
             owner = "calendar_automation",
@@ -180,7 +189,7 @@ class CalendarAutomationWorker(
                 title = event.title.take(160),
                 input = input
             ),
-            idempotencyKey = "calendar:$eventId:$occurrenceStart",
+            idempotencyKey = idempotencyKey,
             maxRetries = 0
         )
         CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
