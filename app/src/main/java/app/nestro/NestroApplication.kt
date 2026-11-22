@@ -378,9 +378,9 @@ class NestroApplication : Application() {
             registerInstalledGeneratedPlugins(this)
         }.also { catalog ->
             val capabilityPrefs = getSharedPreferences("nestro_local", MODE_PRIVATE)
-            CapabilityRegistryStore.registerAll(
-                capabilityPrefs,
-                catalog.list().map { spec ->
+            catalog.list().forEach { spec ->
+                CapabilityRegistryStore.registerIfAbsent(
+                    capabilityPrefs,
                     CapabilityDescriptor(
                         id = spec.id,
                         title = spec.id,
@@ -395,8 +395,8 @@ class NestroApplication : Application() {
                             spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
                         defaultGranted = !spec.id.startsWith("plugin.")
                     )
-                }
-            )
+                )
+            }
         }
     }
 
