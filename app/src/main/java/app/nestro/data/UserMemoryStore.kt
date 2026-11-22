@@ -11,7 +11,8 @@ import kotlin.math.sqrt
 data class MemoryCandidate(
     val category: String,
     val content: String,
-    val confidence: Double
+    val confidence: Double,
+    val supersedesId: String? = null
 )
 
 data class MemoryRecall(
@@ -86,11 +87,27 @@ object UserMemoryStore {
                 if (category !in allowedCategories || content.length !in 8..180) return@forEach
                 if (!candidate.confidence.isFinite() || candidate.confidence !in 0.8..1.0 || containsSensitiveData(content)) return@forEach
                 val fingerprint = fingerprint(category + "|" + content.lowercase())
-                val old = dao.userMemoryByFingerprint(projectId, fingerprint)
                 val now = System.currentTimeMillis()
-                dao.putUserMemory(
+                val supersedesId = candidate.supersedesId?.trim().orEmpty()
+                if (supersedesId.isNotBlank()) {
+                    val replaced = dao.replaceUserMemoryIfUnconflicted(
+                        id = supersedesId,
+                        projectId = projectId,
+                        category = category,
+                        content = content,
+                        fingerprint = fingerprint,
+                        conversationId = conversationId,
+                        messageId = messageId,
+                        confidence = candidate.confidence,
+                        updatedAt = now
+                    )
+                    // A failed explicit correction must not silently become a new memory.
+                    if (replaced) saved++
+                    return@forEach
+                }
+                dao.upsertUserMemoryByFingerprint(
                     UserMemoryEntity(
-                        id = old?.id ?: UUID.randomUUID().toString(),
+                        id = UUID.randomUUID().toString(),
                         projectId = projectId,
                         category = category,
                         content = content,
@@ -98,9 +115,8 @@ object UserMemoryStore {
                         sourceConversationId = conversationId,
                         sourceMessageId = messageId,
                         confidence = candidate.confidence,
-                        createdAt = old?.createdAt ?: now,
-                        updatedAt = now,
-                        shareAcrossProjects = old?.shareAcrossProjects ?: false
+                        createdAt = now,
+                        updatedAt = now
                     )
                 )
                 saved++
