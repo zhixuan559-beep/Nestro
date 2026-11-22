@@ -250,7 +250,7 @@ class WorkflowEngineTest {
             ),
             resumeOutput = "研究目标"
         )
-        assertEquals(2, result.completedSteps)
+        assertEquals(3, result.completedSteps)
         assertTrue(prompts.getValue("synthesis").contains("研究 A已完成"))
         assertTrue(prompts.getValue("synthesis").contains("研究 B已完成"))
         assertEquals("最终汇总", result.output)
