@@ -614,7 +614,7 @@ class NestroApplication : Application() {
     }
 
     val mcpToolCenterRepository: McpToolCenterRepository by lazy { McpToolCenterRepository(this) }
-    val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao())) }
+    val mcpToolCenterService: McpToolCenterService by lazy { McpToolCenterService(mcpToolCenterRepository, agentToolCatalog, RoomAgentTaskTraceStore(database.dao()), agentTaskCoordinator, agentApprovalCoordinator) }
     val expertTeamExecutionCoordinator: ExpertTeamExecutionCoordinator by lazy {
         ExpertTeamExecutionCoordinator(agentTaskCoordinator)
     }
