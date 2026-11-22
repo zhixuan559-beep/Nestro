@@ -308,6 +308,25 @@ class McpToolCenterService(
   require(argsJson.length <= 32_000) { "MCP 调用参数超过可恢复任务的输入上限（32 KB）" }
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
+  val existingState = coordinator.state(taskId)
+  val checkpoint = existingState?.checkpoint.orEmpty()
+  if (checkpoint.startsWith("mcp:v1:executing:$id")) {
+   val reason = "MCP 工具执行中断，外部结果不确定；为避免重复写入，系统未自动重放。请核对服务端结果后重新发起。"
+   coordinator.transitionTask(taskId, AgentTaskStatus.FAILED, reason)
+   approvalCoordinator?.endScope(taskId)
+   return AgentToolResult(false, error = reason)
+  }
+  if (checkpoint.startsWith("mcp:v1:completed:$id\\n")) {
+   val output = checkpoint.substringAfter('\\n').take(8_000)
+   coordinator.transitionTask(
+    taskId,
+    AgentTaskStatus.COMPLETED,
+    "从持久检查点恢复已完成的 MCP 结果",
+    resultSummary = output
+   )
+   approvalCoordinator?.endScope(taskId)
+   return AgentToolResult(true, output)
+  }
   return try {
    coordinator.runInline(
    taskId=taskId,
@@ -326,6 +345,7 @@ class McpToolCenterService(
     }else{
      when(val authorization=DefaultAgentPermissionRouter().authorize(task,tool)){
       is AgentAuthorization.RequireConfirmation -> {
+       taskContext.checkpoint("mcp:v1:approval:$id")
        taskContext.waitForUser(authorization.reason)
        val decision=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)
        if (decision == null) {
@@ -334,6 +354,7 @@ class McpToolCenterService(
        val approved = decision == AgentApprovalDecision.AUTHORIZE_ONCE ||
         decision == AgentApprovalDecision.AUTHORIZE_TASK
        if(approved) {
+        taskContext.checkpoint("mcp:v1:executing:$id")
         taskContext.transition(AgentTaskStatus.RUNNING,"用户已批准 MCP 工具：${tool.id}")
         AgentAuthorization.Allow
        } else {
@@ -341,7 +362,12 @@ class McpToolCenterService(
         AgentAuthorization.Deny("MCP 工具本次任务未获用户批准")
        }
       }
-      else -> authorization
+      else -> {
+       if (authorization == AgentAuthorization.Allow) {
+        taskContext.checkpoint("mcp:v1:executing:$id")
+       }
+       authorization
+      }
      }
     }
    }
@@ -354,8 +380,14 @@ class McpToolCenterService(
    )
    val result=runtime.execute(AgentToolRequest(taskId,id,mapOf("__nestro_mcp_internal_json_payload" to argsJson)))
    when{
-    result.requiresUser -> taskContext.waitForUser(result.error.ifBlank{"等待 MCP 工具审批"})
-    result.success -> taskContext.transition(AgentTaskStatus.COMPLETED,resultSummary=result.output.take(8_000))
+    result.requiresUser -> {
+     taskContext.checkpoint("mcp:v1:approval:$id")
+     taskContext.waitForUser(result.error.ifBlank{"等待 MCP 工具审批"})
+    }
+    result.success -> {
+     taskContext.checkpoint("mcp:v1:completed:$id\\n" + result.output.take(8_000))
+     taskContext.transition(AgentTaskStatus.COMPLETED,resultSummary=result.output.take(8_000))
+    }
     else -> taskContext.fail(result.error.ifBlank{result.output}.take(2_000))
    }
    result
