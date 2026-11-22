@@ -115,6 +115,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -417,9 +418,12 @@ fun NestroApp(initialPage: String = "home") {
     var savedWorkflowTaskState by remember { mutableStateOf<app.nestro.agent.AgentTaskState?>(null) }
     LaunchedEffect(page, runningWorkflowId, workflowInputDraft) {
         if (page == "workflows") {
-            val savedTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
-            savedWorkflowTaskState = if (savedTaskId.isBlank()) null else withContext(Dispatchers.IO) {
-                appRuntime.agentTaskCoordinator.state(savedTaskId)
+            while (true) {
+                val savedTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                savedWorkflowTaskState = if (savedTaskId.isBlank()) null else withContext(Dispatchers.IO) {
+                    appRuntime.agentTaskCoordinator.state(savedTaskId)
+                }
+                delay(1_500)
             }
         } else {
             savedWorkflowTaskState = null
