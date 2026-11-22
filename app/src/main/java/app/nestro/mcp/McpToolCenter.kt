@@ -209,7 +209,13 @@ private object McpCredentialVault {
   return g.generateKey()
  }
 }
-class McpToolCenterService(private val repository:McpToolCenterRepository,private val catalog:AgentToolCatalog,private val traces:AgentTaskTraceStore?=null){
+class McpToolCenterService(
+ private val repository:McpToolCenterRepository,
+ private val catalog:AgentToolCatalog,
+ private val traces:AgentTaskTraceStore?=null,
+ private val taskCoordinator:AgentTaskCoordinator?=null,
+ private val approvalCoordinator:AgentApprovalCoordinator?=null
+){
  private val activeCalls=ConcurrentHashMap<String,MutableSet<Job>>()
  private fun cancelActiveCalls(toolId:String){activeCalls.remove(toolId)?.forEach{it.cancel(CancellationException("MCP 工具授权已撤销"))}}
  fun restoreEnabledTools(){val enabled=repository.listServers().filter{it.enabled}.map{it.id}.toSet();repository.listTools().filter{it.granted&&it.serverId in enabled}.forEach(::registerTool)}
@@ -238,8 +244,47 @@ class McpToolCenterService(private val repository:McpToolCenterRepository,privat
   require(repository.isToolGranted(id)){"该 MCP 工具尚未获得授权"}
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
-  val runtime=DefaultAgentRuntime(catalog,AgentPermissionRouter{_,tool->if(repository.isToolGranted(tool.id))AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具授权已撤销")},InMemoryAgentTaskStateStore(),safeTraceStore())
-  return runtime.execute(AgentToolRequest("mcp-ui-${UUID.randomUUID()}",id,mapOf("__nestro_mcp_internal_json_payload" to argsJson)))
+  val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
+  val taskId="mcp-ui-${UUID.randomUUID()}"
+  return coordinator.runInline(
+   taskId=taskId,
+   owner="mcp_tool",
+   metadata=AgentTaskMetadata(
+    kind="mcp_tool",
+    capabilityId=id,
+    title="MCP：${d.name}".take(160),
+    input=argsJson.take(4_000)
+   ),
+   maxRetries=0
+  ){ taskContext ->
+   val permissionRouter=AgentPermissionRouter{task,tool->
+    if(!repository.isToolGranted(tool.id)){
+     AgentAuthorization.Deny("MCP 工具授权已撤销")
+    }else{
+     when(val authorization=DefaultAgentPermissionRouter().authorize(task,tool)){
+      is AgentAuthorization.RequireConfirmation -> {
+       val approved=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)==true
+       if(approved) AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具本次任务未获用户批准")
+      }
+      else -> authorization
+     }
+    }
+   }
+   val runtime=DefaultAgentRuntime(
+    catalog,
+    permissionRouter,
+    InMemoryAgentTaskStateStore(),
+    safeTraceStore(),
+    executionContext=taskContext
+   )
+   val result=runtime.execute(AgentToolRequest(taskId,id,mapOf("__nestro_mcp_internal_json_payload" to argsJson)))
+   when{
+    result.requiresUser -> taskContext.waitForUser(result.error.ifBlank{"等待 MCP 工具审批"})
+    result.success -> taskContext.transition(AgentTaskStatus.COMPLETED,resultSummary=result.output.take(8_000))
+    else -> taskContext.fail(result.error.ifBlank{result.output}.take(2_000))
+   }
+   result
+  }
  }
  private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
   object:AgentTaskTraceStore {
