@@ -320,8 +320,43 @@ object MediaAiTaskScheduler {
         )
     }
 
+    suspend fun list(context: Context, projectId: String): List<MediaAiTask> {
+        val app = context.applicationContext as? app.nestro.NestroApplication
+            ?: return MediaAiTaskStore.list(context, projectId)
+        return MediaAiTaskStore.list(context, projectId).map { task ->
+            val unified = app.agentTaskCoordinator.state("media-ai:${task.id}")
+            val status = when (unified?.status) {
+                app.nestro.agent.AgentTaskStatus.CREATED,
+                app.nestro.agent.AgentTaskStatus.QUEUED,
+                app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> MediaAiTaskStatus.QUEUED
+                app.nestro.agent.AgentTaskStatus.RUNNING -> MediaAiTaskStatus.RUNNING
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                app.nestro.agent.AgentTaskStatus.PAUSED -> MediaAiTaskStatus.PAUSED
+                app.nestro.agent.AgentTaskStatus.COMPLETED -> MediaAiTaskStatus.COMPLETED
+                app.nestro.agent.AgentTaskStatus.FAILED -> MediaAiTaskStatus.FAILED
+                app.nestro.agent.AgentTaskStatus.CANCELLED -> MediaAiTaskStatus.CANCELLED
+                null -> task.status
+            }
+            task.copy(status = status)
+        }
+    }
+
     suspend fun recover(context:Context,projectId:String) {
-        MediaAiTaskStore.recoverable(context,projectId).forEach { enqueue(context,projectId,it.id) }
+        val app = context.applicationContext as? app.nestro.NestroApplication
+            ?: error("媒体 AI 任务无法连接统一任务机")
+        MediaAiTaskStore.list(context, projectId).forEach { task ->
+            val unified = app.agentTaskCoordinator.state("media-ai:${task.id}")
+            val shouldWake = unified == null || unified.status in setOf(
+                app.nestro.agent.AgentTaskStatus.CREATED,
+                app.nestro.agent.AgentTaskStatus.QUEUED,
+                app.nestro.agent.AgentTaskStatus.RUNNING,
+                app.nestro.agent.AgentTaskStatus.RETRY_WAIT
+            )
+            if (shouldWake && task.status !in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED, MediaAiTaskStatus.PAUSED)) {
+                enqueue(context, projectId, task.id)
+            }
+        }
     }
 
     suspend fun pause(context: Context, projectId: String, taskId: String) {
