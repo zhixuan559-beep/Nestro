@@ -67,7 +67,9 @@ class CalendarRepository(context: Context) {
 
     suspend fun reconcileSchedules() {
         val events = dao.allEvents()
-        val activeIds = events.filter { !it.completed && it.reminderMinutes >= 0 }.map { it.id }.toSet()
+        val activeIds = events.filter {
+            !it.completed && (it.reminderMinutes >= 0 || it.automationPrompt.isNotBlank())
+        }.map { it.id }.toSet()
         events.forEach { event ->
             if (event.id in activeIds) CalendarReminderScheduler.schedule(appContext, event)
             else CalendarReminderScheduler.cancel(appContext, event.id)
