@@ -765,3 +765,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 相关代码提交：`723d7d62ab128ab09a86c233d8a3d005026159f1`、`4d9456f5418eae70580c568f09680fe03758fd51`、`83cd34e6268bb277c35d61399f2a57e2026c6039`。
 - **验证状态**：未执行 WorkManager 并行运行、取消/恢复、真实下载/媒体 API 和专家 DAG 联合测试；仍需补对应集成测试。
 
+
+
+## 2026-11-22 PR #1/#2/#3 与整合分支的最终关系核对
+
+- **PR #2（feature/voice-system）**：GitHub 状态为 closed、merged=false；但该分支相对 `integration/19-modules` 为 ahead=0、behind>0，即它没有任何当前整合分支尚未包含的独有提交。语音输入、WorkManager 背景任务、Artifacts、社区 Skill 目录等代码已经通过其他整合提交进入当前分支；不需要再合 PR #2。
+- **PR #3（refactor/phase-2-architecture）**：仍 open + Draft，base 为旧 `feature/voice-system`；相对当前整合分支 ahead=0、behind=881，没有独有领先提交。抽查 `ModelManagementUiState.kt` 与当前整合分支 blob 完全一致；当前 Android workflow 和代码地图是更新版本。PR #3 的代码已被当前整合分支包含/超越，不需要再合 PR #3。
+- **PR #1（feature/knowledge-retrieval-ranking）**：仍 open + Draft，base 为旧 `main`，相对当前整合分支存在独有领先提交。不得整分支合并；知识库核心已由当前 BGE/OCR/检索实现替代，但旧 PR 中的记忆生命周期/跨项目共享和统一能力中心功能曾被架构替换而丢失，前文已逐项列出并开始移植。
+- 所以“PR 是否显示 merged”和“代码是否已经进入 integration”必须分开判断。PR #2/#3 虽不是 GitHub merged 状态，但其提交已在 integration 历史中；PR #1 的一部分功能仍需有选择地回收。
+
