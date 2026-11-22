@@ -31,7 +31,8 @@ data class ModelDefinition(
     val inputPricePerMillion: Double? = null,
     val outputPricePerMillion: Double? = null,
     val currency: String = "USD",
-    val supportsReasoningEffort: Boolean = false
+    val supportsReasoningEffort: Boolean = false,
+    val contextWindowTokens: Int? = null
 )
 
 data class ModelRegistry(
@@ -138,7 +139,8 @@ data class ModelRegistry(
             inputPricePerMillion = previousModel?.inputPricePerMillion,
             outputPricePerMillion = previousModel?.outputPricePerMillion,
             currency = previousModel?.currency ?: "USD",
-            supportsReasoningEffort = previousModel?.supportsReasoningEffort ?: false
+            supportsReasoningEffort = previousModel?.supportsReasoningEffort ?: false,
+            contextWindowTokens = previousModel?.contextWindowTokens
         )
         val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
         return copy(
@@ -184,7 +186,8 @@ data class ModelRegistry(
                 inputPricePerMillion = old?.inputPricePerMillion,
                 outputPricePerMillion = old?.outputPricePerMillion,
                 currency = old?.currency ?: model.currency,
-                supportsReasoningEffort = old?.supportsReasoningEffort ?: model.supportsReasoningEffort
+                supportsReasoningEffort = old?.supportsReasoningEffort ?: model.supportsReasoningEffort,
+                contextWindowTokens = old?.contextWindowTokens ?: model.contextWindowTokens
             )
         }
         return ModelRegistry(
@@ -252,7 +255,8 @@ object ModelRegistryCodec {
                         .put("inputPricePerMillion", item.inputPricePerMillion ?: JSONObject.NULL)
                         .put("outputPricePerMillion", item.outputPricePerMillion ?: JSONObject.NULL)
                         .put("currency", item.currency)
-                        .put("supportsReasoningEffort", item.supportsReasoningEffort))
+                        .put("supportsReasoningEffort", item.supportsReasoningEffort)
+                        .put("contextWindowTokens", item.contextWindowTokens ?: JSONObject.NULL))
                 }
             })
         }.toString()
@@ -294,7 +298,8 @@ object ModelRegistryCodec {
                     inputPricePerMillion = if (item.isNull("inputPricePerMillion")) null else item.optDouble("inputPricePerMillion"),
                     outputPricePerMillion = if (item.isNull("outputPricePerMillion")) null else item.optDouble("outputPricePerMillion"),
                     currency = item.optString("currency", "USD"),
-                    supportsReasoningEffort = item.optBoolean("supportsReasoningEffort", false)
+                    supportsReasoningEffort = item.optBoolean("supportsReasoningEffort", false),
+                    contextWindowTokens = if (item.isNull("contextWindowTokens")) null else item.optInt("contextWindowTokens")
                 )
             }
         }
