@@ -513,7 +513,7 @@
 
 - `feature/knowledge-retrieval-ranking` 的 `KnowledgeTextDecoder.kt` 与测试文件在当前整合分支中 blob 完全一致；当前整合版的 `KnowledgePdfImportTest`、`LocalBackupRoundTripTest` 反而更大/覆盖更多，不能把 PR #1 的测试简单覆盖回来。
 - 但旧分支 `UserMemoryStore` 曾有 `mutationVersion`、每项目 `Mutex`、`invalidateAndAwaitPendingExtractions()` 和 `saveCandidates(expectedMutationVersion)`。当前整合版删除了这些保护：自动提取直接调用 `saveCandidates()`，不校验项目仍存在或提取开始时的 mutation version；`edit/delete/clearProject` 也不等待并使旧提取失效。**存在已删除记忆被并发中的旧自动提取重新写回的竞态风险**，这是应恢复的正确性保护，不是新增业务功能。
-- 旧分支的 `buildRecallQuery(recentUserTurns,currentPrompt)` 会把当前问题纳入会话记忆检索；当前 `ChatRequestContextAssembler` 的 conversation recall query 只取 requestHistory，未拼入当前 prompt。应核对是否造成当前问题相关记忆漏召回。
+- 旧分支的 `buildRecallQuery(recentUserTurns,currentPrompt)` 会合并最近用户轮次与当前问题，并保证当前 prompt 在 token budget 中优先保留；当前整合版把两类召回拆开：conversation recall query 只取 requestHistory，user-memory recall 只传当前 prompt，没有形成“近期用户上下文 + 当前问题”的统一 query。应核对是否造成跨轮约束漏召回。
 - 旧分支 `prepareExtractionInput/shouldExtractFrom` 会对最近多条用户消息做安全筛选和信号判断；当前自动提取仅检查当前 prompt 并只传当前 prompt，可能丢失跨轮表达的稳定偏好/项目约束。
 - 旧分支还支持 `setShareAcrossProjects` 与显式共享记忆；当前 `UserMemoryEntity` 没有共享字段，检索仅按当前项目。此项需确认是否为用户已接受的产品边界：若项目严格隔离是最终决定，则保留现状；若仍需显式共享，必须重新设计受审计的授权，不可直接复制旧实现。
 - PR #1 的 `CapabilityRegistryStore/CapabilityTaskEngine/CapabilityCenterPage` 是旧版独立能力注册/任务队列体系；当前整合版已使用 `AgentToolCatalog/AgentRuntime/AgentTaskCoordinator`。不应整套合并回去，但旧版的 retry/backoff/idempotency、项目能力目录/审计 UI 可能包含未迁移的产品能力，需逐项映射到新基座。
