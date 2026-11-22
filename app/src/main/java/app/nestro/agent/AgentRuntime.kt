@@ -88,11 +88,15 @@ data class AgentToolSpec(
     val id: String,
     val description: String,
     val permission: AgentToolPermission,
-    val requiresConfirmation: Boolean = false
+    val requiresConfirmation: Boolean = false,
+    val parallelSafe: Boolean = false
 ) {
     init {
         require(id.matches(Regex("[a-zA-Z0-9_.-]{1,100}")))
         require(description.isNotBlank() && description.length <= 500)
+        require(!parallelSafe || (permission == AgentToolPermission.READ_ONLY && !requiresConfirmation)) {
+            "只有明确声明且无需审批的只读工具可以并发"
+        }
     }
 }
 
