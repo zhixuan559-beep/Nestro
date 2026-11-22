@@ -45,6 +45,25 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun approvalPendingCancellationPreservesWaitingForUserState() = runBlocking {
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("approval.pending", "等待用户审批", AgentToolPermission.READ_ONLY)) {
+                throw AgentApprovalPendingException("等待用户审批后继续")
+            }
+        }
+        val states = InMemoryAgentTaskStateStore()
+        val runtime = DefaultAgentRuntime(catalog, DefaultAgentPermissionRouter(), states)
+
+        val result = runCatching {
+            runtime.execute(AgentToolRequest("task-approval-pending", "approval.pending"))
+        }
+
+        assertTrue(result.exceptionOrNull() is AgentApprovalPendingException)
+        assertEquals(AgentTaskStatus.WAITING_FOR_USER, states.get("task-approval-pending")?.status)
+        assertEquals("等待用户审批后继续", states.get("task-approval-pending")?.lastError)
+    }
+
+    @Test
     fun missingToolReturnsActionableErrorWithoutExecuting() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val traces = InMemoryAgentTaskTraceStore()
