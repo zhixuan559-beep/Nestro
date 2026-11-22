@@ -543,14 +543,20 @@ class NestroApplication : Application() {
 
                                 if (baseAuthorization is app.nestro.agent.AgentAuthorization.RequireConfirmation) {
                                     taskContext.waitForUser(baseAuthorization.reason)
-                                    if (agentApprovalCoordinator.authorize(requestId, tool.id, baseAuthorization.reason)) {
-                                        taskContext.transition(
-                                            AgentTaskStatus.RUNNING,
-                                            "用户已批准插件步骤：${tool.id}"
+                                    when (agentApprovalCoordinator.authorize(requestId, tool.id, baseAuthorization.reason)) {
+                                        app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE,
+                                        app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK -> {
+                                            taskContext.transition(
+                                                AgentTaskStatus.RUNNING,
+                                                "用户已批准插件步骤：${tool.id}"
+                                            )
+                                            app.nestro.agent.AgentAuthorization.Allow
+                                        }
+                                        app.nestro.agent.AgentApprovalDecision.REJECT ->
+                                            app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
+                                        null -> throw app.nestro.agent.AgentApprovalPendingException(
+                                            "插件步骤等待用户审批：${tool.id}"
                                         )
-                                        app.nestro.agent.AgentAuthorization.Allow
-                                    } else {
-                                        app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
                                     }
                                 } else baseAuthorization
                             }
