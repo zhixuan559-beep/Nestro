@@ -17,6 +17,7 @@ class WorkflowExecutionCoordinator(
         taskId: String = UUID.randomUUID().toString(),
         invokeModel: suspend (WorkflowStep, String) -> String,
         onStep: suspend (Int, WorkflowStep) -> Unit = { _, _ -> },
+        requestApproval: suspend (WorkflowStep, String) -> Boolean = { _, _ -> false },
         toolCatalog: AgentToolCatalog? = null,
         invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolDiscovery?) -> String)? = null
     ): WorkflowRunResult = taskCoordinator.runInline(
@@ -45,7 +46,8 @@ class WorkflowExecutionCoordinator(
                     lease?.let { AgentToolLeaseRegistry.release(it.id) }
                 }
             },
-            onStep = onStep
+            onStep = onStep,
+            requestApproval = requestApproval
         )
         taskContext.checkpoint("workflow:" + workflow.id + ":finished", result.completedSteps)
         result
