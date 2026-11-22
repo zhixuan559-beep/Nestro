@@ -63,8 +63,9 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return runCatching {
             // AccessibilityService.windows only returns the default display. Virtual displays
             // must be read through getWindowsOnAllDisplays(), then selected by display ID.
+            // Android returns these windows in descending visual layer order. Preserve that
+            // order so a focused but covered app window cannot outrank a visible modal dialog.
             getWindowsOnAllDisplays().get(displayId).orEmpty().asSequence()
-                .sortedByDescending { it.isFocused }
                 .mapNotNull { window -> runCatching { window.root }.getOrNull() }
                 .firstOrNull()
         }.getOrNull()
