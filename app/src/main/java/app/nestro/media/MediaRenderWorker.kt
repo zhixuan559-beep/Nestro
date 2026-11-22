@@ -246,10 +246,26 @@ object MediaRenderScheduler {
         return task.copy(status = status, error = unified?.lastError?.ifBlank { task.error } ?: task.error)
     }
 
-    suspend fun list(context: Context, projectId: String): List<MediaRenderTask> =
-        MediaRenderTaskStore.list(context, projectId).mapNotNull { task ->
-            read(context, projectId, task.id)
+    suspend fun list(context: Context, projectId: String): List<MediaRenderTask> {
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
+        return MediaRenderTaskStore.list(context, projectId).map { task ->
+            val unified = nestroApp?.agentTaskCoordinator?.state("media-render:${task.id}")
+            val status = when (unified?.status) {
+                app.nestro.agent.AgentTaskStatus.CREATED,
+                app.nestro.agent.AgentTaskStatus.QUEUED,
+                app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> MediaRenderStatus.QUEUED
+                app.nestro.agent.AgentTaskStatus.RUNNING -> MediaRenderStatus.RUNNING
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                app.nestro.agent.AgentTaskStatus.PAUSED -> MediaRenderStatus.PAUSED
+                app.nestro.agent.AgentTaskStatus.COMPLETED -> MediaRenderStatus.COMPLETED
+                app.nestro.agent.AgentTaskStatus.FAILED -> MediaRenderStatus.FAILED
+                app.nestro.agent.AgentTaskStatus.CANCELLED -> MediaRenderStatus.CANCELLED
+                null -> task.status
+            }
+            task.copy(status = status, error = unified?.lastError?.ifBlank { task.error } ?: task.error)
         }
+    }
 
     private suspend fun registerUnifiedTask(context: Context, projectId: String, taskId: String): app.nestro.NestroApplication {
         val nestroApp = context.applicationContext as? app.nestro.NestroApplication
