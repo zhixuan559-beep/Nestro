@@ -388,6 +388,7 @@ fun NestroApp(initialPage: String = "home") {
     var runningWorkflowId by workflowUiState.runningWorkflowId
     var workflowPaused by workflowUiState.workflowPaused
     var workflowPauseGate by workflowUiState.workflowPauseGate
+    var workflowApprovalPrompt by workflowUiState.workflowApprovalPrompt
     val dataTransferUiState = remember { DataTransferUiState() }
     var backupStatus by dataTransferUiState.backupStatus
     var pendingBackupUri by dataTransferUiState.pendingBackupUri
@@ -1882,6 +1883,19 @@ fun NestroApp(initialPage: String = "home") {
                                                                      workflowPauseGate?.await()
                                                                      if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                      workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
+                                                                 },
+                                                                 requestApproval = { step, previousOutput ->
+                                                                     val decision = CompletableDeferred<Boolean>()
+                                                                     workflowApprovalPrompt = WorkflowApprovalPrompt(
+                                                                         stepTitle = step.title,
+                                                                         context = previousOutput.take(2_000),
+                                                                         decision = decision
+                                                                     )
+                                                                     try {
+                                                                         decision.await()
+                                                                     } finally {
+                                                                         workflowApprovalPrompt = null
+                                                                     }
                                                                  },
                                                                  toolCatalog = appRuntime.agentToolCatalog
                                                              )
@@ -3892,6 +3906,36 @@ fun NestroApp(initialPage: String = "home") {
                 }) { Text("保存工作流", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showWorkflowDialog = false }) { Text("取消") } }
+        )
+    }
+
+    workflowApprovalPrompt?.let { approval ->
+        AlertDialog(
+            onDismissRequest = {
+                approval.decision.complete(false)
+                workflowApprovalPrompt = null
+            },
+            title = { Text("工作流步骤需要确认") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("即将执行：${approval.stepTitle}", color = Ink)
+                    Text("前序结果（供判断）：", color = Muted)
+                    Text(approval.context.ifBlank { "暂无前序输出" }, color = Ink)
+                    Text("批准后才会继续执行此步骤。", color = Muted)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    approval.decision.complete(true)
+                    workflowApprovalPrompt = null
+                }) { Text("批准执行", color = Mint) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    approval.decision.complete(false)
+                    workflowApprovalPrompt = null
+                }) { Text("拒绝", color = Muted) }
+            }
         )
     }
 
