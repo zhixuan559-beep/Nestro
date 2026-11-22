@@ -943,3 +943,10 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 官方 [Android WorkManager 文档](https://developer.android.com/develop/background-work/background-tasks/persistent)明确建议把 WorkManager 用于需要跨应用进程重启和设备重启持久执行的后台任务；长任务可由 CoroutineWorker 配合前台通知运行。
 
 **选型结论：** 不搬入第三方自定义任务队列。NESTRO 已有 `AgentTaskCoordinator`，负责业务任务状态、权限、检查点、恢复和审计；Jetpack WorkManager 负责 Android 系统级持久唤醒与后台运行。保留现有 Worker/WorkScheduler 作为薄适配层，移除它们对业务生命周期的独立写入。这比复制另一套队列更少重复，也更符合 NESTRO 当前架构。
+
+## 2026-11-22 工作流审批统一任务状态接线修复
+
+- `WorkflowExecutionCoordinator.execute()` 在调用现有审批回调前，先通过 `AgentTaskExecutionContext.waitForUser()` 将统一任务持久状态切换为 `WAITING_FOR_USER`；用户批准后切回 `RUNNING`，拒绝则将任务标记为 `FAILED` 并由工作流引擎终止当前步骤。
+- 复用既有 `AgentTaskCoordinator`、`AgentTaskExecutionContext` 和 `CompletableDeferred` 审批回调，不新增审批数据库或第二套任务状态机。
+- 新增回归测试源码：审批等待期间状态为 `WAITING_FOR_USER`、批准后恢复并完成；拒绝后任务进入 `FAILED`。
+- 当前只完成代码修改与 GitHub 回读；Gradle 编译、JVM 测试、Android instrumentation、模拟器和真机验收均未执行，不标记为通过。
