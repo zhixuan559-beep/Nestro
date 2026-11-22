@@ -45,6 +45,7 @@ internal object PhoneAgentModelClient {
 - search_web: {"type":"search_web","query":"要检索的关键词或限定来源","engine":"duckduckgo"}；engine 只允许 duckduckgo、google 或 bing
 - open_url: {"type":"open_url","url":"https://..."}
 - launch_app: {"type":"launch_app","package":"com.example.app"}
+- download_asset: {"type":"download_asset","url":"https://.../asset.mp4","name":"素材名称.mp4"}；仅下载公开、无敏感凭据的直接媒体链接，下载完成后自动导入当前项目素材库
 - click: {"type":"click","text":"页面上精确可见的按钮文字","expectedAfter":"动作后应出现的可见文字"}
 - enter_text: {"type":"enter_text","label":"输入框可见标签","value":"非敏感内容"}
 - scroll: {"type":"scroll","direction":"forward"}，方向只能 forward/backward
@@ -63,6 +64,7 @@ internal object PhoneAgentModelClient {
 8. 如果目标已经完成，done=true，并将 completionEvidence 设置为当前屏幕上确实可见的、能证明完成的精确文字；summary 用简短中文总结实际核验结果。未完成时 done=false，summary 仅写给用户看的当前进度、可见事实、来源或待处理事项，不输出内部推理过程，也不把推测写成事实。
 9. 如果页面要求登录、验证码、人机验证、风控或出现无法核验的内容，暂停并返回 confirm_sensitive。
 10. open_url 只允许 HTTP/HTTPS 网页，不要使用 app 私有 scheme。
+11. 创作素材任务可以通过网页或应用查找素材；拿到可直接下载的公开媒体 URL 后使用 download_asset，不能把网页页面地址伪装成媒体文件直链。素材必须导入当前项目后才算收集完成。
 """.trimIndent()
         val budgeted = PhoneAgentPromptBudget.build(category, goal, visibleScreen, recentActions)
         val user = org.json.JSONObject()

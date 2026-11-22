@@ -2,6 +2,11 @@ package app.nestro.phone
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.app.DownloadManager
+import android.net.Uri
+import android.os.Environment
+import android.os.SystemClock
+import app.nestro.media.MediaProjectStore
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -274,6 +279,60 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     fun hasActiveWindow(): Boolean = rootInActiveWindow != null
+    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String): String? {
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "素材下载地址不安全或包含敏感凭据" }
+        require(projectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))) { "当前项目标识无效" }
+        require(displayName.length in 1..160 && displayName.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "仅支持图片、视频和音频素材文件" }
+        val extension = displayName.substringAfterLast('.').lowercase()
+        val mime = when (extension) {
+            "jpg", "jpeg" -> "image/jpeg"; "png" -> "image/png"; "webp" -> "image/webp"; "heic" -> "image/heic"
+            "mp4" -> "video/mp4"; "mov" -> "video/quicktime"; "mkv" -> "video/x-matroska"; "webm" -> "video/webm"
+            "mp3" -> "audio/mpeg"; "m4a" -> "audio/mp4"; "wav" -> "audio/wav"; "aac" -> "audio/aac"; "ogg" -> "audio/ogg"; else -> "audio/flac"
+        }
+        val manager = getSystemService(DownloadManager::class.java) ?: error("系统下载服务不可用")
+        val request = DownloadManager.Request(Uri.parse(url)).apply {
+            setTitle(displayName.take(100))
+            setDescription("Nestro 正在下载并导入项目素材")
+            setMimeType(mime)
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setAllowedOverRoaming(false)
+            setDestinationInExternalFilesDir(this@PhoneAgentService, Environment.DIRECTORY_DOWNLOADS, "nestro-$taskId-${System.currentTimeMillis()}.$extension")
+        }
+        val downloadId = manager.enqueue(request)
+        try {
+            val deadline = SystemClock.elapsedRealtime() + 120_000L
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (isTaskStopped(taskId) || !hasValidGrant()) {
+                    manager.remove(downloadId)
+                    return null
+                }
+                manager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
+                    if (cursor != null && cursor.moveToFirst()) {
+                        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                        val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                        val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                        require(downloaded <= 512L * 1024 * 1024 && (total <= 0L || total <= 512L * 1024 * 1024)) { "素材超过 512 MB 下载上限" }
+                        if (status == DownloadManager.STATUS_FAILED) {
+                            val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                            error("素材下载失败，系统错误码：$reason")
+                        }
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            val uri = manager.getUriForDownloadedFile(downloadId) ?: error("下载完成但无法读取文件")
+                            val asset = MediaProjectStore.importAsset(this, projectId, uri)
+                            audit("ASSET_IMPORTED", "项目素材已导入：${asset.kind}，${asset.byteSize} 字节")
+                            return "素材已下载并导入当前项目素材库：${asset.displayName}；素材 ID：${asset.id}；类型：${asset.kind}；大小：${asset.byteSize} 字节。"
+                        }
+                    }
+                }
+                Thread.sleep(500L)
+            }
+            error("素材下载超时，已停止等待")
+        } finally {
+            manager.remove(downloadId)
+        }
+    }
+
     override fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
 
     override fun screenTextChanged(before: String): Boolean = captureVisibleText() != before

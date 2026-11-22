@@ -59,6 +59,14 @@ object PhoneAgentActionParser {
                     require(packageName.length <= 255 && packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) { "应用包名无效" }
                     PhoneAgentExecutor.Action.LaunchApp(packageName)
                 }
+                "download_asset" -> {
+                    val url = item.getString("url").trim()
+                    val name = item.getString("name").trim()
+                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址不安全或无效" }
+                    require(name.isNotBlank() && name.length <= 160 && name.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "素材文件名或格式无效" }
+                    if (PhoneAgentRiskPolicy.containsSensitiveValue(url)) PhoneAgentExecutor.Action.ConfirmSensitive("素材下载地址包含敏感凭据，已停止下载。")
+                    else PhoneAgentExecutor.Action.DownloadAsset(url, name)
+                }
                 "click" -> {
                     val label = item.getString("text").trim()
                     require(label.isNotBlank() && label.length <= 80) { "点击目标无效" }

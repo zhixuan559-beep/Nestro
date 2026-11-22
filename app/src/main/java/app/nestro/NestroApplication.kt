@@ -146,6 +146,15 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
+                    id = "phone_agent.execute",
+                    description = "在用户授权的手机执行环境中完成多步应用/网页任务；公开媒体素材下载后自动导入当前项目。仅当目标确实需要手机操作时调用。",
+                    permission = app.nestro.agent.AgentToolPermission.DEVICE_ACTION
+                )
+            ) {
+                app.nestro.agent.AgentToolResult(false, error = "Phone Agent 执行必须经由聊天统一调度器调用")
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
                     id = "expert_team.run",
                     description = "调用当前会话中用户明确选择的专家团队，分工分析并汇总结果。仅在团队已启用且当前任务模式获得授权时可用。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY

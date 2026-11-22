@@ -26,6 +26,7 @@ object PhoneAgentExecutor {
     sealed class Action {
         data class OpenUrl(val url: String) : Action()
         data class LaunchApp(val packageName: String) : Action()
+        data class DownloadAsset(val url: String, val displayName: String) : Action()
         data class ClickText(val exactText: String, val expectedAfter: String? = null) : Action()
         data class EnterText(val fieldLabel: String, val value: String) : Action()
         data class Scroll(val direction: String) : Action()
@@ -139,6 +140,7 @@ object PhoneAgentExecutor {
                 )
             ) {
                         val executingAction = action
+                        var actionOutput = ""
                         val attempt = runCatchingCancellable {
                             when (executingAction) {
                                 is Action.OpenUrl -> {
@@ -153,6 +155,13 @@ object PhoneAgentExecutor {
                                     val launched = service.launchPackage(executingAction.packageName)
                                     delay(1000)
                                     launched && (service.activePackageName() != beforePackage || service.screenTextChanged(beforeText))
+                                }
+                                is Action.DownloadAsset -> {
+                                    val imported = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        service.downloadAsset(taskId, task.projectId, executingAction.url, executingAction.displayName)
+                                    }
+                                    actionOutput = imported.orEmpty()
+                                    actionOutput.isNotBlank()
                                 }
                                 is Action.ClickText -> {
                                     val before = service.captureVisibleText()
@@ -182,7 +191,7 @@ object PhoneAgentExecutor {
                         }
                         val failure = attempt.exceptionOrNull()
                         val success = attempt.getOrDefault(false)
-                        val detail = failure?.message ?: if (success) "动作已执行并核验" else "目标未匹配或动作未成功"
+                        val detail = failure?.message ?: if (success) actionOutput.ifBlank { "动作已执行并核验" } else "目标未匹配或动作未成功"
                         AgentToolResult(success = success, output = detail, error = if (success) "" else detail)
                     }
             val toolLease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(toolId))
@@ -237,6 +246,7 @@ object PhoneAgentExecutor {
             }
         }
         is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
+        is Action.DownloadAsset -> "下载并导入素材：" + action.displayName.take(80)
         is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
         is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
         is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"
@@ -249,6 +259,7 @@ object PhoneAgentExecutor {
     private fun toolIdFor(action: Action): String = when (action) {
         is Action.OpenUrl -> "phone.open_url"
         is Action.LaunchApp -> "phone.launch_app"
+        is Action.DownloadAsset -> "phone.download_asset"
         is Action.ClickText -> "phone.click"
         is Action.EnterText -> "phone.enter_text"
         is Action.Scroll -> "phone.scroll"

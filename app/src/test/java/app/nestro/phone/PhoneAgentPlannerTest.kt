@@ -46,11 +46,21 @@ class PhoneAgentPlannerTest {
     }
 
     @Test
-    fun explicitTaskModeCreatesOnlyNonGeneralTasks() {
+    fun modelSelectedPhonePathCanExecuteGeneralGoalsOnlyInExplicitTaskMode() {
         val actionPlan = PhoneAgentPlanner.plan("帮我预约明天的餐厅")
-        val chatPlan = PhoneAgentPlanner.plan("解释 Kotlin 协程")
+        val generalPlan = PhoneAgentPlanner.plan("打开浏览器并查找指定页面")
         assertTrue(PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = actionPlan))
-        assertTrue(!PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = chatPlan))
+        assertTrue(PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = generalPlan))
+        assertTrue(!PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = false, plan = generalPlan))
+    }
+
+    @Test
+    fun creativeAssetTaskGetsDownloadAndProjectImportSteps() {
+        val plan = PhoneAgentPlanner.plan("帮我下载几张城市夜景图片素材用于视频剪辑")
+        assertEquals(PhoneAgentPlanner.Category.CREATIVE_ASSET, plan.category)
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.DOWNLOAD_ASSET })
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.IMPORT_ASSET })
+        assertTrue(PhoneAgentPlanner.shouldCreateTask(taskModeEnabled = true, plan = plan))
     }
 
     @Test

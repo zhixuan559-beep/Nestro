@@ -21,6 +21,8 @@ interface PhoneAgentExecutionEnvironment {
     fun verifyVisibleText(expected: String): Boolean
     fun activePackageName(): String?
     fun screenTextChanged(before: String): Boolean
+    /** Download a public media URL and import it into the task's isolated project. */
+    fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String): String? = null
 
     /** Explicitly move the current app task to the real display for user takeover. */
     fun handoffToUser(taskId: String, reason: String): Boolean = true
