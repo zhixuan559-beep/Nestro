@@ -6,6 +6,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -71,6 +73,8 @@ object ExpertTeamEngine {
         maxParallel:Int=4,
         shouldStop:()->Boolean={false},
         onMember:(suspend (String,String)->Unit)?=null,
+        resumeMembers:List<ExpertTeamMemberRun> = emptyList(),
+        onMemberResult:suspend (List<ExpertTeamMemberRun>)->Unit = {},
         invoke:suspend (ExpertTeamMemberTask,String)->String
     ):ExpertTeamRunResult {
         require(teamName.isNotBlank() && teamName.length<=40) { "团队名称无效" }
@@ -82,8 +86,13 @@ object ExpertTeamEngine {
         require(maxRetries in 0..2 && timeoutMillis in 5_000..120_000 && maxParallel in 1..4) { "团队执行参数超出安全范围" }
         val started=System.currentTimeMillis()
         val semaphore=Semaphore(maxParallel)
+        require(resumeMembers.all { saved -> members.any { it.name == saved.name } }) { "恢复记录包含当前团队之外的成员" }
+        val resultsByName = linkedMapOf<String, ExpertTeamMemberRun>()
+        resumeMembers.filter { it.status == "success" }.forEach { resultsByName[it.name] = it }
+        val resultMutex = Mutex()
+        val pendingMembers = members.filterNot { it.name in resultsByName }
         val results=coroutineScope {
-            members.map { member ->
+            pendingMembers.map { member ->
                 async {
                     semaphore.withPermit {
                         val memberStart=System.currentTimeMillis()
@@ -123,12 +132,18 @@ object ExpertTeamEngine {
                             elapsedMillis=System.currentTimeMillis()-memberStart,
                             output=output,
                             error=if(output.isBlank()) errorText else ""
-                        ).also { onMember?.invoke(member.name,it.status) }
+                        ).also { completed ->
+                            onMember?.invoke(member.name,completed.status)
+                            resultMutex.withLock {
+                                resultsByName[member.name] = completed
+                                onMemberResult(members.mapNotNull { resultsByName[it.name] })
+                            }
+                        }
                     }
                 }
             }.awaitAll()
         }
-        return ExpertTeamRunResult(teamName,task.take(12000),started,System.currentTimeMillis(),results)
+        return ExpertTeamRunResult(teamName,task.take(12000),started,System.currentTimeMillis(),members.mapNotNull { resultsByName[it.name] })
     }
 
     /**
