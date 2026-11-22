@@ -48,7 +48,37 @@ object MediaProjectStore {
         return root
     }
 
+    private fun recoverArchiveSwap(context: Context, projectId: String) {
+        safeProjectId(projectId)
+        val mediaRoot = File(context.filesDir, "media-editor").canonicalFile
+        val journal = File(mediaRoot, ".restore-$projectId.json")
+        if (!journal.isFile) return
+        val record = JSONObject(journal.readText(Charsets.UTF_8))
+        require(record.optString("projectId") == projectId) { "媒体项目恢复日志归属不匹配" }
+        val backupName = record.optString("backupName")
+        val stagingName = record.optString("stagingName")
+        require(backupName.matches(Regex("^\\.replaced-[A-Fa-f0-9-]{36}$")) &&
+            stagingName.matches(Regex("^\\.import-[A-Fa-f0-9-]{36}$"))) { "媒体项目恢复日志路径无效" }
+        val target = projectDir(context, projectId)
+        val backup = File(mediaRoot, backupName).canonicalFile
+        val staging = File(mediaRoot, stagingName).canonicalFile
+        require(backup.parentFile == mediaRoot && staging.parentFile == mediaRoot) { "媒体项目恢复日志路径越界" }
+        if (target.exists()) {
+            backup.deleteRecursively()
+            staging.deleteRecursively()
+        } else if (backup.exists()) {
+            require(backup.renameTo(target)) { "媒体项目恢复中断，旧项目暂存目录仍在：${backup.name}" }
+            staging.deleteRecursively()
+        } else if (staging.exists()) {
+            require(staging.renameTo(target)) { "媒体项目恢复中断，暂存目录无法提交：${staging.name}" }
+        } else {
+            error("媒体项目恢复日志存在，但新旧项目目录均缺失；请保留恢复日志以便人工修复")
+        }
+        require(!journal.exists() || journal.delete()) { "媒体项目已恢复，但恢复日志清理失败" }
+    }
+
     private fun readManifest(context: Context, projectId: String): JSONObject {
+        recoverArchiveSwap(context, projectId)
         val file = manifestFile(context, projectId)
         if (!file.exists()) return JSONObject()
             .put("schemaVersion", 1).put("projectId", safeProjectId(projectId))
@@ -638,18 +668,31 @@ object MediaProjectStore {
                 manifest.put(key, rewritten)
             }
             writeAtomically(File(staging, "project.json"), manifest.toString().toByteArray(Charsets.UTF_8))
-            val previous = if (target.exists()) {
-                File(mediaRoot, ".replaced-${UUID.randomUUID()}").also { backup ->
-                    require(target.renameTo(backup)) { "无法暂存当前媒体项目，已取消导入" }
+            if (target.exists()) {
+                val backupName = ".replaced-${UUID.randomUUID()}"
+                val stagingName = staging.name
+                val journal = File(mediaRoot, ".restore-$targetProjectId.json")
+                writeAtomically(
+                    journal,
+                    JSONObject()
+                        .put("projectId", targetProjectId)
+                        .put("backupName", backupName)
+                        .put("stagingName", stagingName)
+                        .toString().toByteArray(Charsets.UTF_8)
+                )
+                val backup = File(mediaRoot, backupName)
+                require(target.renameTo(backup)) { "无法暂存当前媒体项目，已取消导入" }
+                try {
+                    require(staging.renameTo(target)) { "无法提交媒体项目导入结果" }
+                } catch (error: Throwable) {
+                    if (backup.exists()) backup.renameTo(target)
+                    throw error
                 }
-            } else null
-            try {
+                backup.deleteRecursively()
+                require(!journal.exists() || journal.delete()) { "媒体项目已恢复，但恢复日志清理失败" }
+            } else {
                 require(staging.renameTo(target)) { "无法提交媒体项目导入结果" }
-            } catch (error: Throwable) {
-                previous?.let { backup -> if (backup.exists()) backup.renameTo(target) }
-                throw error
             }
-            previous?.deleteRecursively()
             return timeline
         } catch (error: Throwable) {
             staging.deleteRecursively()
