@@ -1338,7 +1338,7 @@ fun NestroApp(initialPage: String = "home") {
                 if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
                         appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
-                            enabled = requestAutomaticMemoryEnabled,
+                            enabled = requestAutomaticMemoryEnabled && CapabilityRegistryStore.authorize(prefs, requestProjectId, "memory"),
                             prompt = prompt,
                             modelConfigs = requestModelConfigs,
                             projectId = requestProjectId,
