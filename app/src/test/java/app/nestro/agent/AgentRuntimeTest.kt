@@ -48,7 +48,7 @@ class AgentRuntimeTest {
     @Test
     fun approvalCoordinatorPersistsPendingAndFinalDecisionWithStableId() = runBlocking {
         val records = mutableListOf<AgentApprovalAuditRecord>()
-        val coordinator = AgentApprovalCoordinator { record -> records += record }
+        val coordinator = AgentApprovalCoordinator(persistAudit = { record -> records += record })
         coordinator.setHandler { AgentApprovalDecision.AUTHORIZE_TASK }
 
         val decision = coordinator.authorize("scope-audit", "mcp.sample", "写入远程数据")
