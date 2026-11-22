@@ -1,5 +1,7 @@
 # Phase 2 product and architecture optimization
 
+> **当前状态校正（2026-11-22）：** 本文记录的是 `feature/phase2-optimization` 当时的源码阶段记录，不是当前整合分支的最终验收结论。该分支目前没有领先于 `integration/19-modules` 的独有提交，但本文中的“六项 source complete”不能直接推断当前整合分支仍满足用户后来补充的所有交互要求。当前源码审计发现：Phone Agent 浮窗仍有标题栏/展开收起入口，双击才缩放，和后续“无标题/按钮、点击窗口缩放”的要求不一致；模块18当前仍只有日程通知提醒，未接入统一 Agent/任务/工作流调度；主屏导航缺少专用地图规划/路线预览/授权流程；工作流审批等待状态仍未接入通用 `WAITING_FOR_USER` 持久状态。以 `docs/FUNCTION_AUDIT.md` 的当前源码证据和 `docs/IMPLEMENTATION_ROADMAP.md` 的最新需求为准。本文保留用于追溯历史实现，不得单独作为当前功能完成依据。
+
 Status: implementation in progress. This document records the agreed target; a checked item means code exists, not that build/device acceptance has passed.
 
 ## Cross-module improvements recovered from development
