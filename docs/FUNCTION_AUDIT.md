@@ -930,3 +930,16 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - WorkManager 与统一协调器职责不同：WorkManager 是 Android 持久唤醒/后台执行适配器，统一协调器是应用任务队列和生命周期权威；保留前者不是保留第二套业务任务引擎。
 - 本轮未执行 Gradle 编译、JVM 测试、Android instrumentation、模拟器或真机验收。测试源码已补，执行仍按十九模块全部补齐后统一验收的既定顺序进行。
 - 当前尚未完成的审批事项：生成式插件批准/拒绝 UI 恢复闭环、MCP 长期授权与任务级确认语义、工作流 WAITING_FOR_USER 持久恢复。
+
+
+### 开源参考与复用取舍
+
+本轮按“优先复用成熟实现，不另造第二套任务机”检查了以下方案：
+
+- [Android Now in Android](https://github.com/android/nowinandroid)：约 22.1k Stars，Apache-2.0，2026-11-22 有更新。其 `WorkManagerSyncManager` 使用唯一 Work、由 Worker 执行、通过 WorkInfo Flow 暴露状态。借鉴职责分离与唯一调度，不移植其同步业务。
+- [Google WorkManager Kotlin Compose 示例](https://github.com/google-developer-training/basic-android-kotlin-compose-training-workmanager)：49 Stars，Apache-2.0，2026-11-20 有推送更新。其 Repository 负责提交唯一 Work 链，Worker 负责具体后台步骤；作为 WorkManager 接线参考，不替代 NESTRO 的任务协调器。
+- [Android Background Work Guide](https://github.com/prakashsrv/Android_Background_Work_Guide)：0 Stars，未声明 SPDX 许可证；不作为生产代码来源。
+
+官方 [Android WorkManager 文档](https://developer.android.com/develop/background-work/background-tasks/persistent)明确建议把 WorkManager 用于需要跨应用进程重启和设备重启持久执行的后台任务；长任务可由 CoroutineWorker 配合前台通知运行。
+
+**选型结论：** 不搬入第三方自定义任务队列。NESTRO 已有 `AgentTaskCoordinator`，负责业务任务状态、权限、检查点、恢复和审计；Jetpack WorkManager 负责 Android 系统级持久唤醒与后台运行。保留现有 Worker/WorkScheduler 作为薄适配层，移除它们对业务生命周期的独立写入。这比复制另一套队列更少重复，也更符合 NESTRO 当前架构。
