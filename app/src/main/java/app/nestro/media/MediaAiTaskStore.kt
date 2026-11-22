@@ -251,7 +251,11 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             val latest=MediaAiTaskStore.read(applicationContext,projectId,taskId)
             when {
                 latest?.status == MediaAiTaskStatus.CANCELLED -> Result.success()
-                isStopped -> throw kotlinx.coroutines.CancellationException("媒体 AI Worker 被系统停止", t)
+                isStopped -> {
+                    val stopped = kotlinx.coroutines.CancellationException("媒体 AI Worker 被系统停止")
+                    stopped.initCause(t)
+                    throw stopped
+                }
                 else -> fail(projectId,taskId,t.message ?: t.javaClass.simpleName)
             }
         } finally {
