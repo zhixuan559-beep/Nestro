@@ -95,16 +95,17 @@ object MediaProjectStore {
     }
 
     @Synchronized
-    fun importAsset(context: Context, projectId: String, uri: Uri): MediaAsset {
+    fun importAsset(context: Context, projectId: String, uri: Uri, displayNameOverride: String? = null): MediaAsset {
         safeProjectId(projectId)
         ensureProject(context, projectId)
+        require(displayNameOverride == null || (displayNameOverride.isNotBlank() && displayNameOverride.length <= 160)) { "素材显示名称无效" }
         val resolver = context.contentResolver
         var declaredSize = -1L
-        var displayName = "媒体素材"
+        var displayName = displayNameOverride?.trim() ?: "媒体素材"
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) displayName = cursor.getString(nameIndex)?.take(160)?.ifBlank { null } ?: displayName
+                if (displayNameOverride.isNullOrBlank() && nameIndex >= 0) displayName = cursor.getString(nameIndex)?.take(160)?.ifBlank { null } ?: displayName
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
                 if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) declaredSize = cursor.getLong(sizeIndex)
             }

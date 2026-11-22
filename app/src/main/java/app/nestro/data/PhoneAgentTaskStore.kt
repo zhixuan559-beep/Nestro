@@ -36,7 +36,7 @@ object PhoneAgentTaskStore {
             val row = JSONObject()
             when (action) {
                 is PhoneAgentExecutor.Action.OpenUrl -> {
-                    require(action.url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
+                    require(action.url.length <= 2048 && action.url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "网页地址不安全或包含个人敏感信息" }
                     row.put("type", "open_url").put("url", action.url)
                 }
                 is PhoneAgentExecutor.Action.LaunchApp -> {
@@ -121,7 +121,7 @@ object PhoneAgentTaskStore {
             when (row.getString("type")) {
                 "open_url" -> {
                     val url = row.getString("url").trim()
-                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
+                    require(url.length <= 2048 && url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的网址不安全或包含个人敏感信息" }
                     PhoneAgentExecutor.Action.OpenUrl(url)
                 }
                 "launch_app" -> {

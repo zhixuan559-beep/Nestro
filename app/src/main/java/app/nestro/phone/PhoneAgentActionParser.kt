@@ -67,7 +67,7 @@ object PhoneAgentActionParser {
                     val credentialQuery = Regex("(?i)([?&])(access_token|refresh_token|api_key|apikey|token|secret|password|session|auth|credential|signature)=").containsMatchIn(url)
                     if (credentialQuery || PhoneAgentRiskPolicy.containsSensitiveValue(url)) PhoneAgentExecutor.Action.ConfirmSensitive("素材下载地址包含敏感凭据，已停止下载。")
                     else {
-                        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址不安全或无效" }
+                        require(url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址必须是安全的公开 HTTPS 直链" }
                         PhoneAgentExecutor.Action.DownloadAsset(url, name)
                     }
                 }
