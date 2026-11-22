@@ -225,6 +225,9 @@ fun NestroApp(initialPage: String = "home") {
     val memoryUiState = remember(prefs) { MemoryUiState(prefs) }
     var globalMemory by memoryUiState.globalMemory
     var memoryDraft by memoryUiState.memoryDraft
+    var manualMemoryDraft by memoryUiState.manualMemoryDraft
+    var manualMemoryCategory by memoryUiState.manualMemoryCategory
+    var manualMemoryCategoryExpanded by memoryUiState.manualMemoryCategoryExpanded
     var automaticMemories by memoryUiState.automaticMemories
     var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
     var memoryEdits by memoryUiState.memoryEdits
@@ -2590,6 +2593,70 @@ fun NestroApp(initialPage: String = "home") {
                                     },
                                     enabled = globalMemory.isNotBlank() || memoryDraft.isNotBlank()
                                 ) { Text("清空全局记忆", color = ColorStop) }
+                                Text("项目记忆 · 手动添加", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                OutlinedTextField(
+                                    value = manualMemoryDraft,
+                                    onValueChange = { manualMemoryDraft = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("例如：这个项目默认使用 Kotlin + Jetpack Compose…") },
+                                    minLines = 2,
+                                    supportingText = { Text("8–180 字；只保存当前项目，不会自动共享到其他项目。敏感信息不允许保存。") }
+                                )
+                                Box {
+                                    OutlinedButton(onClick = { manualMemoryCategoryExpanded = true }) {
+                                        Text("记忆分类：" + when (manualMemoryCategory) {
+                                            "workflow" -> "工作方式"
+                                            "project" -> "项目信息"
+                                            "constraint" -> "执行约束"
+                                            else -> "长期偏好"
+                                        })
+                                    }
+                                    DropdownMenu(
+                                        expanded = manualMemoryCategoryExpanded,
+                                        onDismissRequest = { manualMemoryCategoryExpanded = false }
+                                    ) {
+                                        listOf(
+                                            "preference" to "长期偏好",
+                                            "workflow" to "工作方式",
+                                            "project" to "项目信息",
+                                            "constraint" to "执行约束"
+                                        ).forEach { (value, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                onClick = {
+                                                    manualMemoryCategory = value
+                                                    manualMemoryCategoryExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                runCatching {
+                                                    appRuntime.userMemoryRepository.saveManual(
+                                                        activeProjectId, manualMemoryDraft, manualMemoryCategory
+                                                    )
+                                                }
+                                            }
+                                            memoryStatus = result.fold(
+                                                { saved -> if (saved) "项目记忆已添加" else "这条记忆已存在，无需重复添加" },
+                                                { "添加失败：" + (it.message ?: "内容无效") }
+                                            )
+                                            if (result.getOrNull() == true) {
+                                                automaticMemories = withContext(Dispatchers.IO) {
+                                                    appRuntime.userMemoryRepository.list(activeProjectId)
+                                                }
+                                                manualMemoryDraft = ""
+                                            }
+                                        }
+                                    },
+                                    enabled = manualMemoryDraft.trim().length in 8..180,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("添加到当前项目") }
                                 Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
