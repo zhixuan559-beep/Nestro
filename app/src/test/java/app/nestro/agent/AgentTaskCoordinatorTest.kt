@@ -79,6 +79,27 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun inlineExecutionWaitsForRetryAndKeepsHandlerRegistered() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val result = coordinator.runInline("inline-retry", "workflow") {
+            if (calls.incrementAndGet() == 1) {
+                throw RetryableAgentTaskException("temporary service failure")
+            }
+            "completed after retry"
+        }
+
+        assertEquals("completed after retry", result)
+        assertEquals(2, calls.get())
+        assertEquals(1, states.get("inline-retry")?.attempts)
+        assertEquals(AgentTaskStatus.COMPLETED, states.get("inline-retry")?.status)
+        coordinator.close()
+    }
+
+    @Test
     fun nonRetryableFailureDoesNotEnterRetryQueue() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
