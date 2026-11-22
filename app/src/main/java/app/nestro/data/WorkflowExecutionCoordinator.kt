@@ -47,8 +47,8 @@ class WorkflowExecutionCoordinator(
                     title = row.optString("title"),
                     status = row.optString("status"),
                     attempts = row.optInt("attempts").coerceIn(0, 100),
-                    output = row.optString("output").take(12_000),
-                    error = row.optString("error").take(2_000),
+                    output = row.optString("output").take(1_200),
+                    error = row.optString("error").take(300),
                     iterations = row.optInt("iterations", 1).coerceIn(0, 3)
                 )
             }
@@ -97,7 +97,7 @@ class WorkflowExecutionCoordinator(
                         .put("workflowId", workflow.id)
                         .put("input", input.take(12_000))
                         .put("completedStepIndex", index)
-                        .put("previousOutput", output.take(24_000))
+                        .put("previousOutput", output.take(12_000))
                         .put("stepRuns", JSONArray().apply {
                             completedRuns.take(20).forEach { row ->
                                 put(JSONObject()
@@ -105,8 +105,8 @@ class WorkflowExecutionCoordinator(
                                     .put("title", row.title)
                                     .put("status", row.status)
                                     .put("attempts", row.attempts)
-                                    .put("output", row.output.take(12_000))
-                                    .put("error", row.error.take(2_000))
+                                    .put("output", row.output.take(1_200))
+                                    .put("error", row.error.take(300))
                                     .put("iterations", row.iterations))
                             }
                         }).toString()
