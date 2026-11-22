@@ -126,9 +126,9 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result {
         val projectId = inputData.getString(KEY_PROJECT) ?: return Result.failure()
         val taskId = inputData.getString(KEY_TASK) ?: return Result.failure()
-        val app = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
+        val nestroApp = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
         return try {
-            app.agentTaskCoordinator.runInline(
+            nestroApp.agentTaskCoordinator.runInline(
                 taskId = "media-ai:$taskId",
                 owner = "media_ai",
                 initialCheckpoint = "media_ai:$projectId:$taskId",
