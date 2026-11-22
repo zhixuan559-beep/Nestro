@@ -9,6 +9,18 @@ import org.json.JSONObject
 import java.util.UUID
 import java.security.MessageDigest
 
+/** Enforces confirmation for plugin capabilities that can change external state. */
+object GeneratedPluginAuthorizationPolicy {
+    fun authorize(tool: app.nestro.agent.AgentToolSpec): app.nestro.agent.AgentAuthorization = when {
+        tool.permission == app.nestro.agent.AgentToolPermission.READ_ONLY && !tool.requiresConfirmation ->
+            app.nestro.agent.AgentAuthorization.Allow
+        tool.permission == app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE || tool.requiresConfirmation ->
+            app.nestro.agent.AgentAuthorization.RequireConfirmation("插件步骤需要用户确认：${tool.id}")
+        else ->
+            app.nestro.agent.AgentAuthorization.Deny("生成插件不能执行该高风险能力：${tool.id}")
+    }
+}
+
 data class GeneratedPluginInput(
     val name: String,
     val required: Boolean,

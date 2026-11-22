@@ -34,6 +34,19 @@ class GeneratedPluginFactoryTest {
     )
 
     @Test
+    fun pluginPermissionPolicyRequiresConfirmationForExternalWrites() {
+        val readOnly = AgentToolSpec("media.inspect", "Inspect media metadata", AgentToolPermission.READ_ONLY)
+        val externalWrite = AgentToolSpec("media.render", "Render media output", AgentToolPermission.EXTERNAL_WRITE)
+        val confirmedRead = AgentToolSpec("media.export", "Export metadata", AgentToolPermission.READ_ONLY, requiresConfirmation = true)
+        val deviceAction = AgentToolSpec("phone.click", "Click a device control", AgentToolPermission.DEVICE_ACTION)
+
+        assertEquals(app.nestro.agent.AgentAuthorization.Allow, GeneratedPluginAuthorizationPolicy.authorize(readOnly))
+        assertTrue(GeneratedPluginAuthorizationPolicy.authorize(externalWrite) is app.nestro.agent.AgentAuthorization.RequireConfirmation)
+        assertTrue(GeneratedPluginAuthorizationPolicy.authorize(confirmedRead) is app.nestro.agent.AgentAuthorization.RequireConfirmation)
+        assertTrue(GeneratedPluginAuthorizationPolicy.authorize(deviceAction) is app.nestro.agent.AgentAuthorization.Deny)
+    }
+
+    @Test
     fun validatorAllowsOnlyRegisteredToolsAndPriorStepReferences() {
         GeneratedPluginPackageValidator.validate(plugin(), discovery)
         val invalid = plugin().copy(steps = listOf(

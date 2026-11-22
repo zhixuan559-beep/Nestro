@@ -549,13 +549,9 @@ class NestroApplication : Application() {
                                             globallyEnabled = globallyGranted
                                         )
                                     } == true
-                                    if (globallyGranted && projectGranted) app.nestro.agent.AgentAuthorization.Allow
+                                    if (globallyGranted && projectGranted) GeneratedPluginAuthorizationPolicy.authorize(tool)
                                     else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
-                                } else if (tool.permission in setOf(
-                                    app.nestro.agent.AgentToolPermission.READ_ONLY,
-                                    app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
-                                )) app.nestro.agent.AgentAuthorization.Allow
-                                else app.nestro.agent.AgentAuthorization.Deny("该高风险能力不能由生成插件执行")
+                                } else GeneratedPluginAuthorizationPolicy.authorize(tool)
                             }
                             val runtime = DefaultAgentRuntime(
                                 catalog = lease.access,
