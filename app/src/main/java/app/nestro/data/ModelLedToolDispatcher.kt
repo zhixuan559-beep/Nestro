@@ -97,7 +97,7 @@ internal class ModelLedToolDispatcher(
         shouldStop: () -> Boolean,
         taskModeEnabled: Boolean,
         expertTeamEnabled: Boolean,
-        planPhoneAgent: suspend (Map<String, String>) -> String,
+        planPhoneAgent: suspend (Map<String, String>) -> AgentToolResult,
         runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
@@ -202,7 +202,7 @@ ${prompt.take(8_000)}
                     override fun list() = lease.access.list()
                     override suspend fun invoke(id: String, args: Map<String, String>) =
                         when (id) {
-                            "phone_agent.execute" -> AgentToolResult(success = true, output = planPhoneAgent(args).take(4_000))
+                            "phone_agent.execute" -> planPhoneAgent(args).let { result -> result.copy(output = result.output.take(4_000), error = result.error.take(2_000)) }
                             "expert_team.run" -> {
                                 val output = runExpertTeam(systemContext, args).take(8_000)
                                 if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
@@ -377,7 +377,7 @@ ${prompt.take(8_000)}
                 override fun list() = lease.access.list()
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
                     when (toolId) {
-                        "phone_agent.execute" -> AgentToolResult(success = true, output = planPhoneAgent(arguments).take(4_000))
+                        "phone_agent.execute" -> planPhoneAgent(arguments).let { result -> result.copy(output = result.output.take(4_000), error = result.error.take(2_000)) }
                         "expert_team.run" -> {
                             val output = runExpertTeam(systemContext, arguments).take(8_000)
                             if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
