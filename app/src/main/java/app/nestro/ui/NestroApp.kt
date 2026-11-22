@@ -1077,13 +1077,14 @@ fun NestroApp(initialPage: String = "home") {
                     ),
                     onUsage = recordModelUsage,
                     onProviderUsage = recordProviderModelUsage,
-                    planPhoneAgent = {
+                    planPhoneAgent = { toolArguments ->
                         if (!requestExecutionAuthorization.shouldPlanPhoneAgent()) {
                             "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。"
                         } else {
-                            val phonePlan = PhoneAgentPlanner.plan(prompt)
+                            val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt
+                            val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
                             if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
-                                val canSchedule = app.nestro.phone.PhoneAgentService.activeService?.hasValidGrant() == true
+                                val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
                                 val created = withContext(Dispatchers.IO) {
                                     appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
                                         requestProjectId,
