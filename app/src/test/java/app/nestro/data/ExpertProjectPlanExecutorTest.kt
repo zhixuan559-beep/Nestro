@@ -56,4 +56,26 @@ class ExpertProjectPlanExecutorTest {
         assertEquals(4, result.packageResults.size)
         assertTrue(result.packageResults.all { it.output.isNotBlank() })
     }
+    @Test
+    fun executionRestoresSuccessfulPackagesAndRunsOnlyRemainingDagNodes() = runBlocking {
+        val calls = mutableListOf<String>()
+        val checkpointSizes = mutableListOf<Int>()
+        val result = ExpertProjectPlanExecutor.execute(
+            plan = plan(),
+            availableMembers = setOf("研究员", "策略师", "文案官", "审校官"),
+            resumeResults = listOf(
+                ExpertWorkPackageResult("research", "研究员", "success", output = "已保存的研究成果")
+            ),
+            invoke = { member, prompt ->
+                calls += member
+                "$member 已完成：${prompt.take(80)}"
+            },
+            onPackageResult = { rows -> checkpointSizes += rows.size }
+        )
+        assertTrue(result.isSuccessful)
+        assertEquals(3, calls.size)
+        assertFalse("研究员" in calls)
+        assertEquals(listOf(3, 4), checkpointSizes)
+    }
+
 }
