@@ -240,3 +240,12 @@
 - `main` 分支独有的 `TtsCapability.kt` 提供系统中文 Voice 质量/延迟排序；当前 `AndroidTextToSpeechController` 已提供设备可用语言并负责 setLanguage/语速/音调。当前用户确认的需求中尚无“按 TTS Voice 质量排序选择”的明确要求，暂不恢复该 helper，后续如界面设计确认需要具体音色选择，再基于现有控制器补入口。
 - 上述判断基于旧 main 分支文件与整合分支当前实现的对照，不是对 main 分支执行删除；当前开发基线仍只有 `integration/19-modules`。
 
+
+## 2026-11-22 工作流审批持久状态复核
+
+- `WorkflowUiState` 保存当前审批弹窗与 `CompletableDeferred<WorkflowApprovalChoice>`；`NestroApp.kt` 的审批回调在用户选择前停留于 `decision.await()`，授权一次/当前任务全部授权/拒绝三个选择都已接通。
+- 当前审批弹窗 `onDismissRequest = {}`，并且没有关闭按钮；停止工作流按钮会显式完成 `REJECT`，因此“未选择不会自动拒绝”成立，但“关闭弹窗并继续保持等待”并没有独立交互入口。是否需要可关闭但不决策的入口，应按用户要求修正。
+- 更重要的是：`WorkflowExecutionCoordinator.execute()` 将执行交给 `AgentTaskCoordinator.runInline()`，但在审批回调等待 `CompletableDeferred` 时没有调用 `taskContext.waitForUser()`。目前可见代码会让 UI 协程等待，但没有把持久任务状态显式改为 `WAITING_FOR_USER`；需要补齐任务状态与审计事件，避免后台任务中心/进程恢复将等待审批误显示为普通 RUNNING。
+- `AgentTaskExecutionContext.waitForUser()` 已存在并会持久化 `AgentTaskStatus.WAITING_FOR_USER`，说明应复用现有能力，而不是再建一套审批状态存储。
+- 本项已确认是具体接线缺口；尚未修改代码，待完成十九模块全量审计后按最小改动修复，并补充“等待时持久状态、批准后恢复、拒绝后终止、停止时取消等待”的测试。
+
