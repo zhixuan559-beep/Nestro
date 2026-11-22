@@ -6,6 +6,8 @@ import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 enum class ExpertTeamSchedulingStrategy {
     /** User assigns each member a work package; independent work runs concurrently. */
@@ -135,68 +137,135 @@ class ExpertTeamExecutionCoordinator(
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
         invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
-    ): ExpertProjectExecutionResult = taskCoordinator.runInline(
-        taskId = taskId,
-        owner = "expert_team_project",
-        initialCheckpoint = "team:" + teamId + ":project_queued"
-    ) { taskContext ->
-        taskContext.checkpoint("team:" + teamId + ":project_running", 0)
-        var sequence = 0L
-        suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
-            eventSink?.append(
-                ExpertTeamCollaborationEvent(
-                    taskId = taskId, projectId = projectId, teamId = teamId,
-                    sequence = sequence++, type = type, memberName = member,
-                    status = status, message = message.take(3_000)
-                )
-            )
+    ): ExpertProjectExecutionResult {
+        val planIdentity = JSONObject()
+            .put("goal", plan.projectGoal)
+            .put("acceptance", plan.finalAcceptanceCriteria)
+            .put("packages", JSONArray().apply {
+                plan.packages.forEach { item ->
+                    put(JSONObject()
+                        .put("id", item.id)
+                        .put("member", item.memberName)
+                        .put("instruction", item.instruction)
+                        .put("acceptance", item.acceptanceCriteria)
+                        .put("dependsOn", JSONArray(item.dependsOn)))
+                }
+            }).toString()
+        val savedState = taskCoordinator.state(taskId)
+        val savedPayload = savedState?.checkpoint
+            ?.takeIf { it.startsWith("expert_project:") }
+            ?.removePrefix("expert_project:")
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        if (savedPayload != null) {
+            require(savedPayload.optString("teamId") == teamId &&
+                savedPayload.optString("projectId") == projectId &&
+                savedPayload.optString("planIdentity") == planIdentity) {
+                "专家项目检查点与当前团队、项目或任务图不匹配，已停止恢复"
+            }
         }
-        emit("team_started", status = "running", message = plan.projectGoal.take(2_000))
-        val result = ExpertProjectPlanExecutor.execute(
-            plan = plan,
-            availableMembers = members.keys,
-            shouldStop = shouldStop,
-            invoke = { memberName, instruction ->
-                val member = members[memberName] ?: error("专家不在当前团队中：$memberName")
-                val lease = AgentCapabilityRegistry.openLease(
-                    taskId = taskId, owner = "expert_team_project",
-                    operation = member.name, catalog = toolCatalog
-                )
-                try {
-                    if (lease != null && invokeMemberWithTools == null) {
-                        error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
-                    }
-                    invokeMemberWithTools?.invoke(member, instruction, lease?.access)
-                        ?: invokeMember(member, instruction)
-                } finally {
-                    lease?.let { AgentToolLeaseRegistry.release(it.id) }
-                }
-            },
-            onPackage = { packageId, status, detail ->
-                onPackage(packageId, status, detail)
-                val packageInfo = plan.packages.firstOrNull { it.id == packageId }
-                val eventType = when (status) {
-                    "running" -> "member_started"
-                    "success" -> "artifact_submitted"
-                    "failed" -> "member_failed"
-                    else -> "member_message"
-                }
-                emit(eventType, member = packageInfo?.memberName.orEmpty(), status = status,
-                    message = "工作包 $packageId：$detail")
-            },
-            onHandoff = { fromPackage, toPackage, fromMember, toMember, artifact ->
-                emit(
-                    "member_handoff",
-                    member = fromMember,
-                    status = "delivered",
-                    message = "交接至 $toMember（$toPackage），来源工作包 $fromPackage：\n$artifact"
+        val resumeResults = savedPayload?.optJSONArray("results")?.let { rows ->
+            (0 until rows.length()).mapNotNull { index ->
+                val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                ExpertWorkPackageResult(
+                    packageId = row.optString("packageId"),
+                    memberName = row.optString("memberName"),
+                    status = row.optString("status"),
+                    output = row.optString("output").take(12_000),
+                    error = row.optString("error").take(1_000),
+                    completedAt = row.optLong("completedAt")
                 )
             }
-        )
-        emit("team_completed", status = if (result.isSuccessful) "success" else "partial",
-            message = "工作包完成：${result.packageResults.count { it.status == "success" }}/${plan.packages.size}")
-        taskContext.checkpoint("team:" + teamId + ":project_finished", result.packageResults.size)
-        result
+        }.orEmpty()
+        val initialCheckpoint = "expert_project:" + JSONObject()
+            .put("teamId", teamId)
+            .put("projectId", projectId)
+            .put("planIdentity", planIdentity)
+            .put("results", JSONArray())
+            .toString()
+
+        return taskCoordinator.runInline(
+            taskId = taskId,
+            owner = "expert_team_project",
+            initialCheckpoint = initialCheckpoint
+        ) { taskContext ->
+            var sequence = 0L
+            suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
+                eventSink?.append(
+                    ExpertTeamCollaborationEvent(
+                        taskId = taskId, projectId = projectId, teamId = teamId,
+                        sequence = sequence++, type = type, memberName = member,
+                        status = status, message = message.take(3_000)
+                    )
+                )
+            }
+            emit("team_started", status = "running", message = plan.projectGoal.take(2_000))
+            val result = ExpertProjectPlanExecutor.execute(
+                plan = plan,
+                availableMembers = members.keys,
+                shouldStop = shouldStop,
+                resumeResults = resumeResults,
+                invoke = { memberName, instruction ->
+                    val member = members[memberName] ?: error("专家不在当前团队中：$memberName")
+                    val lease = AgentCapabilityRegistry.openLease(
+                        taskId = taskId, owner = "expert_team_project",
+                        operation = member.name, catalog = toolCatalog
+                    )
+                    try {
+                        if (lease != null && invokeMemberWithTools == null) {
+                            error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
+                        }
+                        invokeMemberWithTools?.invoke(member, instruction, lease?.access)
+                            ?: invokeMember(member, instruction)
+                    } finally {
+                        lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                    }
+                },
+                onPackage = { packageId, status, detail ->
+                    onPackage(packageId, status, detail)
+                    val packageInfo = plan.packages.firstOrNull { it.id == packageId }
+                    val eventType = when (status) {
+                        "running" -> "member_started"
+                        "success" -> "artifact_submitted"
+                        "failed" -> "member_failed"
+                        else -> "member_message"
+                    }
+                    emit(eventType, member = packageInfo?.memberName.orEmpty(), status = status,
+                        message = "工作包 $packageId：$detail")
+                },
+                onPackageResult = { rows ->
+                    taskContext.checkpoint(
+                        "expert_project:" + JSONObject()
+                            .put("teamId", teamId)
+                            .put("projectId", projectId)
+                            .put("planIdentity", planIdentity)
+                            .put("results", JSONArray().apply {
+                                rows.forEach { row ->
+                                    put(JSONObject()
+                                        .put("packageId", row.packageId)
+                                        .put("memberName", row.memberName)
+                                        .put("status", row.status)
+                                        .put("output", row.output.take(12_000))
+                                        .put("error", row.error.take(1_000))
+                                        .put("completedAt", row.completedAt))
+                                }
+                            }).toString(),
+                        rows.size
+                    )
+                },
+                onHandoff = { fromPackage, toPackage, fromMember, toMember, artifact ->
+                    emit(
+                        "member_handoff",
+                        member = fromMember,
+                        status = "delivered",
+                        message = "交接至 $toMember（$toPackage），来源工作包 $fromPackage：\n$artifact"
+                    )
+                }
+            )
+            emit("team_completed", status = if (result.isSuccessful) "success" else "partial",
+                message = "工作包完成：${result.packageResults.count { it.status == "success" }}/${plan.packages.size}")
+            taskContext.checkpoint("team:" + teamId + ":project_finished", result.packageResults.size)
+            result
+        }
     }
 
 }
