@@ -2720,7 +2720,7 @@ fun NestroApp(initialPage: String = "home") {
                                                     Column(Modifier.weight(1f)) {
                                                         Text("跨项目共享", color = Ink, style = MaterialTheme.typography.labelMedium)
                                                         Text(
-                                                            "开启后其他项目可以召回这条记忆；关闭会撤销共享。",
+                                                            "开启后，已获得本项目读取授权的其他项目可以召回这条记忆；关闭会撤销共享。",
                                                             color = Muted,
                                                             style = MaterialTheme.typography.bodySmall
                                                         )
