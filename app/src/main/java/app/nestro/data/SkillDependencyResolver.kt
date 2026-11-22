@@ -13,6 +13,73 @@ object SkillDependencyResolver {
         val satisfied: Map<String, String>
     )
 
+    /**
+     * Validates the complete installed dependency closure before a skill is injected into
+     * model context. Legacy skills without dependency metadata remain compatible.
+     */
+    fun inspectInstalledSkill(
+        name: String,
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>,
+        disabledSkills: Set<String> = emptySet()
+    ): List<String> {
+        val issues = linkedSetOf<String>()
+        val visited = mutableSetOf<String>()
+        fun visit(current: String, chain: Set<String>, depth: Int) {
+            if (depth > 32) { issues += "技能依赖深度超过 32 层：$current"; return }
+            if (current in chain) { issues += "技能依赖形成循环：${(chain + current).joinToString(" → ")}"; return }
+            if (current in disabledSkills) { issues += "依赖技能已停用：$current"; return }
+            if (!installedSkills.containsKey(current)) { issues += "依赖技能未安装或当前项目不可见：$current"; return }
+            if (!visited.add(current)) return
+            val raw = installedMetadata[current]
+            if (raw.isNullOrBlank()) return
+            val metadata = runCatching { org.json.JSONObject(raw) }.getOrElse {
+                issues += "技能依赖元数据损坏：$current"; return
+            }
+            val version = metadata.optString("version", "1.0.0").ifBlank { "1.0.0" }
+            if (!runCatching { SkillSemVer.compare(version, version) }.isSuccess) {
+                issues += "技能版本元数据无效：$current"; return
+            }
+            if (metadata.has("dependencies") && metadata.optJSONArray("dependencies") == null) {
+                issues += "技能依赖列表格式无效：$current"; return
+            }
+            val dependencies = metadata.optJSONArray("dependencies") ?: return
+            val nextChain = chain + current
+            for (index in 0 until dependencies.length()) {
+                val row = dependencies.optJSONObject(index)
+                if (row == null) { issues += "技能依赖项格式无效：$current#$index"; continue }
+                val dependency = row.optString("name").trim()
+                val constraint = row.optString("version", "*").trim()
+                if (dependency.isBlank() || dependency.length > 80 ||
+                    !runCatching { SkillSemVer.matches("1.0.0", constraint) }.isSuccess
+                ) { issues += "技能依赖约束无效：$current#$index"; continue }
+                val rawDependencyMetadata = installedMetadata[dependency]
+                val installedVersion = if (!installedSkills.containsKey(dependency)) null else if (rawDependencyMetadata.isNullOrBlank()) {
+                    "1.0.0"
+                } else runCatching {
+                    org.json.JSONObject(rawDependencyMetadata).optString("version", "1.0.0").ifBlank { "1.0.0" }
+                }.getOrNull()
+                if (installedVersion == null || !runCatching { SkillSemVer.matches(installedVersion, constraint) }.getOrDefault(false)) {
+                    issues += "依赖版本不满足：$dependency@$constraint"; continue
+                }
+                visit(dependency, nextChain, depth + 1)
+            }
+        }
+        visit(name, emptySet(), 0)
+        return issues.toList()
+    }
+
+    fun filterSatisfiedSkills(
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>,
+        disabledSkills: Set<String> = emptySet()
+    ): Map<String, String> {
+        val active = installedSkills.filterKeys { it !in disabledSkills }
+        return active.filter { (name, _) ->
+            inspectInstalledSkill(name, installedSkills, installedMetadata, disabledSkills).isEmpty()
+        }
+    }
+
     fun resolve(rootRelease: SignedSkillRelease, catalog: List<SignedSkillRelease>, installedVersions: Map<String, String>, verifiedRootBundle: SkillBundle? = null): InstallPlan {
         val byName = catalog.groupBy { it.name }
         var attempts = 0
