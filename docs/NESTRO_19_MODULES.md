@@ -111,7 +111,7 @@
 - [ ] 独立记忆上下文缓存（全局/项目/会话作用域）及记忆新增/修改/删除后的版本失效；现有 embeddingCache 不是该功能。
 - [ ] 自动记忆提取准确性、冲突覆盖和跨项目隔离完整验证。
 - [ ] 恢复自动提取的 mutationVersion/项目锁和 edit/delete/clear/backup restore 失效等待，防止旧提取并发写回已删除记忆。
-- [ ] 会话记忆召回 query 纳入当前用户 prompt；当前只使用 requestHistory。
+- [ ] 统一召回 query 合并最近用户轮次与当前 prompt；当前 conversation recall 只用 requestHistory，user-memory recall 只用当前 prompt，没有统一合并。
 - [ ] 明确是否保留用户主动授权的跨项目共享记忆；当前数据模型与检索严格按项目隔离。
 
 ## 模块8：Phone Agent
