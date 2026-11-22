@@ -950,3 +950,36 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 复用既有 `AgentTaskCoordinator`、`AgentTaskExecutionContext` 和 `CompletableDeferred` 审批回调，不新增审批数据库或第二套任务状态机。
 - 新增回归测试源码：审批等待期间状态为 `WAITING_FOR_USER`、批准后恢复并完成；拒绝后任务进入 `FAILED`。
 - 当前只完成代码修改与 GitHub 回读；Gradle 编译、JVM 测试、Android instrumentation、模拟器和真机验收均未执行，不标记为通过。
+
+
+## 2026-11-22 统一审批与跨模块调度第二阶段核对（HEAD e52aa778）
+
+本节基于当前分支递归 Git tree（361 个文件，truncated=false）及对应源码回读，修正前述审计中已过期的判断，并记录下一阶段真实缺口。仍为静态源码核对，不代表编译或运行验收。
+
+### 已存在、不得重复开发的能力
+
+- `WorkflowExecutionCoordinator` 已通过 `AgentTaskCoordinator.runInline` 管理工作流任务，并在执行审批回调前写入 `WAITING_FOR_USER`；批准后恢复为 `RUNNING`，拒绝则写入 `FAILED`。此前“工作流审批未显式写入统一任务状态”的旧结论已过期。当前仍需补齐审批请求的持久化展示/进程重建后的 UI 恢复、审批审计和统一授权范围。
+- 工作流执行已有持久检查点、已完成步骤恢复、工具租约接口和并行步骤组；但当前定义仍只有 `PROMPT/EXPERT/SKILL`。NestroApp 实际调用未提供 `invokeModelWithTools`，因此工作流步骤尚不能直接编排工具、MCP 或 Phone Agent。
+- 生成式插件已使用统一任务机 `runInline` 和步骤 checkpoint；`GeneratedPluginAuthorizationPolicy` 已阻止外部写入被直接 Allow。当前待补的是批准后从安全检查点继续、拒绝/取消的完整用户交互，以及与 MCP/聊天共用的审批服务。
+- Phone Agent 已通过统一任务机与 WorkManager 适配层协作；保留 PhoneAgentTaskStore 的动作中断标记属于执行安全保护，不应误删为“重复队列”。
+
+### 当前确认的跨模块缺口
+
+1. **审批闭环仍分散。** 工作流审批由 UI 的 `CompletableDeferred` 交互；生成式插件在工具权限层返回 `RequireConfirmation`；MCP 工具中心自身有逐工具持久授权，但其直接 `invoke` 路径使用临时 `InMemoryAgentTaskStateStore` 和独立 Runtime。尚无统一审批记录模型将“能力长期信任、当前任务授权一次、当前任务剩余步骤授权、拒绝、撤销、恢复”统一绑定到同一 taskId/projectId/toolId。
+2. **媒体 AI 任务未接入统一任务机。** `MediaAiTaskStore` 使用项目目录下 JSON 文件维护 QUEUED/RUNNING/COMPLETED/FAILED/CANCELLED；`MediaAiTaskWorker` 直接更新领域状态；`MediaAiTaskScheduler` 通过 WorkManager 唤醒。该领域记录承载素材 ID、服务商、动作、结果和消费状态，应保留，但业务生命周期需要投影/接入 `AgentTaskCoordinator`。
+3. **媒体渲染任务未接入统一任务机。** `MediaRenderTaskStore` 维护独立 JSON 状态，`MediaRenderWorker` 直接推进状态与进度，`MediaRenderScheduler` 负责 WorkManager 唤醒、暂停、恢复、取消。需保留渲染领域元数据与文件清理/中断恢复逻辑，将统一任务机作为业务生命周期权威。
+4. **日历仍是提醒，不是任务调度。** `CalendarReminderWorker` 到期只发通知并重新安排下一次提醒；`CalendarEvent` 当前没有自动执行目标、任务输入、occurrence 幂等键或执行策略字段，也没有分发给 Workflow/Agent/Phone Agent 的入口。不能只给提醒 Worker 加一个调用就宣称完成，需先定义用户可配置的自动执行动作与权限边界，再由到期 occurrence 创建统一任务。
+5. **原生工具调用仍顺序执行。** `OpenAiClient.nativeToolLoop` 解析同轮多个 tool calls 后，仍以顺序循环逐个 await `onToolCall`。并发必须以显式 parallel-safe 能力声明为前提；只读且无数据依赖的调用可并行，设备操作、外部写入、同一资源写入默认串行，并按原 callId 顺序回注结果。
+6. **跨模块协作缺统一交接协议。** 当前已有 Phone Agent 下载素材后导入项目素材库、专家团队与媒体素材工具等局部能力；但“专家/工作流提出素材需求→调度任务机安排 Phone Agent→素材入库→回传 artifact/asset 引用→原创作任务恢复”的父子任务关系、等待依赖、失败返工和最终验收尚未形成通用闭环。
+
+### 下一阶段实施顺序
+
+- A. 统一审批域：先定义持久审批请求、授权范围与决策记录，复用现有 AgentTaskState、CapabilityRegistryStore、MCP 工具授权及工作流审批 UI；禁止另建一套任务队列。
+- B. 媒体 AI / 渲染接入：沿用现有领域 JSON 记录和 WorkManager Worker，统一任务机负责业务状态、检查点、恢复、取消和审计；Worker 仅做系统唤醒/后台执行适配。
+- C. 日历自动调度：扩展事件的自动执行配置与 occurrence 记录，按 occurrence 创建幂等统一任务，接入 Workflow/Agent/Phone Agent，并保留独立提醒功能。
+- D. 工具并发与跨模块依赖：先给工具声明并发安全级别与资源冲突键，再并发执行安全调用；建立父子任务/依赖/产物引用协议，支持创作与执行交替。
+- E. 完成其余模块缺口后再统一构建、JVM 测试、Android instrumentation、模拟器/真机验收。
+
+### 验证边界
+
+本轮已回读当前分支源码和递归树；未修改生产代码，未运行 Gradle、JVM 测试、Android instrumentation、模拟器或真机。下一轮生产代码修改必须逐项回读依赖与调用点，完成后核对 diff、提交并回读 GitHub。
