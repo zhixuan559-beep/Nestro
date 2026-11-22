@@ -21,6 +21,7 @@ import app.nestro.model.ChatExecutionService
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.UUID
+import java.security.MessageDigest
 
 internal data class ModelToolDecision(
     val action: String,
@@ -88,6 +89,68 @@ internal class ModelLedToolDispatcher(
     private val toolDefinitionProvider: (String) -> String? = { null },
     private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
 ) {
+    private fun mcpCallSignature(toolId: String, arguments: Map<String, String>): String {
+        val canonical = buildString {
+            append(toolId).append('\\n')
+            arguments.toSortedMap().forEach { (key, value) ->
+                append(key.length).append(':').append(key)
+                append(value.length).append(':').append(value).append('\\n')
+            }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun decodeMcpReplayLedger(raw: String): JSONObject {
+        val parsed = runCatching { JSONObject(raw) }.getOrNull()
+        return if (parsed?.optInt("version") == 1 && parsed.optJSONObject("calls") != null) {
+            parsed
+        } else {
+            JSONObject().put("version", 1).put("calls", JSONObject())
+        }
+    }
+
+    private fun findMcpInFlightCall(raw: String): String? {
+        val calls = decodeMcpReplayLedger(raw).optJSONObject("calls") ?: return null
+        val keys = calls.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val row = calls.optJSONObject(key) ?: continue
+            if (row.optString("state") == "EXECUTING") return row.optString("toolId").ifBlank { key }
+        }
+        return null
+    }
+
+    private fun findCompletedMcpCall(raw: String, toolId: String, arguments: Map<String, String>): String? {
+        val calls = decodeMcpReplayLedger(raw).optJSONObject("calls") ?: return null
+        val row = calls.optJSONObject(mcpCallSignature(toolId, arguments)) ?: return null
+        return row.optString("output").takeIf { row.optString("state") == "COMPLETED" }
+    }
+
+    private suspend fun saveMcpReplayCall(
+        stateStore: AgentTaskStateStore,
+        taskId: String,
+        toolId: String,
+        arguments: Map<String, String>,
+        state: String,
+        output: String = ""
+    ) {
+        val current = stateStore.get(taskId) ?: return
+        val ledger = decodeMcpReplayLedger(current.checkpoint)
+        val calls = ledger.optJSONObject("calls") ?: JSONObject()
+        calls.put(
+            mcpCallSignature(toolId, arguments),
+            JSONObject()
+                .put("toolId", toolId)
+                .put("state", state)
+                .put("output", output.take(4_000))
+        )
+        val encoded = ledger.put("calls", calls).toString()
+        require(encoded.length <= 64_000) { "MCP 恢复检查点超过 64 KB" }
+        stateStore.put(current.copy(checkpoint = encoded, updatedAt = System.currentTimeMillis()))
+    }
+
     suspend fun dispatch(
         requestId: String,
         conversationId: String,
