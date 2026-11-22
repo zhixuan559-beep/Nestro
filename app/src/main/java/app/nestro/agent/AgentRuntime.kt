@@ -599,12 +599,22 @@ class DefaultAgentRuntime(
             result
         } catch (cancelled: CancellationException) {
             val latest = states.get(request.taskId) ?: current
-            trace(request.taskId, "tool_cancelled", "工具执行被取消")
-            if (executionContext != null) executionContext.pause("任务已取消，可从最近检查点恢复") else states.put(latest.copy(
-                status = AgentTaskStatus.PAUSED,
-                lastError = "任务已取消，可从最近检查点恢复",
-                updatedAt = System.currentTimeMillis()
-            ))
+            if (cancelled is AgentApprovalPendingException) {
+                val reason = cancelled.message?.take(2_000) ?: "任务等待用户审批"
+                trace(request.taskId, "waiting_for_user", reason)
+                if (executionContext != null) executionContext.waitForUser(reason) else states.put(latest.copy(
+                    status = AgentTaskStatus.WAITING_FOR_USER,
+                    lastError = reason,
+                    updatedAt = System.currentTimeMillis()
+                ))
+            } else {
+                trace(request.taskId, "tool_cancelled", "工具执行被取消")
+                if (executionContext != null) executionContext.pause("任务已取消，可从最近检查点恢复") else states.put(latest.copy(
+                    status = AgentTaskStatus.PAUSED,
+                    lastError = "任务已取消，可从最近检查点恢复",
+                    updatedAt = System.currentTimeMillis()
+                ))
+            }
             throw cancelled
         } catch (error: Exception) {
             val latest = states.get(request.taskId) ?: current
