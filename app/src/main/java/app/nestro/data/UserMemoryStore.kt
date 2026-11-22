@@ -99,7 +99,8 @@ object UserMemoryStore {
                         sourceMessageId = messageId,
                         confidence = candidate.confidence,
                         createdAt = old?.createdAt ?: now,
-                        updatedAt = now
+                        updatedAt = now,
+                        shareAcrossProjects = old?.shareAcrossProjects ?: false
                     )
                 )
                 saved++
