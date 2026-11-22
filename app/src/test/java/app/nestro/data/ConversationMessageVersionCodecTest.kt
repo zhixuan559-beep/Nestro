@@ -75,7 +75,7 @@ class ConversationMessageVersionCodecTest {
     }
 
     @Test
-    fun RoomSnapshotsDoNotInheritTheLegacySharedPreferencesAggregateCap() {
+    fun roomSnapshotsDoNotInheritTheLegacySharedPreferencesAggregateCap() {
         val conversations = listOf(
             ConversationRecord(
                 "c1", "第一段", 1L,
