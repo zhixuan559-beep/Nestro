@@ -136,21 +136,30 @@ class CalendarRepository(context: Context) {
     }
 
     private suspend fun cancelActiveAutomation(event: CalendarEvent, reason: String) {
-        if (event.lastTaskId.isBlank()) return
         val nestroApp = appContext as? app.nestro.NestroApplication ?: return
-        val state = nestroApp.agentTaskCoordinator.state(event.lastTaskId) ?: return
-        if (state.status in setOf(
-                app.nestro.agent.AgentTaskStatus.CREATED,
-                app.nestro.agent.AgentTaskStatus.QUEUED,
-                app.nestro.agent.AgentTaskStatus.RUNNING,
-                app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
-                app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
-                app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
-                app.nestro.agent.AgentTaskStatus.PAUSED
-            )
-        ) {
-            nestroApp.agentTaskCoordinator.cancel(event.lastTaskId)
-            recordAutomationResult(event.id, "CANCELLED", error = reason)
+        val activeStatuses = setOf(
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RUNNING,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+            app.nestro.agent.AgentTaskStatus.PAUSED
+        )
+        val activeTasks = nestroApp.agentTaskCoordinator.recoverableTasks().filter { task ->
+            task.kind == "calendar_automation" &&
+                task.status in activeStatuses &&
+                runCatching { org.json.JSONObject(task.input).optString("eventId") == event.id }.getOrDefault(false)
+        }
+        activeTasks.forEach { task ->
+            nestroApp.agentTaskCoordinator.cancel(task.taskId)
+        }
+        if (activeTasks.isNotEmpty() || event.lastTaskId.isNotBlank()) {
+            val lastState = event.lastTaskId.takeIf(String::isNotBlank)
+                ?.let { nestroApp.agentTaskCoordinator.state(it) }
+            if (activeTasks.isNotEmpty() || lastState?.status in activeStatuses) {
+                recordAutomationResult(event.id, "CANCELLED", error = reason)
+            }
         }
     }
 
