@@ -255,9 +255,23 @@ class McpToolCenterService(
   return invokeWithTaskId(taskId, state.capabilityId, state.input)
  }
 
+ suspend fun cancelPending(taskId: String) {
+  val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
+  val state=requireNotNull(coordinator.state(taskId)){"MCP 任务不存在或已被清理"}
+  require(state.kind=="mcp_tool" && state.capabilityId.startsWith("mcp_")) { "该任务不是 MCP 调用" }
+  require(state.status in setOf(
+   app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+   app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+   app.nestro.agent.AgentTaskStatus.PAUSED
+  )) { "当前 MCP 任务不能从待恢复列表终止：${state.status}" }
+  coordinator.cancel(taskId)
+  approvalCoordinator?.endScope(taskId)
+ }
+
  private suspend fun invokeWithTaskId(taskId:String,id:String,argsJson:String):AgentToolResult {
   require(repository.isToolGranted(id)){"该 MCP 工具尚未获得授权"}
   val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在或已从服务目录移除"}
+  require(argsJson.length <= 32_000) { "MCP 调用参数超过可恢复任务的输入上限（32 KB）" }
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
   return try {
@@ -268,7 +282,7 @@ class McpToolCenterService(
     kind="mcp_tool",
     capabilityId=id,
     title="MCP：${d.name}".take(160),
-    input=argsJson.take(4_000)
+    input=argsJson
    ),
    maxRetries=0
   ){ taskContext ->
