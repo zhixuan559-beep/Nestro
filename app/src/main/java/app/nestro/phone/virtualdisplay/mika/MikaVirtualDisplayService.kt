@@ -344,18 +344,34 @@ internal class MikaVirtualDisplayService(
         if (times.first() != 0L || times.last() > 10_000L || times.zipWithNext().any { it.first > it.second }) return false
         val downTime = android.os.SystemClock.uptimeMillis()
         var ok = true
-        for (i in xs.indices) {
-            val action = when (i) { 0 -> MotionEvent.ACTION_DOWN; xs.lastIndex -> MotionEvent.ACTION_UP; else -> MotionEvent.ACTION_MOVE }
-            val event = MotionEvent.obtain(downTime, downTime + times[i], action, xs[i].toFloat(), ys[i].toFloat(), 0)
-            event.source = InputDevice.SOURCE_TOUCHSCREEN
-            runCatching {
-                MotionEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType).invoke(event, displayId)
+        var lastX = xs.first()
+        var lastY = ys.first()
+        try {
+            for (i in xs.indices) {
+                val action = when (i) { 0 -> MotionEvent.ACTION_DOWN; xs.lastIndex -> MotionEvent.ACTION_UP; else -> MotionEvent.ACTION_MOVE }
+                val event = MotionEvent.obtain(downTime, downTime + times[i], action, xs[i].toFloat(), ys[i].toFloat(), 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try {
+                    ok = inject(event, displayId) && ok
+                } finally {
+                    event.recycle()
+                }
+                lastX = xs[i]
+                lastY = ys[i]
+                if (i < xs.lastIndex && times[i + 1] > times[i]) Thread.sleep(times[i + 1] - times[i])
             }
-            ok = inject(event, displayId) && ok
-            event.recycle()
-            if (i < xs.lastIndex && times[i + 1] > times[i]) Thread.sleep(times[i + 1] - times[i])
+            return ok
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            // A cancelled gesture must not leave the virtual touchscreen in a pressed state.
+            val cancel = MotionEvent.obtain(
+                downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_CANCEL,
+                lastX.toFloat(), lastY.toFloat(), 0
+            )
+            cancel.source = InputDevice.SOURCE_TOUCHSCREEN
+            try { inject(cancel, displayId) } finally { cancel.recycle() }
+            return false
         }
-        return ok
     }
 
     override fun injectAsciiText(displayId: Int, taskId: Int, packageName: String, text: String): Int {
