@@ -201,3 +201,25 @@
 ### 首轮结论
 
 视频生成主链路已有代码，不能重复建设；多模态媒体分析已有编辑器内任务，但聊天主模型的按需调度入口存在可确认缺口。下一步应复用现有 `MediaAiTaskStore/Worker/Provider` 体系，补主模型工具注册与参数/权限/结果交接，先确认是否已有通用实现可复用，再做最小必要修改。HTTP 协议测试和统一验证放入后续审计/验收，不把代码存在等同于已通过。
+
+## 2026-11-22 功能分支差异复核（整合分支 HEAD: cf5d0cb84f9bea748d9d805be7d3a4ade7e32e53）
+
+本轮对仓库可见的 28 个分支逐一与 `integration/19-modules` 比较。以下为比较结果的正确解释与关键文件抽查，不以 ahead/behind 数量直接判定功能是否合并：
+
+- `feature/module-17-smart-editing`、`feature/module-18-calendar`、`feature/phase2-optimization`、`feature/modelscope-oauth`、`feature/module-5-project-space`、`feature/module-7-memory`、`feature/module-10-artifacts`、`feature/module-11-expert-templates`、`feature/module-12-model-comparison` 等旧分支相对整合分支没有独有领先提交（behind）；不能把它们标记为缺失功能。
+- `feature/module-6-knowledge-base` / `wip/module-6-finalize` 虽存在分叉提交，但抽查发现整合分支的 BGE 输出使用 attention-mask masked mean pooling；旧分支仍取 CLS token。整合版本更新，不能把旧分支版本合并回来。
+- `wip/module-6-knowledge-base` 的旧 `KnowledgeChunker` 对 chunkSize/overlap 的约束较弱；整合分支新增最小长度与 UTF-16 surrogate 边界约束，优先保留整合分支版本。
+- `wip/module-5-project-space` 的 `ProjectAccessControlStore` 未强制 WRITE 必须包含 READ；整合分支当前文件比该 WIP 版本更严格。其 `ProjectResourceScopeStore` 也有更完整的 key 校验 helper，不能用 WIP 旧版覆盖。
+- `fix/module-13-audit-reliability` 的 MCP 源码和测试 blob 与整合分支完全一致；其独有差异只在旧版模块状态文档，不存在需要再合入的代码修复。
+- `feature/module-13-mcp-tool-center`、`feature/module-14-github-workbench`、`feature/module-15-ai-coworkbench` 分支仍有分叉文件，但这些是历史分支版本差异；必须按当前实现逐文件核对，不能整分支合并。已抽查模块13/14发现整合分支含额外安全修正。
+- `main` 分支保留 `UnifiedAgentDispatcher.kt`、`ChatNetworkPolicy.kt`、`TtsCapability.kt` 等文件，但它们未出现在当前整合分支树中；其中 `UnifiedAgentDispatcher` 是早期关键词路由，与当前 `ModelLedToolDispatcher` 的主模型原生工具调用架构不同，不应直接恢复旧路由。其余两个 helper 需与整合分支现有网络重试和 TTS 能力逐项对照，确认有无独有行为后再决定是否吸收。
+- `feature/module-8-phone-agent` 的分叉差异集中在 CI/Gradle 配置文件；需在构建审计阶段核对这些配置差异，不将旧分支 CI 文件直接覆盖当前配置。
+- `feature/knowledge-retrieval-ranking`、`feature/module-9-voice-system` 等历史分支含较多分叉文件，但当前整合分支抽查的核心实现文件存在更新版本；后续仍需逐文件审查其余独有差异，不能仅凭提交数做 merge。
+
+### 当前整合基线验证状态
+
+- HEAD：`cf5d0cb84f9bea748d9d805be7d3a4ade7e32e53`。
+- GitHub Combined Status 返回空状态列表；关联 PR workflow runs 也为空。当前不能声称该 HEAD 的 CI 已通过。
+- 当前代码树为 354 个文件；媒体模块专项检查发现有多组媒体 AI 测试，但没有独立的 `MediaVideoGenerationClientTest`。
+- 本节只完成分支结构与代表性文件核对；剩余分叉分支的逐文件语义审查仍在进行。任何清理/删除都必须等到全量引用扫描和调用链确认后再做。
+
