@@ -105,4 +105,32 @@ class UserMemoryRepositoryInstrumentedTest {
             database.close()
         }
     }
+    @Test
+    fun sharedMemoryIsVisibleAcrossProjectsOnlyAfterExplicitGrantAndRevocationIsImmediate() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("project-a", "项目 A", "", 1L),
+                ProjectEntity("project-b", "项目 B", "", 1L)
+            ))
+            dao.putUserMemory(memory())
+            val repository = UserMemoryRepository(database)
+
+            assertTrue(repository.recall("project-b", "清晰直接的表达方式").memories.isEmpty())
+            assertTrue(repository.setShareAcrossProjects("source-memory", "project-a", true))
+            assertEquals("source-memory", repository.recall("project-b", "清晰直接的表达方式").memories.single().id)
+            assertTrue("共享记忆不应复制到目标项目列表", repository.list("project-b").isEmpty())
+
+            assertTrue(repository.setShareAcrossProjects("source-memory", "project-a", false))
+            assertTrue("撤销后目标项目立即无法召回", repository.recall("project-b", "清晰直接的表达方式").memories.isEmpty())
+            assertEquals(1, repository.list("project-a").size)
+        } finally {
+            database.close()
+        }
+    }
+
 }
