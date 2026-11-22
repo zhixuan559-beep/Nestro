@@ -232,3 +232,11 @@
 - 当前未发现按全局/项目/会话作用域缓存记忆上下文并依据记忆版本自动失效的独立实现。用户提出的记忆关联本地缓存仍应列为待补/待明确验收项；不能用 embeddingCache、Prompt Cache 或 WorkManager 任务缓存顶替。
 - 后续若实现，必须先确认是否已有可复用的 repository/context assembler 缓存边界，避免另造一套缓存数据库；缓存 key 至少需覆盖项目/会话/记忆版本与上下文策略，记忆增删改、项目切换/删除、导入和恢复时必须正确失效。
 
+
+### 旧 main 分支独有辅助类的去留判断
+
+- `main` 分支独有的 `UnifiedAgentDispatcher.kt` 是关键词计数路由（PHONE/KNOWLEDGE/EXPERT/GENERAL），与当前整合分支的 `ModelLedToolDispatcher` 原生工具调用和主模型自主选择能力重复且能力更弱；不恢复旧文件。
+- `main` 分支独有的 `ChatNetworkPolicy.kt` 中重试判定调用的正是当前整合分支已有的 `ChatRequestPolicy.shouldRetry()`；超时参数由当前 `ChatExecutionService/OpenAiClient` 请求入口管理。未发现必须恢复该类的独有功能，避免增加第二套网络策略入口。
+- `main` 分支独有的 `TtsCapability.kt` 提供系统中文 Voice 质量/延迟排序；当前 `AndroidTextToSpeechController` 已提供设备可用语言并负责 setLanguage/语速/音调。当前用户确认的需求中尚无“按 TTS Voice 质量排序选择”的明确要求，暂不恢复该 helper，后续如界面设计确认需要具体音色选择，再基于现有控制器补入口。
+- 上述判断基于旧 main 分支文件与整合分支当前实现的对照，不是对 main 分支执行删除；当前开发基线仍只有 `integration/19-modules`。
+
