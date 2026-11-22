@@ -170,4 +170,26 @@ class ExpertTeamEngineTest {
         assertTrue(plan.none { it.name == "空角色" })
     }
 
+    @Test fun parallelTeamResumesOnlyUnfinishedMembersAndPersistsEachCompletion() = runBlocking {
+        val saved = mutableListOf<List<ExpertTeamMemberRun>>()
+        val calls = mutableListOf<String>()
+        val result = ExpertTeamEngine.run(
+            teamName = "恢复团队",
+            teamDescription = "独立分工",
+            task = "完成研究",
+            members = members,
+            resumeMembers = listOf(
+                ExpertTeamMemberRun("研究员", "success", 1, 10, output = "研究员已完成")
+            ),
+            onMemberResult = { rows -> synchronized(saved) { saved += rows } }
+        ) { member, _ ->
+            calls += member.name
+            "${member.name}完成"
+        }
+        assertEquals(listOf("审校员", "策略师").toSet(), calls.toSet())
+        assertEquals(3, result.successfulMembers)
+        assertTrue(saved.isNotEmpty())
+        assertTrue(saved.last().any { it.name == "研究员" && it.output == "研究员已完成" })
+    }
+
 }
