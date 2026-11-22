@@ -73,7 +73,8 @@ class AgentTaskExecutionContext internal constructor(
     suspend fun transition(
         status: AgentTaskStatus,
         reason: String = "",
-        currentStep: Int? = null
+        currentStep: Int? = null,
+        resultSummary: String? = null
     ) {
         require(status in setOf(
             AgentTaskStatus.RUNNING,
@@ -90,6 +91,7 @@ class AgentTaskExecutionContext internal constructor(
             status = status,
             currentStep = currentStep ?: state.currentStep,
             lastError = reason,
+            resultSummary = resultSummary?.take(8_000) ?: state.resultSummary,
             updatedAt = now,
             finishedAt = if (status in setOf(AgentTaskStatus.FAILED, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) now else state.finishedAt
         ))

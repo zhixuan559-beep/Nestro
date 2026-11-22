@@ -576,25 +576,11 @@ class NestroApplication : Application() {
                         )
                         when {
                             result.requiresUser -> taskContext.waitForUser(result.output.ifBlank { "插件步骤需要用户确认" })
-                            !result.success -> {
-                                val current = states.get(taskId)
-                                if (current != null) states.put(current.copy(
-                                    status = app.nestro.agent.AgentTaskStatus.FAILED,
-                                    lastError = result.output.take(2_000),
-                                    finishedAt = System.currentTimeMillis(),
-                                    updatedAt = System.currentTimeMillis()
-                                ))
-                            }
-                            else -> {
-                                val current = states.get(taskId)
-                                if (current != null) states.put(current.copy(
-                                    status = app.nestro.agent.AgentTaskStatus.COMPLETED,
-                                    lastError = "",
-                                    resultSummary = result.output.take(8_000),
-                                    finishedAt = System.currentTimeMillis(),
-                                    updatedAt = System.currentTimeMillis()
-                                ))
-                            }
+                            !result.success -> taskContext.fail(result.output.take(2_000).ifBlank { "插件步骤执行失败" })
+                            else -> taskContext.transition(
+                                AgentTaskStatus.COMPLETED,
+                                resultSummary = result.output.take(8_000)
+                            )
                         }
                         result
                     }
