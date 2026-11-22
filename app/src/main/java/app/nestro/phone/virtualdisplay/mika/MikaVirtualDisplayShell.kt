@@ -4,6 +4,7 @@
  */
 package app.nestro.phone.virtualdisplay.mika
 
+import android.os.Bundle
 import android.view.Surface
 import com.wangzan101.mika.shell.IMikaShell
 
@@ -22,6 +23,8 @@ interface MikaVirtualDisplayShell {
     fun injectTap(displayId: Int, x: Int, y: Int): Boolean
     fun injectStroke(displayId: Int, xs: IntArray, ys: IntArray, times: LongArray): Boolean
     fun injectAsciiText(displayId: Int, taskId: Int, packageName: String, text: String): Int
+    fun watchMainScreen(windowMs: Int): Int
+    fun mainArrivals(sinceUptimeMs: Long): Bundle
     fun finishDisplay(displayId: Int, keep: Array<String> = emptyArray(), close: Array<String> = emptyArray())
 }
 
@@ -45,6 +48,8 @@ class MikaAidlShellAdapter(private val remote: IMikaShell) : MikaVirtualDisplayS
         remote.injectStroke(displayId, xs, ys, times)
     override fun injectAsciiText(displayId: Int, taskId: Int, packageName: String, text: String) =
         remote.injectAsciiText(displayId, taskId, packageName, text)
+    override fun watchMainScreen(windowMs: Int) = remote.watchMainScreen(windowMs)
+    override fun mainArrivals(sinceUptimeMs: Long) = remote.mainArrivals(sinceUptimeMs)
     override fun finishDisplay(displayId: Int, keep: Array<String>, close: Array<String>) =
         remote.finishDisplay(displayId, keep, close)
 }
