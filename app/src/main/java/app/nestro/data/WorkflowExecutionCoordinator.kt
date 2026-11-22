@@ -29,6 +29,9 @@ class WorkflowExecutionCoordinator(
         val workflowFingerprint = MessageDigest.getInstance("SHA-256")
             .digest(WorkflowDefinitionCodec.encode(listOf(workflow)).toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+        val inputFingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
         val savedState = taskCoordinator.state(taskId)
         val savedPayload = savedState?.checkpoint
             ?.takeIf { it.startsWith("workflow_run:") }
@@ -40,7 +43,7 @@ class WorkflowExecutionCoordinator(
                 savedPayload.optString("workflowFingerprint") == workflowFingerprint) {
                 "持久化工作流检查点与当前工作流定义不匹配；请恢复原工作流或新建运行"
             }
-            require(savedPayload.optString("input") == input) {
+            require(savedPayload.optString("inputFingerprint") == inputFingerprint) {
                 "持久化工作流输入与当前输入不一致；请恢复原输入或新建运行"
             }
         }
@@ -68,7 +71,7 @@ class WorkflowExecutionCoordinator(
             .put("schemaVersion", 1)
             .put("workflowId", workflow.id)
             .put("workflowFingerprint", workflowFingerprint)
-            .put("input", input.take(12_000))
+            .put("inputFingerprint", inputFingerprint)
             .put("completedStepIndex", 0)
             .put("previousOutput", "")
             .put("stepRuns", JSONArray())
@@ -109,7 +112,7 @@ class WorkflowExecutionCoordinator(
                         .put("workflowFingerprint", workflowFingerprint)
                         .put("input", input.take(12_000))
                         .put("completedStepIndex", index)
-                        .put("previousOutput", output.take(12_000))
+                        .put("previousOutput", output.take(24_000))
                         .put("stepRuns", JSONArray().apply {
                             completedRuns.take(20).forEach { row ->
                                 put(JSONObject()
@@ -117,7 +120,11 @@ class WorkflowExecutionCoordinator(
                                     .put("title", row.title)
                                     .put("status", row.status)
                                     .put("attempts", row.attempts)
-                                    .put("output", row.output.take(1_200))
+                                    .put("output", if (
+                                        workflow.steps.firstOrNull { it.id == stepRun.stepId }?.parallelGroup?.isNotBlank() == true &&
+                                        workflow.steps.firstOrNull { it.id == row.stepId }?.parallelGroup ==
+                                            workflow.steps.firstOrNull { it.id == stepRun.stepId }?.parallelGroup
+                                    ) row.output.take(8_000) else "")
                                     .put("error", row.error.take(300))
                                     .put("iterations", row.iterations))
                             }
