@@ -394,7 +394,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 
 以下条目依据当前整合分支源码回读，修正本清单中未随着后续提交更新的旧结论：
 - 模块3：原生工具循环已具备受限 parallelSafe 并发；模型 context-window 仍未进入 ModelDefinition，固定 16,384/2,048 预算仍是缺口。
-- 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 和 DAO 来源归属校验仍缺。
+- 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 仍缺；DAO 项目/会话/消息来源归属校验已补并有 instrumentation 测试源码，未运行。
 - 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线授权仍缺。
 - 模块16：插件统一任务机/checkpoint、外部写入审批、插件恢复入口和 MCP 两层授权语义已实现；能力授权/调用审计已有 UI，但统一跨模块任务总览仍未收敛。任意代码沙箱和完整 VoiceInteractionService 仍未实现。
 - 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、日历状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟/任意时间条件模型、retryCount 与业务错误分类退避仍缺，专家 DAG/Workflow 直接调度边界待核。
@@ -417,3 +417,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 补齐原调用点引用但仓库中缺失的 `ConversationSnapshotPersistenceEffect`，新增 300ms debounce Room snapshot effect，继续委托现有 `ConversationPersistenceService`，未新增第二套持久化系统。
 - `NestroApp.kt` 在快照成功持久化后同步 `persistedConversationVersions` 并清理已删除会话的 marker。
 - 以上只完成源码写入与回读静态检查，尚未编译/运行测试。
+
+
+## 2026-11-22 17:25 UTC — 自动记忆来源链路补齐
+
+- 已在自动记忆提取前事务性持久化当前会话消息；来源项目/会话/消息校验后才允许保存自动记忆。
+- 新增来源归属与跨项目覆盖拒绝的 instrumentation 测试源码。
+- 独立全局/项目/会话 memory-context cache 仍未实现；不要将 UserMemoryRepository 的 embeddingCache 当成该缓存。
