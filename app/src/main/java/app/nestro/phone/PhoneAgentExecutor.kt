@@ -6,8 +6,7 @@ import app.nestro.data.runCatchingCancellable
 import app.nestro.agent.AgentAuthorization
 import app.nestro.agent.AgentPermissionRouter
 import app.nestro.agent.AgentRuntime
-import app.nestro.agent.AgentTaskState
-import app.nestro.agent.AgentTaskStatus
+import app.nestro.agent.AgentTaskExecutionContext
 import app.nestro.agent.AgentToolPermission
 import app.nestro.agent.AgentToolRequest
 import app.nestro.agent.AgentToolResult
@@ -39,18 +38,19 @@ object PhoneAgentExecutor {
     data class ActionResult(val index: Int, val action: String, val success: Boolean, val detail: String)
     data class ExecutionResult(val outcome: Outcome, val completedActions: Int, val results: List<ActionResult>, val handoffReason: String = "")
 
-    suspend fun execute(dao: NestroDao, taskId: String, actions: List<Action>, markTaskCompleted: Boolean = true, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun execute(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, actions: List<Action>, markTaskCompleted: Boolean = true, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         require(actions.size in 1..80) { "任务动作数量必须为 1 到 80" }
         PhoneAgentTaskStore.persistActions(dao, taskId, actions)
-        return runFrom(dao, taskId, actions, 0, markTaskCompleted, catalog, onProgress)
+        return runFrom(dao, taskId, taskContext, actions, 0, markTaskCompleted, catalog, onProgress)
     }
 
     /** Resume only previously persisted actions. If waiting for the user, skip the handoff marker after user completion. */
-    suspend fun resume(dao: NestroDao, taskId: String, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
+    suspend fun resume(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         val actionCount = try { PhoneAgentTaskStore.decodeActions(task.planJson).size } catch (_: Exception) { 0 }
         if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < actionCount && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
+            taskContext.pause("任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
         }
         val actions = try {
@@ -60,10 +60,10 @@ object PhoneAgentExecutor {
         }
         val start = if (afterUserHandoff && task.status == PhoneAgentTaskStore.STATUS_WAITING_USER &&
             actions.getOrNull(task.currentStep) is Action.ConfirmSensitive) task.currentStep + 1 else task.currentStep
-        return runFrom(dao, taskId, actions, start, true, catalog, onProgress)
+        return runFrom(dao, taskId, taskContext, actions, start, false, catalog, onProgress)
     }
 
-    private suspend fun runFrom(dao: NestroDao, taskId: String, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, catalog: AgentToolCatalog, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
+    private suspend fun runFrom(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, catalog: AgentToolCatalog, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
             return ExecutionResult(Outcome.CANCELLED, 0, emptyList(), "任务已取消")
@@ -72,24 +72,16 @@ object PhoneAgentExecutor {
         val service = PhoneAgentExecutionEnvironmentProvider.active
         if (service == null) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
-            agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "隔离虚拟屏执行环境尚未连接"))
+            taskContext.pause("隔离虚拟屏执行环境尚未连接")
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "隔离虚拟屏执行环境尚未连接")
         }
         if (!service.hasValidGrant()) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
-            agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, task.currentStep, task.planJson.take(64_000), "没有有效的操作授权"))
+            taskContext.pause("没有有效的操作授权")
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "没有有效的操作授权")
         }
         val results = mutableListOf<ActionResult>()
-        agentStates.put(
-            AgentTaskState(
-                taskId = taskId,
-                owner = "phone_agent",
-                status = AgentTaskStatus.RUNNING,
-                currentStep = startIndex,
-                checkpoint = task.planJson.take(64_000)
-            )
-        )
+        taskContext.checkpoint(task.planJson, startIndex)
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
@@ -107,12 +99,12 @@ object PhoneAgentExecutor {
             }
             if (service.isTaskStopped(taskId)) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "用户已请求停止"))
+                taskContext.pause("用户已请求停止")
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "用户已请求停止")
             }
             if (!service.hasValidGrant()) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.PAUSED, index, task.planJson.take(64_000), "操作授权已失效"))
+                taskContext.pause("操作授权已失效")
                 return ExecutionResult(Outcome.PAUSED, results.size, results, "操作授权已失效")
             }
             val screenBeforeAction = service.captureVisibleText()
@@ -122,7 +114,7 @@ object PhoneAgentExecutor {
                 val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请检查执行窗口。"
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "需要用户接手", false, userMessage)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), userMessage))
+                taskContext.waitForUser(userMessage)
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
             action = actions[index]
@@ -131,8 +123,7 @@ object PhoneAgentExecutor {
                 val userMessage = if (handedOff) action.description else "${action.description} 隔离屏自动交接未成功，请检查执行窗口。"
                 PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, userMessage)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), userMessage))
-                RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = userMessage.take(2_000)))
+                taskContext.waitForUser(userMessage)
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
             val toolId = toolIdFor(action)
@@ -203,7 +194,8 @@ object PhoneAgentExecutor {
                 catalog = toolLease.access,
                 permissions = toolPermissionRouter,
                 states = agentStates,
-                traces = RoomAgentTaskTraceStore(dao)
+                traces = RoomAgentTaskTraceStore(dao),
+                executionContext = taskContext
             )
             val toolResult = try {
                 runtime.execute(AgentToolRequest(taskId, toolId))
@@ -220,22 +212,26 @@ object PhoneAgentExecutor {
             onProgress(index + 1, result)
             if (!success) {
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
-                return ExecutionResult(Outcome.FAILED, results.count { it.success }, results, detail)
+                when {
+                    toolResult.requiresUser -> taskContext.waitForUser(detail)
+                    service.isTaskStopped(taskId) || !service.hasValidGrant() -> taskContext.pause(detail)
+                    else -> taskContext.fail(detail)
+                }
+                val outcome = if (toolResult.requiresUser) Outcome.WAITING_USER
+                    else if (service.isTaskStopped(taskId) || !service.hasValidGrant()) Outcome.PAUSED
+                    else Outcome.FAILED
+                return ExecutionResult(outcome, results.count { it.success }, results, detail)
             }
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, index + 1)
+            taskContext.checkpoint(task.planJson, index + 1)
         }
         PhoneAgentTaskStore.updateProgress(
             dao, taskId,
             if (markTaskCompleted) PhoneAgentTaskStore.STATUS_COMPLETED else PhoneAgentTaskStore.STATUS_RUNNING,
             actions.size
         )
-        agentStates.put(
-            AgentTaskState(
-                taskId, "phone_agent",
-                if (markTaskCompleted) AgentTaskStatus.COMPLETED else AgentTaskStatus.RUNNING,
-                actions.size, task.planJson.take(64_000), ""
-            )
-        )
+        taskContext.checkpoint(task.planJson, actions.size)
+        if (markTaskCompleted) taskContext.transition(app.nestro.agent.AgentTaskStatus.COMPLETED, currentStep = actions.size)
         return ExecutionResult(Outcome.COMPLETED, results.size, results)
     }
     private fun actionLabel(action: Action): String = when (action) {

@@ -761,26 +761,19 @@ class NestroApplication : Application() {
                     this@NestroApplication,
                     dao,
                     taskContext.taskId,
-                    preferences.getBoolean(PhoneAgentWorkScheduler.afterHandoffKey(taskContext.taskId), false),
-                    preferences.getBoolean(PhoneAgentWorkScheduler.allowRetryKey(taskContext.taskId), false),
+                    taskContext = taskContext,
+                    afterUserHandoff = preferences.getBoolean(PhoneAgentWorkScheduler.afterHandoffKey(taskContext.taskId), false),
+                    allowRetryCurrentAction = preferences.getBoolean(PhoneAgentWorkScheduler.allowRetryKey(taskContext.taskId), false),
                     toolCatalog = agentToolCatalog
                 )
-                val store = RoomAgentTaskStateStore(dao)
-                val current = store.get(taskContext.taskId)
-                val status = when (result.outcome) {
-                    PhoneAgentExecutor.Outcome.COMPLETED -> AgentTaskStatus.COMPLETED
-                    PhoneAgentExecutor.Outcome.PAUSED -> AgentTaskStatus.PAUSED
-                    PhoneAgentExecutor.Outcome.WAITING_USER -> AgentTaskStatus.WAITING_FOR_USER
-                    PhoneAgentExecutor.Outcome.FAILED -> AgentTaskStatus.FAILED
-                    PhoneAgentExecutor.Outcome.CANCELLED -> AgentTaskStatus.CANCELLED
-                }
-                if (current != null) {
-                    store.put(current.copy(
-                        status = status,
-                        currentStep = dao.phoneAgentTask(taskContext.taskId)?.currentStep ?: task.currentStep,
-                        lastError = if (status in setOf(AgentTaskStatus.PAUSED, AgentTaskStatus.WAITING_FOR_USER, AgentTaskStatus.FAILED)) result.message.take(2_000) else "",
-                        updatedAt = System.currentTimeMillis()
-                    ))
+                val currentStep = dao.phoneAgentTask(taskContext.taskId)?.currentStep ?: task.currentStep
+                when (result.outcome) {
+                    PhoneAgentExecutor.Outcome.COMPLETED ->
+                        taskContext.transition(AgentTaskStatus.COMPLETED, currentStep = currentStep)
+                    PhoneAgentExecutor.Outcome.PAUSED -> taskContext.pause(result.message.take(2_000))
+                    PhoneAgentExecutor.Outcome.WAITING_USER -> taskContext.waitForUser(result.message.take(2_000))
+                    PhoneAgentExecutor.Outcome.FAILED -> taskContext.fail(result.message.take(2_000))
+                    PhoneAgentExecutor.Outcome.CANCELLED -> taskContext.cancel()
                 }
             }
         }

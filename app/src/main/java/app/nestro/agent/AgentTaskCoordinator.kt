@@ -62,15 +62,46 @@ class AgentTaskExecutionContext internal constructor(
         trace("checkpoint_saved", "步骤 " + (currentStep ?: state.currentStep))
     }
 
-    suspend fun waitForUser(reason: String) {
-        require(reason.isNotBlank() && reason.length <= 2_000)
+    suspend fun waitForUser(reason: String) = transition(AgentTaskStatus.WAITING_FOR_USER, reason)
+
+    suspend fun pause(reason: String) = transition(AgentTaskStatus.PAUSED, reason)
+
+    suspend fun fail(reason: String) = transition(AgentTaskStatus.FAILED, reason)
+
+    suspend fun cancel(reason: String = "用户取消任务") = transition(AgentTaskStatus.CANCELLED, reason)
+
+    suspend fun transition(
+        status: AgentTaskStatus,
+        reason: String = "",
+        currentStep: Int? = null
+    ) {
+        require(status in setOf(
+            AgentTaskStatus.RUNNING,
+            AgentTaskStatus.WAITING_FOR_USER,
+            AgentTaskStatus.PAUSED,
+            AgentTaskStatus.FAILED,
+            AgentTaskStatus.COMPLETED,
+            AgentTaskStatus.CANCELLED
+        )) { "执行上下文不能直接设置创建、排队或重试等待状态" }
+        require(reason.length <= 2_000)
         val state = states.get(taskId) ?: return
+        val now = System.currentTimeMillis()
         states.put(state.copy(
-            status = AgentTaskStatus.WAITING_FOR_USER,
+            status = status,
+            currentStep = currentStep ?: state.currentStep,
             lastError = reason,
-            updatedAt = System.currentTimeMillis()
+            updatedAt = now,
+            finishedAt = if (status in setOf(AgentTaskStatus.FAILED, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) now else state.finishedAt
         ))
-        trace("waiting_for_user", reason)
+        val event = when (status) {
+            AgentTaskStatus.WAITING_FOR_USER -> "waiting_for_user"
+            AgentTaskStatus.PAUSED -> "paused"
+            AgentTaskStatus.FAILED -> "failed"
+            AgentTaskStatus.COMPLETED -> "completed"
+            AgentTaskStatus.CANCELLED -> "cancelled"
+            else -> "state_changed"
+        }
+        trace(event, reason)
     }
 }
 

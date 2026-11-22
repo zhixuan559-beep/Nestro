@@ -469,7 +469,8 @@ class DefaultAgentRuntime(
     private val catalog: AgentToolAccess,
     private val permissions: AgentPermissionRouter,
     private val states: AgentTaskStateStore,
-    private val traces: AgentTaskTraceStore? = null
+    private val traces: AgentTaskTraceStore? = null,
+    private val executionContext: AgentTaskExecutionContext? = null
 ) : AgentRuntime {
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
         try {
@@ -488,7 +489,7 @@ class DefaultAgentRuntime(
         val spec = catalog.find(request.toolId) ?: run {
             val reason = "工具不存在或尚未注册：${request.toolId}"
             trace(request.taskId, "tool_missing", request.toolId)
-            states.put(current.copy(
+            if (executionContext != null) executionContext.fail(reason) else states.put(current.copy(
                 status = AgentTaskStatus.FAILED,
                 lastError = reason,
                 updatedAt = System.currentTimeMillis()
@@ -500,7 +501,7 @@ class DefaultAgentRuntime(
         when (authorization) {
             is AgentAuthorization.Deny -> {
                 trace(request.taskId, "tool_denied", authorization.reason)
-                states.put(current.copy(
+                if (executionContext != null) executionContext.fail(authorization.reason) else states.put(current.copy(
                     status = AgentTaskStatus.FAILED,
                     lastError = authorization.reason,
                     updatedAt = System.currentTimeMillis()
@@ -509,7 +510,7 @@ class DefaultAgentRuntime(
             }
             is AgentAuthorization.RequireConfirmation -> {
                 trace(request.taskId, "waiting_for_user", authorization.reason)
-                states.put(current.copy(
+                if (executionContext != null) executionContext.waitForUser(authorization.reason) else states.put(current.copy(
                     status = AgentTaskStatus.WAITING_FOR_USER,
                     lastError = authorization.reason,
                     updatedAt = System.currentTimeMillis()
@@ -523,7 +524,7 @@ class DefaultAgentRuntime(
             AgentAuthorization.Allow -> Unit
         }
 
-        states.put(current.copy(
+        if (executionContext == null) states.put(current.copy(
             status = AgentTaskStatus.RUNNING,
             lastError = "",
             updatedAt = System.currentTimeMillis()
@@ -532,7 +533,10 @@ class DefaultAgentRuntime(
             val result = catalog.invoke(request.toolId, request.arguments)
             trace(request.taskId, if (result.success) "tool_succeeded" else "tool_failed", result.error.ifBlank { result.output })
             val latest = states.get(request.taskId) ?: current
-            states.put(latest.copy(
+            if (executionContext != null) {
+                if (result.success) executionContext.transition(AgentTaskStatus.RUNNING)
+                else executionContext.fail(result.error.ifBlank { result.output }.take(2_000))
+            } else states.put(latest.copy(
                 status = if (result.success) AgentTaskStatus.RUNNING else AgentTaskStatus.FAILED,
                 currentStep = latest.currentStep + if (result.success) 1 else 0,
                 lastError = if (result.success) "" else result.error.ifBlank { result.output }.take(2_000),
@@ -542,7 +546,7 @@ class DefaultAgentRuntime(
         } catch (cancelled: CancellationException) {
             val latest = states.get(request.taskId) ?: current
             trace(request.taskId, "tool_cancelled", "工具执行被取消")
-            states.put(latest.copy(
+            if (executionContext != null) executionContext.pause("任务已取消，可从最近检查点恢复") else states.put(latest.copy(
                 status = AgentTaskStatus.PAUSED,
                 lastError = "任务已取消，可从最近检查点恢复",
                 updatedAt = System.currentTimeMillis()
@@ -552,7 +556,7 @@ class DefaultAgentRuntime(
             val latest = states.get(request.taskId) ?: current
             val message = error.message?.take(2_000) ?: "工具执行失败"
             trace(request.taskId, "tool_failed", message)
-            states.put(latest.copy(
+            if (executionContext != null) executionContext.fail(message) else states.put(latest.copy(
                 status = AgentTaskStatus.FAILED,
                 lastError = message,
                 updatedAt = System.currentTimeMillis()
