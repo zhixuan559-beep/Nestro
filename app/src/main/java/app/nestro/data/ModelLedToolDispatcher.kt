@@ -851,7 +851,7 @@ ${prompt.take(8_000)}
                 task.status in pendingStatuses
         }
         if (!pendingChatApproval && !pendingPluginApproval) {
-            approvalCoordinator?.endScope(requestId)
+            approvalCoordinator?.endScopeAndAudit(requestId, "CLOSED")
         }
     }
 
