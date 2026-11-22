@@ -856,3 +856,77 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ### 逐项复核结果
 
 - **模块6 知识库**：\`KnowledgeChunker.kt\`、\`KnowledgePdfOcr.kt\`、\`KnowledgeRepository.kt\`、\`KnowledgeSearchEngine.kt\`、\`KnowledgeStore.kt\`、\`KnowledgeTextDecoder.kt\`、\`KnowledgeVectorSearch.kt\`、\`KnowledgePage.kt\` 与模块6历史分支对应实现逐行内容一致。\`KnowledgeEmbeddingModelManager.kt\` 当前版本增加 attention-mask-aware mean pooling，对有效 token 向量按 attention mask 求均值，而非旧分支只取 CLS 向量；保留当前较新实现。PDF OCR、文本解码、向量搜索、嵌入模型管理及对应测试均已在当前树中。历史模块 CI 不覆盖当前统一 Android workflow。\n- **模块7 技能库**：旧 \`SkillCommunityInstallPlanner\`、\`SkillInstallPolicy\` 和旧依赖报告 API不整套迁入；当前使用回溯求解器、安装计划与依赖闭包检查。当前 \`SkillBundleParser\` / \`SkillCommunityClient\` 比旧分支增加严格 SemVer 2.0、签名者指纹、社区 HTTPS URL 结构约束、存储元数据校验及更完整的签名/信任管理。旧 \`CapabilityDirectoryPage\` / \`NestroApp\` 属早期页面和路由，当前页面已承接统一能力注册表、MCP、审计及其他模块接线，不以旧 UI 覆盖。\n- **模块8 Phone Agent**：分支差异集中在 instrumentation 脚本、Android workflow 和 Gradle 配置，没有新增 Phone Agent 主源码路径；当前主源码及专项策略/测试已在整合树中。旧 CI 配置不覆盖当前工作流。\n- **模块9 语音**：语音 Provider、Realtime、录音控制器、TTS 控制器及语音设置页共享源码逐行一致；不需重复迁入。\n- **模块13 MCP**：历史 MCP 客户端、工具中心、页面及调用入口已在整合树中；此前专项对照确认核心文件与审计可靠性修复分支一致。当前版本还包含项目授权与全局授权双重校验，不用历史页面覆盖。\n- **模块14 GitHub Workbench**：页面源码逐行一致；当前 \`GitWorkbench.kt\` 比历史分支多出凭据保存/删除失败后的旧凭据恢复校验，以及本地仓库索引同步锁等保护；保留当前版本。\n- **模块15 AI Coworkbench**：当前页面、服务、数据流分析器、报告解析器和静态分析器与历史分支逐行一致；不重复迁入。SBOM 脚本/测试和 workflow 变更以当前仓库文件及统一 CI 配置为准，不覆盖当前 workflow。\n- **main**：独有旧关键词路由、网络策略和 TTS 能力类已判定被当前架构替代，不整分支合并。\n\n以上是 GitHub 远程文件内容/树差异的静态比较，不代表 Gradle 编译、JVM 测试、Android instrumentation 或设备运行通过。没有删除历史分支，也没有开展全项目死代码扫描。仍需完成所有可见分支最终清单核对，并回读审计与分支 HEAD 后，才能标记第一阶段整合结束。\n
+
+## 2026-11-22 整合分支十九模块二次审计（HEAD 6b331842）
+
+审计基线：`integration/19-modules`，HEAD `6b33184220f1dbaf2174bee3218e530d38414eca`；递归 Git tree `truncated=false`，361 个文件。  
+本轮重新读取 `NESTRO_19_MODULES.md`、`IMPLEMENTATION_ROADMAP.md`、`CURRENT_CODE_MAP.md` 与本审计文件，并按当前分支核对模块源码、主要调用入口和测试源码。此记录为源码静态审计，不代表编译、自动化测试、模拟器或真机通过。
+
+### 十九模块二次核对摘要
+
+| 模块 | 当前判断 | 关键缺口 / 验收边界 |
+|---|---|---|
+| 1 专家系统 | 自动组队、手动组队、DAG 工作包、并行执行和检查点恢复有源码 | 双向自由交流/私聊、可编辑任务图、用户可控暂停/恢复/返工、完整历史分页和结构化验收协议仍不完整 |
+| 2 模型管理 | Provider/模型/API Key 分离、加密凭据和多协议配置有源码 | `ModelDefinition` 未提供模型真实 context-window 元数据；魔搭 OAuth 仍待部署、注册应用和真实授权联调；动态余额/额度同步未实现 |
+| 3 聊天与主模型调度 | 流式聊天、原生工具调用、上下文组装、恢复和媒体任务工具入口有源码 | `ChatMessage` 仍只有字符串 `content`，没有原生多模态消息 parts；上下文预算仍使用固定估算；同一轮多个 tool calls 在 `OpenAiClient.nativeToolLoop` 中逐个 await，不支持无依赖工具并发 |
+| 4 数据与备份 | Room 快照、版本化 JSON 备份、项目包和中断恢复有源码 | 媒体工程 ZIP 与通用 JSON 备份分离；媒体原文件不在通用项目包中，需明确恢复边界并做完整往返验证 |
+| 5 项目空间 | 项目 CRUD、READ/WRITE 授权、资源范围和审计有源码 | 跨项目授权撤销对知识/记忆/专家/技能/工作流/媒体资源的即时影响，以及复制/删除全资源生命周期仍需联测 |
+| 6 知识库 | 文档导入、PDF OCR、BM25/FTS、BGE ONNX 向量检索和索引重建有源码 | 真实模型下载、设备内存/耗电/长文档性能及 Room 迁移尚未执行验证 |
+| 7 我的记忆 | 自动提取版本保护、项目记忆、来源关联、编辑删除、跨项目显式共享有源码 | 未发现独立的全局/项目/会话记忆上下文缓存；embeddingCache 只是向量缓存；会话召回 query 由最近历史构造，未包含当前 prompt |
+| 8 Phone Agent | WorkManager 任务、虚拟屏执行、页面节点桥接、下载后导入项目素材有源码 | 当前浮动预览固定在右下角，非角部拖动被解释为屏幕 swipe，未实现预览窗口拖动；主屏导航/授权交接和地图路线规划未形成已确认闭环；具体虚拟屏 UI 手势仍需按用户要求调整 |
+| 9 语音系统 | 本机识别/TTS、远程 STT/TTS、Realtime WebSocket 有源码 | 真实设备音频路由、回声、耳机/扬声器切换、厂商兼容和网络恢复待设备验收 |
+| 10 我的作品 | ArtifactStore 的项目范围、文件校验、版本和备份路径有源码 | 文件字节丢失、索引不一致、项目删除/恢复及跨版本完整恢复仍需集成验证 |
+| 11 专家模板 | 内置/自定义模板、编辑、复制、搜索、导入导出有源码和测试源码 | Kotlin 编译、JVM/UI 测试尚未执行 |
+| 12 双模型对比 | 双模型并行、独立失败/取消和响应布局有源码和策略测试源码 | 编译、JVM、并发取消和设备验收尚未执行 |
+| 13 MCP 工具中心 | 远程 HTTPS Streamable HTTP、发现、逐工具授权、参数校验、审计和撤销有源码 | 持久工具授权与任务级一次/当前任务授权语义仍未统一；测试源码未执行；stdio/OAuth 交互式授权不属于当前范围 |
+| 14 GitHub 工作台 | GitHub/GitLab/Gitee 账号凭据、本地仓库操作、Diff/回滚等有源码 | 完整远程操作、异常恢复、凭据轮换和文件系统故障测试未执行 |
+| 15 AI 共建工作台 | 补丁审查、逐文件批准、快照/回滚、静态分析和 Actions 结果解析有源码 | 真实 GitHub Actions、SBOM/JUnit 产物链和设备验证尚未执行 |
+| 16 统一能力中心 | AgentRuntime/AgentTaskCoordinator、工具租约、凭据租约、声明式插件工厂有源码 | 生成式插件执行现已通过 `AgentTaskCoordinator.runInline` 并逐步写 checkpoint（修正旧审计中“完全绕开统一任务基座”的过期判断）；但其自定义权限路由对 `EXTERNAL_WRITE` 直接 Allow，未检查 `requiresConfirmation`，可绕过工具确认；统一能力总览/项目授权/任务审计 UI、任意代码沙箱仍缺失 |
+| 17 智能剪辑 | 项目素材、单主视频轨/单音轨时间线、撤销重做、Media3 预览/导出、字幕和后台渲染有源码 | 多视频轨/PIP、转场、速度曲线、关键帧、字幕烧录和高级混音未实现；媒体渲染任务仍由独立文件状态与 WorkManager 管理；长视频性能待验证 |
+| 18 日历调度 | 日程 CRUD、重复规则、系统日历互操作和 WorkManager 提醒通知有源码 | 当前 Worker 到期只发通知并重排提醒；没有 Agent/Workflow/Phone Agent 分发、任务状态回写、occurrence 幂等 ID、重试/暂停/恢复/取消和 nextRunAt/lastRunAt 等调度记录；尚不是统一自动时间调度引擎 |
+| 19 多模态与社区生态 | 图片理解、音频/视频语音转写、视频场景检测、音频处理、异步视频生成、社区依赖求解与签名撤销有源码 | 没有通用视频理解接口/整段视频问答，也没有图像生成 action；媒体任务与统一 AgentTaskCoordinator 状态尚未统一；真实服务商凭据、专属端点和正式社区信任根待配置/联调 |
+
+### 跨模块集成问题（优先级高）
+
+1. **生成式插件权限绕过：** `NestroApplication` 为插件步骤创建的自定义 `AgentPermissionRouter` 对 `READ_ONLY` 和 `EXTERNAL_WRITE` 直接返回 Allow，没有尊重工具的 `requiresConfirmation`。例如 `media.video.generate` 声明为 `EXTERNAL_WRITE + requiresConfirmation=true`，生成插件路径仍可能绕过确认。必须先修复并增加“外部写入不能绕过确认、批准后续跑、拒绝终止”的测试。
+2. **工作流能力边界：** `WorkflowStepKind` 当前只有 PROMPT/EXPERT/SKILL；`NestroApp` 的工作流模型调用走 `completeWithFallback`，没有传入 `invokeModelWithTools`，因此工作流步骤不能直接调 Phone Agent、媒体或 MCP 工具。当前审批弹窗已有“授权一次 / 当前任务全部授权 / 拒绝”且不可随意关闭，但 `WorkflowExecutionCoordinator` 未把审批等待显式写入统一任务的 WAITING_FOR_USER 状态，也未见对应持久审计闭环。
+3. **统一任务状态未覆盖全部领域任务：** Phone Agent 已与统一协调器协作；生成式插件已使用 `runInline` 和 checkpoint。媒体 AI、媒体渲染仍各自使用文件任务状态 + WorkManager；日历目前仅 WorkManager 通知。需复用统一任务基座并保持领域数据，不新建第二套队列。
+4. **工具并发语义不足：** `OpenAiClient.nativeToolLoop` 对同轮 tool calls 使用顺序循环。应只并发无数据依赖且声明并行安全的调用；共享项目/文件/设备的写操作必须串行或显式依赖，并按 callId 稳定回注结果。
+5. **多模态入口不等于原生多模态聊天：** 聊天附件已导入项目素材库并可通过 `media.ai.run/status` 调用专业能力，但聊天消息传输仍是文本结构；图片理解/转写/场景分析与通用视频理解、图像生成必须分别验收。
+6. **MCP 授权范围：** MCP 服务/工具持久授权被运行时直接视为 Allow，任务级一次授权/当前任务授权尚未统一，需明确长期信任和单次任务审批的层级。
+
+### 测试与执行边界
+
+- 当前已找到大量 JVM/Android 测试源码，包括模块1–19的策略、持久化、页面、媒体、Phone Agent、工作流和插件相关测试；源码存在不代表测试已执行。
+- 本轮没有运行 Kotlin 编译、JVM 测试、Android instrumentation、模拟器、真机或真实 API 联调；本轮没有修改生产代码。
+- 下一步按依赖关系先处理安全/状态/调度级阻塞，再处理功能缺口；所有修复先查现有实现和调用链，采用最小补丁，十九模块代码全部完成后再统一执行构建与测试。
+
+
+## 2026-11-22 插件审批与 Phone Agent 统一任务机收敛记录（当前 HEAD `816e60660757549770d30c817450235b48696132`）
+
+### 插件权限审批修复
+
+- 新增 `GeneratedPluginAuthorizationPolicy`：只有 `READ_ONLY` 且未声明 `requiresConfirmation` 的工具可以直接 Allow；`EXTERNAL_WRITE` 或显式要求确认的工具统一返回 `RequireConfirmation`；其他高风险能力拒绝。
+- 生成式插件的 MCP 步骤仍先经过全局服务授权和当前项目授权，授权通过后再执行上述确认策略。
+- 插件内 `DefaultAgentRuntime` 已注入当前 `AgentTaskExecutionContext`；插件执行结果通过上下文写入 WAITING_FOR_USER / FAILED / COMPLETED，不再由插件回调直接改任务状态。
+- 已增加策略测试，覆盖只读放行、外部写入要求确认、显式确认和设备高风险能力拒绝。
+- **尚未闭环：** 当前修复保证外部写入不会静默 Allow，并持久进入 WAITING_FOR_USER；生成插件审批 UI、批准后恢复执行和拒绝后的完整用户交互仍需与统一审批机制打通。不能把“安全阻断”写成“审批体验已完成”。
+
+### Phone Agent 统一任务机收敛
+
+之前“Phone Agent 已与统一协调器协作”的结论只覆盖 Worker 触发执行的部分，不能代表生命周期已完全统一。本轮进一步完成：
+
+1. `PhoneAgentTaskService.createAndScheduleIfAuthorized` 在调度前先向 `AgentTaskCoordinator` 注册正式任务状态；旧安装中尚无统一状态的任务会在 Worker 入口按既有任务记录迁移注册。
+2. 新增外部调度任务的注册、排队准备和派发接口。Phone Agent 任务先进入统一状态表，再由 WorkManager 到期唤醒并调用统一协调器派发。
+3. `PhoneAgentWorker` 保留为 Android WorkManager 适配器，负责前台服务、进程唤醒、通知、系统级重试和持久唤醒；它不再直接写统一任务状态。统一队列、状态转换和执行生命周期由 `AgentTaskCoordinator` 管理。
+4. `PhoneAgentAgent`、`PhoneAgentExecutor`、Phone Agent 专用 `DefaultAgentRuntime` 与应用 Handler 改为通过 `AgentTaskExecutionContext` 保存检查点、暂停、等待用户、失败、取消和完成状态；删除了这些执行层直接写 `RoomAgentTaskStateStore` 的重复状态转换。
+5. `PhoneAgentTaskService.loadTasks` 从统一任务状态读取当前步骤；领域任务表仍保留计划、动作日志和状态字段。该领域状态目前仍承担“动作执行中断后必须人工核对，避免重复点击/重复提交”的安全标记，暂不删除；它不是第二个队列，但与统一状态的投影/回写关系仍需继续收敛。
+6. Worker 的旧任务迁移、暂停/取消/异常和 RETRY_WAIT 派发路径均改由统一协调器处理；Phone Agent 页面调用服务层入队，不再直接调度 Worker。
+
+### 本轮代码与测试变化
+
+- 生产代码：插件权限策略、统一任务上下文、Phone Agent 服务/Worker/Agent/Executor/应用接线。
+- 测试源码：新增外部调度任务“先登记、后派发”测试；新增执行上下文持久化用户接管状态测试；新增生成式插件权限策略测试。
+- WorkManager 与统一协调器职责不同：WorkManager 是 Android 持久唤醒/后台执行适配器，统一协调器是应用任务队列和生命周期权威；保留前者不是保留第二套业务任务引擎。
+- 本轮未执行 Gradle 编译、JVM 测试、Android instrumentation、模拟器或真机验收。测试源码已补，执行仍按十九模块全部补齐后统一验收的既定顺序进行。
+- 当前尚未完成的审批事项：生成式插件批准/拒绝 UI 恢复闭环、MCP 长期授权与任务级确认语义、工作流 WAITING_FOR_USER 持久恢复。
