@@ -995,10 +995,13 @@ class NestroApplication : Application() {
                         (state.status == AgentTaskStatus.PAUSED && state.lastError == restartReason)
                     if (resumable) {
                         when (state.kind) {
-                            "mcp_tool" -> mcpToolCenterService.resume(scopeId)
+                            "mcp_tool" -> applicationScope.launch {
+                                runCatching { mcpToolCenterService.resume(scopeId) }
+                            }
                             "media_ai" -> MediaAiTaskScheduler.resume(this@NestroApplication, state.projectId, state.input)
                             "media_render" -> app.nestro.media.MediaRenderWorker.resume(this@NestroApplication, state.projectId, state.input)
-                            "calendar_automation", "phone_agent" -> agentTaskCoordinator.resume(scopeId)
+                            "calendar_automation" -> agentTaskCoordinator.resume(scopeId)
+                            "phone_agent" -> phoneAgentTaskService.enqueue(scopeId)
                             // Workflow, expert-team and chat/plugin runInline handlers are
                             // re-entered by their owning coordinator or restored UI. Enqueuing
                             // them here without re-registering their handler would fail closed.
