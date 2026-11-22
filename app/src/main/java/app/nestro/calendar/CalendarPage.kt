@@ -357,6 +357,18 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                         )
                         if (event.location.isNotBlank()) Text("地点：${event.location}", style = MaterialTheme.typography.bodySmall)
                         if (event.description.isNotBlank()) Text(event.description, style = MaterialTheme.typography.bodySmall)
+                        if (event.automationPrompt.isNotBlank()) {
+                            Text("自动任务 · ${event.automationStatus}", style = MaterialTheme.typography.labelMedium)
+                            if (event.nextRunAt > 0L) {
+                                Text("下次执行时间戳：${event.nextRunAt}", style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (event.automationError.isNotBlank()) {
+                                Text(event.automationError.take(400), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (event.automationResult.isNotBlank()) {
+                                Text("最近执行结果：${event.automationResult.take(1_200)}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                         if (event.recurrence != CalendarRules.NONE) Text("重复：${event.recurrence}", style = MaterialTheme.typography.labelSmall)
                     }
                 }
