@@ -61,6 +61,7 @@ internal class MikaVirtualDisplayService(
             }.getOrNull()
         } ?: return -1
         displays[display.display.displayId] = display
+        configureDisplay(display.display.displayId)
         return display.display.displayId
     }
 
@@ -159,7 +160,7 @@ internal class MikaVirtualDisplayService(
         val now = android.os.SystemClock.uptimeMillis()
         val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, 0, -1, 0, 0, InputDevice.SOURCE_KEYBOARD)
         val up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP)
-        return inject(down) && inject(up)
+        return inject(down, displayId) && inject(up, displayId)
     }
 
     override fun injectTap(displayId: Int, x: Int, y: Int): Boolean =
@@ -177,7 +178,7 @@ internal class MikaVirtualDisplayService(
             runCatching {
                 MotionEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType).invoke(event, displayId)
             }
-            ok = inject(event) && ok
+            ok = inject(event, displayId) && ok
             event.recycle()
             if (i < xs.lastIndex && times[i + 1] > times[i]) Thread.sleep(times[i + 1] - times[i])
         }
@@ -189,7 +190,7 @@ internal class MikaVirtualDisplayService(
         if (displayOfTask(taskId) != displayId || packageOfTask(taskId) != packageName) return 0
         val events = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray()) ?: return 0
         var sent = true
-        events.forEach { event -> sent = inject(event) && sent }
+        events.forEach { event -> sent = inject(event, displayId) && sent }
         return if (sent) 1 else 2
     }
 
@@ -203,13 +204,34 @@ internal class MikaVirtualDisplayService(
         displays.keys.toList().forEach(::releaseDisplay)
     }
 
-    private fun inject(event: android.view.InputEvent): Boolean = runCatching {
+    @SuppressLint("PrivateApi")
+    private fun inject(event: android.view.InputEvent, displayId: Int): Boolean = runCatching {
+        event.javaClass.getMethod("setDisplayId", Int::class.javaPrimitiveType).invoke(event, displayId)
         val manager = runCatching {
             Class.forName("android.hardware.input.InputManagerGlobal").getMethod("getInstance").invoke(null)
         }.getOrNull() ?: Class.forName("android.hardware.input.InputManager").getMethod("getInstance").invoke(null)
         manager.javaClass.methods.first { it.name == "injectInputEvent" && it.parameterTypes.size == 2 }
             .invoke(manager, event, 0) as? Boolean ?: false
     }.getOrDefault(false)
+
+    @SuppressLint("PrivateApi")
+    private fun configureDisplay(displayId: Int) {
+        runCatching {
+            val wm = Class.forName("android.view.WindowManagerGlobal").getMethod("getWindowManagerService").invoke(null)!!
+            wm.javaClass.getMethod("setWindowingMode", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(wm, displayId, WINDOWING_MODE_FULLSCREEN)
+        }.onFailure {
+            runCatching {
+                ProcessBuilder("wm", "set-display-windowing-mode", "-d", "$displayId", "$WINDOWING_MODE_FULLSCREEN")
+                    .redirectErrorStream(true).start().waitFor()
+            }
+        }
+        runCatching {
+            val wm = Class.forName("android.view.WindowManagerGlobal").getMethod("getWindowManagerService").invoke(null)!!
+            wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(wm, displayId, IME_POLICY_LOCAL)
+        }.onFailure { Log.w(TAG, "Unable to isolate IME policy for display " + displayId, it) }
+    }
 
     private fun owns(displayId: Int) = displays.containsKey(displayId)
     private fun valid(surface: Surface, width: Int, height: Int, dpi: Int) =
@@ -263,6 +285,8 @@ internal class MikaVirtualDisplayService(
         private const val START_ERROR = 3
         private const val START_INVALID_LINK = 6
         private const val START_IN_USE_BY_OTHER = 7
+        private const val WINDOWING_MODE_FULLSCREEN = 1
+        private const val IME_POLICY_LOCAL = 0
         private const val FLAG_PUBLIC = 1 shl 0
         private const val FLAG_OWN_CONTENT_ONLY = 1 shl 3
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
