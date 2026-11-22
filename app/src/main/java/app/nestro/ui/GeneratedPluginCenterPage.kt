@@ -280,7 +280,7 @@ internal fun GeneratedPluginCenterPage(
                         }
                         if (
                             entry.state.kind == "generated_plugin" &&
-                            entry.state.status in setOf("WAITING_FOR_USER", "PAUSED")
+                            entry.state.status in setOf("WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED")
                         ) {
                             OutlinedButton(
                                 enabled = !busy,
