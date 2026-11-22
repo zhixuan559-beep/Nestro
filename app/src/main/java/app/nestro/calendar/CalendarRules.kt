@@ -58,21 +58,28 @@ object CalendarRules {
         return next.toInstant().toEpochMilli()
     }
 
-    /** Returns the next occurrence whose reminder time is strictly after now. */
+    /** Returns the next occurrence whose reminder lead-time is still ahead of now. */
     fun nextOccurrenceStart(event: CalendarEvent, now: Long): Long? {
-        if (event.completed || (event.reminderMinutes < 0 && event.automationPrompt.isBlank())) return null
+        if (event.completed || event.reminderMinutes < 0) return null
+        return nextOccurrenceAfter(event, now, event.reminderMinutes * 60_000L)
+    }
+
+    /** Returns the next actual event start for automation, independent of reminder settings. */
+    fun nextAutomationOccurrenceStart(event: CalendarEvent, now: Long): Long? {
+        if (event.completed || event.automationPrompt.isBlank()) return null
+        return nextOccurrenceAfter(event, now, 0L)
+    }
+
+    private fun nextOccurrenceAfter(event: CalendarEvent, now: Long, leadTimeMillis: Long): Long? {
         var candidate = event.startAt
         val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
-        val reminderMillis = if (event.reminderMinutes >= 0) event.reminderMinutes * 60_000L else 0L
-        if (event.recurrence == NONE) {
-            return candidate.takeIf { it - reminderMillis > now }
-        }
+        if (event.recurrence == NONE) return candidate.takeIf { it - leadTimeMillis > now }
         var guard = 0
-        while (candidate - reminderMillis <= now && guard++ < 20_000) {
+        while (candidate - leadTimeMillis <= now && guard++ < 20_000) {
             candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
             if (candidate == Long.MAX_VALUE) return null
         }
-        return candidate.takeIf { it != Long.MAX_VALUE && it - reminderMillis > now }
+        return candidate.takeIf { it != Long.MAX_VALUE && it - leadTimeMillis > now }
     }
 
     fun occurrences(events: List<CalendarEvent>, from: Long, until: Long, limit: Int = 500): List<Occurrence> {
