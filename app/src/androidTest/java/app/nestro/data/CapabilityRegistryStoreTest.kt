@@ -36,6 +36,7 @@ class CapabilityRegistryStoreTest {
         assertFalse(CapabilityRegistryStore.authorize(preferences, "project-a", "knowledge.search"))
         CapabilityRegistryStore.setGranted(preferences, "project-a", "knowledge.search", true)
         assertTrue(CapabilityRegistryStore.authorize(preferences, "project-a", "knowledge.search"))
+        assertFalse(CapabilityRegistryStore.authorize(preferences, "project-b", "knowledge.search"))
         CapabilityRegistryStore.setGranted(preferences, "project-a", "knowledge.search", false)
         assertFalse(CapabilityRegistryStore.authorize(preferences, "project-a", "knowledge.search"))
 
