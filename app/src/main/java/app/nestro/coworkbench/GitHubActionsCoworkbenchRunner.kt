@@ -1,0 +1,511 @@
+package app.nestro.coworkbench
+
+import android.content.Context
+import app.nestro.git.GitLocalRepository
+import app.nestro.git.GitProvider
+import app.nestro.git.GitAccountStore
+import java.net.URLEncoder
+import java.io.IOException
+import java.util.zip.ZipInputStream
+import java.time.Instant
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+object CoworkbenchReleaseGate {
+    // Kept closed until all 19 modules have complete code and the user authorizes unified validation.
+    const val ENABLE_REMOTE_VALIDATION = false
+}
+
+data class CoworkbenchJobStep(val name: String, val status: String, val conclusion: String?)
+data class CoworkbenchArtifactFile(val path: String, val content: String, val truncated: Boolean = false)
+data class CoworkbenchArtifactReport(val id: Long, val name: String, val sizeBytes: Long, val files: List<CoworkbenchArtifactFile>, val diagnostic: String? = null)
+data class CoworkbenchJobResult(
+    val id: Long,
+    val name: String,
+    val status: String,
+    val conclusion: String?,
+    val steps: List<CoworkbenchJobStep>,
+    val logExcerpt: String
+)
+
+data class CoworkbenchValidationResult(
+    val runId: Long,
+    val status: String,
+    val conclusion: String?,
+    val url: String,
+    val createdAt: String,
+    val jobs: List<CoworkbenchJobResult> = emptyList(),
+    val artifacts: List<CoworkbenchArtifactReport> = emptyList(),
+    val diagnostics: List<String> = emptyList(),
+    val sbomComponents: List<CoworkbenchSbomComponent> = emptyList(),
+    val sbomComplete: Boolean = false,
+    val testReports: List<CoworkbenchTestReport> = emptyList(),
+    val resolvedDependencies: List<CoworkbenchResolvedDependency> = emptyList()
+) {
+    val completed: Boolean get() = status == "completed"
+    val reportedTestFailures: Int get() = testReports.sumOf { it.failures + it.errors }
+    val hasTruncatedReports: Boolean get() = artifacts.any { artifact ->
+        artifact.diagnostic != null || artifact.files.any { it.truncated }
+    }
+    val successful: Boolean get() = completed && conclusion == "success" &&
+        testReports.any { it.total > 0 } && reportedTestFailures == 0 &&
+        sbomComplete && sbomComponents.isNotEmpty() && !hasTruncatedReports
+}
+
+/**
+ * Uses GitHub-hosted Actions runners as the isolated build/test boundary.
+ * It never executes repository code inside the Android process.
+ */
+class GitHubActionsCoworkbenchRunner(context: Context) {
+    private val accounts = GitAccountStore(context.applicationContext)
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(40, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun dispatchAndWait(
+        repository: GitLocalRepository,
+        workflowFile: String,
+        branch: String,
+        timeoutMinutes: Int = 20
+    ): CoworkbenchValidationResult = withContext(Dispatchers.IO) {
+        check(CoworkbenchReleaseGate.ENABLE_REMOTE_VALIDATION) { "统一验收尚未开放：须先完成十九个模块全部代码。" }
+        require(repository.provider == GitProvider.GITHUB) { "隔离构建当前仅支持 GitHub Actions；GitLab/Gitee runner 尚未接入" }
+        require(Regex("^[A-Za-z0-9_.-]{1,100}\\.ya?ml$").matches(workflowFile)) { "Workflow 必须是 .github/workflows 下的 YAML 文件名" }
+        require(branch.isNotBlank() && branch.length <= 200 && branch.none { it.isISOControl() }) { "分支名称无效" }
+        require(timeoutMinutes in 1..30) { "远程构建等待时间必须在 1 到 30 分钟之间" }
+        val account = accounts.list().firstOrNull { it.id == repository.accountId }
+            ?: error("GitHub 账号不存在，请重新授权")
+        require(account.provider == GitProvider.GITHUB)
+        val token = accounts.token(account.id)
+        require(token.isNotBlank()) { "GitHub 授权凭据不可用" }
+        val fullName = repository.fullName
+        require(Regex("^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$").matches(fullName)) { "仓库名称无效" }
+        val encodedWorkflow = URLEncoder.encode(workflowFile, "UTF-8")
+        val encodedBranch = URLEncoder.encode(branch, "UTF-8")
+        val repositoryApi = "https://api.github.com/repos/" + fullName
+        val branchRequest = Request.Builder().url(repositoryApi + "/branches/" + encodedBranch)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        executeCancellable(branchRequest).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 404) "目标分支尚未推送到 GitHub；请先推送本地已审查变更。"
+                else permissionDiagnostic(response, "检查远程分支失败")
+            }
+        }
+        val base = repositoryApi + "/actions/workflows/" + encodedWorkflow
+        val workflowRequest = Request.Builder().url(base)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        executeCancellable(workflowRequest).use { response ->
+            val body = response.body?.string().orEmpty()
+            require(response.isSuccessful) {
+                when (response.code) {
+                    401, 403 -> permissionDiagnostic(response, "读取 Workflow 失败")
+                    404 -> "GitHub 未找到该 Workflow；请确认文件已推送到默认分支且位于 .github/workflows。"
+                    else -> "Workflow 预检失败（HTTP ${response.code}）：${body.take(500)}"
+                }
+            }
+            val state = JSONObject(body).optString("state")
+            require(state == "active") { "目标 Workflow 当前状态为 ${state.ifBlank { "未知" }}，必须先启用。" }
+        }
+        val previousRunsRequest = Request.Builder()
+            .url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        val previousRunIds = executeCancellable(previousRunsRequest).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取既有 Workflow 运行记录失败")
+                else "读取既有 Workflow 运行记录失败（HTTP ${response.code}）"
+            }
+            val rows = JSONObject(response.body?.string().orEmpty()).optJSONArray("workflow_runs")
+                ?: org.json.JSONArray()
+            (0 until rows.length()).mapNotNull { rows.optJSONObject(it)?.optLong("id")?.takeIf { id -> id > 0 } }.toSet()
+        }
+        val startedAt = System.currentTimeMillis()
+        val dispatch = Request.Builder().url(base + "/dispatches")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .post(JSONObject().put("ref", branch).toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        val deadline = startedAt + TimeUnit.MINUTES.toMillis(timeoutMinutes.toLong())
+        var visibleSince: Long? = null
+        var activeRunId: Long? = null
+        try {
+            executeCancellable(dispatch).use { response ->
+                require(response.code == 204) {
+                    val body = response.body?.string().orEmpty().take(1200)
+                    when (response.code) {
+                        401, 403 -> permissionDiagnostic(response, "触发远程隔离构建失败")
+                        404 -> "未找到该 Workflow，或它未声明 workflow_dispatch；请先推送分支并启用手动触发。"
+                        else -> "触发远程隔离构建失败（HTTP " + response.code + "）：" + body
+                    }
+                }
+            }
+        while (System.currentTimeMillis() < deadline) {
+            val request = Request.Builder().url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Authorization", "Bearer " + token)
+                .header("User-Agent", "Nestro-AI-Coworkbench")
+                .get().build()
+            val found = executeCancellable(request).use { response ->
+                val body = response.body?.string().orEmpty()
+                require(response.isSuccessful) {
+                    if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取远程构建状态失败")
+                    else "读取远程构建状态失败（HTTP " + response.code + "）：" + body.take(1000)
+                }
+                val runs = JSONObject(body).optJSONArray("workflow_runs") ?: org.json.JSONArray()
+                (0 until runs.length()).mapNotNull { index ->
+                    val row = runs.optJSONObject(index) ?: return@mapNotNull null
+                    val created = row.optString("created_at")
+                    val createdMs = runCatching { Instant.parse(created).toEpochMilli() }.getOrDefault(0L)
+                    if (row.optString("head_branch") != branch || row.optString("event") != "workflow_dispatch" ||
+                        row.optLong("id") in previousRunIds || createdMs < startedAt - 5_000L) null
+                    else CoworkbenchValidationResult(
+                        row.optLong("id"), row.optString("status"), row.optString("conclusion").ifBlank { null },
+                        row.optString("html_url"), created
+                    )
+                }.maxByOrNull { it.createdAt }
+            }
+            if (found != null) {
+                activeRunId = found.runId
+                visibleSince = visibleSince ?: System.currentTimeMillis()
+                if (found.completed) {
+                    val diagnostics = mutableListOf<String>()
+                    val jobs = try {
+                        loadJobResults(fullName, token, found.runId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        diagnostics += "Job/Step 与日志读取失败：" + (error.message ?: "未知错误")
+                        emptyList()
+                    }
+                    val artifacts = try {
+                        loadArtifactReports(fullName, token, found.runId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        diagnostics += "构建产物/测试报告读取失败：" + (error.message ?: "未知错误")
+                        emptyList()
+                    }
+                    val sbomComponents = artifacts.flatMap { artifact ->
+                        artifact.files.flatMap { CoworkbenchReportParser.parseSbom(it.path, it.content) }
+                    }.distinctBy { listOf(it.name, it.version, it.packageUrl) }.take(5_000)
+                    val sbomComplete = artifacts.any { artifact ->
+                        artifact.files.any { CoworkbenchReportParser.isCompleteCoworkbenchSbom(it.path, it.content) }
+                    }
+                    val testReports = artifacts.flatMap { artifact ->
+                        artifact.files.mapNotNull { CoworkbenchReportParser.parseJunitXml(it.path, it.content) }
+                    }.take(100)
+                    val resolvedDependencies = artifacts.flatMap { artifact ->
+                        artifact.files.flatMap { CoworkbenchReportParser.parseGradleDependencyReport(it.path, it.content) }
+                    }.distinctBy { listOf(it.configuration, it.group, it.artifact, it.resolvedVersion, it.parent) }
+                        .take(10_000)
+                    return@withContext found.copy(jobs = jobs, artifacts = artifacts, diagnostics = diagnostics,
+                        sbomComponents = sbomComponents, sbomComplete = sbomComplete, testReports = testReports,
+                        resolvedDependencies = resolvedDependencies)
+                }
+            } else if (visibleSince == null && System.currentTimeMillis() - startedAt > 90_000L) {
+                error("已触发 Workflow，但 90 秒内未找到对应运行记录；请检查 workflow_dispatch、分支和仓库 Actions 设置")
+            }
+            delay(5_000L)
+        }
+        error("远程隔离构建等待超时；任务可能仍在 GitHub Actions 运行，请到仓库 Actions 页面核对，不能据此判断失败")
+        } catch (cancelled: CancellationException) {
+            val runId = activeRunId ?: withContext(NonCancellable) {
+                runCatching {
+                    val lookup = Request.Builder()
+                        .url(base + "/runs?branch=" + encodedBranch + "&event=workflow_dispatch&per_page=10")
+                        .header("Accept", "application/vnd.github+json")
+                        .header("X-GitHub-Api-Version", "2022-11-28")
+                        .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", "Nestro-AI-Coworkbench")
+                        .get().build()
+                    executeCancellable(lookup).use { response ->
+                        if (!response.isSuccessful) null else {
+                            val rows = JSONObject(response.body?.string().orEmpty()).optJSONArray("workflow_runs")
+                                ?: org.json.JSONArray()
+                            (0 until rows.length()).mapNotNull { index ->
+                                val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                                val createdMs = runCatching { Instant.parse(row.optString("created_at")).toEpochMilli() }
+                                    .getOrDefault(0L)
+                                if (row.optString("head_branch") == branch &&
+                                    row.optString("event") == "workflow_dispatch" &&
+                                    row.optLong("id") !in previousRunIds && createdMs >= startedAt - 5_000L
+                                ) row.optLong("id").takeIf { it > 0 } else null
+                            }.maxOrNull()
+                        }
+                    }
+                }.getOrNull()
+            }
+            val remoteCancelled = if (runId == null) false else withContext(NonCancellable) {
+                runCatching { cancelRemoteRun(fullName, token, runId) }.getOrDefault(false)
+            }
+            val message = if (remoteCancelled) {
+                "已向 GitHub Actions 发送远程取消请求；请到 Actions 页面确认任务最终状态。"
+            } else if (runId != null) {
+                "本地等待已取消，但 GitHub 未确认远程取消；Run #$runId 可能仍在运行，请到 Actions 页面核对。"
+            } else {
+                "本地等待已取消；尚未取得远程 Run ID，无法确认远程任务是否已启动或取消。"
+            }
+            throw CancellationException(message).also { it.initCause(cancelled) }
+        }
+    }
+
+    private suspend fun cancelRemoteRun(repository: String, token: String, runId: Long): Boolean {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/runs/" + runId + "/cancel")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .build()
+        return executeCancellable(request).use { response ->
+            response.code == 202
+        }
+    }
+
+    private suspend fun executeCancellable(request: Request): okhttp3.Response =
+        suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    if (continuation.isActive) continuation.resume(response) else response.close()
+                }
+            })
+        }
+
+    private fun permissionDiagnostic(response: okhttp3.Response, operation: String): String {
+        val accepted = response.header("X-Accepted-GitHub-Permissions")
+            ?.take(300)?.takeIf { it.isNotBlank() }
+        val classicScopes = response.header("X-OAuth-Scopes")
+            ?.take(300)?.takeIf { it.isNotBlank() }
+        val hints = buildList {
+            accepted?.let { add("GitHub 接口要求权限：$it") }
+            classicScopes?.let { add("Classic PAT 当前 scopes：$it") }
+        }
+        return operation + "（HTTP " + response.code + "）：" +
+            (hints.joinToString("；").ifBlank { "GitHub 未返回可读取的权限提示" }) +
+            "。请在 GitHub Token 设置中补齐仓库 Contents: read、Actions: read；触发工作流还需要 Actions: write。不会通过试探性请求启动工作流。"
+    }
+
+    private suspend fun loadJobResults(
+        repository: String,
+        token: String,
+        runId: Long
+    ): List<CoworkbenchJobResult> {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/runs/" + runId + "/jobs?per_page=100")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        val body = executeCancellable(request).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取 Job/Step 结果失败")
+                else "读取 Job/Step 结果失败（HTTP " + response.code + "）"
+            }
+            response.body?.string().orEmpty()
+        }
+        val jobs = JSONObject(body).optJSONArray("jobs") ?: org.json.JSONArray()
+        return (0 until jobs.length()).mapNotNull { index ->
+            val row = jobs.optJSONObject(index) ?: return@mapNotNull null
+            val jobId = row.optLong("id")
+            val stepsJson = row.optJSONArray("steps") ?: org.json.JSONArray()
+            val steps = (0 until stepsJson.length()).mapNotNull { stepIndex ->
+                val step = stepsJson.optJSONObject(stepIndex) ?: return@mapNotNull null
+                CoworkbenchJobStep(
+                    step.optString("name"),
+                    step.optString("status"),
+                    step.optString("conclusion").ifBlank { null }
+                )
+            }
+            val logs = try {
+                downloadJobLog(repository, token, jobId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                "日志暂不可读取：" + (error.message ?: "未知错误")
+            }
+            CoworkbenchJobResult(
+                jobId,
+                row.optString("name"),
+                row.optString("status"),
+                row.optString("conclusion").ifBlank { null },
+                steps,
+                logs
+            )
+        }
+    }
+
+    private suspend fun loadArtifactReports(
+        repository: String,
+        token: String,
+        runId: Long
+    ): List<CoworkbenchArtifactReport> {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/runs/" + runId + "/artifacts?per_page=100")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        val body = executeCancellable(request).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "读取构建产物失败")
+                else "读取构建产物失败（HTTP " + response.code + "）"
+            }
+            response.body?.string().orEmpty()
+        }
+        val rows = JSONObject(body).optJSONArray("artifacts") ?: org.json.JSONArray()
+        return (0 until minOf(rows.length(), 10)).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (row.optBoolean("expired", false)) return@mapNotNull null
+            val id = row.optLong("id")
+            val name = row.optString("name")
+            val size = row.optLong("size_in_bytes")
+            try {
+                CoworkbenchArtifactReport(id, name, size, downloadArtifactFiles(repository, token, id))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                CoworkbenchArtifactReport(id, name, size, emptyList(),
+                    "产物下载或 ZIP 解析失败：" + (error.message ?: "未知错误"))
+            }
+        }
+    }
+
+    private suspend fun downloadArtifactFiles(
+        repository: String,
+        token: String,
+        artifactId: Long
+    ): List<CoworkbenchArtifactFile> {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/artifacts/" + artifactId + "/zip")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        return executeCancellable(request).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "下载构建产物失败")
+                else "下载构建产物失败（HTTP " + response.code + "）"
+            }
+            val stream = response.body?.byteStream() ?: return@use emptyList()
+            ZipInputStream(stream).use { zip ->
+                val reports = mutableListOf<CoworkbenchArtifactFile>()
+                var total = 0
+                var entries = 0
+                while (entries < 40 && total < 2_000_000) {
+                    val entry = zip.nextEntry ?: break
+                    entries++
+                    val name = entry.name.replace('\\', '/')
+                    val safeName = name.split('/').none { it == ".." || it.isBlank() } &&
+                        !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)
+                    val reportFile = listOf(".xml", ".html", ".htm", ".txt", ".json", ".log")
+                        .any { name.lowercase().endsWith(it) }
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var entryBytes = 0
+                    var entryTruncated = false
+                    while (entryBytes < 256_000 && total < 2_000_000) {
+                        val count = zip.read(buffer, 0, minOf(buffer.size, 256_000 - entryBytes, 2_000_000 - total))
+                        if (count < 0) break
+                        if (count == 0) continue
+                        if (reportFile && safeName) output.write(buffer, 0, count)
+                        entryBytes += count
+                        total += count
+                    }
+                    if (total >= 2_000_000) {
+                        entryTruncated = true
+                    } else {
+                        // Read one extra byte to distinguish an exact-size entry from a truncated one.
+                        val extra = zip.read()
+                        if (extra >= 0) {
+                            entryTruncated = true
+                            total++
+                        }
+                    }
+                    if (!entry.isDirectory && safeName && reportFile) {
+                        reports += CoworkbenchArtifactFile(name, output.toString("UTF-8"), truncated = entryTruncated)
+                    }
+                    if (entryTruncated) break
+                    zip.closeEntry()
+                }
+                reports
+            }
+        }
+    }
+
+    private suspend fun downloadJobLog(repository: String, token: String, jobId: Long): String {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/" + repository + "/actions/jobs/" + jobId + "/logs")
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", "Bearer " + token)
+            .header("User-Agent", "Nestro-AI-Coworkbench")
+            .get().build()
+        return executeCancellable(request).use { response ->
+            require(response.isSuccessful) {
+                if (response.code == 401 || response.code == 403) permissionDiagnostic(response, "下载 Job 日志失败")
+                else "下载 Job 日志失败（HTTP " + response.code + "）"
+            }
+            val stream = response.body?.byteStream() ?: return@use ""
+            ZipInputStream(stream).use { zip ->
+                val output = StringBuilder()
+                var total = 0
+                var entries = 0
+                while (entries < 20) {
+                    val entry = zip.nextEntry ?: break
+                    entries++
+                    if (!entry.isDirectory) {
+                        val buffer = ByteArray(8192)
+                        while (total < 1_000_000) {
+                            val count = zip.read(buffer, 0, minOf(buffer.size, 1_000_000 - total))
+                            if (count <= 0) break
+                            output.append(String(buffer, 0, count, Charsets.UTF_8))
+                            total += count
+                        }
+                    }
+                    if (total >= 1_000_000) break
+                    zip.closeEntry()
+                }
+                if (total >= 1_000_000) output.append("\n…日志达到 1 MB 展示上限")
+                output.toString()
+            }
+        }
+    }
+}
