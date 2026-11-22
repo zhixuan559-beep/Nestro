@@ -240,12 +240,24 @@ class McpToolCenterService(
  fun setToolGranted(id:String,on:Boolean){repository.setToolGranted(id,on);val t=requireNotNull(repository.findTool(id));if(on)registerTool(t)else{catalog.remove(id);cancelActiveCalls(id)}}
  fun setServerEnabled(id:String,on:Boolean){repository.setServerEnabled(id,on);repository.listTools().filter{it.serverId==id}.forEach{if(on&&it.granted)registerTool(it)else{catalog.remove(it.id);cancelActiveCalls(it.id)}}}
  fun deleteServer(id:String){val ids=repository.listTools().filter{it.serverId==id}.map{it.id};repository.deleteServer(id);ids.forEach{catalog.remove(it);cancelActiveCalls(it)}}
- suspend fun invoke(id:String,argsJson:String):AgentToolResult{
+ suspend fun invoke(id:String,argsJson:String):AgentToolResult =
+  invokeWithTaskId("mcp-ui-${UUID.randomUUID()}", id, argsJson)
+
+ suspend fun resume(taskId: String): AgentToolResult {
+  val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
+  val state=requireNotNull(coordinator.state(taskId)){"MCP 任务不存在或已被清理"}
+  require(state.kind=="mcp_tool" && state.capabilityId.startsWith("mcp_")) { "该任务不是可恢复的 MCP 调用" }
+  require(state.status==app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER ||
+   state.status==app.nestro.agent.AgentTaskStatus.PAUSED ||
+   state.status==app.nestro.agent.AgentTaskStatus.FAILED) { "当前 MCP 任务状态不可恢复：${state.status}" }
+  return invokeWithTaskId(taskId, state.capabilityId, state.input)
+ }
+
+ private suspend fun invokeWithTaskId(taskId:String,id:String,argsJson:String):AgentToolResult {
   require(repository.isToolGranted(id)){"该 MCP 工具尚未获得授权"}
-  val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在"}
+  val d=requireNotNull(repository.findTool(id)){"MCP 工具不存在或已从服务目录移除"}
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
-  val taskId="mcp-ui-${UUID.randomUUID()}"
   return try {
    coordinator.runInline(
    taskId=taskId,
