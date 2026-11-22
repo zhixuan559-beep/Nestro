@@ -535,6 +535,10 @@ class NestroApplication : Application() {
                     }
                 }
                 val conversationId = rawArguments["__nestro_conversation_id"].orEmpty().take(120)
+                val recoveryPayload = "request_id=$requestId\n" + JSONObject().apply {
+                    inputs.forEach { (name, value) -> put(name, value) }
+                }.toString()
+                require(recoveryPayload.length <= 48_000) { "插件恢复输入超过统一任务记录限制" }
                 val coordinator = agentTaskCoordinator
                 val execution = try {
                     coordinator.runInline(
@@ -547,7 +551,7 @@ class NestroApplication : Application() {
                             kind = "generated_plugin",
                             capabilityId = plugin.id,
                             title = plugin.name.take(160),
-                            input = ("request_id=$requestId; inputs=" + inputs.keys.sorted().joinToString(",")).take(1_000)
+                            input = recoveryPayload
                         ),
                         idempotencyKey = idempotencyKey,
                         // Plugin tool failures may have an unknown external-write outcome.
