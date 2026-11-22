@@ -295,6 +295,25 @@ fun NestroApp(initialPage: String = "home") {
             }
         }
     }
+    val assignNewProjectResourceScope: (ProjectResourceKind, String) -> Boolean = { kind, resourceId ->
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已阻止新资源创建。"
+            false
+        } else {
+            runCatching {
+                val next = ProjectResourceScopeStore.assignNewResourceToProject(
+                    projectResourceScopes, kind, resourceId, activeProjectId
+                )
+                ProjectResourceScopeStore.save(prefs, next)
+                projectResourceScopes = next
+                status = "新资源已限定在当前项目"
+                true
+            }.getOrElse {
+                status = "新资源归属登记失败：" + (it.message ?: "数据无效")
+                false
+            }
+        }
+    }
     var recallSources by chatExecutionUiState.recallSources
     var showRecallDialog by chatExecutionUiState.showRecallDialog
     val expertCatalogUiState = remember(prefs) { ExpertCatalogUiState(prefs) }
@@ -3677,7 +3696,7 @@ fun NestroApp(initialPage: String = "home") {
                             members = teamDraftMembers.filter { it in experts }.take(4)
                         )
                         if (team.members.size in 2..4 && team.members.distinct().size == team.members.size) {
-                            if (editingTeamId.isBlank() && !updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)) return@TextButton
+                            if (editingTeamId.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.TEAM, team.id)) return@TextButton
                             if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
                             check(prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).commit()) { "专家团队保存失败" }
@@ -3744,7 +3763,7 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     val replacing = bundle.name in skills
                     if (replacing && !canWriteProjectResource(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
-                    if (!replacing && !updateProjectResourceScope(ProjectResourceKind.SKILL, bundle.name, false)) return@TextButton
+                    if (!replacing && !assignNewProjectResourceScope(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
                     skills = skills + (bundle.name to bundle.prompt)
                     skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
                     disabledSkills = disabledSkills - bundle.name
@@ -3914,7 +3933,7 @@ fun NestroApp(initialPage: String = "home") {
                         val oldName = editingSkillName
                         if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.SKILL, oldName)) return@TextButton
                         if (oldName.isNotBlank() && oldName != name && !canWriteSkillDependents(oldName)) return@TextButton
-                        if (oldName.isBlank() && !updateProjectResourceScope(ProjectResourceKind.SKILL, name, false)) return@TextButton
+                        if (oldName.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.SKILL, name)) return@TextButton
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
@@ -3986,9 +4005,9 @@ fun NestroApp(initialPage: String = "home") {
                 if (bundle.members.any { it.name in experts && !canWriteProjectResource(ProjectResourceKind.EXPERT, it.name) }) return@TextButton
                 val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
                 bundle.members.filter { it.name !in existingExpertNames }.forEach { member ->
-                    if (!updateProjectResourceScope(ProjectResourceKind.EXPERT, member.name, false)) return@TextButton
+                    if (!assignNewProjectResourceScope(ProjectResourceKind.EXPERT, member.name)) return@TextButton
                 }
-                if (previousTeam == null && !updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, false)) return@TextButton
+                if (previousTeam == null && !assignNewProjectResourceScope(ProjectResourceKind.TEAM, team.id)) return@TextButton
                 bundle.members.forEach { member ->
                     if (member.name !in experts) experts = experts + member.name
                     expertPrompts = expertPrompts + (member.name to member.prompt)
@@ -4028,7 +4047,7 @@ fun NestroApp(initialPage: String = "home") {
                 }
                 val isNewExpert = bundle.name !in experts
                 if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
-                if (isNewExpert && !updateProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name, false)) return@TextButton
+                if (isNewExpert && !assignNewProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
                 val missingSkills = bundle.skillNames.filter { skillName ->
                     skillName !in skills || skillName in disabledSkills || projectResourceScopesReadOnly ||
                         !ProjectResourceScopeStore.isVisibleFromProjects(
@@ -4306,7 +4325,7 @@ fun NestroApp(initialPage: String = "home") {
                     )
                     if (editingWorkflowId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.WORKFLOW, editingWorkflowId)) return@TextButton
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
-                        if (editingWorkflowId.isBlank() && !updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, false)) return@onSuccess
+                        if (editingWorkflowId.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id)) return@onSuccess
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
                         prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                         showWorkflowDialog = false
@@ -4494,7 +4513,7 @@ fun NestroApp(initialPage: String = "home") {
                         expertDialogError = profileError
                         return@TextButton
                     }
-                    if (oldName.isBlank() && !updateProjectResourceScope(ProjectResourceKind.EXPERT, name, false)) return@TextButton
+                    if (oldName.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.EXPERT, name)) return@TextButton
                     val previousProfile = expertProfiles[oldName] ?: if (oldName in experts) ExpertProfile() else null
                     val previousPrompt = expertPrompts[oldName].orEmpty()
                     if (oldName.isNotBlank() && previousProfile != null && (previousPrompt != expertPromptDraft.trim() || previousProfile.copy(version = profile.version) != profile)) {
