@@ -66,11 +66,57 @@ class AgentTaskExecutionContext internal constructor(
 
     suspend fun waitForUser(reason: String) = transition(AgentTaskStatus.WAITING_FOR_USER, reason)
 
+    suspend fun waitForTask(reason: String) = transition(AgentTaskStatus.WAITING_FOR_TASK, reason)
+
     suspend fun pause(reason: String) = transition(AgentTaskStatus.PAUSED, reason)
 
     suspend fun fail(reason: String) = transition(AgentTaskStatus.FAILED, reason)
 
     suspend fun cancel(reason: String = "用户取消任务") = transition(AgentTaskStatus.CANCELLED, reason)
+
+    suspend fun awaitTaskCompletion(
+        childTaskId: String,
+        timeoutMillis: Long = 30 * 60 * 1_000L
+    ): AgentTaskState {
+        require(childTaskId.isNotBlank() && childTaskId != taskId)
+        require(timeoutMillis in 1_000L..(60 * 60 * 1_000L))
+        val startedAt = System.currentTimeMillis()
+        checkpoint("await_child_task:$childTaskId")
+        while (true) {
+            if (!currentCoroutineContext().isActive) throw CancellationException("等待子任务时父任务已取消")
+            val child = states.get(childTaskId) ?: throw IllegalStateException("子任务不存在：$childTaskId")
+            when (child.status) {
+                AgentTaskStatus.COMPLETED -> {
+                    val parentStatus = states.get(taskId)?.status
+                    if (parentStatus == AgentTaskStatus.WAITING_FOR_TASK || parentStatus == AgentTaskStatus.WAITING_FOR_USER) {
+                        transition(AgentTaskStatus.RUNNING, "子任务已完成：${child.title}")
+                    }
+                    return child
+                }
+                AgentTaskStatus.FAILED -> throw IllegalStateException("子任务失败：${child.lastError.ifBlank { child.title }}")
+                AgentTaskStatus.CANCELLED -> throw IllegalStateException("子任务已取消：${child.title}")
+                AgentTaskStatus.WAITING_FOR_USER, AgentTaskStatus.PAUSED -> {
+                    if (states.get(taskId)?.status != AgentTaskStatus.WAITING_FOR_USER) {
+                        waitForUser("子任务等待用户处理：${child.title}；${child.lastError}".take(2_000))
+                    }
+                }
+                AgentTaskStatus.WAITING_FOR_TASK -> {
+                    if (states.get(taskId)?.status != AgentTaskStatus.WAITING_FOR_TASK) {
+                        waitForTask("子任务正在等待其他任务：${child.title}")
+                    }
+                }
+                else -> {
+                    if (states.get(taskId)?.status in setOf(AgentTaskStatus.WAITING_FOR_TASK, AgentTaskStatus.WAITING_FOR_USER)) {
+                        transition(AgentTaskStatus.RUNNING, "子任务正在执行：${child.title}")
+                    }
+                }
+            }
+            if (System.currentTimeMillis() - startedAt > timeoutMillis) {
+                throw IllegalStateException("等待子任务超时：$childTaskId")
+            }
+            delay(300)
+        }
+    }
 
     suspend fun transition(
         status: AgentTaskStatus,
@@ -81,6 +127,7 @@ class AgentTaskExecutionContext internal constructor(
         require(status in setOf(
             AgentTaskStatus.RUNNING,
             AgentTaskStatus.WAITING_FOR_USER,
+            AgentTaskStatus.WAITING_FOR_TASK,
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
             AgentTaskStatus.COMPLETED,
@@ -99,6 +146,7 @@ class AgentTaskExecutionContext internal constructor(
         ))
         val event = when (status) {
             AgentTaskStatus.WAITING_FOR_USER -> "waiting_for_user"
+            AgentTaskStatus.WAITING_FOR_TASK -> "waiting_for_task"
             AgentTaskStatus.PAUSED -> "paused"
             AgentTaskStatus.FAILED -> "failed"
             AgentTaskStatus.COMPLETED -> "completed"
