@@ -198,6 +198,7 @@ object CapabilityRegistryStore {
     fun setGranted(prefs: SharedPreferences, projectId: String, id: String, granted: Boolean) {
         require(validProject(projectId) && validId(id)) { "项目 ID 或能力 ID 无效" }
         val item = find(prefs, id) ?: error("能力尚未注册，不能授权")
+        require(item.available && item.projectScoped) { "当前能力不可用或不支持项目级授权" }
         val root = objectAt(prefs, GRANTS)
         val project = root.optJSONObject(projectId) ?: JSONObject()
         project.put(id, granted)
@@ -221,10 +222,19 @@ object CapabilityRegistryStore {
         }.getOrDefault(emptyList())
     }
 
-    fun isToolGranted(prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String): Boolean {
+    fun isToolGranted(
+        prefs: SharedPreferences,
+        projectId: String,
+        serviceId: String,
+        toolName: String,
+        defaultGranted: Boolean = false
+    ): Boolean {
         if (!validProject(projectId)) return false
         val key = runCatching { CapabilityToolPolicy.grantKey(serviceId, toolName) }.getOrNull() ?: return false
-        return runCatching { objectAt(prefs, TOOL_GRANTS).optJSONObject(projectId)?.optBoolean(key, false) ?: false }.getOrDefault(false)
+        return runCatching {
+            val project = objectAt(prefs, TOOL_GRANTS).optJSONObject(projectId)
+            if (project?.has(key) == true) project.optBoolean(key, false) else defaultGranted
+        }.getOrDefault(false)
     }
 
     private fun toolAudit(
