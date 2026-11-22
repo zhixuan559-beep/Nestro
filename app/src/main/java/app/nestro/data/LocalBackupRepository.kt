@@ -257,7 +257,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             .put("createdAt", event.createdAt).put("updatedAt", event.updatedAt)
             .put("sourceSystemEventId", JSONObject.NULL)
             .put("sourceSystemCalendarId", JSONObject.NULL)
-            .put("sourceSystemImported", event.sourceSystemImported))
+            .put("sourceSystemImported", event.sourceSystemImported)
+            .put("automationPrompt", event.automationPrompt)
+            .put("automationProjectId", event.automationProjectId))
     }
     root.put("calendar_events_v1", calendarArray)
     root.put("base_url", prefs.getString("base_url", "") ?: "")
@@ -784,9 +786,15 @@ private suspend fun applyLocalBackup(
             updatedAt = item.longOrDefault("updatedAt", 0L),
             sourceSystemEventId = null,
             sourceSystemCalendarId = null,
-            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", item.requiredString("id").startsWith("system-"))
+            sourceSystemImported = item.booleanOrDefault("sourceSystemImported", item.requiredString("id").startsWith("system-")),
+            automationPrompt = item.stringOrDefault("automationPrompt", "").take(12_000),
+            automationProjectId = item.stringOrDefault("automationProjectId", "")
         )
-        require(CalendarRules.validate(event) == null && event.createdAt >= 0L && event.updatedAt >= 0L) {
+        require(
+            CalendarRules.validate(event) == null &&
+                event.createdAt >= 0L && event.updatedAt >= 0L &&
+                (event.automationPrompt.isBlank() || event.automationProjectId in restoredProjectIds)
+        ) {
             "日历日程字段无效，拒绝恢复"
         }
         event
