@@ -78,7 +78,12 @@ internal fun GeneratedPluginCenterPage(
     suspend fun reloadAudit() {
         auditEntries = withContext(Dispatchers.IO) {
             val dao = application.database.dao()
-            dao.recentGeneratedPluginTaskStates(10)
+            (
+                dao.recoverableGeneratedPluginTaskStates(200) +
+                    dao.recentGeneratedPluginTaskStates(10)
+                )
+                .distinctBy { it.taskId }
+                .sortedByDescending { it.updatedAt }
                 .map { state ->
                     GeneratedPluginAuditEntry(
                         state = state,
