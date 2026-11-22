@@ -227,8 +227,27 @@ internal class MikaVirtualDisplayService(
     }
 
     override fun finishDisplay(displayId: Int, keep: Array<String>?, close: Array<String>?) {
+        if (!owns(displayId)) return
+        val keepSet = keep.orEmpty().toSet()
+        val closeSet = close.orEmpty().toSet()
+        tasks(displayId).forEach { item ->
+            val id = runCatching { taskInfoClass.getField("taskId").getInt(item) }.getOrDefault(-1)
+            if (id < 0) return@forEach
+            val pkg = listOf("topActivity", "baseActivity").firstNotNullOfOrNull { field ->
+                runCatching { (taskInfoClass.getField(field).get(item) as? android.content.ComponentName)?.packageName }.getOrNull()
+            }
+            when {
+                pkg != null && pkg in keepSet -> moveTask(id, Display.DEFAULT_DISPLAY)
+                pkg != null && pkg in closeSet -> removeTask(id)
+            }
+        }
         releaseDisplay(displayId)
     }
+
+    @SuppressLint("PrivateApi")
+    private fun removeTask(taskId: Int): Boolean = runCatching {
+        taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager, taskId) as? Boolean ?: true
+    }.getOrDefault(false)
 
     override fun identity(): IntArray = intArrayOf(Process.myUid(), Process.myPid())
 
