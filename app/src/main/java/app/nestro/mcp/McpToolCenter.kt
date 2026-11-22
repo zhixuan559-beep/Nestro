@@ -263,8 +263,15 @@ class McpToolCenterService(
     }else{
      when(val authorization=DefaultAgentPermissionRouter().authorize(task,tool)){
       is AgentAuthorization.RequireConfirmation -> {
+       taskContext.waitForUser(authorization.reason)
        val approved=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)==true
-       if(approved) AgentAuthorization.Allow else AgentAuthorization.Deny("MCP 工具本次任务未获用户批准")
+       if(approved) {
+        taskContext.transition(AgentTaskStatus.RUNNING,"用户已批准 MCP 工具：${tool.id}")
+        AgentAuthorization.Allow
+       } else {
+        taskContext.fail("MCP 工具本次任务未获用户批准")
+        AgentAuthorization.Deny("MCP 工具本次任务未获用户批准")
+       }
       }
       else -> authorization
      }
