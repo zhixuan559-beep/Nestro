@@ -69,6 +69,7 @@ internal class ChatRequestExecutionCoordinator(
             var directPersistedLength = 0
             var lastDirectPersistAt = System.currentTimeMillis()
             val coordinated = modelToolDispatcher?.let { dispatcher ->
+                try {
                     dispatcher.dispatch(
                         requestId = request.requestId,
                         conversationId = request.conversationId,
@@ -113,6 +114,9 @@ internal class ChatRequestExecutionCoordinator(
                             onPartialAnswer(partial)
                         }
                     )
+                } finally {
+                    dispatcher.endApprovalScope(request.requestId)
+                }
             }
             if (coordinated?.directReply != null) {
                 streamingCoordinator.persistPartial(
