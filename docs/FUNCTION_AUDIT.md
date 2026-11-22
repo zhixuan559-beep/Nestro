@@ -541,3 +541,37 @@
 - 旧分支 `NestroDatabaseMigrationTest.cancelledPhoneAgentTaskCannotBeRevivedByProgressOrPlanWrites()` 专门覆盖此问题；当前整合版测试缺少该用例，当前 PhoneAgentTaskStoreTest 也没有数据库终态保护测试。
 - 这是确认的 P0 状态一致性 bug，应恢复 SQL 终态保护并让 DAO 返回受影响行数；调用方在更新失败时停止后续动作。修复时保留合法的同终态写入/用户明确恢复语义，不能简单阻止所有状态更新。
 
+
+
+## 2026-11-22 多模态理解能力主模型入口核查（补充）
+
+### 已存在实现（复用，不重写）
+- 实时/录音语音输入：`AndroidSpeechRecognitionController`、`SpeechRecordingController`、`SpeechProviderConfigStore`、`OpenAiCompatibleSpeechProviders`、`OpenAiRealtimeVoiceProvider` 已存在；`NestroApp` 有语音输入/语音系统页面接入。
+- 音频/视频文件转写、视频场景识别、音频处理、图片理解：`MediaIntelligenceProvider` 和 `OpenAiCompatibleMediaIntelligenceProvider` 已实现；`MediaAiTaskStore`、`MediaAiTaskWorker`、`MediaAiTaskScheduler` 提供持久后台任务、进度、取消、恢复和结果保存；`MediaEditorPage` 有四类操作入口。
+- 视频生成：独立视频模型配置、异步生成客户端、后台任务和素材导入已存在，主模型可经 `media.provider.list`、`media.video.generate`、`media.video.status` 调用。
+- 图片理解、转写、场景识别、音频处理均已有媒体编辑器调用闭环的主要代码，不应另建第二套 Provider/Worker/TaskStore。
+
+### 已确认的主模型入口缺口
+- `NestroApplication.agentToolCatalog` 当前注册了 Phone Agent、专家团队、项目素材查询、媒体 Provider 列表和视频生成/状态工具；**未注册图片理解、音频文件转写、视频场景理解/分析、音频处理的聊天工具入口**。
+- `ModelLedToolDispatcher` 的主模型指令也只明确了视频模型路由；未定义主模型如何基于附件/项目素材选择并调用上述媒体理解能力。
+- 因此，语音按钮能把用户说的话转成聊天文本，不等于主模型能够分析用户上传的音频文件；媒体编辑器里有“理解图片/AI 转字幕/识别场景/音频处理”，也不等于普通聊天或专家项目能按需调度它们。
+- 当前准确状态：媒体分析底层与编辑器入口已有；主模型可调度入口缺失/未发现。后续应优先复用现有 `MediaAiTaskStore/Worker/Scheduler` 与项目素材库，补统一媒体分析工具 schema、任务创建/等待/状态查询、结果回传；先核查是否有可复用的通用工具执行封装，再作最小改动，不得复制 Provider/Worker。
+
+### 主模型媒体工具应覆盖的能力边界
+- `image_understanding`：图片素材/附件 → 视觉模型 → 可读分析结果回主模型。
+- `audio_transcription` / `audio_understanding`：音频素材/附件 → 转写模型或支持音频理解的模型 → 文本/结构化结果回主模型；语音识别输入和文件分析分别验收。
+- `video_understanding`：视频素材 → 已配置场景/视频理解服务 → 时间段、场景、摘要等结果回主模型。现有 scene detection 是结构化场景识别能力，不得夸大为任意视频问答，能力声明需区分。
+- `audio_processing`：仅在用户要求降噪/处理等操作时调用；结果音频导入当前项目并回传素材 ID。
+- 视频生成继续复用现有独立生成工具，不与视频理解合并成同一个能力声明。
+- 对每类能力按 Provider 实际能力/配置逐项显示可用性；不能只凭共享的 `model` 字段假设支持音频/视觉/场景接口。没有服务商端点、API Key 或能力声明时，主模型应明确提示缺失并提供可执行替代方案。
+
+## 2026-11-22 历史分支差异语义复核（代表性文件）
+
+- 模块9旧分支 `feature/module-9-voice-system` 的核心 Speech Provider/Realtime/TTS 文件与整合分支 blob 一致；其 Manifest 仍缺整合分支现有的日历权限、`FOREGROUND_SERVICE_MEDIA_PROCESSING`、Mika Helper Provider 等配置；旧 `LocalVault` 也缺 `ModelApiProtocol` 保存/恢复。不能把旧 Manifest、LocalVault 或旧版巨大 `NestroApp.kt` 覆盖到整合分支。
+- 模块13旧分支 `feature/module-13-mcp-tool-center` 的 `McpToolCenter.kt` 缺少当前整合分支的同步审计恢复策略：当前版本在损坏审计隔离失败时明确报错，且工具不存在时审计关联失败；旧版会静默返回空列表/忽略审计，可靠性更弱。当前整合分支版本应保留。
+- 模块14旧分支 `feature/module-14-github-workbench` 的 `GitWorkbench.kt` 在账号元数据保存/删除失败时只做 best-effort 恢复旧密文；当前整合分支会验证恢复结果，恢复失败时明确抛出严重错误。保留整合分支增强版，不合并旧版。
+- 模块15旧分支 `feature/module-15-ai-coworkbench` 的核心 Service/Page 文件与整合分支 blob 一致；其差异不构成需重建的功能缺口。
+- 模块8旧分支差异集中于旧版 workflow/instrumentation 脚本与 Gradle 配置；整合分支配置更新，不能覆盖。需要在统一构建阶段审查当前 CI 配置有效性，而不是把旧 CI 文件当功能代码合并。
+- `main` 分支独有的三个旧 helper 已在前文说明：旧关键词路由与当前主模型原生工具调度重复；网络策略逻辑已由现有 ChatRequestPolicy/请求执行层承接；TTS Voice 排序暂未形成用户确认需求。均不直接恢复。
+- 以上是逐文件内容对照，不是整分支合并。分支提交图上的 ahead/behind 只反映提交图差异，不能证明功能是否缺失。
+
