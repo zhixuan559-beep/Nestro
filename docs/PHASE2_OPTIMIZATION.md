@@ -45,7 +45,7 @@ Architecture invariants:
 
 ## Current implementation boundary
 
-The chat request coordinator currently centralizes context assembly and streaming. The process-wide agent task coordinator and shared capability catalog already provide reusable scheduling/catalog foundations for Phone Agent, experts, workflows and MCP. Model registry/fallback/usage accounting, project-scope primitives, and community signature/dependency foundations also exist and must be reused rather than rebuilt. The chat path now has a model-led streaming decision protocol before final response: `DIRECT` streams user-facing text immediately; `TOOL` returns a typed JSON argument object. Tool decisions are restricted to the shared catalog, receive a task-local lease, pass through `AgentRuntime` and its permission router, and return bounded results for model synthesis. Existing granted MCP tools use their persisted per-tool grant check, and `knowledge.search` is registered as a project-scoped read-only capability. The decision request is streamed and cancellable; the tool loop is capped at three decision rounds. Remaining: provider-native tool-call protocol adapters (OpenAI/Anthropic/Gemini), user-confirmation continuation for non-MCP high-risk tools, richer schema-aware argument validation for every capability, and full project-scope enforcement for each future tool handler. Until those are complete, this is a functioning first model-led dispatch path, not the final native tool-call architecture. The current text-protocol decision pass is a separate model request before the normal answer/tool execution, so it adds a network round trip when the dispatcher is active; do not describe it as native tool calling or as the final low-latency design. Replace it with provider-native streaming tool-call adapters before claiming the one-model/one-decision request path is complete.
+The chat request coordinator centralizes context assembly and streaming. The process-wide AgentTaskCoordinator and shared AgentToolCatalog are reused by Phone Agent, expert teams, workflows, MCP and generated plugins. The model-led dispatcher prefers provider-native function calling for OpenAI-compatible Chat Completions, Anthropic Messages and Gemini; tool results are returned through each provider's native protocol and the loop is bounded. The compatibility DIRECT/TOOL text protocol is retained only when a provider explicitly rejects native tool calling. Tool decisions are allow-listed, task-leased, routed through AgentRuntime and its permission router, and receive bounded results for main-model synthesis. Phone Agent planning returns a typed AgentToolResult so task creation, authorization and scheduling outcomes are not flattened into false success. The dispatcher supports sequential capability composition: the main model may interleave phone execution, waiting, project asset verification, expert collaboration and media creation according to actual dependencies. Remaining boundaries include richer per-tool schema validation, complete project-scope enforcement for future handlers, and a product-level user-confirmation continuation for every high-risk external-write capability. Native calling and current routing are source-level implementations pending the unified verification phase.
 
 ## Acceptance sequence
 
@@ -73,17 +73,9 @@ Finish all feature code and architecture integration first. Only then run the ag
 - `phone_agent.execute` is the single canonical model-visible Phone Agent capability and is exposed only in explicit task mode. The duplicate `phone_agent.plan` registration and schema have been removed; both native and compatibility dispatcher paths route the canonical tool through the same task-planning/scheduling callback.
 - `expert_team.run` is exposed only when the user explicitly selected an enabled team in task mode. Expert-team execution is deferred until the model selects that capability; it no longer runs automatically before the model decision.
 
-## 专家团双模式与 AI 插件工厂（需求已确认，代码未完成）
+## 历史阶段记录说明
 
-详细约束见 docs/EXPERT_TEAM_AUTONOMOUS_PROJECTS_AND_PLUGIN_FACTORY.md。
-
-已落地的第一步代码：ExpertTeamMemberTask 增加独立 assignedTask，ExpertTeamEngine.run() 会按成员各自任务执行；ExpertTeamExecutionCoordinator 增加 MANUAL_PARALLEL / SEQUENTIAL_DELEGATION 两种执行策略，测试源码覆盖成员任务隔离。当前 UI 尚未接入逐成员派单，聊天入口默认仍走原有链式协作，不能视为双模式产品功能完成。\n\n源码核查纠正：
-- 当前聊天专家团入口调用 ExpertTeamExecutionCoordinator.execute()，其内部实际使用 ExpertTeamEngine.runCollaborative()，是单专家逐个委派的链式协作，不是项目级多专家并行任务 DAG。
-- ExpertTeamEngine.run() 虽有受限并行执行能力，但尚未与主模型项目规划、依赖调度、持久化消息事件、用户可查看的协作工作区和最终主模型审查交付连成闭环。
-- 当前仅有临时成员状态与运行历史，不等于用户可进入的实时协作工作区。
-- CapabilityDraftCoordinator 只生成专家/Skill 的文字定义，不是可执行插件工厂；插件 manifest、受限运行时、沙箱测试、审批安装、版本生命周期和回滚均待实现。
-- 上述内容加入本轮优化范围；不能标记为已完成。
-
+本文件早期关于专家 DAG、插件工厂尚未接入的记录已被下方 2026-11-22 源码核查与实现状态覆盖；不得再按旧阶段描述判断当前分支状态。
 
 ## 2026-11-22 统一专家协作、插件工厂与 Android 助手入口补充
 
@@ -97,10 +89,10 @@ Finish all feature code and architecture integration first. Only then run the ag
 - 尚未完成：独立可交互项目工作区、双向自由消息、持久化事件分页/Room 迁移、工作包返工 UI、专家团队保留/解散操作和结构化验收协议。
 
 ### 受限 AI 插件工厂
-- 新增 GeneratedPluginFactory：模型可依据当前已注册 AgentToolCatalog 生成声明式插件包；插件只编排已有工具，不生成任意语言代码或声明任意系统权限。
-- 新增插件 manifest 数据结构、SemVer/工具白名单/模板引用校验、有界 codec，以及按顺序调用注入的统一 Runtime 回调的执行器。
-- 新增 JVM 测试源码，覆盖前序步骤引用、未授权工具拒绝、运行时路由和包 codec；尚未执行。
-- 尚未完成：产品 UI、草案/安装/启用持久化仓库、插件注册进全局能力目录、签名/来源、依赖锁定、隔离沙箱、权限审批、审计、升级/撤销/回滚。因此当前是受限插件生成与执行内核，不是完整插件商店。
+- GeneratedPluginFactory 根据已注册 AgentToolCatalog 生成声明式插件包，包含 SemVer、输入字段、步骤、工具白名单与参数模板校验；拒绝递归插件及高风险设备/身份验证/金融工具。
+- GeneratedPluginCenterPage 与 GeneratedPluginStore 已提供草案生成/预览、安装（默认关闭）、启用/停用、升级、版本回滚和卸载；启用插件才注册到共享能力目录。
+- 插件只编排现有工具，不执行任意代码；每步仍通过统一 AgentRuntime 回调及工具自身权限路由。
+- 仍待补齐签名/来源验证、依赖锁定、独立资源沙箱、插件级完整审批/审计视图、远程目录及导入/导出。
 
 ### Android 默认助手入口
 - Manifest 增加 ACTION_ASSIST，系统助手触发时 MainActivity 进入主聊天页面。
@@ -143,7 +135,7 @@ Core efficiency rule: direct-answer requests must not pay for an unnecessary dec
 - The expert project DAG executor, automatic expert selection/plan handoff, manual expert-center selection, collaboration event timeline and final main-model review instructions have code落点. The richer interactive workspace, bidirectional member chat, pause/resume/rework controls, durable event pagination and structured acceptance protocol remain gap candidates; do not describe the entire expert system as absent.
 - The declarative generated-plugin factory, local store/lifecycle, plugin center UI and catalog registration have code落点. Signature/provenance, dependency lifecycle, sandbox/resource isolation, complete approval/audit semantics and distribution remain separate gap candidates; do not describe the plugin factory as only a prompt draft.
 - Video generation has provider configuration, asynchronous WorkManager tasks, progress/cancellation/recovery, revision linkage and project asset import paths. Real provider interoperability and user-visible playback/revision flows require unified verification.
-- Phone Agent now has a Mika-derived isolated-display execution adapter. It reads AccessibilityService windows filtered by the selected display ID, routes app launch/URL/back input through the shell helper, persists user-handoff task IDs, and restores the task to the isolated display after user confirmation. The Phone Agent page now exposes wireless-debugging pairing, helper reconnect, virtual-screen creation, live frame preview, tap/swipe input, gesture-only preview resizing, collapse/expand and explicit main-screen restoration. The execution-mode preference is persisted so a lost virtual session pauses instead of silently falling back to the real screen. This is source-level implementation only; accessibility-window behavior and OEM/app compatibility remain unverified until the agreed acceptance phase.
+- Phone Agent now has a Mika-derived isolated-display execution adapter. It reads AccessibilityService windows filtered by the selected display ID, routes app launch/URL/back input through the shell helper, persists user-handoff task IDs, and restores the task to the isolated display after user confirmation. The Phone Agent page exposes wireless-debugging pairing, helper reconnect, virtual-screen creation, live frame preview, tap/swipe input, double-tap preview zoom, corner-drag resizing (up shrinks, down enlarges), and explicit main-screen restoration. Preview scale remains independent from virtual-display resolution; retired preview bitmaps are recycled after a short UI handoff delay. A stale session cannot detach a replacement session's active execution environment. The execution-mode preference is persisted so a lost virtual session pauses instead of silently falling back to the real screen. This is source-level implementation only; accessibility-window behavior and OEM/app compatibility remain unverified until the agreed acceptance phase.
 - The current task dispatcher exposes selected registered capabilities and gates Phone Agent/expert tools by task-mode/team state. The complete scenario router must not hard-code “expert first” or “phone first”; it must select the correct route based on intent and actual capability availability.
 
 ### Work order — do not start acceptance early
