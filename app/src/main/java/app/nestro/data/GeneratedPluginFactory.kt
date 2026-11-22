@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import java.security.MessageDigest
 
 data class GeneratedPluginInput(
     val name: String,
@@ -18,7 +19,8 @@ data class GeneratedPluginStep(
     val id: String,
     val toolId: String,
     val arguments: Map<String, String>,
-    val resultKey: String
+    val resultKey: String,
+    val toolFingerprint: String = ""
 )
 
 data class GeneratedPluginPackage(
@@ -77,6 +79,10 @@ object GeneratedPluginPackageValidator {
             require(!step.toolId.startsWith("plugin.")) { "插件不能递归调用其他生成插件" }
             val toolSpec = discovery.find(step.toolId)
                 ?: error("插件引用了未注册的工具：${step.toolId}")
+            require(step.toolFingerprint.isBlank() ||
+                step.toolFingerprint == toolFingerprint(toolSpec)) {
+                "插件依赖工具契约已变化，请重新审查并更新插件：${step.toolId}"
+            }
             require(step.toolId.length in 1..100)
             require(toolSpec.permission in setOf(
                 app.nestro.agent.AgentToolPermission.READ_ONLY,
@@ -111,6 +117,21 @@ object GeneratedPluginPackageValidator {
         }
     }
 
+    fun toolFingerprint(spec: app.nestro.agent.AgentToolSpec): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(
+                listOf(spec.id, spec.permission.name, spec.requiresConfirmation.toString(), spec.description)
+                    .joinToString("\n").toByteArray(Charsets.UTF_8)
+            ).joinToString("") { "%02x".format(it) }
+
+    fun pinToolContracts(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery): GeneratedPluginPackage {
+        validate(plugin, discovery)
+        return plugin.copy(steps = plugin.steps.map { step ->
+            val spec = discovery.find(step.toolId) ?: error("插件引用了未注册的工具：${step.toolId}")
+            step.copy(toolFingerprint = toolFingerprint(spec))
+        })
+    }
+
     internal val TEMPLATE = Regex("""\$\{([^}]{1,100})\}""")
 }
 
@@ -138,6 +159,7 @@ object GeneratedPluginPackageCodec {
                                 .put("id", step.id)
                                 .put("toolId", step.toolId)
                                 .put("resultKey", step.resultKey)
+                                .put("toolFingerprint", step.toolFingerprint)
                                 .put("arguments", JSONObject(step.arguments)))
                         }
                     }))
@@ -178,7 +200,10 @@ object GeneratedPluginPackageCodec {
                         put(key, args.optString(key).take(2_000))
                     }
                 }
-                GeneratedPluginStep(item.optString("id"), item.optString("toolId"), mapped, item.optString("resultKey"))
+                GeneratedPluginStep(
+                    item.optString("id"), item.optString("toolId"), mapped,
+                    item.optString("resultKey"), item.optString("toolFingerprint")
+                )
             }
             GeneratedPluginPackage(
                 id = root.optString("id"), name = root.optString("name"),
@@ -198,26 +223,32 @@ class GeneratedPluginStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("nestro_generated_plugins_v1", Context.MODE_PRIVATE)
 
     @Synchronized
-    fun list(discovery: AgentToolDiscovery? = null): List<GeneratedPluginPackage> =
-        GeneratedPluginPackageCodec.decode(prefs.getString(KEY_PACKAGES, "[]").orEmpty())
-            .mapNotNull { plugin ->
-                if (discovery == null) plugin else runCatching {
-                    GeneratedPluginPackageValidator.validate(plugin, discovery)
-                    plugin
-                }.getOrNull()
-            }
-            .sortedWith(compareBy<GeneratedPluginPackage> { it.name.lowercase() }.thenBy { it.id })
+    fun list(discovery: AgentToolDiscovery? = null): List<GeneratedPluginPackage> {
+        val decoded = GeneratedPluginPackageCodec.decode(prefs.getString(KEY_PACKAGES, "[]").orEmpty())
+        val normalized = if (discovery == null) decoded else decoded.map { plugin ->
+            if (plugin.steps.any { it.toolFingerprint.isBlank() }) {
+                runCatching { GeneratedPluginPackageValidator.pinToolContracts(plugin, discovery) }.getOrDefault(plugin)
+            } else plugin
+        }
+        if (normalized != decoded) persist(normalized)
+        return normalized.mapNotNull { plugin ->
+            if (discovery == null) plugin else runCatching {
+                GeneratedPluginPackageValidator.validate(plugin, discovery)
+                plugin
+            }.getOrNull()
+        }.sortedWith(compareBy<GeneratedPluginPackage> { it.name.lowercase() }.thenBy { it.id })
+    }
 
     fun find(pluginId: String, discovery: AgentToolDiscovery? = null): GeneratedPluginPackage? =
         list(discovery).firstOrNull { it.id == pluginId }
 
     @Synchronized
     fun install(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery): GeneratedPluginPackage {
-        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val pinned = GeneratedPluginPackageValidator.pinToolContracts(plugin, discovery)
         val current = list()
         require(current.none { it.id == plugin.id }) { "插件 ID 已安装，请使用版本更新流程" }
         require(current.size < MAX_PLUGINS) { "本地插件数量已达到上限" }
-        val installed = plugin.copy(enabled = false)
+        val installed = pinned.copy(enabled = false)
         persist(current + installed)
         return installed
     }
@@ -226,8 +257,8 @@ class GeneratedPluginStore(context: Context) {
     fun setEnabled(pluginId: String, enabled: Boolean, discovery: AgentToolDiscovery): GeneratedPluginPackage {
         val current = list()
         val existing = current.firstOrNull { it.id == pluginId } ?: error("插件不存在")
-        GeneratedPluginPackageValidator.validate(existing, discovery)
-        val updated = existing.copy(enabled = enabled)
+        val pinned = GeneratedPluginPackageValidator.pinToolContracts(existing, discovery)
+        val updated = pinned.copy(enabled = enabled)
         persist(current.map { if (it.id == pluginId) updated else it })
         return updated
     }
@@ -245,11 +276,11 @@ class GeneratedPluginStore(context: Context) {
 
     @Synchronized
     fun replaceVersion(plugin: GeneratedPluginPackage, discovery: AgentToolDiscovery): GeneratedPluginPackage {
-        GeneratedPluginPackageValidator.validate(plugin, discovery)
+        val pinned = GeneratedPluginPackageValidator.pinToolContracts(plugin, discovery)
         val current = list()
         val existing = current.firstOrNull { it.id == plugin.id } ?: error("待更新插件不存在")
-        require(compareSemVer(plugin.version, existing.version) > 0) { "插件更新版本必须高于当前版本" }
-        val updated = plugin.copy(enabled = false)
+        require(compareSemVer(pinned.version, existing.version) > 0) { "插件更新版本必须高于当前版本" }
+        val updated = pinned.copy(enabled = false)
         val history = historyVersions(plugin.id)
         persistWithHistory(
             current.map { if (it.id == plugin.id) updated else it },
@@ -269,8 +300,8 @@ class GeneratedPluginStore(context: Context) {
         val active = current.firstOrNull { it.id == pluginId } ?: error("插件不存在")
         val history = historyVersions(pluginId)
         val previous = history.lastOrNull() ?: error("没有可回滚的插件版本")
-        GeneratedPluginPackageValidator.validate(previous, discovery)
-        val restored = previous.copy(enabled = false)
+        val pinned = GeneratedPluginPackageValidator.pinToolContracts(previous, discovery)
+        val restored = pinned.copy(enabled = false)
         persistWithHistory(
             current.map { if (it.id == pluginId) restored else it },
             pluginId,
