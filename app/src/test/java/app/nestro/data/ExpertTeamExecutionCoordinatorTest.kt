@@ -156,4 +156,65 @@ class ExpertTeamExecutionCoordinatorTest {
         tasks.close()
     }
 
+    @Test
+    fun leadHandoffResumesAtTheDelegatedExpertWithoutRepeatingTheLead() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = ExpertTeamExecutionCoordinator(tasks)
+        val members = listOf(
+            ExpertTeamMemberTask("文案官", "负责文案和公众号内容表达"),
+            ExpertTeamMemberTask("研究员", "负责资料研究与事实核验")
+        )
+        val secondMemberStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val firstRun = kotlinx.coroutines.launch {
+            runCatching {
+                service.execute(
+                    teamId = "lead-handoff-resume",
+                    teamName = "主导交接团队",
+                    teamDescription = "先产出，再由研究员核验",
+                    task = "写一篇公众号文章",
+                    members = members,
+                    strategy = ExpertTeamSchedulingStrategy.LEAD_HANDOFF,
+                    taskId = "lead-handoff-resume-task",
+                    invokeMember = { member, _ ->
+                        if (member.name == "文案官") {
+                            "初步文案结论 [[DELEGATE:研究员 | 核验数据来源]]"
+                        } else {
+                            secondMemberStarted.complete(Unit)
+                            kotlinx.coroutines.awaitCancellation()
+                        }
+                    }
+                )
+            }
+        }
+        withTimeout(2_000) { secondMemberStarted.await() }
+        withTimeout(2_000) {
+            while (states.get("lead-handoff-resume-task")?.checkpoint?.contains("\"nextMemberName\":\"研究员\"") != true) {
+                delay(10)
+            }
+        }
+        tasks.pause("lead-handoff-resume-task")
+        firstRun.join()
+        assertEquals(AgentTaskStatus.PAUSED, tasks.state("lead-handoff-resume-task")?.status)
+
+        val resumedCalls = mutableListOf<String>()
+        val result = service.execute(
+            teamId = "lead-handoff-resume",
+            teamName = "主导交接团队",
+            teamDescription = "先产出，再由研究员核验",
+            task = "写一篇公众号文章",
+            members = members,
+            strategy = ExpertTeamSchedulingStrategy.LEAD_HANDOFF,
+            taskId = "lead-handoff-resume-task",
+            invokeMember = { member, _ ->
+                resumedCalls += member.name
+                "核验完成"
+            }
+        )
+        assertEquals(listOf("研究员"), resumedCalls)
+        assertEquals(2, result.successfulMembers)
+        assertEquals(AgentTaskStatus.COMPLETED, tasks.state("lead-handoff-resume-task")?.status)
+        tasks.close()
+    }
+
 }
