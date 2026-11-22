@@ -30,25 +30,25 @@
 
 | 编号 | 模块 | 当前代码证据 | 初步判断 |
 |---:|---|---|---|
-| 1 | 专家系统 | ExpertProfileCodec、ExpertTeamEngine、ExpertBundleParser、NestroApp 专家/团队界面 | 主体已有；UI 状态仍集中在根页面 |
+| 1 | 专家系统 | ExpertProfileCodec、ExpertTeamEngine、ExpertProjectPlanExecutor、ExpertTeamExecutionCoordinator、ExpertBundleParser、NestroApp 专家/团队界面 | 自动组队/DAG/并行工作包已接入；自由双向交流、可编辑任务图、结构化验收返工、完整历史和进程中断恢复仍不完整 |
 | 2 | 模型管理 | model/ 全部核心类、LocalVault、ModelManagerPage | 主体已有；新旧配置模型需统一 |
-| 3 | 聊天系统 | ChatExecutionService、OpenAiClient、SSE/请求策略、会话持久化 | 主体已有；UI 与业务编排耦合 |
-| 4 | 数据与备份 | NestroDatabase、LocalBackupRepository、LocalBackupCompatibility、LocalVault | 主体已有；需维持迁移/恢复安全边界 |
+| 3 | 聊天系统 | ChatExecutionService、OpenAiClient、SSE/请求策略、ChatRequestRecoveryCoordinator、会话持久化 | 多会话、流式、编辑/重试/重新生成和进程重建恢复已有；上下文预算仍使用固定默认窗口，未按模型真实上下文长度动态适配 |
+| 4 | 数据与备份 | NestroDatabase、LocalBackupRepository、LocalBackupCompatibility、LocalVault、ProjectPackageCodec | 结构化数据备份有校验/事务日志/中断恢复；附件管理及媒体编辑器二进制素材未纳入通用备份/项目包 |
 | 5 | 项目空间 | ProjectSpaceRepository、ProjectSpaceRules、ProjectPreferencesStore | 主体已有；需统一项目级资源归属 |
 | 6 | 知识库 | KnowledgeRepository、KnowledgeStore、Chunker、SearchEngine、KnowledgePage | 主体已有；独立页面和仓库边界较清楚 |
 | 7 | 我的记忆 | UserMemoryRepository/Store、ConversationMemoryStore | 初版已有；记忆提取/召回/授权边界需继续核对 |
 | 8 | Phone Agent | PhoneAgentAgent/Planner/Executor/Worker/WorkScheduler/TaskService + AgentTaskCoordinator | 主体已有；需重点核对任务状态与动作幂等 |
-| 9 | 语音系统 | AndroidSpeechRecognitionController、SpeechProviders、VoiceInputButton | 输入已有；输出/实时会话未形成闭环 |
+| 9 | 语音系统 | AndroidSpeechRecognitionController、AndroidTextToSpeechController、OpenAiCompatibleSpeechProviders、OpenAiRealtimeVoiceProvider、RealtimeVoiceAudioController、VoiceSystemPage | 系统识别、本机 TTS、远程 STT/TTS 与实时双向语音源码已整合；真实 API Key、服务商兼容和真机音频路由待统一验收 |
 | 10 | 我的作品 | ArtifactStore、ArtifactLibraryPage、聊天保存入口 | 主体已有；需核对项目隔离、版本与备份 |
 | 11 | 专家模板 | ExpertTemplateCatalog、ExpertRevisionAndTemplate、NestroApp 模板流程 | 主体已有；对应测试已有，完整 UI 回归仍需核验 |
 | 12 | 双模型对比 | ModelComparisonPage、ModelComparisonCoordinator、ModelComparisonPolicy；复用 ModelRegistry、加密 Key 仓库与 ChatExecutionService | 功能代码已补齐并快进合并锁定（commit 5868d6d）；静态源码/结构复核完成，Kotlin 编译与 JVM 测试尚未执行，模拟器/真机留待统一验收 |
 | 13 | MCP 工具中心 | McpStreamableHttpClient（2026-07-28 stateless + 2025 legacy fallback）、McpToolCenterRepository/Service、McpToolCenterPage；复用 AgentToolCatalog/AgentRuntime/RoomAgentTaskTraceStore；Keystore Bearer vault | 远程服务/工具发现、逐工具授权、参数预览调用、审计撤销及损坏审计隔离已实现并静态复核；编译/JVM/设备验收待十九模块统一阶段 |
 | 14 | GitHub 工作台 | `git/GitWorkbench.kt`（GitHub/GitLab/Gitee API、Android Keystore 凭据、JGit 本地仓库操作）、`git/GitWorkbenchPage.kt`、NestroApp 路由与抽屉入口；JGit 6.10.1 | PR #10 已合并；2026-11-21 二次复核补强本地仓库索引并发锁、删除隔离/进程中断恢复、凭据回滚失败显式处理、Push 空结果防误报，并扩充路径/URL/分支/账号策略测试源码；源码最终静态复核提交 `716a8861`；未运行编译/JVM/设备测试，按十九模块统一验收 |
 | 15 | AI 共建工作台 | `coworkbench/` 补丁审查/事务回滚/静态分析/Actions Runner；`NestroApp` 已接入导航与聊天结果回流；Android CI 导出 Debug/Release 依赖树与 CycloneDX SBOM | 源码已整合；编译、测试与真实 Actions 验证待统一验收 |
-| 16 | 统一能力中心 | CapabilityDirectoryPage、能力目录/技能目录相关能力 | 已按既定决策锁定；只做适配，不重构其核心 |
-| 17 | 智能剪辑 | 本轮已形成 MediaProjectStore、MediaTimeline/Policy/Codec、MediaEditorPage、MediaRenderEngine/Worker/TaskStore、SRT Codec、MediaIntelligenceProvider 等源码对象；含 SAF 素材库、项目隔离、单视频/音频轨、编辑历史、CompositionPlayer 预览、Transformer/WorkManager 导出和 SRT 编辑。依赖 Media3 1.9.0。已提交至 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；源码已回读核验，尚未编译/测试/设备验收 | 功能代码补齐中；未编译/未测试 |
+| 16 | 统一能力中心 | CapabilityDirectoryPage、SkillCommunityClient/LifecycleStore/TrustStore、GeneratedPluginFactory/Store/WorkflowExecutor | 本地声明式插件工坊与签名社区技能安装已有代码；插件签名来源验证、依赖锁定、独立资源沙箱、完整审批审计和远程插件目录仍缺 |
+| 17 | 智能剪辑 | MediaProjectStore、MediaTimeline/Policy/Codec、MediaEditorPage、MediaRenderEngine/Worker/TaskStore、SRT Codec、MediaIntelligenceProvider；SAF 素材库、项目隔离、单视频/音频轨、编辑历史、CompositionPlayer 预览、Transformer/WorkManager 导出和 SRT 管理 | 源码历史已纳入 integration/19-modules；多视频轨/PIP、转场、速度曲线、字幕烧录未实现；媒体二进制不在通用备份内；Media3 1.9.0 编译/设备验证待执行 |
 | 18 | 日历 | `calendar/CalendarDatabase`、`CalendarRepository`、`CalendarRules`、`CalendarReminderScheduler/Worker`、`CalendarProviderBridge`、`CalendarPage`；独立 Room DB、WorkManager 提醒、Android Calendar Provider 读写与权限控制，纳入 LocalBackupRepository | 功能代码已落地；统一构建/测试/模拟器/真机验收待全部模块完成 |
-| 19 | 多模态服务与社区生态 | SpeechProviders、SkillCommunityClient、ArtifactStore | 局部基础已有；不能等同完整多模态服务生态 |
+| 19 | 多模态服务与社区生态 | OpenAI-compatible STT/视觉适配、MediaAiTaskStore/Worker、MediaVideoGenerationClient、SkillSemVer、SkillDependencyResolver、SkillCommunityLifecycleStore、SkillTrustStore | 媒体任务持久化、SemVer 依赖求解/原子安装、独立信任根撤销源码已整合；真实 API/服务商端点、正式社区信任根配置与测试验收仍待完成 |
 
 > “未发现”是对当前源码树的初步检索结论，不代表产品设计中不存在需求；后续仍需对资源、配置和隐藏入口做补充核验。
 
