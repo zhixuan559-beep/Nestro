@@ -908,6 +908,16 @@ class NestroApplication : Application() {
                         automationRepository.recordAutomationResult(eventId, "WAITING_FOR_USER", error = reason)
                         taskContext.waitForUser(reason)
                     }
+                    child?.status == AgentTaskStatus.WAITING_FOR_TASK -> {
+                        val reason = child.lastError.ifBlank { "日历自动任务等待子任务完成" }
+                        automationRepository.recordAutomationResult(eventId, "WAITING_FOR_TASK", error = reason)
+                        taskContext.transition(AgentTaskStatus.WAITING_FOR_TASK, reason)
+                    }
+                    child?.status == AgentTaskStatus.PAUSED -> {
+                        val reason = child.lastError.ifBlank { "日历自动任务已暂停" }
+                        automationRepository.recordAutomationResult(eventId, "PAUSED", error = reason)
+                        taskContext.pause(reason)
+                    }
                     child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准") -> {
                         automationRepository.recordAutomationResult(eventId, "FAILED", error = child.lastError)
                         taskContext.fail(child.lastError)
