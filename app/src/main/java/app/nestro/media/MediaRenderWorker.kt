@@ -226,27 +226,30 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
 object MediaRenderScheduler {
     private fun uniqueName(projectId: String, taskId: String) = "media-render-" + projectId + "-" + taskId
 
-    suspend fun list(context: Context, projectId: String): List<MediaRenderTask> {
-        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
-            ?: return MediaRenderTaskStore.list(context, projectId)
-        return MediaRenderTaskStore.list(context, projectId).map { task ->
-            val unified = nestroApp.agentTaskCoordinator.state("media-render:${task.id}")
-            val status = when (unified?.status) {
-                app.nestro.agent.AgentTaskStatus.CREATED,
-                app.nestro.agent.AgentTaskStatus.QUEUED,
-                app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> MediaRenderStatus.QUEUED
-                app.nestro.agent.AgentTaskStatus.RUNNING -> MediaRenderStatus.RUNNING
-                app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
-                app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
-                app.nestro.agent.AgentTaskStatus.PAUSED -> MediaRenderStatus.PAUSED
-                app.nestro.agent.AgentTaskStatus.COMPLETED -> MediaRenderStatus.COMPLETED
-                app.nestro.agent.AgentTaskStatus.FAILED -> MediaRenderStatus.FAILED
-                app.nestro.agent.AgentTaskStatus.CANCELLED -> MediaRenderStatus.CANCELLED
-                null -> task.status
-            }
-            task.copy(status = status)
+    suspend fun read(context: Context, projectId: String, taskId: String): MediaRenderTask? {
+        val task = MediaRenderTaskStore.read(context, projectId, taskId) ?: return null
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication ?: return task
+        val unified = nestroApp.agentTaskCoordinator.state("media-render:$taskId")
+        val status = when (unified?.status) {
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> MediaRenderStatus.QUEUED
+            app.nestro.agent.AgentTaskStatus.RUNNING -> MediaRenderStatus.RUNNING
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+            app.nestro.agent.AgentTaskStatus.PAUSED -> MediaRenderStatus.PAUSED
+            app.nestro.agent.AgentTaskStatus.COMPLETED -> MediaRenderStatus.COMPLETED
+            app.nestro.agent.AgentTaskStatus.FAILED -> MediaRenderStatus.FAILED
+            app.nestro.agent.AgentTaskStatus.CANCELLED -> MediaRenderStatus.CANCELLED
+            null -> task.status
         }
+        return task.copy(status = status, error = unified?.lastError?.ifBlank { task.error } ?: task.error)
     }
+
+    suspend fun list(context: Context, projectId: String): List<MediaRenderTask> =
+        MediaRenderTaskStore.list(context, projectId).mapNotNull { task ->
+            read(context, projectId, task.id)
+        }
 
     private suspend fun registerUnifiedTask(context: Context, projectId: String, taskId: String): app.nestro.NestroApplication {
         val nestroApp = context.applicationContext as? app.nestro.NestroApplication
@@ -294,7 +297,6 @@ object MediaRenderScheduler {
             app.nestro.agent.AgentTaskStatus.RUNNING,
             app.nestro.agent.AgentTaskStatus.RETRY_WAIT
         )) { "当前统一媒体渲染任务不能暂停：${state.status}" }
-        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.PAUSED)
         nestroApp.agentTaskCoordinator.pause("media-render:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(uniqueName(projectId, taskId))
     }
@@ -311,7 +313,6 @@ object MediaRenderScheduler {
         )) { "只有统一任务机中的暂停/等待任务可以恢复" }
         MediaRenderTaskStore.update(
             context, projectId, taskId,
-            status = MediaRenderStatus.QUEUED,
             progress = 0,
             errorMessage = ""
         )
@@ -331,7 +332,6 @@ object MediaRenderScheduler {
             app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
             app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK
         )) { "当前统一媒体渲染任务不可取消" }
-        MediaRenderTaskStore.update(context, projectId, taskId, status = MediaRenderStatus.CANCELLED)
         nestroApp.agentTaskCoordinator.cancel("media-render:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(uniqueName(projectId, taskId))
     }
