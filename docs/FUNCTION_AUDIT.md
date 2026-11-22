@@ -485,3 +485,9 @@
 - 未来周期触发不能直接复用 scheduleId 作为 AgentTaskId，否则 `AgentTaskCoordinator.enqueue()` 的幂等规则会把后续 occurrence 视为同一个已完成任务。应以 scheduleId + plannedAt 生成确定性 occurrence/task ID，并持久化每次触发状态，确保重启/重复唤醒不重复执行。
 - 这进一步确认当前模块18是通知提醒系统，不是统一任务调度引擎。
 
+
+### 多模态能力范围补充核对
+- 当前媒体 AI 任务 action 仅有 `transcribe`、`scenes`、`audio-clean`、`image`、`video-generate`；`MediaIntelligenceProvider` 提供图片理解 `analyzeImage`，没有 `analyzeVideo` 接口。
+- 当前没有图像生成 action，也没有基于整段视频帧/音轨的多模态视频理解任务；`MediaPromptFactory.summarize()` 只是基于已提供字幕/转写生成摘要，不能冒充视频画面理解。
+- 因此当前能力边界是：视频生成已由主模型工具调用；图片理解/音频转写/场景检测/音频处理由媒体编辑器任务触发；图像生成和完整视频理解尚无实现。后续按用户确认的模型服务商与目标能力接入现有 MediaAiTaskStore/Worker，不另造媒体任务系统。
+
