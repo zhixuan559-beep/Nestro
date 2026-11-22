@@ -810,6 +810,7 @@ class NestroApplication : Application() {
                 require(configs.isNotEmpty()) { "日历自动任务没有可用的已选模型或 API Key" }
                 val conversationId = "calendar-$eventId".take(120)
                 val requestId = taskContext.taskId
+                var latestPartialAnswer = ""
                 val execution = chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
                         requestId = requestId,
@@ -847,10 +848,11 @@ class NestroApplication : Application() {
                         )
                     },
                     onPartialAnswer = { partial ->
-                        taskContext.checkpoint("calendar_output:" + partial.take(24_000))
+                        latestPartialAnswer = partial.take(24_000)
                     }
                 )
                 val finalText = execution.finalization.finalText.take(8_000)
+                taskContext.checkpoint("calendar_output:" + finalText.ifBlank { latestPartialAnswer }.take(24_000))
                 when (execution.finalization.status.name) {
                     "SUCCESS" -> {
                         val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
