@@ -390,7 +390,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块清单必须随代码提交同步更新；已落地源码不再标记为“未开发”，未验收内容不得标记为“已验收”。
 
 
-## 2026-11-22 17:06 UTC — 当前源码状态纠偏（以 b394e60 源码基线核对）
+## 2026-11-22 17:06 UTC — 当前源码状态纠偏（初核基线 b394e60；最新代码增量见下节）
 
 以下条目依据当前整合分支源码回读，修正本清单中未随着后续提交更新的旧结论：
 - 模块3：原生工具循环已具备受限 parallelSafe 并发；模型 context-window 仍未进入 ModelDefinition，固定 16,384/2,048 预算仍是缺口。
@@ -409,3 +409,11 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块18：日历 handler 调用 `ChatRequestExecutionCoordinator` 时 `taskModeEnabled=true` 但明确 `expertTeamEnabled=false`；`ModelLedToolDispatcher` 会过滤 `expert_team.run`，且没有 `workflow.run` 工具。因此当前日历自动任务可调用 Phone Agent、媒体、MCP、插件等能力，但不能直接调用专家 DAG 或工作流。
 - 模块18重试：CalendarAutomationWorker 创建 AgentTaskCoordinator 任务时明确 `maxRetries=0`；WorkManager 的 `runAttemptCount < 3` 只覆盖统一任务机接收前的入队异常，不覆盖主模型业务执行失败。不能简单调高 maxRetries，否则可能重复执行已经发生的外部写入；需要按步骤幂等/检查点设计安全重试后再开放。
 - 模块18 UI：当前仍有独立月/周/日 Calendar 页面，与“日历仅作辅助调度能力、入口嵌入任务/工作流”的产品要求不一致，需在后续界面阶段收敛。
+
+
+## 2026-11-22 17:20 UTC — 源码增量修复记录
+
+- 最新源码审计基线推进到 `f7b36a32653f582a582fcc0677276f8d03161737`。
+- 补齐原调用点引用但仓库中缺失的 `ConversationSnapshotPersistenceEffect`，新增 300ms debounce Room snapshot effect，继续委托现有 `ConversationPersistenceService`，未新增第二套持久化系统。
+- `NestroApp.kt` 在快照成功持久化后同步 `persistedConversationVersions` 并清理已删除会话的 marker。
+- 以上只完成源码写入与回读静态检查，尚未编译/运行测试。
