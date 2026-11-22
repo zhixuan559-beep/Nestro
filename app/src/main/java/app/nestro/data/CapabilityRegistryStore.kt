@@ -124,7 +124,9 @@ object CapabilityRegistryStore {
 
     @Synchronized
     fun registerIfAbsent(prefs: SharedPreferences, item: CapabilityDescriptor) {
-        if (descriptors(prefs).any { it.id == item.id }) return
+        // A malformed registry must not crash application startup or be silently overwritten.
+        val current = runCatching { descriptors(prefs) }.getOrElse { return }
+        if (current.any { it.id == item.id }) return
         registerAll(prefs, listOf(item))
     }
 
