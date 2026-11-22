@@ -108,7 +108,7 @@ internal class ModelLedToolDispatcher(
         val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter(visibleToolFilter)
-            .filter { it.id != "phone_agent.execute" || taskModeEnabled }
+            .filter { it.id !in setOf("phone_agent.execute", "phone_agent.wait") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
@@ -166,7 +166,7 @@ ${prompt.take(8_000)}
 
 安全规则：
 - 只有确实需要外部能力、设备操作或已连接数据时才调用工具；普通聊天、解释、写作和可直接回答的问题直接回复。
-- 需要在手机应用/网页中执行多步操作时选择 phone_agent.execute；创作任务若需要手机收集素材，可与专家创作工作包组合，素材下载动作会自动导入当前项目。不要为纯创作任务额外启动手机执行。
+- 需要在手机应用/网页中执行多步操作时选择 phone_agent.execute；若创作任务依赖手机收集素材，先执行后用 phone_agent.wait 等待完成，再用 media.project.assets 核对已导入的素材 ID，然后再交给专家或媒体创作工具。素材下载动作会自动导入当前项目。不要为纯创作任务额外启动手机执行。
 - 当用户提出需要多人专业分工、多个阶段交付、相互依赖或交叉审查的项目时，优先考虑 expert_team.run；不要要求用户先手动选择专家。若系统上下文表明用户已在专家中心手动选定成员，则优先使用该成员范围。
 - 当用户要求生成视频时，先用 media.provider.list 检查已配置的媒体服务商及视频模型能力；若存在多个可用视频模型，按任务要求选择并把 provider_id 传给 media.video.generate。将用户需求整理为完整、可执行的 prompt；视频任务异步执行，工具返回完成后应向用户交付结果信息，若仍在后台执行则明确返回任务 ID 和进度，不得声称已完成。若用户要求修改上一版，先用 media.video.status 查询最近任务并将其 task_id 作为 previous_task_id 传入，保留版本关联；不要覆盖或删除旧视频。若没有视频模型配置，不要调用文本模型假装生成视频；默认给出适配用户目标的可复制视频提示词。若用户明确要求使用手机上已安装的生成应用，且本轮工具目录实际包含 phone_agent.execute，则可通过 Phone Agent 尝试执行；不得假设应用已安装、登录或允许自动化，也不得声称文件已下载，除非收到实际执行结果。
 - 调用 expert_team.run 时，arguments 必须包含 member_names（从本轮项目专家目录精确选择 2–4 个名称）、team_name、team_description，以及 plan JSON 字符串。plan 包含 project_goal、final_acceptance_criteria、packages 数组；每个 package 包含 id、member_name、instruction、depends_on（工作包 ID 数组）、acceptance_criteria。独立工作包使用空 depends_on；前置成果依赖必须明确写入。
@@ -220,7 +220,7 @@ ${prompt.take(8_000)}
                         }
                 }
                 val requestPermissionRouter = AgentPermissionRouter { task, tool ->
-                    if (tool.id == "phone_agent.execute" && taskModeEnabled) AgentAuthorization.Allow
+                    if (tool.id in setOf("phone_agent.execute", "phone_agent.wait") && taskModeEnabled) AgentAuthorization.Allow
                     else if (tool.id.startsWith("media.project.") && taskModeEnabled) AgentAuthorization.Allow
                     else permissionRouter.authorize(task, tool)
                 }
@@ -456,6 +456,15 @@ ${prompt.take(8_000)}
                 properties.put("goal", JSONObject().put("type", "string").put("description", "需要在当前手机或隔离虚拟屏中完成的有边界子任务；下载的媒体素材会自动导入当前项目素材库"))
                 required.put("goal")
             }
+            "phone_agent.wait" -> {
+                properties.put("task_id", JSONObject().put("type", "string").put("description", "phone_agent.execute 返回的任务 ID"))
+                properties.put("timeout_seconds", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 180))
+                required.put("task_id")
+            }
+            "media.project.assets" -> {
+                properties.put("kind", JSONObject().put("type", "string").put("enum", JSONArray().put("VIDEO").put("AUDIO").put("IMAGE")))
+                properties.put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 100))
+            }
             "expert_team.run" -> {
                 properties.put("member_names", JSONObject().put("type", "array")
                     .put("items", JSONObject().put("type", "string")).put("minItems", 2).put("maxItems", 4))
@@ -491,7 +500,7 @@ ${prompt.take(8_000)}
     }
 
     private companion object {
-        const val MAX_TOOL_ROUNDS = 3
+        const val MAX_TOOL_ROUNDS = 5
         const val DIRECT_UI_UPDATE_CHARS = 16
         const val MAX_TOOL_CATALOG_CHARS = 12_000
     }

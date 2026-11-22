@@ -147,6 +147,65 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
+                    id = "phone_agent.wait",
+                    description = "等待同一项目中的 Phone Agent 任务完成或进入需要用户接手的状态。参数：task_id（必填）；timeout_seconds（可选，1 到 180 秒）。返回任务状态、执行记录及本任务已导入的素材 ID。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val taskId = arguments["task_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "等待 Phone Agent 任务缺少 task_id")
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，已阻止跨项目读取任务")
+                var task = database.dao().phoneAgentTask(taskId)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "Phone Agent 任务不存在或已删除")
+                if (task.projectId != projectId) return@register app.nestro.agent.AgentToolResult(false, error = "任务不属于当前项目，已阻止读取")
+                val timeoutSeconds = arguments["timeout_seconds"]?.toIntOrNull()?.coerceIn(1, 180) ?: 90
+                val terminal = setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_CANCELLED)
+                kotlinx.coroutines.withTimeoutOrNull(timeoutSeconds * 1_000L) {
+                    while (task.status !in terminal) {
+                        delay(750L)
+                        task = database.dao().phoneAgentTask(taskId) ?: task
+                    }
+                }
+                val logs = database.dao().phoneAgentTaskLogs(taskId, 50).asReversed()
+                val importedIds = logs.mapNotNull { log -> Regex("素材 ID：([A-Fa-f0-9-]{36})").find(log.detail)?.groupValues?.getOrNull(1) }.toSet()
+                val importedAssets = runCatching { MediaProjectStore.listAssets(this@NestroApplication, projectId).filter { it.id in importedIds } }.getOrDefault(emptyList())
+                val output = buildString {
+                    append("任务 ID：").append(task.id).append("\n目标：").append(task.goal)
+                    append("\n状态：").append(task.status).append("\n当前步骤：").append(task.currentStep)
+                    append("\n最近执行记录：\n")
+                    logs.takeLast(12).forEach { append("- ").append(it.action).append(" | ").append(if (it.success) "成功" else "待处理/失败").append(" | ").append(it.detail.take(700)).append("\n") }
+                    if (importedAssets.isNotEmpty()) {
+                        append("已导入当前项目的素材：\n")
+                        importedAssets.forEach { asset -> append("- asset_id=").append(asset.id).append("; name=").append(asset.displayName).append("; kind=").append(asset.kind).append("; bytes=").append(asset.byteSize).append("; duration_ms=").append(asset.durationMs).append("; resolution=").append(asset.width).append("x").append(asset.height).append("\n") }
+                    }
+                    if (task.status !in terminal) append("等待窗口结束，任务仍在执行或排队；不要把它报告为完成。")
+                    if (task.status == PhoneAgentTaskStore.STATUS_WAITING_USER) append("任务需要用户接手验证；暂停后续自动执行。")
+                }.take(12_000)
+                app.nestro.agent.AgentToolResult(true, output = output)
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "media.project.assets",
+                    description = "列出当前项目素材库中的可用素材，供创作工作引用。可选参数：kind（VIDEO/AUDIO/IMAGE）；limit（1 到 100）。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，已阻止跨项目读取素材")
+                val kind = arguments["kind"]?.trim()?.uppercase().orEmpty()
+                val limit = arguments["limit"]?.toIntOrNull()?.coerceIn(1, 100) ?: 40
+                val assets = runCatching { MediaProjectStore.listAssets(this@NestroApplication, projectId) }
+                    .getOrElse { return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "读取项目素材失败") }
+                    .filter { kind.isBlank() || it.kind.name == kind }
+                    .take(limit)
+                val output = if (assets.isEmpty()) "当前项目素材库没有符合条件的素材。" else assets.joinToString("\n") { asset ->
+                    "asset_id=${asset.id}; name=${asset.displayName}; kind=${asset.kind}; mime=${asset.mimeType}; bytes=${asset.byteSize}; duration_ms=${asset.durationMs}; resolution=${asset.width}x${asset.height}"
+                }
+                app.nestro.agent.AgentToolResult(true, output = output.take(12_000))
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
                     id = "expert_team.run",
                     description = "调用当前会话中用户明确选择的专家团队，分工分析并汇总结果。仅在团队已启用且当前任务模式获得授权时可用。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
