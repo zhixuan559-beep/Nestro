@@ -13,7 +13,6 @@ interface IMikaShell {
     boolean injectTap(int displayId, int x, int y) = 7;
     int displayOfTask(int taskId) = 12;
     String packageOfTask(int taskId) = 13;
-    String packageOfTask(int taskId) = 13;
     int startView(int displayId, String action, String uri, String packageName) = 17;
     boolean injectStroke(int displayId, in int[] xs, in int[] ys, in long[] times) = 34;
     void finishDisplay(int displayId, in String[] keep, in String[] close) = 48;
