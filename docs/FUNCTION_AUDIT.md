@@ -154,7 +154,7 @@
 ### 已抽查的实现证据
 
 - **混合调度主链路已存在，不应重建第二套调度器。** `ModelLedToolDispatcher.kt` 的主模型系统提示明确规定创作/专家/手机执行可组合并多轮交替；`NestroApplication.kt` 注册 `phone_agent.execute`、`phone_agent.wait`、`media.project.assets`；`PhoneAgentExecutor.kt` 包含 `DownloadAsset` 动作；`PhoneAgentService.downloadAsset()` 使用系统 DownloadManager 下载后调用 `MediaProjectStore.importAsset()`，并返回实际素材 ID、文件信息和来源；素材目录工具可供创作任务查询项目素材。当前判断：源码主链路已落地；端到端多轮协作、任务入队/等待/取消、素材可读性和专家实际消费文件仍需测试/逐调用点核验。
-- **Mika 虚拟屏底层已存在。** `phone/virtualdisplay/mika/` 包含 ADB、helper/Binder、VirtualDisplay 和 Phone Agent execution environment；`PhoneAgentPage.kt` 接入实时帧悬浮预览及触控输入。当前浮窗仍有“Phone Agent / 展开 / 收起”标题栏；点击标题栏折叠/展开，双击画面缩放，画面点击执行触控，右下角拖动区域调整尺寸。与用户指定的“无按钮/角标/手柄、点击窗口放大/缩小”的交互不一致；纵向拖动目前正向位移增大 previewScale（下拉放大、上拉缩小），需保留该方向并调整入口/显示元素。
+- **Mika 虚拟屏底层和 Shell 启动授权链路已存在。** `MikaAdbManager` 支持 Android 无线调试 TLS 配对、发现连接端口并通过本地 ADB 启动/连接 shell-UID helper；`MikaHelperHandoffProvider` 校验 UID 2000、安装路径、签名证书 pin 和一次性 nonce；`PhoneAgentPage.kt` 提供端口/六位配对码输入、连接、创建虚拟屏和实时帧悬浮预览。该链路属于代码已实现、设备兼容性待测，不应再列为从零缺失。当前浮窗仍有“Phone Agent / 展开 / 收起”标题栏；点击标题栏折叠/展开，双击画面缩放，画面点击执行触控，右下角拖动区域调整尺寸。与用户指定的“无按钮/角标/手柄、点击窗口放大/缩小”的交互不一致；纵向拖动目前正向位移增大 previewScale（下拉放大、上拉缩小），需保留该方向并调整入口/显示元素。
 - **工作流审批已有三种显式决策。** `NestroApp.kt` 显示“授权一次 / 当前任务全部授权 / 拒绝”；任务级授权变量限定在一次工作流运行作用域；未选择时等待 `CompletableDeferred`。当前弹窗 `onDismissRequest = {}`，因此返回键/点击外部不能关闭；若用户要求“关闭但保持等待”，当前缺少独立关闭入口。另需核查等待期间持久任务状态是否写成 `WAITING_FOR_USER`，而非 UI 协程挂起时仍显示 RUNNING。
 - **专家自主项目与团队检查点已有代码。** `ExpertProjectPlanExecutor.kt`、`ExpertTeamExecutionCoordinator.kt` 已包含 DAG/依赖/并行工作包、结构化交接、成员结果检查点和恢复逻辑；`NestroApp.kt` 已接入项目计划执行。仍需核对手动组队入口、自动组队入口、工具调用及恢复是否全链路接通。
 - **记忆关联本地缓存尚未确认。** 目前仅确认 BGE 本地语义检索/embedding 相关实现；这不等于用户要求的记忆缓存。需继续搜索是否存在按全局/项目/会话作用域缓存，以及记忆新增、修改、删除、清空后的失效/刷新。
@@ -379,8 +379,8 @@
 
 - `ModelLedToolDispatcher` 已按主模型决策“直接回答或调用已声明能力”，并有创作/专家/手机执行组合规则；专家团工具仅在当前项目至少两位专家启用时开放。场景路由不是每轮强制调用工具或专家。
 - `PhoneAgentPlanner` 当前分类包含 SHOPPING、FOOD_ORDER、BOOKING、WEB_RESEARCH、FORM、CREATIVE_ASSET、GENERAL；购物/点餐计划已包含多来源比价、最终到手价比较和付款前用户确认；创作素材计划包含下载、导入当前项目素材库。
-- **未发现 TRAVEL/导航场景分类、地图路线规划步骤或“虚拟屏预览→主屏导航”专用交接动作。** `PhoneAgentExecutor.Action` 当前只有 OpenUrl/LaunchApp/DownloadAsset/ClickText/EnterText/Scroll/Wait/VerifyText/Back/ConfirmSensitive；`PhoneAgentService.openUrl()` 走普通 ACTION_VIEW，不能替代带路线预览、主屏目标确认和单独授权的导航交接流程。
-- 当前风险策略能阻止支付/提交等高风险点击并要求用户接手，但这不等于已实现“切换到主屏导航前展示目的地并授权”。该场景是明确缺口，后续应在现有 Phone Agent/统一权限路由中增加专用 handoff 能力，不能用普通 openUrl 变相实现。
+- **通用虚拟屏/主屏交接已经实现，但导航专用决策链缺失。** `MikaPhoneAgentExecutionEnvironment.handoffToUser()` 会先持久化 taskId→Android taskId，再把虚拟屏任务移动到主屏；`resumeAfterUserHandoff()` 可将任务移回虚拟屏；`PhoneAgentExecutor` 在登录/验证码/风控或 `ConfirmSensitive` 时将任务置为 `WAITING_USER` 并触发交接。因此不能再把“虚拟屏/真实屏交接”整体列为未实现。当前缺少的是 `TRAVEL` 任务分类、地图路线规划工具/步骤，以及“展示目的地与路线→单独请求主屏导航授权→启动主屏导航”的专用流程。
+- 当前风险策略能阻止支付/提交等高风险点击并要求用户接手；通用 handoff 机制可复用。仍需在现有 Phone Agent/统一权限路由中增加导航专用的目的地/路线预览与主屏导航授权，不要新建第二套屏幕交接机制，也不能用普通 openUrl 变相实现。
 - 响应式方面，`NestroApp.kt` 已有 `adaptiveDrawerWidthDp` / `adaptiveContentPaddingDp`，`ChatRequestContextAssembler` 并行执行独立记忆检索；这是代码层面的适配/并行优化证据，手机/平板/大屏真实布局、帧率、内存和耗电仍待设备验证。
 - 用户要求的场景最短路径与主屏交接已补入路线图 J 节；本轮未修改代码。
 
