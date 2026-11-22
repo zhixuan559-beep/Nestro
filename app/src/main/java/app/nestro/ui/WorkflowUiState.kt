@@ -50,7 +50,7 @@ internal class WorkflowUiState(preferences: SharedPreferences) {
     )
     val workflowTargetPickerIndex = mutableIntStateOf(-1)
     val showWorkflowTargetPicker: MutableState<Boolean> = mutableStateOf(false)
-    val workflowInputDraft: MutableState<String> = mutableStateOf("")
+    val workflowInputDraft: MutableState<String> = mutableStateOf(preferences.getString("workflow_resume_input_v1", "") ?: "")
     val workflowRunStatus: MutableState<String> = mutableStateOf("")
     val runningWorkflowId: MutableState<String> = mutableStateOf("")
     val workflowPaused: MutableState<Boolean> = mutableStateOf(false)
