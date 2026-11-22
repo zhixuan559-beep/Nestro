@@ -2002,11 +2002,18 @@ fun NestroApp(initialPage: String = "home") {
                                                                      workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                                  },
                                                                  requestApproval = { step, previousOutput ->
-                                                                     appRuntime.agentApprovalCoordinator.authorize(
+                                                                     when (appRuntime.agentApprovalCoordinator.authorize(
                                                                          effectiveWorkflowTaskId,
                                                                          "workflow.${step.id}",
                                                                          "工作流步骤需要授权：${step.title}\n执行要求：${step.instruction.take(2_000)}\n前序结果：${previousOutput.take(1_000)}"
-                                                                     )
+                                                                     )) {
+                                                                         app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE,
+                                                                         app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK -> true
+                                                                         app.nestro.agent.AgentApprovalDecision.REJECT -> false
+                                                                         null -> throw app.nestro.agent.AgentApprovalPendingException(
+                                                                             "工作流步骤等待用户审批：${step.title}"
+                                                                         )
+                                                                     }
                                                                  },
                                                                  toolCatalog = appRuntime.agentToolCatalog
                                                              )
