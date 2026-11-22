@@ -57,6 +57,8 @@ The PR was not merged wholesale. Its independent behaviors were mapped into the 
    - Added MCP service/tool project-level overrides while retaining the existing global MCP grant as an upper bound. A project grant cannot revive a globally revoked MCP tool.
    - Unregistering a capability removes project grants and records revocation; MCP audit parameter names are filtered to avoid storing common secret fields.
    - Added Android instrumentation coverage for grants, revocation, fail-closed behavior, metadata round-trip, and MCP overrides.
+   - A second authorization path in the model-led text-protocol fallback was found during call-site review and brought under the same project capability gate; both native and compatibility execution paths now enforce it.
+   - Propagated the chat request identity to tool execution and derived generated-plugin idempotency keys from project, plugin, request identity, and a SHA-256 fingerprint of declared inputs. Duplicate plugin requests return the canonical persisted task instead of executing again; successful output is saved to the shared task result summary.
    - The legacy CapabilityCenterPage UI was not copied in this phase; the descriptor metadata required by that UI is retained for the later unified UI design.
 
 2. **Unified task metadata, idempotency, and retry**
@@ -79,9 +81,9 @@ The PR was not merged wholesale. Its independent behaviors were mapped into the 
 
 ## Integration gate status
 
-The PR #1 functional merge gate is **selectively integrated** on `integration/19-modules`. The branch comparison against the previous audited baseline reports 39 commits ahead and 0 behind. The latest branch HEAD read-back is `4401926740cde6bf79e6571b6fd7602388d45777`.
+The PR #1 functional merge gate is **selectively integrated** on `integration/19-modules`. Capability authorization, MCP project grants/audit, memory correction/ranking, task metadata, idempotency, and retry/backoff semantics have been mapped into the current shared architecture. The old duplicate task engine and stale UI snapshot remain excluded.
 
-This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 19-module scan, source cleanup, UI design, or app acceptance is complete. The next authorized stage is to finish the all-branch functional merge inventory and read-back verification; only then begin the first full 19-module scan.
+This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 19-module scan, source cleanup, UI design, or app acceptance is complete. The next authorized stage is to finish the all-branch functional merge inventory and consolidated read-back verification; only then begin the first full 19-module scan.
 
 ## Verification boundary
 
