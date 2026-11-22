@@ -226,98 +226,140 @@ object WorkflowEngine {
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
-        var previousOutput=""
-        val outputs=mutableListOf<String>()
-        val runs=mutableListOf<WorkflowStepRun>()
-        val active=workflow.steps.filter { it.enabled }
+        var previousOutput = ""
+        val outputs = mutableListOf<String>()
+        val runs = mutableListOf<WorkflowStepRun>()
+        val active = workflow.steps.filter { it.enabled }
         require(active.isNotEmpty()) { "工作流没有启用的步骤" }
-        active.forEachIndexed { index,step ->
-            if(step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput)) {
-                runs += WorkflowStepRun(step.id,step.title,"skipped",0,error="条件未满足")
-                outputs += previousOutput
-                return@forEachIndexed
-            }
-            if(step.approvalRequired && !requestApproval(step, previousOutput)) {
-                runs += WorkflowStepRun(step.id,step.title,"approval_rejected",0,error="审批未通过")
-                throw WorkflowExecutionException("步骤“${step.title}”未获批准", runs.toList())
-            }
-            if(step.skipIfPreviousContains.isNotBlank() &&
-                previousOutput.contains(step.skipIfPreviousContains,ignoreCase=true)) {
-                runs += WorkflowStepRun(step.id,step.title,"skipped",0,output=previousOutput)
-                outputs += previousOutput
-                return@forEachIndexed
-            }
-            var stepOutput=previousOutput
-            var totalAttempts=0
-            var failedMessage=""
-            var completedIterations=0
-            for(iteration in 1..step.repeatCount) {
-                val iterationInput=stepOutput
-                val prompt=buildString {
+
+        suspend fun executeStep(index: Int, step: WorkflowStep, input: String): Pair<WorkflowStepRun, String> {
+            var stepOutput = input
+            var totalAttempts = 0
+            var failedMessage = ""
+            var completedIterations = 0
+            for (iteration in 1..step.repeatCount) {
+                val iterationInput = stepOutput
+                val prompt = buildString {
                     append("工作流：").append(workflow.name).append("\n")
                     append("当前步骤：").append(step.title).append("\n")
                     append("当前迭代：").append(iteration).append(" / ").append(step.repeatCount).append("\n")
                     append("步骤要求：").append(step.instruction).append("\n\n")
                     append("用户原始目标：\n").append(userInput).append("\n\n")
-                    if(iterationInput.isNotBlank()) {
-                        append(if(iteration==1) "前序步骤输出：" else "本步骤上一次迭代输出：")
-                            .append("\n").append(iterationInput.take(12000)).append("\n\n")
+                    if (iterationInput.isNotBlank()) {
+                        append(if (iteration == 1) "前序步骤输出：" else "本步骤上一次迭代输出：")
+                            .append("\n").append(iterationInput.take(12_000)).append("\n\n")
                     }
                     append("请只完成当前步骤的本次迭代，输出可供后续迭代或下一步骤继续处理的结果。")
                 }
-                var attempts=0
-                var result=""
-                var failure:Throwable?=null
-                while(attempts<=step.retries && result.isBlank()) {
+                var attempts = 0
+                var result = ""
+                var failure: Throwable? = null
+                while (attempts <= step.retries && result.isBlank()) {
                     attempts++
-                    onStep(index+1,step.copy(title=if(iteration==1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
+                    onStep(index + 1, step.copy(title = if (iteration == 1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
                     try {
-                        result=kotlinx.coroutines.withTimeout(step.timeoutSeconds*1000L) {
-                            invokeModel(step,prompt).trim()
+                        result = kotlinx.coroutines.withTimeout(step.timeoutSeconds * 1000L) {
+                            invokeModel(step, prompt).trim()
                         }
                         require(result.isNotBlank()) { "模型返回了空结果" }
-                    } catch (cancelled:kotlinx.coroutines.CancellationException) {
-                        if(cancelled is kotlinx.coroutines.TimeoutCancellationException) {
-                            failure=IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+                            failure = IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
                         } else throw cancelled
-                    } catch (error:Exception) {
-                        failure=error
+                    } catch (error: Exception) {
+                        failure = error
                     }
-                    if(result.isBlank() && attempts<=step.retries) {
-                        onStep(index+1,step.copy(title="${step.title}（重试 $attempts/${step.retries}）"))
+                    if (result.isBlank() && attempts <= step.retries) {
+                        onStep(index + 1, step.copy(title = "${step.title}（重试 $attempts/${step.retries}）"))
                     }
                 }
                 totalAttempts += attempts
-                if(result.isBlank()) {
-                    failedMessage=failure?.message ?: "未知错误"
-                    if(!step.continueOnError) {
-                        runs += WorkflowStepRun(step.id,step.title,"failed",totalAttempts,error=failedMessage,iterations=completedIterations)
-                        throw WorkflowExecutionException(
-                            "步骤“${step.title}”失败：$failedMessage",
-                            runs.toList(),
-                            failure
-                        )
+                if (result.isBlank()) {
+                    failedMessage = failure?.message ?: "未知错误"
+                    if (!step.continueOnError) {
+                        val failed = WorkflowStepRun(step.id, step.title, "failed", totalAttempts, error = failedMessage, iterations = completedIterations)
+                        throw WorkflowExecutionException("步骤“${step.title}”失败：$failedMessage", runs + failed, failure)
                     }
-                    stepOutput="步骤失败，已按设置继续。错误：$failedMessage"
+                    stepOutput = "步骤失败，已按设置继续。错误：$failedMessage"
                     break
                 }
-                stepOutput=result
+                stepOutput = result
                 completedIterations++
             }
-            val runStatus=if(failedMessage.isBlank()) "success" else "failed"
-            runs += WorkflowStepRun(
-                stepId=step.id,
-                title=step.title,
-                status=runStatus,
-                attempts=totalAttempts,
-                output=stepOutput,
-                error=failedMessage,
-                iterations=completedIterations
-            )
-            previousOutput=stepOutput
-            outputs += stepOutput
+            val status = if (failedMessage.isBlank()) "success" else "failed"
+            return WorkflowStepRun(
+                stepId = step.id, title = step.title, status = status,
+                attempts = totalAttempts, output = stepOutput, error = failedMessage,
+                iterations = completedIterations
+            ) to stepOutput
         }
-        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs,runs.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
+
+        var cursor = 0
+        while (cursor < active.size) {
+            val groupName = active[cursor].parallelGroup
+            val groupStart = cursor
+            cursor++
+            if (groupName.isNotBlank()) {
+                while (cursor < active.size && active[cursor].parallelGroup == groupName) cursor++
+            }
+            val group = active.subList(groupStart, cursor)
+            val ready = mutableListOf<Pair<Int, WorkflowStep>>()
+            group.forEachIndexed { offset, step ->
+                val index = groupStart + offset
+                when {
+                    step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput) -> {
+                        val skipped = WorkflowStepRun(step.id, step.title, "skipped", 0, error = "条件未满足")
+                        runs += skipped
+                        outputs += previousOutput
+                        onStepCompleted(index + 1, skipped, previousOutput)
+                    }
+                    step.approvalRequired && !requestApproval(step, previousOutput) -> {
+                        val rejected = WorkflowStepRun(step.id, step.title, "approval_rejected", 0, error = "审批未通过")
+                        runs += rejected
+                        throw WorkflowExecutionException("步骤“${step.title}”未获批准", runs.toList())
+                    }
+                    step.skipIfPreviousContains.isNotBlank() &&
+                        previousOutput.contains(step.skipIfPreviousContains, ignoreCase = true) -> {
+                        val skipped = WorkflowStepRun(step.id, step.title, "skipped", 0, output = previousOutput)
+                        runs += skipped
+                        outputs += previousOutput
+                        onStepCompleted(index + 1, skipped, previousOutput)
+                    }
+                    else -> ready += index to step
+                }
+            }
+            if (ready.isEmpty()) continue
+            val completed = if (ready.size > 1 && groupName.isNotBlank()) {
+                kotlinx.coroutines.coroutineScope {
+                    ready.map { (index, step) ->
+                        kotlinx.coroutines.async { executeStep(index, step, previousOutput) }
+                    }.map { it.await() }
+                }
+            } else {
+                ready.map { (index, step) -> executeStep(index, step, previousOutput) }
+            }
+            completed.forEachIndexed { resultIndex, pair ->
+                val (stepRun, stepOutput) = pair
+                val (stepIndex, _) = ready[resultIndex]
+                runs += stepRun
+                outputs += stepOutput
+                onStepCompleted(stepIndex + 1, stepRun, stepOutput)
+            }
+            previousOutput = if (ready.size > 1 && groupName.isNotBlank()) {
+                completed.mapIndexed { index, pair ->
+                    "【并行步骤：${ready[index].second.title}】\n${pair.second}"
+                }.joinToString("\n\n").take(24_000)
+            } else {
+                completed.last().second
+            }
+        }
+        return WorkflowRunResult(
+            previousOutput,
+            runs.count { it.status == "success" },
+            outputs,
+            runs,
+            runs.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1
+        )
     }
     private fun evaluateCondition(condition:String, previousOutput:String):Boolean {
         val c=condition.trim()
