@@ -1947,7 +1947,7 @@ fun NestroApp(initialPage: String = "home") {
                                                  Text("上次输入或工作流定义已变化，不能安全续跑原任务；可取消旧任务后重新运行。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                              }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && !workflowTaskBusy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
+                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && !workflowTaskBusy && !(hasPendingSavedWorkflow && !canResumeSavedWorkflow) && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
                                                      val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
                                                      val currentWorkflowDefinition = WorkflowDefinitionCodec.encode(listOf(workflow))
