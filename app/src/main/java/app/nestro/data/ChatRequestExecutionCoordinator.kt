@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import app.nestro.agent.AgentToolResult
 import app.nestro.model.ChatStreamingCoordinator
 
 internal data class ChatRequestExecutionRequest(
@@ -40,7 +41,7 @@ internal class ChatRequestExecutionCoordinator(
         request: ChatRequestExecutionRequest,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
-        planPhoneAgent: suspend (Map<String, String>) -> String = { "" },
+        planPhoneAgent: suspend (Map<String, String>) -> AgentToolResult = { AgentToolResult(false, error = "Phone Agent 任务规划回调未配置") },
         onTaskPlanningFailure: (Throwable) -> Unit = {},
         runExpertTeam: suspend (String, Map<String, String>) -> String = { _, _ -> "" },
         onPartialAnswer: suspend (String) -> Unit
