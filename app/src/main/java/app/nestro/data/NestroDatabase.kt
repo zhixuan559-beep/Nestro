@@ -433,7 +433,10 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun recentGeneratedPluginTaskStates(limit: Int = 10): List<AgentTaskStateEntity>
 
-    @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'RETRY_WAIT', 'FAILED') ORDER BY updatedAt ASC")
+    @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' AND status IN ('WAITING_FOR_USER', 'WAITING_FOR_TASK', 'PAUSED') ORDER BY updatedAt ASC LIMIT :limit")
+    suspend fun recoverableGeneratedPluginTaskStates(limit: Int = 200): List<AgentTaskStateEntity>
+
+    @Query("SELECT * FROM agent_task_states WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'WAITING_FOR_TASK', 'PAUSED', 'RETRY_WAIT', 'FAILED') ORDER BY updatedAt ASC")
     suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
