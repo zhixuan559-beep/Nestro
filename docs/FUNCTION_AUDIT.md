@@ -175,3 +175,29 @@
 4. 全面检查重复实现、死代码、旧入口、重复状态源和历史垃圾代码。
 5. 按用户既定顺序，源码收口后才设计完整 APP 操作界面，之后统一构建和测试。
 
+
+## 2026-11-22 主模型调度多模态与视频模型专项初查
+
+### 用户需求补录
+
+用户在 2026-11-21 明确要求：文本主模型按需识别并调用多模态/视频模型；无 API 时提供提示词或在用户明确要求且 Phone Agent 可用时尝试已授权工具；视频生成后可继续对话返工；补齐后统一合并验收。此项现纳入 `IMPLEMENTATION_ROADMAP.md` 的 G 节。
+
+### 当前源码已确认
+
+- `ModelLedToolDispatcher.kt` 的主模型决策提示已包含视频生成路由规则：先调用 `media.provider.list`，选择已配置视频模型，再调用 `media.video.generate`；返工通过 `media.video.status` 查询任务并传入 `previous_task_id`，不覆盖旧视频。主模型可同时使用文本聊天模型与独立媒体视频模型。
+- `NestroApplication.kt` 已注册 `media.provider.list`、`media.video.generate`、`media.video.status`。视频生成工具具备项目范围检查、配置读取、异步任务提交、有限等待、后台任务状态查询及结果素材 ID 回传。
+- `MediaAiTaskStore.kt` + `MediaAiTaskWorker` 使用 WorkManager 持久化异步任务；生成文件通过 `MediaProjectStore.importGeneratedFile()` 导入当前项目；版本任务要求前一任务完成并保存 parentTaskId。
+- `MediaVideoGenerationClient.kt` 已实现配置化 JSON 提交/轮询/结果下载，包含 HTTPS、拒绝重定向、内网地址拦截、MIME 检查和文件大小限制。
+- `MediaProviderConfigStore.kt` / `MediaIntelligenceProvider` 还具备图像理解、音频转写、场景识别和音频处理的媒体 AI 能力；`MediaEditorPage.kt` 能创建并调度这些任务。
+
+### 当前明确缺口/待核验
+
+- **主模型可调用视频生成，但不能据此认定主模型已能调用所有多模态分析能力。** 当前 `NestroApplication.kt` 的媒体工具注册仅见 `media.provider.list`、`media.video.generate`、`media.video.status` 和项目素材查询；图像理解、音频转写/处理、场景识别目前确认有媒体编辑器内任务入口，尚未发现对应的聊天主模型工具注册。需要判断并补齐用户要求的“文本模型按需调取多模态模型”闭环，避免另造重复媒体任务体系。
+- 当前通用媒体连接测试验证的是聊天/视觉 `/chat/completions` 路径，不验证视频提交/轮询端点；视频端点真实联调尚未确认。
+- 当前媒体测试目录没有 `MediaVideoGenerationClientTest`；`MediaAiTaskStoreTest` 覆盖视频任务无源素材、已完成父任务版本关联等持久化规则，但没有覆盖 HTTP 请求/轮询/下载/错误/取消全链路。
+- `docs/MULTIMODAL_VIDEO_GENERATION_PIPELINE.md` 明确记载：视频播放由聊天结果按钮跳转媒体编辑器，不是消息气泡内联播放器；通用连接测试不验证视频端点；当前实现未完成编译、测试、Lint、模拟器或真机验收。
+- 通用视频适配器只覆盖可配置的异步 JSON submit/status/result URL 协议；签名、multipart、特殊轮询/响应格式的服务商仍需专用 adapter。是否需要支持更多特定视频模型协议，按用户后续确认的服务商范围检查，不先造抽象层。
+
+### 首轮结论
+
+视频生成主链路已有代码，不能重复建设；多模态媒体分析已有编辑器内任务，但聊天主模型的按需调度入口存在可确认缺口。下一步应复用现有 `MediaAiTaskStore/Worker/Provider` 体系，补主模型工具注册与参数/权限/结果交接，先确认是否已有通用实现可复用，再做最小必要修改。HTTP 协议测试和统一验证放入后续审计/验收，不把代码存在等同于已通过。
