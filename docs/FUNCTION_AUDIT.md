@@ -473,3 +473,9 @@
 - 该问题不是删除插件功能，而是把插件执行接回统一任务基座和统一审批：每步复用 `AgentPermissionRouter` 的确认语义，记录当前步骤 checkpoint；等待用户时持久化 WAITING_FOR_USER；批准后从该步骤恢复，拒绝后终止并记录审计。此项属于高优先级安全/一致性修复。
 - 当前未修改代码；待全量审计完成后以最小补丁修复并补充“requiresConfirmation 不可绕过、批准后续跑、拒绝终止、进程中断恢复”测试。
 
+
+### MCP 持久授权与任务级审批语义待统一
+- MCP 工具注册时统一标记 `EXTERNAL_WRITE + requiresConfirmation=true`，并且每次调用前检查 `repository.isToolGranted(toolId)`；MCP 工具中心提供持久的单工具授权开关。
+- 但 `NestroApplication` 主模型权限路由和 `McpToolCenterService.invoke()` 对已持久授权的 MCP 工具直接返回 Allow，因此不会再走通用的任务级一次授权/当前任务全部授权弹窗。
+- 这意味着当前 MCP “已授权”实质是跨任务持续授权；撤销后立即阻断。它与工作流的任务级授权范围不同。后续需在权限设计中明确两层含义：MCP 工具中心的长期授权是否代表永久信任；任务执行时是否仍需一次性/本任务确认。不能让 `requiresConfirmation` 字段继续处于“声明为 true、路由却忽略”的含混状态。
+
