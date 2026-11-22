@@ -257,4 +257,54 @@ class WorkflowExecutionCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun approvalWaitIsPersistedAndApprovalResumesUnifiedTaskLifecycle() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val workflows = WorkflowExecutionCoordinator(tasks)
+        val approval = CompletableDeferred<Boolean>()
+        val workflow = WorkflowDefinition(
+            id = "workflow-approval-state",
+            name = "审批状态",
+            description = "",
+            steps = listOf(
+                WorkflowStep(id = "approval-step", title = "外部操作", instruction = "执行操作", approvalRequired = true)
+            )
+        )
+        val taskId = "workflow-approval-state-task"
+        try {
+            val execution = launch {
+                workflows.execute(
+                    workflow = workflow,
+                    input = "执行受控操作",
+                    taskId = taskId,
+                    invokeModel = { _, _ -> "执行完成" },
+                    requestApproval = { _, _ -> approval.await() }
+                )
+            }
+            withTimeout(2_000) {
+                while (states.get(taskId)?.status != AgentTaskStatus.WAITING_FOR_USER) delay(10)
+            }
+            assertEquals(AgentTaskStatus.WAITING_FOR_USER, states.get(taskId)?.status)
+            approval.complete(true)
+            execution.join()
+            assertEquals(AgentTaskStatus.COMPLETED, states.get(taskId)?.status)
+
+            val rejectedTaskId = "workflow-approval-rejected"
+            assertTrue(runCatching {
+                workflows.execute(
+                    workflow = workflow,
+                    input = "执行受控操作",
+                    taskId = rejectedTaskId,
+                    invokeModel = { _, _ -> error("审批拒绝后不得执行") },
+                    requestApproval = { _, _ -> false }
+                )
+            }.isFailure)
+            assertEquals(AgentTaskStatus.FAILED, states.get(rejectedTaskId)?.status)
+        } finally {
+            tasks.close()
+        }
+    }
+
 }
