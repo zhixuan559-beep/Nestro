@@ -231,6 +231,8 @@ class AgentTaskCoordinator(
         owner: String,
         initialCheckpoint: String = "",
         metadata: AgentTaskMetadata = AgentTaskMetadata(),
+        idempotencyKey: String? = null,
+        maxRetries: Int = 2,
         handler: suspend (AgentTaskExecutionContext) -> T
     ): T {
         require(taskId.isNotBlank() && taskId.length <= 120)
@@ -258,7 +260,14 @@ class AgentTaskCoordinator(
             }
         }
         try {
-            val queued = enqueue(taskId, handlerId, if (existing == null) initialCheckpoint else null, metadata = metadata)
+            val queued = enqueue(
+                taskId,
+                handlerId,
+                if (existing == null) initialCheckpoint else null,
+                metadata = metadata,
+                idempotencyKey = if (existing == null) idempotencyKey else null,
+                maxRetries = maxRetries
+            )
             check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
             return completion.await()
         } catch (cancelled: CancellationException) {
