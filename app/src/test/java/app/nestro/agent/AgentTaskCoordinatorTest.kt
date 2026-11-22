@@ -484,4 +484,35 @@ class AgentTaskCoordinatorTest {
         coordinator.close()
     }
 
+
+    @Test
+    fun approvalWaitAndResumeArePersistedBySharedTaskCoordinator() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            states.putIfAbsent(
+                AgentTaskState(
+                    taskId = "chat-approval-state",
+                    owner = "chat",
+                    status = AgentTaskStatus.RUNNING
+                )
+            )
+            coordinator.transitionTask(
+                "chat-approval-state",
+                AgentTaskStatus.WAITING_FOR_USER,
+                "等待外部写入审批"
+            )
+            assertEquals(AgentTaskStatus.WAITING_FOR_USER, states.get("chat-approval-state")?.status)
+
+            coordinator.transitionTask(
+                "chat-approval-state",
+                AgentTaskStatus.RUNNING,
+                "用户已批准"
+            )
+            assertEquals(AgentTaskStatus.RUNNING, states.get("chat-approval-state")?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
+
 }
