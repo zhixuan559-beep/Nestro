@@ -401,11 +401,12 @@ private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.m
         val panelHeightDp = 34.dp + if (floatingPreviewCollapsed) 0.dp else previewHeightDp
         val maxWidthPx = with(density) { maxWidth.toPx() }
         val maxHeightPx = with(density) { maxHeight.toPx() }
+        val edgeInsetPx = with(density) { 12.dp.toPx() }
         val panelWidthPx = with(density) { panelWidthDp.toPx() }
         val panelHeightPx = with(density) { panelHeightDp.toPx() }
         LaunchedEffect(panelWidthPx, panelHeightPx, maxWidthPx, maxHeightPx) {
-            val minX = -(maxWidthPx - panelWidthPx).coerceAtLeast(0f)
-            val minY = -(maxHeightPx - panelHeightPx).coerceAtLeast(0f)
+            val minX = -(maxWidthPx - panelWidthPx - edgeInsetPx).coerceAtLeast(0f)
+            val minY = -(maxHeightPx - panelHeightPx - edgeInsetPx).coerceAtLeast(0f)
             floatingPreviewOffset = Offset(
                 floatingPreviewOffset.x.coerceIn(minX, 0f),
                 floatingPreviewOffset.y.coerceIn(minY, 0f)
@@ -426,10 +427,10 @@ private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.m
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(34.dp)
-                        .pointerInput(session, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, panelWidthPx, panelHeightPx) {
+                        .pointerInput(session, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, edgeInsetPx, panelWidthPx, panelHeightPx) {
                             detectDragGestures { change, dragAmount ->
-                                val minX = -(maxWidthPx - panelWidthPx).coerceAtLeast(0f)
-                                val minY = -(maxHeightPx - panelHeightPx).coerceAtLeast(0f)
+                                val minX = -(maxWidthPx - panelWidthPx - edgeInsetPx).coerceAtLeast(0f)
+                                val minY = -(maxHeightPx - panelHeightPx - edgeInsetPx).coerceAtLeast(0f)
                                 floatingPreviewOffset = Offset(
                                     (floatingPreviewOffset.x + dragAmount.x).coerceIn(minX, 0f),
                                     (floatingPreviewOffset.y + dragAmount.y).coerceIn(minY, 0f)
