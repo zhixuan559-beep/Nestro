@@ -274,7 +274,7 @@ object WorkflowEngine {
                         result = kotlinx.coroutines.withTimeout(step.timeoutSeconds * 1000L) {
                             invokeModel(step, prompt).trim().let { output ->
                                 if (step.parallelGroup.isNotBlank()) {
-                                    require(output.length <= 8_000) { "并行步骤“${step.title}”输出超过 8,000 字符上限" }
+                                    require(output.length <= 5_000) { "并行步骤“${step.title}”输出超过 5,000 字符上限" }
                                 }
                                 output.take(24_000)
                             }
