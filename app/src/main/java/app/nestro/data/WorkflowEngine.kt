@@ -223,15 +223,18 @@ object WorkflowEngine {
         invokeModel:suspend (WorkflowStep,String)->String,
         onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
         onStepCompleted:suspend (Int,WorkflowStepRun,String)->Unit={ _, _, _ -> },
-        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> false }
+        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> false },
+        resumeCompletedRuns:List<WorkflowStepRun> = emptyList(),
+        resumeOutput:String = ""
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
-        var previousOutput = ""
-        val outputs = mutableListOf<String>()
-        val runs = mutableListOf<WorkflowStepRun>()
-        val active = workflow.steps.filter { it.enabled }
-        require(active.isNotEmpty()) { "工作流没有启用的步骤" }
+        var previousOutput = resumeOutput
+        val outputs = resumeCompletedRuns.map { it.output }.toMutableList()
+        val runs = resumeCompletedRuns.toMutableList()
+        val completedIds = resumeCompletedRuns.map { it.stepId }.toSet()
+        val active = workflow.steps.filter { it.enabled && it.id !in completedIds }
+        require(active.isNotEmpty() || resumeCompletedRuns.isNotEmpty()) { "工作流没有启用的步骤" }
 
         suspend fun executeStep(index: Int, step: WorkflowStep, input: String): Pair<WorkflowStepRun, String> {
             var stepOutput = input
