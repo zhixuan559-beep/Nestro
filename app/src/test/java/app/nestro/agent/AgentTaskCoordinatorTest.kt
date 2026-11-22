@@ -531,7 +531,7 @@ class AgentTaskCoordinatorTest {
                     title = "媒体 AI"
                 )
             )
-            assertEquals(AgentTaskStatus.QUEUED, registered.status)
+            assertEquals(AgentTaskStatus.CREATED, registered.status)
             val result = coordinator.runInline(
                 taskId = registered.taskId,
                 owner = "media_ai",
