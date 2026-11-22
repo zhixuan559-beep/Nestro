@@ -143,7 +143,7 @@ class PhoneAgentWorker(
             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER)) {
                 PhoneAgentTaskStore.markInterrupted(dao, taskId)
             }
-            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已暂停", "无障碍服务未连接，请重新打开应用并检查任务状态。", false)
+            PhoneAgentNotifications.show(applicationContext, taskId, "Phone Agent 已暂停", "隔离虚拟屏执行环境或节点识别桥接未连接；任务不会回退到真实主屏。", false)
             return Result.success()
         }
 
