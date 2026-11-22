@@ -519,8 +519,8 @@ class NestroApplication : Application() {
                             resumeCheckpoint = savedCheckpoint,
                             onStepCheckpoint = { currentStep, checkpoint ->
                                 taskContext.checkpoint(checkpoint, currentStep)
-                            }
-                        ) { stepToolId, stepArguments ->
+                            },
+                            invokeThroughRuntime = { stepToolId, stepArguments ->
                             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
                             val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                                 CapabilityRegistryStore.registerIfAbsent(
@@ -576,7 +576,8 @@ class NestroApplication : Application() {
                             } finally {
                                 AgentToolLeaseRegistry.release(lease.id)
                             }
-                        }
+                            }
+                        )
                         when {
                             result.requiresUser -> taskContext.waitForUser(result.output.ifBlank { "插件步骤需要用户确认" })
                             !result.success -> {
