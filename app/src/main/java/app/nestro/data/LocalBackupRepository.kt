@@ -1202,6 +1202,9 @@ private suspend fun applyLocalBackup(
             editor.remove("model_registry_v1")
         }
     }
+    // Invalidate any memory extraction started against the data being replaced.
+    // The version epoch is advanced only after the backup has been fully parsed/validated.
+    UserMemoryStore.invalidateAndAwaitPendingExtractions()
     // A queued worker belongs to the device state being replaced. Stop the old queue
     // before swapping task rows so a stale worker cannot execute against restored data.
     app.nestro.phone.PhoneAgentWorkScheduler.cancelAll(context)
