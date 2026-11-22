@@ -28,36 +28,36 @@ object CalendarReminderScheduler {
 
     fun schedule(context: Context, event: CalendarEvent, replaceAutomation: Boolean = true) {
         val now = System.currentTimeMillis()
-        val occurrenceStart = CalendarRules.nextOccurrenceStart(event, now)
-        if (occurrenceStart == null) {
-            val workManager = WorkManager.getInstance(context)
-            workManager.cancelUniqueWork(workName(event.id))
-            if (replaceAutomation) workManager.cancelAllWorkByTag(automationTag(event.id))
-            return
-        }
         val workManager = WorkManager.getInstance(context)
-        if (event.reminderMinutes >= 0) {
-            val triggerAt = occurrenceStart - event.reminderMinutes * 60_000L
+
+        val reminderOccurrence = if (event.reminderMinutes >= 0) {
+            CalendarRules.nextOccurrenceStart(event, now)
+        } else null
+        if (reminderOccurrence == null) {
+            workManager.cancelUniqueWork(workName(event.id))
+        } else {
+            val triggerAt = reminderOccurrence - event.reminderMinutes * 60_000L
             val request = OneTimeWorkRequestBuilder<CalendarReminderWorker>()
-                .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to occurrenceStart))
+                .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to reminderOccurrence))
                 .setInitialDelay((triggerAt - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
                 .addTag("calendar-reminder")
                 .build()
             workManager.enqueueUniqueWork(workName(event.id), ExistingWorkPolicy.REPLACE, request)
-        } else {
-            workManager.cancelUniqueWork(workName(event.id))
         }
 
         if (replaceAutomation) workManager.cancelAllWorkByTag(automationTag(event.id))
-        if (event.automationPrompt.isNotBlank() && event.automationProjectId.isNotBlank()) {
+        val automationOccurrence = if (event.automationPrompt.isNotBlank() && event.automationProjectId.isNotBlank()) {
+            CalendarRules.nextAutomationOccurrenceStart(event, now)
+        } else null
+        if (automationOccurrence != null) {
             val automationRequest = OneTimeWorkRequestBuilder<CalendarAutomationWorker>()
-                .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to occurrenceStart))
-                .setInitialDelay((occurrenceStart - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+                .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to automationOccurrence))
+                .setInitialDelay((automationOccurrence - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
                 .addTag("calendar-automation")
                 .addTag(automationTag(event.id))
                 .build()
             workManager.enqueueUniqueWork(
-                automationWorkName(event.id, occurrenceStart),
+                automationWorkName(event.id, automationOccurrence),
                 ExistingWorkPolicy.KEEP,
                 automationRequest
             )
