@@ -104,14 +104,16 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                     ?.filter { task ->
                         task.projectId == activeProjectId &&
                             task.kind == "calendar_automation" &&
-                            task.status in setOf(
-                                AgentTaskStatus.WAITING_FOR_USER,
-                                AgentTaskStatus.WAITING_FOR_TASK,
-                                AgentTaskStatus.PAUSED
-                            ) || (
-                                task.status == AgentTaskStatus.FAILED &&
-                                    !task.lastError.contains("拒绝") &&
-                                    !task.lastError.contains("未批准")
+                            (
+                                task.status in setOf(
+                                    AgentTaskStatus.WAITING_FOR_USER,
+                                    AgentTaskStatus.WAITING_FOR_TASK,
+                                    AgentTaskStatus.PAUSED
+                                ) || (
+                                    task.status == AgentTaskStatus.FAILED &&
+                                        !task.lastError.contains("拒绝") &&
+                                        !task.lastError.contains("未批准")
+                                )
                             )
                     }.orEmpty()
             }
