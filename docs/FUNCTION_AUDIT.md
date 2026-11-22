@@ -828,7 +828,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 ### 历史分叉分支的选择性回收
 
-- `feature/knowledge-retrieval-ranking`：不整分支合并。旧 `CapabilityTaskEngine` / `CapabilityCenterPage` 与当前 `AgentTaskCoordinator` / `CapabilityDirectoryPage` 形成重复任务架构；旧任务引擎测试绑定已淘汰的数据表/API，不迁入。旧 `CapabilityRegistryStoreTest` 依赖当前已改为私有的旧 codec API，不直接复制；其适用断言已按当前公开 API 改写并追加到整合分支原有的 Android instrumentation 文件 `app/src/androidTest/java/app/nestro/data/CapabilityRegistryStoreTest.kt`。最终保留原有 8 项测试，并新增 4 项描述符/安全边界测试；提交 `48240bb24ede064db9d295c1e770bce7be60fc7f` 已回读确认旧用例未丢失。其数据库终态保护是有效且曾遗漏的实现，已选择性恢复，见提交 `31fedead85e036a870c4eea6e0fbad862cf908d8`。
+- `feature/knowledge-retrieval-ranking`：不整分支合并。旧 `CapabilityTaskEngine` 与当前 `AgentTaskCoordinator` 使用不同任务表和状态所有者，直接迁入会形成第二套任务架构，因此旧引擎及其测试不迁入。旧 `CapabilityCenterPage` 的能力目录/项目授权部分已由当前 `CapabilityDirectoryPage` 承接；其任务列表面板绑定旧 `CapabilityTaskEntity`，没有直接复制或接线，也不宣称统一任务总览 UI 已整合。该 UI 只能在后续界面阶段基于现有 `AgentTaskStateEntity` / `AgentTaskCoordinator` 适配，当前不启动 UI 改造。旧 `CapabilityRegistryStoreTest` 依赖当前已改为私有的旧 codec API，不直接复制；其适用断言已按当前公开 API 改写并追加到整合分支原有的 Android instrumentation 文件 `app/src/androidTest/java/app/nestro/data/CapabilityRegistryStoreTest.kt`。最终保留原有 8 项测试，并新增 4 项描述符/安全边界测试；提交 `48240bb24ede064db9d295c1e770bce7be60fc7f` 已回读确认旧用例未丢失。其数据库终态保护是有效且曾遗漏的实现，已选择性恢复，见提交 `31fedead85e036a870c4eea6e0fbad862cf908d8`。
 - `feature/module-7-skill-library`：旧 `SkillCommunityInstallPlanner`、`SkillInstallPolicy` 和相关测试不整套迁入。当前版本使用更新的 SemVer 2.0、依赖约束回溯求解、签名信任根/撤销与安装计划 API；旧测试面向不同 API。当前 `SkillSemVerTest`、`SkillDependencyRuntimePolicyTest`、`SkillCommunityClientTest` 已覆盖对应核心规则。
 - `wip/module-5-project-space`：唯一缺失路径是详细设计文档 `docs/MODULE_5_PROJECT_SPACE_DESIGN.md`。已将其保留到整合分支，并明确标注为 2026-11-19 历史设计归档，当前实现以功能审计/代码地图/路线图为准；提交 `e84a2fcade2a0a7cb4efc33e38dbeeaf14a9de22`。
 - `main`：独有 `UnifiedAgentDispatcher`、`ChatNetworkPolicy`、`TtsCapability` 及其旧测试不恢复。前者是较弱的关键词路由，后两者分别与现有请求策略和 Android TTS 控制器重复；具体判断见本审计“旧 main 分支独有辅助类的去留判断”。
@@ -843,6 +843,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ### 当前边界
 
 - 未删除任何源码、资源、依赖或历史分支。
+- 旧 PR #1 的任务总览 UI 尚未适配到当前统一任务模型；旧 UI/任务引擎属于未合并 Draft 实现，不直接并入以免引入重复架构，后续界面阶段再决定是否基于现有任务模型复用其交互。
 - 未执行历史遗留/死代码扫描；该工作严格留待用户确认第一阶段整合完成后再开始。
 - 未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验证；按既定顺序留待后续统一验收。
 - 当前记录是历史分支整合进度，不代表第一阶段已经完成；仍需继续核对分叉分支中共享路径的独有语义，确认没有遗漏有效实现。
