@@ -641,8 +641,8 @@
 
 ### 需要做最小整合/修复的真实缺口
 - **专家团工具描述冲突**：`NestroApplication` 注册的 `expert_team.run` 描述仍说“用户明确选择的专家团队”，但 `ModelLedToolDispatcher` 系统提示和 `NestroApp.runExpertTeam` 回调已支持主模型从项目专家目录自动选 2–4 人。描述过时会误导模型，应统一为“优先使用用户已选团队，否则主模型可自主选择可用专家”。
-- **插件审批粒度**：插件总工具 `plugin.*` 标记 `requiresConfirmation=true`，但内部执行为每一步创建自定义 PermissionRouter，对所有 READ_ONLY/EXTERNAL_WRITE 直接 Allow，未尊重内部工具的 `requiresConfirmation`。因此用户对插件入口的一次确认可能绕过具体步骤本应触发的确认；需把工具自身确认要求接回统一审批路由，不能简单全部 Allow。
-- **插件任务生命周期**：插件 handler 直接写 RUNNING/COMPLETED/FAILED/PAUSED 状态，逐步执行却未调用 `AgentTaskCoordinator.enqueue/runInline/checkpoint/resume`；取消后标为 PAUSED，但未见可恢复的步骤检查点/handler 恢复链路。应复用共享 coordinator 补 checkpoint/恢复，不新建第三套任务引擎。
+- **插件审批粒度**：插件总工具 `plugin.*` 本身标记 `requiresConfirmation=true`，其描述会列出工作流步骤并标记哪些底层工具自身要求确认；内部执行器随后对 READ_ONLY/EXTERNAL_WRITE 直接 Allow，因此当前语义是“用户先整体确认插件工作流”，而不是逐步骤再次弹窗。不能直接称为未授权执行，但必须核验审批 UI 是否清楚展示完整步骤、权限和实际参数；若只展示插件名称/摘要，则需补逐步确认与 checkpoint/resume，不能把整体确认误当永久授权。
+- **插件任务生命周期**：插件 handler 直接写 RUNNING/COMPLETED/FAILED/PAUSED 状态并写入 Room trace，但逐步执行未调用 `AgentTaskCoordinator.enqueue/runInline/checkpoint/resume`；取消后标为 PAUSED，未见可恢复的步骤检查点/handler 恢复链路。应复用共享 coordinator 补 checkpoint/恢复，不新建第三套任务引擎。
 - **统一能力中心 UI**：当前 `CapabilityDirectoryPage` 是 Skills/社区目录，不等于模型/专家/工作流/知识/记忆/设备/MCP/GitHub/媒体的总览、项目授权、可用状态和任务审计中心。旧 PR #1 的页面不可直接复制，但该产品入口缺口仍需基于现有目录/权限/trace 数据源补齐。
 - **混合调度**：主模型系统提示已有专家/手机/素材按依赖穿插调用的规则，Phone Agent 的任务创建/等待/素材核验代码已接入；仍需联测多轮交替、等待用户接管、失败重试和专家真正读取素材。不能再造新的混合调度器。
 - **多模态理解**：聊天 transport 纯文本、媒体分析工具缺失，已在前文记录；复用现有 Media AI 任务链路补主模型入口。
