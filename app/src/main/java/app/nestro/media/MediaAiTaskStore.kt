@@ -282,7 +282,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
 object MediaAiTaskScheduler {
     private fun unique(projectId:String,taskId:String)="media-ai-$projectId-$taskId"
 
-    suspend fun enqueue(context:Context,projectId:String,taskId:String) {
+    private suspend fun registerUnifiedTask(context: Context, projectId: String, taskId: String): app.nestro.NestroApplication {
         val app = context.applicationContext as? app.nestro.NestroApplication
             ?: error("媒体任务无法连接统一任务机")
         val task = MediaAiTaskStore.read(context, projectId, taskId)
@@ -299,6 +299,11 @@ object MediaAiTaskScheduler {
                 input = taskId
             )
         )
+        return app
+    }
+
+    suspend fun enqueue(context:Context,projectId:String,taskId:String) {
+        registerUnifiedTask(context, projectId, taskId)
         val request=OneTimeWorkRequestBuilder<MediaAiTaskWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(MediaAiTaskWorker.KEY_PROJECT to projectId,MediaAiTaskWorker.KEY_TASK to taskId)).build()
@@ -312,9 +317,8 @@ object MediaAiTaskScheduler {
     suspend fun cancel(context:Context,projectId:String,taskId:String) {
         val task=MediaAiTaskStore.read(context,projectId,taskId) ?: return
         require(task.status in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) { "当前媒体 AI 任务不可取消" }
+        val app = registerUnifiedTask(context, projectId, taskId)
         MediaAiTaskStore.update(context,projectId,taskId,status=MediaAiTaskStatus.CANCELLED)
-        val app = context.applicationContext as? app.nestro.NestroApplication
-            ?: error("媒体任务无法连接统一任务机")
         app.agentTaskCoordinator.cancel("media-ai:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(unique(projectId,taskId))
     }
