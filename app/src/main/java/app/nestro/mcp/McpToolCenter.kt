@@ -248,8 +248,7 @@ class McpToolCenterService(
   val state=requireNotNull(coordinator.state(taskId)){"MCP 任务不存在或已被清理"}
   require(state.kind=="mcp_tool" && state.capabilityId.startsWith("mcp_")) { "该任务不是可恢复的 MCP 调用" }
   require(state.status==app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER ||
-   state.status==app.nestro.agent.AgentTaskStatus.PAUSED ||
-   state.status==app.nestro.agent.AgentTaskStatus.FAILED) { "当前 MCP 任务状态不可恢复：${state.status}" }
+   state.status==app.nestro.agent.AgentTaskStatus.PAUSED) { "当前 MCP 任务状态不可恢复：${state.status}" }
   return invokeWithTaskId(taskId, state.capabilityId, state.input)
  }
 
