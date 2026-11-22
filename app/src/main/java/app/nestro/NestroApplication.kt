@@ -540,7 +540,12 @@ class NestroApplication : Application() {
                                 } else GeneratedPluginAuthorizationPolicy.authorize(tool)
 
                                 if (baseAuthorization is app.nestro.agent.AgentAuthorization.RequireConfirmation) {
+                                    taskContext.waitForUser(baseAuthorization.reason)
                                     if (agentApprovalCoordinator.authorize(requestId, tool.id, baseAuthorization.reason)) {
+                                        taskContext.transition(
+                                            AgentTaskStatus.RUNNING,
+                                            "用户已批准插件步骤：${tool.id}"
+                                        )
                                         app.nestro.agent.AgentAuthorization.Allow
                                     } else {
                                         app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
