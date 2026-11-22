@@ -16,8 +16,12 @@ class UserMemoryRepository(
     suspend fun list(projectId: String): List<UserMemoryEntity> =
         UserMemoryStore.list(database.dao(), projectId)
 
-    suspend fun recall(projectId: String, query: String): MemoryRecall {
-        val memories = database.dao().userMemoriesForRecall(projectId, 200)
+    suspend fun recall(
+        projectId: String,
+        query: String,
+        readableSourceProjectIds: Set<String> = emptySet()
+    ): MemoryRecall {
+        val memories = database.dao().userMemoriesForRecall(projectId, readableSourceProjectIds.sorted(), 200)
         val keywordFallback = UserMemoryStore.recall(memories, query)
         val context = appContext ?: return keywordFallback
         if (memories.isEmpty() || !KnowledgeEmbeddingModelManager.isInstalled(context)) return keywordFallback
