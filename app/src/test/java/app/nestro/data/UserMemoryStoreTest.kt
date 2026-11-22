@@ -6,15 +6,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UserMemoryStoreTest {
-    private fun memory(id: String, content: String, updatedAt: Long = 1L) = UserMemoryEntity(
+    private fun memory(
+        id: String,
+        content: String,
+        updatedAt: Long = 1L,
+        category: String = "preference",
+        confidence: Double = 0.95
+    ) = UserMemoryEntity(
         id = id,
         projectId = "project-1",
-        category = "preference",
+        category = category,
         content = content,
         fingerprint = id,
         sourceConversationId = "conversation-1",
         sourceMessageId = "message-1",
-        confidence = 0.95,
+        confidence = confidence,
         createdAt = 1L,
         updatedAt = updatedAt
     )
@@ -31,6 +37,42 @@ class UserMemoryStoreTest {
         assertFalse(UserMemoryStore.isSafeContent("我的收入和负债情况如下"))
         assertFalse(UserMemoryStore.isSafeContent("我的身份证号是 11010119900101123X"))
         assertFalse(UserMemoryStore.isSafeContent("我最近的病史和用药记录"))
+    }
+
+    @Test
+    fun bm25RanksSpecificChineseMemoryAboveGenericAndOlderMemory() {
+        val now = 2_000_000_000_000L
+        val generic = memory("generic", "我喜欢简洁表达", updatedAt = now - 400L * 86_400_000L)
+        val specific = memory(
+            "specific",
+            "回答技术问题时先给结论，再解释关键原因",
+            updatedAt = now - 86_400_000L,
+            category = "constraint",
+            confidence = 0.98
+        )
+        val ranked = MemoryRecallRanker.rank("技术问题先给结论", listOf(generic, specific), now = now)
+        assertEquals("specific", ranked.first().id)
+    }
+
+    @Test
+    fun bm25RejectsUnmatchedMemoriesAndWeakSingleMatchesForLongQueries() {
+        val candidate = memory("m1", "项目采用本地优先的存储方式")
+        assertTrue(MemoryRecallRanker.rank("完全无关的火星探测", listOf(candidate)).isEmpty())
+        assertTrue(
+            MemoryRecallRanker.rank(
+                "项目使用远程服务器处理完全不同的业务流程",
+                listOf(candidate)
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun bm25DeduplicatesIdenticalContentAfterRanking() {
+        val first = memory("first", "我偏好简洁直接的中文回答", updatedAt = 2_000L)
+        val duplicate = memory("duplicate", "我偏好简洁直接的中文回答", updatedAt = 1_000L)
+        val ranked = MemoryRecallRanker.rank("简洁直接中文回答", listOf(first, duplicate))
+        assertEquals(1, ranked.size)
+        assertEquals("first", ranked.single().id)
     }
 
     @Test
