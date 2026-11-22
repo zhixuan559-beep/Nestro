@@ -131,6 +131,24 @@ class CapabilityRegistryStoreTest {
     }
 
     @Test
+    fun registrySupportsMoreThanOneHundredCombinedBuiltinPluginAndMcpCapabilities() {
+        preferences.edit().clear().commit()
+        val items = (1..160).map { index ->
+            CapabilityDescriptor(
+                id = "capability.test.$index",
+                title = "能力 $index",
+                category = "test",
+                description = "容量回归测试能力 $index"
+            )
+        }
+
+        CapabilityRegistryStore.registerAll(preferences, items)
+
+        assertEquals(160, CapabilityRegistryStore.list(preferences).size)
+        assertTrue(CapabilityRegistryStore.authorize(preferences, "project-a", "capability.test.160"))
+    }
+
+    @Test
     fun toolAuditNeverStoresSecretParameterNames() {
         assertEquals(
             listOf("query", "page_size"),
