@@ -1,5 +1,7 @@
 # 第二阶段代码地图与依赖盘点（初版）
 
+> **状态说明（2026-11-22）：** 本文是以 `refactor/phase-2-architecture` 为基线的历史初盘，不是当前 `integration/19-modules` 的实时代码地图。文中的 149 文件/88 主源码等数量和部分模块状态已过期；请以 `docs/FUNCTION_AUDIT.md` 的当前基线与 `docs/IMPLEMENTATION_ROADMAP.md` 的最新需求/进度为准。本文保留用于追溯架构重构历史，不得单独用来判定当前模块缺失或未合并。
+
 > 基线：`refactor/phase-2-architecture`，起点提交 `8bd25b210488cc1935c4afffbccba9a994018dbc`。该提交来自 Nestro 自身的 `feature/voice-system` 分支；PR #2 仍为 Draft、未合并。
 >
 > ETA 处理边界：现有 Nestro 架构文档记录 ETA 为 GPL-3.0，并明确要求未经许可证兼容审查不得直接复用其源代码。本分支没有引入 ETA 源码子树或独立 Gradle 模块；本阶段只把其 Agent Runtime、工具目录、权限和任务生命周期设计作为架构参考，按 Nestro 现有代码独立整合。不能把本分支称为“已合并 ETA 源码”。
