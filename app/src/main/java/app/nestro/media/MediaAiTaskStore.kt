@@ -146,18 +146,21 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                 taskContext.checkpoint("media_ai:$projectId:$taskId")
                 try {
                     val succeeded = executeMediaTask(projectId, taskId)
-                    if (succeeded) {
-                        taskContext.transition(
-                            app.nestro.agent.AgentTaskStatus.COMPLETED,
-                            resultSummary = "媒体 AI 处理完成"
-                        )
-                        Result.success()
-                    } else {
-                        val error = MediaAiTaskStore.read(applicationContext, projectId, taskId)?.error
-                            ?: "媒体 AI 任务执行失败"
-                        taskContext.fail(error)
-                        Result.failure()
+                    when (nestroApp.agentTaskCoordinator.state("media-ai:$taskId")?.status) {
+                        app.nestro.agent.AgentTaskStatus.CANCELLED -> taskContext.cancel("媒体 AI 任务已取消")
+                        app.nestro.agent.AgentTaskStatus.PAUSED -> taskContext.pause("媒体 AI 任务已暂停")
+                        else -> if (succeeded) {
+                            taskContext.transition(
+                                app.nestro.agent.AgentTaskStatus.COMPLETED,
+                                resultSummary = "媒体 AI 处理完成"
+                            )
+                        } else {
+                            val error = MediaAiTaskStore.read(applicationContext, projectId, taskId)?.error
+                                ?: "媒体 AI 任务执行失败"
+                            taskContext.fail(error)
+                        }
                     }
+                    if (succeeded) Result.success() else Result.failure()
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                         when (nestroApp.agentTaskCoordinator.state("media-ai:$taskId")?.status) {
@@ -189,6 +192,12 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
         val provider=OpenAiCompatibleMediaIntelligenceProvider(providerConfig)
         activeProvider=provider
+        suspend fun ensureTaskRunning() {
+            val lifecycle = nestroApp.agentTaskCoordinator.state("media-ai:$taskId")?.status
+            if (lifecycle != app.nestro.agent.AgentTaskStatus.RUNNING) {
+                throw kotlinx.coroutines.CancellationException("媒体 AI 任务已暂停、取消或离开运行状态")
+            }
+        }
         return try {
             MediaAiTaskStore.update(applicationContext,projectId,taskId,errorMessage="")
             if (task.action == "video-generate") {
@@ -200,6 +209,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     setProgressAsync(workDataOf("progress" to p))
                 }
                 try {
+                    ensureTaskRunning()
                     val imported = MediaProjectStore.importGeneratedFile(
                         applicationContext, projectId, generated, MediaAssetKind.VIDEO, stableAssetId = task.id
                     )
@@ -238,6 +248,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     "audio-clean" -> {
                         val output=provider.processAudio(mediaAsset,file,"noise_reduction",progress)
                         try {
+                            ensureTaskRunning()
                             val imported=MediaProjectStore.importGeneratedFile(applicationContext,projectId,output,MediaAssetKind.AUDIO,stableAssetId=task.id)
                             JSONObject().put("type","audio").put("assetId",imported.id).put("displayName",imported.displayName).toString()
                         } finally { output.delete() }
@@ -246,6 +257,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     else -> error("不支持的媒体 AI 操作")
                 }
             }
+            ensureTaskRunning()
             MediaAiTaskStore.update(applicationContext,projectId,taskId,progress=100,resultJson=result,errorMessage="")
             true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -253,7 +265,10 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             throw cancelled
         } catch(t:Throwable) {
             when {
-                nestroApp.agentTaskCoordinator.state("media-ai:$taskId")?.status == app.nestro.agent.AgentTaskStatus.CANCELLED -> true
+                nestroApp.agentTaskCoordinator.state("media-ai:$taskId")?.status in setOf(
+                    app.nestro.agent.AgentTaskStatus.CANCELLED,
+                    app.nestro.agent.AgentTaskStatus.PAUSED
+                ) -> true
                 isStopped -> {
                     val stopped = kotlinx.coroutines.CancellationException("媒体 AI Worker 被系统停止")
                     stopped.initCause(t)
