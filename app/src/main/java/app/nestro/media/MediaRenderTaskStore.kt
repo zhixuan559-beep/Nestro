@@ -96,14 +96,21 @@ object MediaRenderTaskStore {
     }
 
     @Synchronized
-    fun delete(context: Context, projectId: String, taskId: String) {
+    suspend fun delete(context: Context, projectId: String, taskId: String) {
         val target = file(context, projectId, taskId)
         if (!target.exists()) return
         val current = read(context, projectId, taskId)
         if (current != null) {
-            require(current.status in setOf(MediaRenderStatus.COMPLETED, MediaRenderStatus.FAILED, MediaRenderStatus.CANCELLED)) {
-                "运行中的导出任务不能直接删除"
+            val nestroApp = context.applicationContext as? app.nestro.NestroApplication
+            val unifiedStatus = nestroApp?.agentTaskCoordinator?.state("media-render:$taskId")?.status
+            val canDelete = when (unifiedStatus) {
+                app.nestro.agent.AgentTaskStatus.COMPLETED,
+                app.nestro.agent.AgentTaskStatus.FAILED,
+                app.nestro.agent.AgentTaskStatus.CANCELLED -> true
+                null -> current.status in setOf(MediaRenderStatus.COMPLETED, MediaRenderStatus.FAILED, MediaRenderStatus.CANCELLED)
+                else -> false
             }
+            require(canDelete) { "运行中的导出任务不能直接删除" }
         }
         val stagedTask = File(target.parentFile, "." + target.name + ".deleting")
         val output = MediaProjectStore.exportFile(context, projectId, taskId)
