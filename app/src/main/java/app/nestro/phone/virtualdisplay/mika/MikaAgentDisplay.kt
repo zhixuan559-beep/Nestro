@@ -49,6 +49,10 @@ class MikaAgentDisplay(
 
     private val frameLock = Any()
     private var fullFrame: Bitmap? = null
+    // Compose may still be drawing the previous StateFlow value after a new frame arrives.
+    // Retire preview bitmaps briefly, then recycle them instead of leaking 10 new bitmaps/sec.
+    private var previewFrame: Bitmap? = null
+    private val retiredPreviewFrames = mutableSetOf<Bitmap>()
     private var hasFrame = false
     private var frameGeometry = DisplayFrameGeometry(bufferWidth, bufferHeight, Surface.ROTATION_0)
     private var lastProcessedAt = 0L
@@ -150,9 +154,22 @@ class MikaAgentDisplay(
                 hasFrame = true
                 frameTimestampNanos = image.timestamp
                 frameGeometry = capturedGeometry
-                _frames.value = uprightDisplayFrame(
+                val nextPreview = uprightDisplayFrame(
                     bmp, capturedGeometry, capturedGeometry.previewWidth(previewLimit), paint
                 )
+                val previousPreview = previewFrame
+                previewFrame = nextPreview
+                _frames.value = nextPreview
+                if (previousPreview != null) {
+                    retiredPreviewFrames += previousPreview
+                    handler.postDelayed({
+                        synchronized(frameLock) {
+                            if (retiredPreviewFrames.remove(previousPreview) && !previousPreview.isRecycled) {
+                                previousPreview.recycle()
+                            }
+                        }
+                    }, PREVIEW_RETIRE_DELAY_MS)
+                }
             }
         } finally {
             image.close()
@@ -190,11 +207,20 @@ class MikaAgentDisplay(
         handler.removeCallbacks(process)
         handler.post {
             reader.close()
-            synchronized(frameLock) {
-                fullFrame?.recycle()
+            val retired = synchronized(frameLock) {
+                val frames = retiredPreviewFrames.toList() + listOfNotNull(previewFrame, fullFrame)
+                retiredPreviewFrames.clear()
+                previewFrame = null
                 fullFrame = null
                 hasFrame = false
+                frameTimestampNanos = 0L
+                _frames.value = null
+                frames.distinct()
             }
+            // Let Compose finish the frame currently on screen before releasing its bitmap.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                retired.forEach { bitmap -> if (!bitmap.isRecycled) bitmap.recycle() }
+            }, PREVIEW_RETIRE_DELAY_MS)
         }
         thread.quitSafely()
     }
@@ -202,5 +228,6 @@ class MikaAgentDisplay(
     private companion object {
         const val TAG = "MikaAgentDisplay"
         const val FRAME_INTERVAL_MS = 100L
+        const val PREVIEW_RETIRE_DELAY_MS = 500L
     }
 }
