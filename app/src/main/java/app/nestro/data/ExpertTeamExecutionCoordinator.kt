@@ -227,7 +227,9 @@ class ExpertTeamExecutionCoordinator(
             .put("acceptance", plan.finalAcceptanceCriteria)
             .put("members", JSONArray().apply {
                 members.toSortedMap().forEach { (name, member) ->
-                    put(JSONObject().put("name", name).put("rolePrompt", member.rolePrompt))
+                    put(JSONObject().put("name", name)
+                        .put("rolePrompt", member.rolePrompt)
+                        .put("assignedTask", member.assignedTask))
                 }
             })
             .put("packages", JSONArray().apply {
