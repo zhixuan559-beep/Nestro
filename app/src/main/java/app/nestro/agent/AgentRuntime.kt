@@ -434,6 +434,7 @@ class AgentApprovalCoordinator(
 
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
+    private val responseLocks = ConcurrentHashMap<String, Mutex>()
     private val promptMutex = Mutex()
     private val activeRequests = ConcurrentHashMap<String, ActiveApproval>()
     @Volatile private var handler: (suspend (AgentApprovalRequest) -> Unit)? = null
@@ -454,18 +455,33 @@ class AgentApprovalCoordinator(
         decision: AgentApprovalDecision,
         resumeTaskIfInactive: Boolean = true
     ): Boolean {
-        val active = activeRequests[approvalId]
-        if (active != null) {
-            if (!active.decision.isActive) return false
-            persistAudit(active.record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
-            return active.decision.complete(decision)
-        }
+        val responseLock = responseLocks.computeIfAbsent(approvalId) { Mutex() }
+        return responseLock.withLock {
+            val active = activeRequests[approvalId]
+            if (active != null) {
+                if (!active.decision.isActive) return@withLock false
+                persistAudit(active.record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
+                return@withLock active.decision.complete(decision)
+            }
 
-        val record = loadAudit(approvalId) ?: return false
-        if (record.status != "PENDING") return false
-        persistAudit(record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
-        if (resumeTaskIfInactive) resumeTask(record.scopeId)
-        return true
+            val record = loadAudit(approvalId) ?: return@withLock false
+            if (record.status != "PENDING") return@withLock false
+            persistAudit(record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
+
+            // authorize() registers its continuation under the same short-lived lock.
+            // If it is already entering this scope, it will consume the persisted decision
+            // itself; do not enqueue a duplicate task execution.
+            val activeAfterPersist = activeRequests[approvalId]
+            if (activeAfterPersist != null) {
+                activeAfterPersist.decision.complete(decision)
+            } else if (
+                resumeTaskIfInactive &&
+                requestLocks[record.scopeId]?.isLocked != true
+            ) {
+                runCatching { resumeTask(record.scopeId) }
+            }
+            true
+        }
     }
 
     /** Reattach decisions committed just before a process interruption. */
@@ -528,9 +544,40 @@ class AgentApprovalCoordinator(
                 updatedAt = now
             )
             val deferred = CompletableDeferred<AgentApprovalDecision>()
-            activeRequests[record.id] = ActiveApproval(record, deferred)
+            val responseLock = responseLocks.computeIfAbsent(record.id) { Mutex() }
+            val persistedDecision = responseLock.withLock {
+                when (val latestStatus = loadAudit(record.id)?.status) {
+                    "AUTHORIZED_TASK" -> {
+                        taskWideGrants += scopeId
+                        AgentApprovalDecision.AUTHORIZE_TASK
+                    }
+                    "AUTHORIZED_ONCE" -> {
+                        val latest = loadAudit(record.id) ?: record
+                        persistAudit(latest.copy(status = "CONSUMED_ONCE", updatedAt = System.currentTimeMillis()))
+                        AgentApprovalDecision.AUTHORIZE_ONCE
+                    }
+                    "REJECTED" -> {
+                        val latest = loadAudit(record.id) ?: record
+                        persistAudit(latest.copy(status = "CONSUMED_REJECTED", updatedAt = System.currentTimeMillis()))
+                        AgentApprovalDecision.REJECT
+                    }
+                    "PENDING" -> {
+                        val latest = loadAudit(record.id) ?: record
+                        activeRequests[record.id] = ActiveApproval(latest, deferred)
+                        null
+                    }
+                    null -> {
+                        activeRequests[record.id] = ActiveApproval(record, deferred)
+                        persistAudit(record)
+                        null
+                    }
+                    else -> null
+                }
+            }
+            if (persistedDecision != null) return@scopeLock persistedDecision
+            if (activeRequests[record.id] == null) return@scopeLock null
+
             try {
-                if (pending == null) persistAudit(record)
                 val approvalHandler = handler
                 if (approvalHandler == null && !deferred.isCompleted) return@scopeLock null
                 if (approvalHandler != null && !deferred.isCompleted) {

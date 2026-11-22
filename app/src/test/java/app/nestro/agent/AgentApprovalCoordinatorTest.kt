@@ -2,6 +2,7 @@ package app.nestro.agent
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -120,6 +121,30 @@ class AgentApprovalCoordinatorTest {
         assertEquals(AgentApprovalDecision.AUTHORIZE_ONCE, withTimeout(2_000) { second.await() })
         assertTrue(approvals.respond(pending.single { it.toolId == "tool-a" }.id, AgentApprovalDecision.REJECT))
         assertEquals(AgentApprovalDecision.REJECT, withTimeout(2_000) { first.await() })
+    }
+
+    @Test
+    fun approvalDecisionCanOnlyBeCommittedOnce() = runBlocking {
+        val store = MemoryApprovalStore()
+        val approvals = store.coordinator()
+        val pendingId = CompletableDeferred<String>()
+        approvals.setHandler { request -> pendingId.complete(request.id) }
+        val execution = async { approvals.authorize("scope-once", "tool-once", "需要确认") }
+        val id = withTimeout(2_000) { pendingId.await() }
+
+        val responses = listOf(
+            async { approvals.respond(id, AgentApprovalDecision.AUTHORIZE_ONCE) },
+            async { approvals.respond(id, AgentApprovalDecision.REJECT) }
+        ).awaitAll()
+
+        assertEquals(1, responses.count { it })
+        val decision = withTimeout(2_000) { execution.await() }
+        val expectedStatus = if (decision == AgentApprovalDecision.AUTHORIZE_ONCE) {
+            "CONSUMED_ONCE"
+        } else {
+            "CONSUMED_REJECTED"
+        }
+        assertEquals(expectedStatus, store.records.single().status)
     }
 
     @Test
