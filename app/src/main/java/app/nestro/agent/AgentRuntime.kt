@@ -432,7 +432,14 @@ class InMemoryAgentTaskStateStore : AgentTaskStateStore {
         mutex.withLock { states.values.firstOrNull { it.idempotencyKey == key } }
 
     override suspend fun put(state: AgentTaskState) {
-        mutex.withLock { states[state.taskId] = state }
+        mutex.withLock {
+            state.idempotencyKey?.let { key ->
+                require(states.values.none { it.taskId != state.taskId && it.idempotencyKey == key }) {
+                    "幂等键已被其他任务占用"
+                }
+            }
+            states[state.taskId] = state
+        }
     }
 
     override suspend fun putIfAbsent(state: AgentTaskState): AgentTaskState = mutex.withLock {
