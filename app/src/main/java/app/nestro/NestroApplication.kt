@@ -826,6 +826,9 @@ class NestroApplication : Application() {
                 val payload = org.json.JSONObject(state.input)
                 val prompt = payload.optString("prompt").trim().take(12_000)
                 val eventId = payload.optString("eventId")
+                val automationRepository = app.nestro.calendar.CalendarRepository(this@NestroApplication)
+                automationRepository.recordAutomationResult(eventId, "RUNNING")
+                try {
                 require(prompt.isNotBlank() && state.projectId.isNotBlank()) {
                     "日历自动任务缺少执行目标或项目范围"
                 }
@@ -855,8 +858,7 @@ class NestroApplication : Application() {
                 val conversationId = "calendar-$eventId".take(120)
                 val requestId = taskContext.taskId
                 var latestPartialAnswer = ""
-                val execution = try {
-                    chatRequestExecutionCoordinator.execute(
+                val execution = chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
                         requestId = requestId,
                         conversationId = conversationId,
@@ -897,23 +899,46 @@ class NestroApplication : Application() {
                         latestPartialAnswer = partial.take(24_000)
                     }
                     )
-                } catch (pending: AgentApprovalPendingException) {
-                    taskContext.waitForUser(pending.message.orEmpty().take(2_000))
-                    throw pending
-                }
                 val finalText = execution.finalization.finalText.take(8_000)
                 taskContext.checkpoint("calendar_output:" + finalText.ifBlank { latestPartialAnswer }.take(24_000))
                 val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
                 when {
-                    child?.status == AgentTaskStatus.WAITING_FOR_USER ->
-                        taskContext.waitForUser(child.lastError.ifBlank { "日历自动任务等待工具审批" })
-                    child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准") ->
+                    child?.status == AgentTaskStatus.WAITING_FOR_USER -> {
+                        val reason = child.lastError.ifBlank { "日历自动任务等待工具审批" }
+                        automationRepository.recordAutomationResult(eventId, "WAITING_FOR_USER", error = reason)
+                        taskContext.waitForUser(reason)
+                    }
+                    child?.status == AgentTaskStatus.FAILED && child.lastError.contains("未批准") -> {
+                        automationRepository.recordAutomationResult(eventId, "FAILED", error = child.lastError)
                         taskContext.fail(child.lastError)
-                    execution.finalization.status.name == "SUCCESS" ->
+                    }
+                    execution.finalization.status.name == "SUCCESS" -> {
+                        automationRepository.recordAutomationResult(eventId, "COMPLETED", result = finalText)
                         taskContext.transition(AgentTaskStatus.COMPLETED, resultSummary = finalText)
-                    execution.finalization.status.name == "STOPPED" ->
+                    }
+                    execution.finalization.status.name == "STOPPED" -> {
+                        automationRepository.recordAutomationResult(eventId, "CANCELLED", error = "日历自动任务已停止")
                         taskContext.cancel("日历自动任务已停止")
-                    else -> taskContext.fail(finalText.ifBlank { "日历自动任务执行失败" })
+                    }
+                    else -> {
+                        val error = finalText.ifBlank { "日历自动任务执行失败" }
+                        automationRepository.recordAutomationResult(eventId, "FAILED", error = error)
+                        taskContext.fail(error)
+                    }
+                }
+                } catch (pending: AgentApprovalPendingException) {
+                    val reason = pending.message.orEmpty().take(2_000)
+                    automationRepository.recordAutomationResult(eventId, "WAITING_FOR_USER", error = reason)
+                    taskContext.waitForUser(reason)
+                    throw pending
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    automationRepository.recordAutomationResult(eventId, "CANCELLED", error = "日历自动任务已取消")
+                    throw cancelled
+                } catch (error: Exception) {
+                    val reason = (error.message ?: error.javaClass.simpleName).take(2_000)
+                    automationRepository.recordAutomationResult(eventId, "FAILED", error = reason)
+                    taskContext.fail(reason)
+                    throw error
                 }
             }
         }
