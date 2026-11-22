@@ -350,3 +350,27 @@
 - `AiCoworkbenchService` 复用 `GitWorkbenchRepository`，提供变更审查、补丁应用/回滚和构建/测试工作流；相关静态分析、报告解析、上下文策略与策略测试源码存在。
 - 需确认远程 GitHub Actions 只在用户主动启动后执行、逐文件批准与事务回滚在异常/进程中断下保持一致；真实 Actions、SBOM/JUnit 产物和完整测试尚未运行。
 
+
+## 2026-11-22 模块18统一时间调度引擎专项审计
+
+### 用户确认的真实定位
+用户于 2026-11-21 明确纠正：模块18主要辅助自动定时，不是独立日历产品页；应把时间事件接入统一调度基座，支持 Agent/任务/工作流分发、状态回写、失败重试、持久化、重启恢复和取消。
+
+### 当前源码实际能力
+- `CalendarDatabase/CalendarRepository` 已实现本地日程 CRUD 和 Room 持久化。
+- `CalendarRules` 支持 NONE/DAILY/WEEKLY/MONTHLY/YEARLY 的重复计算、到期 occurrence 判断和日期范围展开。
+- `CalendarReminderScheduler` 只创建 `CalendarReminderWorker` 的唯一 WorkManager 单次任务；`CalendarReminderWorker` 到期后发系统通知，再安排下一次重复提醒。
+- `CalendarProviderBridge` 支持系统日历导入/导出和关联事件更新/删除。
+- `CalendarPage` 当前是完整月历/周历页面，包含日程 CRUD、系统日历导入导出和提醒配置。
+
+### 与用户要求的差距
+- **未发现时间触发后向 `AgentTaskCoordinator` / `AgentToolCatalog` / 工作流分发的代码链路。** 当前到期动作是发通知，不会自动创建 Agent/任务/工作流执行。
+- 未发现调度触发任务的关联 ID、执行状态回写、失败重试策略或幂等执行记录；当前 `completed` 是日程完成标记，不是任务执行状态。
+- 当前仅支持事件开始前的提醒分钟数及周期重复；没有独立的延迟触发、时间条件判断、按任务目标选择执行器等统一调度模型。
+- WorkManager 能持久化通知工作并处理设备重启，但当前没有“未完成 Agent 任务恢复/执行状态恢复”的关联链路。不能把 WorkManager 提醒恢复等同于统一调度恢复。
+- 当前只找到 `CalendarRulesTest`；没有发现 Scheduler/Worker/Repository 的自动化测试，也没有 Agent/Workflow dispatch 的集成测试。
+- 当前完整月历/周历页面与用户“不是独立页面”的产品定位不一致；后续 UI 设计应将它收敛为轻量计划/触发管理入口，而不是继续扩展独立日历功能。
+
+### 当前判定
+模块18的“日程 CRUD、周期计算、通知提醒、系统日历互操作”代码存在；但用户真正要求的“统一自动时间调度引擎”尚未实现。此项是明确的功能缺口，不是待验收状态。后续应复用现有统一任务基座和 WorkManager，补齐最小执行接线，不另建第二套任务系统。尚未修改代码。
+
