@@ -601,3 +601,21 @@
 - PR #3 的主要目标是从大型 Compose 根页面拆分模型管理 UI 状态；当前整合分支已存在 `ModelManagementUiState`、`ConversationUiState`、`ProjectSpaceUiState`、`WorkflowUiState`、`ExpertWorkspaceUiState` 等分离状态文件。
 - PR #3 以旧 `feature/voice-system` 为 base，当前 `integration/19-modules` 相对该旧分支已大幅演进；不得整分支合并或用其旧版 `NestroApp.kt` 覆盖当前根页面。后续应以当前文件继续审查剩余状态是否还有可安全拆分的部分。
 
+
+
+## 2026-11-22 聊天输入多模态边界与代码基线快照
+
+### 直接聊天输入的源码证据
+- `ChatMessage.kt` 的消息模型只有 `role` 与 `content` 两个字段，没有 attachment/media payload、MIME、文件引用或多模态 part。
+- `OpenAiClient.kt` 中 OpenAI Chat Completions、Anthropic Messages、Gemini Generate Content 的普通消息序列化均将 `message.content` 作为纯文本发送；未发现 image_url、input_audio、视频帧/视频文件等消息块序列化。
+- 因此当前主聊天不能直接把用户上传的图片/音频/视频作为多模态消息发给模型。语音输入按钮的系统识别结果转成文本后再聊天，不等于音频文件理解；媒体编辑器可以对已导入素材调用 Provider，也不等于普通聊天能直接理解附件。
+- 现有 `MediaProviderConfig` 只有聊天/视觉 model、transcriptionModel、scenePath、audioProcessPath、videoGenerationModel 等字段；没有独立的通用 video-understanding model/能力声明。场景识别通过专属 scenePath 接口返回分段，不等于支持任意视频内容问答。
+- 这是模块3/19的真实功能缺口，后续应先确定用户输入附件的存储与项目素材引用方式，再扩展 ChatMessage/Provider 能力适配与主模型工具调用；不能在 OpenAiClient 里简单把文件路径拼进 prompt，也不能假定所有 Provider 协议都接受相同多模态格式。
+
+### 当前整合基线快照
+- 分支：`integration/19-modules`
+- 本轮文档更新后的 HEAD：`6ac8588069ae824b280d92809dfb8baca68c83f3`
+- 当前 Git 树：354 个文件；其中 317 个 Kotlin 文件，199 个 app 主源码 Kotlin 文件、87 个 JVM 测试源码、31 个 Android instrumentation 测试源码。
+- HEAD Combined Status 返回空状态列表，关联 PR workflow runs 返回空列表；不能宣称当前 HEAD CI 已通过。
+- 以上统计是源码文件数量，不是完成率；测试源码存在不等于测试执行通过。
+
