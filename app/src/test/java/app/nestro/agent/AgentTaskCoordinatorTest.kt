@@ -287,4 +287,35 @@ class AgentTaskCoordinatorTest {
         coordinator.close()
     }
 
+    @Test
+    fun inlineTaskCanReregisterStableHandlerAndResumePersistedCheckpoint() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+        val started = CompletableDeferred<Unit>()
+        val caller = launch {
+            runCatching {
+                coordinator.runInline("inline-resume-stable", "workflow") { context ->
+                    context.checkpoint("completed-step-1", 1)
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+        }
+        started.await()
+        coordinator.pause("inline-resume-stable")
+        caller.join()
+        assertEquals(AgentTaskStatus.PAUSED, states.get("inline-resume-stable")?.status)
+
+        val result = coordinator.runInline("inline-resume-stable", "workflow") { context ->
+            assertEquals("completed-step-1", states.get(context.taskId)?.checkpoint)
+            context.checkpoint("completed-step-2", 2)
+            "resumed"
+        }
+        assertEquals("resumed", result)
+        assertEquals(AgentTaskStatus.COMPLETED, states.get("inline-resume-stable")?.status)
+        assertEquals("completed-step-2", states.get("inline-resume-stable")?.checkpoint)
+        coordinator.close()
+    }
+
 }
