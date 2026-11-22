@@ -534,3 +534,10 @@
 特别要求：专家团、Phone Agent、媒体模型不得各自建立重复调度系统；应复用 AgentRuntime/AgentToolCatalog、任务队列、权限路由、项目范围、事件检查点和取消/恢复。创作与执行允许多轮交替、串并行组合；工具/模型必须回传真实状态与产物，主模型复核后交付。
 
 后续审计必须分别核验每项能力的源码、入口、端到端调用、状态/产物回传、持久化/恢复和测试覆盖。只有 UI 或 Provider 类存在，不等于功能闭环。
+
+### Phone Agent 终态任务可被旧写入复活：确认的数据库回归
+- 对照 PR #1 的旧版 `NestroDatabase.kt` 与当前整合版发现：旧版 `updatePhoneAgentTaskProgress` 有 `status NOT IN ('completed','cancelled') OR status=:status` 保护，旧版 `updatePhoneAgentTaskPlan` 也禁止覆盖 completed/cancelled；当前整合版这两个 SQL 更新已移除终态条件。
+- 当前 `PhoneAgentTaskStore.persistActions()` 只检查 task 存在，然后调用 `updatePhoneAgentTaskPlan()`；该 SQL 会无条件把 status 重置为 planned。一个已经取消/完成的任务若收到迟到的规划写入，就可能被重新置为 planned；迟到的 Worker progress 也可能覆盖 CANCELLED/COMPLETED。
+- 旧分支 `NestroDatabaseMigrationTest.cancelledPhoneAgentTaskCannotBeRevivedByProgressOrPlanWrites()` 专门覆盖此问题；当前整合版测试缺少该用例，当前 PhoneAgentTaskStoreTest 也没有数据库终态保护测试。
+- 这是确认的 P0 状态一致性 bug，应恢复 SQL 终态保护并让 DAO 返回受影响行数；调用方在更新失败时停止后续动作。修复时保留合法的同终态写入/用户明确恢复语义，不能简单阻止所有状态更新。
+
