@@ -342,19 +342,26 @@ object WorkflowEngine {
             } else {
                 ready.map { (index, step) -> executeStep(index, step, previousOutput) }
             }
-            completed.forEachIndexed { resultIndex, pair ->
-                val (stepRun, stepOutput) = pair
-                val (stepIndex, _) = ready[resultIndex]
+            completed.forEach { (stepRun, stepOutput) ->
                 runs += stepRun
                 outputs += stepOutput
-                onStepCompleted(stepIndex + 1, stepRun, stepOutput)
             }
-            previousOutput = if (ready.size > 1 && groupName.isNotBlank()) {
-                completed.mapIndexed { index, pair ->
-                    "【并行步骤：${ready[index].second.title}】\n${pair.second}"
-                }.joinToString("\n\n").take(24_000)
+            previousOutput = if (groupName.isNotBlank()) {
+                val groupIds = group.map { it.id }.toSet()
+                runs.filter { it.stepId in groupIds }
+                    .sortedBy { row -> group.indexOfFirst { it.id == row.stepId } }
+                    .joinToString("\n\n") { row ->
+                        "【并行步骤：${row.title}】\n${row.output.ifBlank { row.error }}"
+                    }.take(24_000)
             } else {
                 completed.last().second
+            }
+            completed.forEachIndexed { resultIndex, pair ->
+                val stepRun = pair.first
+                val stepIndex = ready[resultIndex].first
+                // For a parallel wave, persist the complete merged wave output so a
+                // resumed sibling receives the same deterministic context.
+                onStepCompleted(stepIndex + 1, stepRun, previousOutput)
             }
         }
         return WorkflowRunResult(
