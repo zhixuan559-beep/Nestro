@@ -399,6 +399,15 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putAgentTaskState(state: AgentTaskStateEntity)
 
+    @Transaction
+    suspend fun putAgentTaskStateChecked(state: AgentTaskStateEntity) {
+        if (state.idempotencyKey != null) {
+            val existing = agentTaskStateByIdempotencyKey(state.idempotencyKey)
+            require(existing == null || existing.taskId == state.taskId) { "幂等键已被其他任务占用" }
+        }
+        putAgentTaskState(state)
+    }
+
     @Query("DELETE FROM agent_task_states WHERE taskId = :taskId")
     suspend fun deleteAgentTaskState(taskId: String)
 
