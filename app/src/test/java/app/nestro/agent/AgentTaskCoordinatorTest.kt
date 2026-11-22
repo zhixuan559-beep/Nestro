@@ -515,4 +515,37 @@ class AgentTaskCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun preRegisteredWorkManagerTaskUsesTheSameInlineOwnerAndCompletes() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            val registered = coordinator.registerInlineTask(
+                taskId = "media-ai:00000000-0000-0000-0000-000000000001",
+                owner = "media_ai",
+                checkpoint = "media_ai:project:task",
+                metadata = AgentTaskMetadata(
+                    projectId = "project",
+                    kind = "media_ai",
+                    title = "媒体 AI"
+                )
+            )
+            assertEquals(AgentTaskStatus.QUEUED, registered.status)
+            val result = coordinator.runInline(
+                taskId = registered.taskId,
+                owner = "media_ai",
+                initialCheckpoint = "media_ai:project:task",
+                metadata = AgentTaskMetadata(projectId = "project", kind = "media_ai")
+            ) { context ->
+                assertEquals("media_ai:project:task", states.get(context.taskId)?.checkpoint)
+                "done"
+            }
+            assertEquals("done", result)
+            assertEquals(AgentTaskStatus.COMPLETED, states.get(registered.taskId)?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
+
 }
