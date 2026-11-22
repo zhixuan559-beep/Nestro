@@ -2018,8 +2018,15 @@ fun NestroApp(initialPage: String = "home") {
                                                                  toolCatalog = appRuntime.agentToolCatalog
                                                              )
                                                          }
+                                                         val approvalTaskState = appRuntime.agentTaskCoordinator.state(effectiveWorkflowTaskId)
+                                                         val waitingForApproval = approvalTaskState?.status in setOf(
+                                                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                                                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                                                             app.nestro.agent.AgentTaskStatus.PAUSED
+                                                         )
                                                          val assistantText = when {
                                                              stopRequested -> "工作流已停止。"
+                                                             waitingForApproval -> "工作流已保存当前检查点，正在等待用户审批或任务恢复。"
                                                              result.isSuccess -> {
                                                                  val completed = result.getOrThrow()
                                                                  "工作流「${workflow.name}」已完成（${completed.completedSteps} 步成功）。\n" +
@@ -2029,13 +2036,17 @@ fun NestroApp(initialPage: String = "home") {
                                                              }
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
-                                                         appRuntime.agentApprovalCoordinator.endScope(effectiveWorkflowTaskId)\n                                                         val runRecord = WorkflowRunRecord(
+                                                         if (!waitingForApproval) {
+                                                             appRuntime.agentApprovalCoordinator.endScope(effectiveWorkflowTaskId)
+                                                         }
+                                                         val runRecord = WorkflowRunRecord(
                                                              workflowId = workflow.id,
                                                              workflowName = workflow.name,
                                                              input = input,
                                                              startedAt = startedAt,
                                                              status = when {
                                                                  stopRequested -> "stopped"
+                                                                 waitingForApproval -> "waiting"
                                                                  result.isSuccess -> "success"
                                                                  else -> "failed"
                                                              },
@@ -2054,7 +2065,12 @@ fun NestroApp(initialPage: String = "home") {
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
                                                          conversations = ConversationPreferencesStore.saveConversationMessages(prefs, conversationId, completed, projectId, conversations)
                                                          if (activeConversationId == conversationId) messages = completed
-                                                         workflowRunStatus = if (stopRequested) "工作流已停止。" else if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
+                                                         workflowRunStatus = when {
+                                                             stopRequested -> "工作流已停止。"
+                                                             waitingForApproval -> assistantText
+                                                             result.isSuccess -> "工作流已完成，结果已写入当前对话。"
+                                                             else -> assistantText
+                                                         }
                                                          workflowPauseGate?.complete(Unit)
                                                          workflowPauseGate = null
                                                          workflowPaused = false
