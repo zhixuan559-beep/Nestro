@@ -3,6 +3,7 @@
  * Copyright (C) 2018 Genymobile
  * Copyright (C) 2018-2024 Romain Vimont
  * Licensed under the Apache License, Version 2.0.
+ * Modifications: adapted shell-context initialization for Nestro's Mika-compatible helper process.
  * Mika source: https://github.com/wangzan101/Mika
  */
 package app.nestro.phone.virtualdisplay.mika
