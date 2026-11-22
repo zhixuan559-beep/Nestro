@@ -497,7 +497,9 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     val imported = results.mapNotNull { it.getOrNull() }
                     val failedCount = results.count { it.isFailure } + (uris.size - selectedUris.size)
-                    if (imported.isNotEmpty() && activeProjectId == importProjectId && activeConversationId == importConversationId) {
+                    val attachedToCurrentDraft = imported.isNotEmpty() &&
+                        activeProjectId == importProjectId && activeConversationId == importConversationId
+                    if (attachedToCurrentDraft) {
                         val attachmentNote = buildString {
                             append("已附加到当前项目素材库的媒体素材，请按需理解和分析：")
                             imported.forEach { asset ->
@@ -513,8 +515,10 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     chatMediaStatus = when {
                         imported.isEmpty() -> "媒体导入失败：未能导入所选文件。"
-                        failedCount > 0 -> "已导入 ${imported.size} 个素材，另有 ${failedCount} 个文件导入失败或超出 10 个文件限制。"
-                        else -> "已导入 ${imported.size} 个素材，已附加到输入框。"
+                        failedCount > 0 && attachedToCurrentDraft -> "已导入并附加 ${imported.size} 个素材，另有 ${failedCount} 个文件导入失败或超出 10 个文件限制。"
+                        failedCount > 0 -> "已导入 ${imported.size} 个素材，但当前会话已切换，未附加到输入框；另有 ${failedCount} 个文件导入失败或超出限制。"
+                        attachedToCurrentDraft -> "已导入 ${imported.size} 个素材，已附加到输入框。"
+                        else -> "已导入 ${imported.size} 个素材到原项目，但当前会话已切换，未附加到输入框。"
                     }
                 }
             }
