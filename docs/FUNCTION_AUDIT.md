@@ -444,3 +444,8 @@
 - **旧 main 分支：** UnifiedAgentDispatcher、ChatNetworkPolicy、TtsCapability 不在当前 integration 代码树；前两者与当前 ModelLedToolDispatcher/ChatRequestPolicy 有重叠或被替代，不应复制回来。TtsCapability 仅有额外音色排序能力，尚无用户确认需求。
 - **大型 UI 聚合入口：** NestroApp.kt 约 4,505 行，尚未发现重复函数名；必须按状态 owner/路由/调用链抽取，不得只按文件体积拆分。
 
+
+### Mika 虚拟屏 Shell/交接测试覆盖补充
+- 当前树仅发现 `VirtualDisplayGeometryTest`；未发现 ADB TLS pairing、helper 启动、UID/签名/nonce Binder handoff、虚拟屏创建/销毁、主屏任务移动/恢复和 UI 手势的专项自动化测试。
+- 因此 Shell 授权/启动和通用屏幕交接属于“代码已实现、自动化/真机验证缺失”，不能误报为代码未实现；也不能在六项阶段完成前提前运行测试。
+
