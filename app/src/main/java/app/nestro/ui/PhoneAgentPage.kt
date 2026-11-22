@@ -390,7 +390,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     if (virtualSession != null) {
         val density = LocalDensity.current
         val previewWidthDp = 180.dp * previewScale
-        val previewHeightDp = 320.dp * previewScale
+        val frameAspect = virtualFrame?.let { it.height.toFloat() / it.width.toFloat() } ?: (320f / 180f)
+        val previewHeightDp = previewWidthDp * frameAspect
         val panelWidthDp = if (floatingPreviewCollapsed) 164.dp else previewWidthDp
         val panelHeightDp = 34.dp + if (floatingPreviewCollapsed) 0.dp else previewHeightDp
         val maxWidthPx = with(density) { maxWidth.toPx() }
