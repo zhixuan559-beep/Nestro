@@ -1189,7 +1189,7 @@ fun NestroApp(initialPage: String = "home") {
                         plan = plan,
                         members = memberTasks,
                         projectId = requestProjectId,
-                        taskId = assistantId + "-team-" + UUID.randomUUID().toString().take(8),
+                        taskId = assistantId + "-team-project",
                         shouldStop = { stopRequested },
                         eventSink = app.nestro.data.ExpertTeamEventSink { event ->
                             withContext(Dispatchers.IO) {
