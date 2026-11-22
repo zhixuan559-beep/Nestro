@@ -486,6 +486,9 @@ class AgentApprovalCoordinator(
         return lock.withLock scopeLock@{
             if (scopeId in taskWideGrants) return@scopeLock AgentApprovalDecision.AUTHORIZE_TASK
 
+            // Read the durable scope once while holding its request lock. This catches
+            // decisions already committed by a restored approval prompt before creating
+            // another request for the same tool.
             val scopeAudits = loadAuditsForScope(scopeId).sortedBy { it.createdAt }
             if (scopeAudits.any { it.status == "AUTHORIZED_TASK" }) {
                 taskWideGrants += scopeId
@@ -510,11 +513,10 @@ class AgentApprovalCoordinator(
                 return@scopeLock decision
             }
 
-            // Persist and register the request before waiting for the global UI slot.
-            // A second task can therefore be approved from the durable queue while the
-            // first prompt is open, without losing its continuation on process death.
-            val pending = loadAuditsForScope(scopeId)
-                .firstOrNull { it.toolId == toolId && it.status == "PENDING" }
+            // Register the continuation before any further suspension. The audit row is
+            // persisted before waiting for the global UI slot, so another task can be
+            // approved from the durable queue while the first prompt is open.
+            val pending = scopeAudits.firstOrNull { it.toolId == toolId && it.status == "PENDING" }
             val now = System.currentTimeMillis()
             val record = pending ?: AgentApprovalAuditRecord(
                 id = UUID.randomUUID().toString(),
@@ -525,11 +527,10 @@ class AgentApprovalCoordinator(
                 createdAt = now,
                 updatedAt = now
             )
-            if (pending == null) persistAudit(record)
-
             val deferred = CompletableDeferred<AgentApprovalDecision>()
             activeRequests[record.id] = ActiveApproval(record, deferred)
             try {
+                if (pending == null) persistAudit(record)
                 promptMutex.withLock promptLock@{
                     if (deferred.isCompleted) {
                         consumeDecision(record, deferred.await())
