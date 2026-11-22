@@ -1078,7 +1078,7 @@ fun NestroApp(initialPage: String = "home") {
                     onUsage = recordModelUsage,
                     onProviderUsage = recordProviderModelUsage,
                     planPhoneAgent = { toolArguments ->
-                        if (!requestExecutionAuthorization.shouldPlanPhoneAgent()) {
+                        if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
                             "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。"
                         } else {
                             val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt

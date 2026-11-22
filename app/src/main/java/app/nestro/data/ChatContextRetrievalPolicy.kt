@@ -18,7 +18,7 @@ internal data class ChatExecutionAuthorization(
     val taskModeEnabled: Boolean,
     val selectedTeamId: String
 ) {
-    fun shouldPlanPhoneAgent(): Boolean = taskModeEnabled
+    fun shouldExecutePhoneAgent(): Boolean = taskModeEnabled
     fun shouldRunExpertTeam(): Boolean = taskModeEnabled && selectedTeamId.isNotBlank()
 }
 

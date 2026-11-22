@@ -51,7 +51,7 @@ internal class ChatRequestExecutionCoordinator(
         var taskPlanningFailure: Throwable? = null
         val result = runCatchingCancellable {
             // Context retrieval is selected by policy; task planning is deferred until
-            // the model explicitly selects the phone_agent.plan capability.
+            // the model explicitly selects the phone_agent.execute capability.
             val assembled = contextAssembler.assemble(
                 projectId = request.projectId,
                 conversationId = request.conversationId,
