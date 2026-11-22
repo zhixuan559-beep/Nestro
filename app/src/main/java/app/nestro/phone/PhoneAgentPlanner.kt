@@ -12,7 +12,7 @@ object PhoneAgentPlanner {
         })
     }
 
-    enum class Category { SHOPPING, FOOD_ORDER, BOOKING, WEB_RESEARCH, FORM, CREATIVE_ASSET, GENERAL }
+    enum class Category { SHOPPING, FOOD_ORDER, BOOKING, NAVIGATION, WEB_RESEARCH, FORM, CREATIVE_ASSET, GENERAL }
     enum class Risk { LOW, MEDIUM, HIGH }
     enum class StepKind { CLARIFY_REQUIREMENTS, DISCOVER_OPTIONS, COMPARE_TOTAL_COST, SELECT_CANDIDATE, OPEN_DESTINATION, VERIFY_PAGE, FILL_NON_SENSITIVE_DETAILS, DOWNLOAD_ASSET, IMPORT_ASSET, REVIEW_ORDER, REQUEST_USER_CONFIRMATION, HANDOFF_TO_USER, VERIFY_COMPLETION }
     data class Step(val kind: StepKind, val title: String, val risk: Risk = Risk.LOW, val requiresUserConfirmation: Boolean = false)
@@ -28,6 +28,7 @@ object PhoneAgentPlanner {
             listOf("下载素材", "下载图片", "下载视频", "素材采集", "收集素材", "获取素材", "图片素材", "视频素材", "音频素材").any { normalized.contains(it) } -> Category.CREATIVE_ASSET
             listOf("买", "购买", "下单", "购物", "咖啡", "商品", "比价").any { normalized.contains(it) } -> Category.SHOPPING
             listOf("订票", "预约", "预订", "酒店", "机票", "火车票", "挂号").any { normalized.contains(it) } -> Category.BOOKING
+            listOf("导航", "路线", "怎么走", "开车去", "步行去", "骑车去", "带我去", "去机场", "去车站", "去医院").any { normalized.contains(it) } -> Category.NAVIGATION
             listOf("外卖", "点餐", "订餐", "奶茶", "餐厅", "吃饭").any { normalized.contains(it) } -> Category.FOOD_ORDER
             listOf("搜索", "查找", "调查", "对比", "资料", "网页").any { normalized.contains(it) } -> Category.WEB_RESEARCH
             listOf("填写", "提交表单", "申请", "报名").any { normalized.contains(it) } -> Category.FORM
@@ -56,6 +57,13 @@ object PhoneAgentPlanner {
                 Step(StepKind.REVIEW_ORDER, "复核预订信息与最终金额"),
                 Step(StepKind.REQUEST_USER_CONFIRMATION, "付款或最终提交前由用户确认", Risk.HIGH, true),
                 Step(StepKind.VERIFY_COMPLETION, "核对平台返回的预订结果")
+            )
+            Category.NAVIGATION -> listOf(
+                Step(StepKind.CLARIFY_REQUIREMENTS, "确认出发地、目的地和出行方式"),
+                Step(StepKind.DISCOVER_OPTIONS, "打开地图路线页面并获取可用路线"),
+                Step(StepKind.VERIFY_PAGE, "核对起终点、路线、距离、预计耗时和交通方式"),
+                Step(StepKind.REQUEST_USER_CONFIRMATION, "将路线交给用户核对，确认后再开始导航", Risk.HIGH, true),
+                Step(StepKind.HANDOFF_TO_USER, "把地图导航页面交到真实主屏，由用户本人启动导航", Risk.HIGH, true)
             )
             Category.WEB_RESEARCH -> listOf(
                 Step(StepKind.CLARIFY_REQUIREMENTS, "明确检索范围与判断标准"),
@@ -99,6 +107,7 @@ Phone Agent 目标执行约束：
 - 当前用户目标分类：${plan.category.name}。
 - 先理解目标并自主收集可访问的信息，不要一听到目标就直接打开某个预设 App。
 - 购物/订餐必须尽可能比较多个可用来源的最终到手价、配送费、优惠、时效、库存与商家信息；区分实时核验数据和无法访问的数据，不得编造。
+- 出行导航必须先确认出发地、目的地和出行方式，再打开地图路线页面；必须在页面上核对路线与预计耗时。不得把搜索结果或估算冒充实时导航路线。路线交给用户确认后，使用现有主屏交接机制交由用户本人启动导航；不得在未确认时自动开始导航。
 - 先规划，再逐步执行；每次动作前确认目标页面/控件，动作后检查页面状态。失败、页面偏离或出现登录/验证码/风控时暂停并交还用户。
 - 普通低风险动作可连续执行；支付、转账、密码、验证码、最终下单/预订/提交等高风险或不可逆步骤必须停下，展示完整信息并取得用户明确确认。
 - 不得替用户输入支付密码/验证码，不得绕过平台安全验证，不得声称未核验的操作已完成。手机号、邮箱、地址、姓名、身份证、银行卡等个人信息默认不自动读取或外发，确需填写时必须先向用户确认具体字段与内容。
