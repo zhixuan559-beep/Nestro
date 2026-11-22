@@ -133,3 +133,18 @@ object ChatRequestPolicy {
         return retryable
     }
 }
+
+
+/** Model-specific context window selection shared by every request entry point. */
+object ModelContextWindowPolicy {
+    const val DEFAULT_CONTEXT_WINDOW_TOKENS = 16_384
+    const val DEFAULT_OUTPUT_RESERVE_TOKENS = 2_048
+
+    /** Use the smallest candidate window so failover never receives an oversized prompt. */
+    fun effectiveContextWindow(configs: List<ModelConfig>): Int =
+        configs.minOfOrNull { it.contextWindowTokens ?: DEFAULT_CONTEXT_WINDOW_TOKENS }
+            ?: DEFAULT_CONTEXT_WINDOW_TOKENS
+
+    fun outputReserve(maxTokens: Int?, contextWindowTokens: Int): Int =
+        (maxTokens ?: DEFAULT_OUTPUT_RESERVE_TOKENS).coerceIn(0, contextWindowTokens.coerceAtLeast(1))
+}
