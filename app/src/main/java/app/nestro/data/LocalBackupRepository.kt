@@ -455,7 +455,8 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
         memories.put(JSONObject().put("id", memory.id).put("projectId", memory.projectId).put("category", memory.category)
             .put("content", memory.content).put("fingerprint", memory.fingerprint).put("sourceConversationId", memory.sourceConversationId)
             .put("sourceMessageId", memory.sourceMessageId).put("confidence", memory.confidence)
-            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt))
+            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt)
+            .put("shareAcrossProjects", memory.shareAcrossProjects))
     }
     root.put("user_memories", memories)
     val taskArray = JSONArray()
@@ -875,7 +876,8 @@ private suspend fun applyLocalBackup(
             sourceMessageId = sourceMessageId,
             confidence = confidence,
             createdAt = item.longOrDefault("createdAt", System.currentTimeMillis()),
-            updatedAt = item.longOrDefault("updatedAt", System.currentTimeMillis())
+            updatedAt = item.longOrDefault("updatedAt", System.currentTimeMillis()),
+            shareAcrossProjects = item.optBoolean("shareAcrossProjects", false)
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
