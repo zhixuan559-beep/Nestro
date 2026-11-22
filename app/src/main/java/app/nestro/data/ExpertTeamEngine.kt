@@ -98,7 +98,7 @@ object ExpertTeamEngine {
         resumeMembers.filter { it.status == "success" }.forEach { resultsByName[it.name] = it }
         val resultMutex = Mutex()
         val pendingMembers = members.filterNot { it.name in resultsByName }
-        val results=coroutineScope {
+        coroutineScope {
             pendingMembers.map { member ->
                 async {
                     semaphore.withPermit {
