@@ -78,7 +78,7 @@ data class AgentTaskState(
         require(checkpoint.length <= 64_000 && lastError.length <= 2_000)
         require(projectId.length <= 120 && conversationId.length <= 120)
         require(kind.length <= 60 && capabilityId.length <= 100)
-        require(title.length <= 160 && input.length <= 12_000 && resultSummary.length <= 8_000)
+        require(title.length <= 160 && input.length <= 48_000 && resultSummary.length <= 8_000)
         require(idempotencyKey == null || idempotencyKey.length in 1..240)
         require(availableAt >= 0L && startedAt >= 0L && finishedAt >= 0L)
     }
