@@ -57,7 +57,7 @@ object MediaAiTaskStore {
         ) { "素材 ID 无效" }
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "服务商 ID 无效" }
         require(prompt.length <= (if (action == "video-generate") 12_000 else 2_000)) { "媒体 AI 指令过长" }
-        require(languageTag == "auto" || languageTag.matches(Regex("^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$"))) {
+        require(languageTag == "auto" || languageTag.matches(Regex("^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"))) {
             "转写语言标识无效"
         }
         if (parentTaskId.isNotBlank()) {
