@@ -151,19 +151,20 @@ fun CapabilityDirectoryPage(projectId: String) {
             Text("MCP 工具项目授权",style=MaterialTheme.typography.titleMedium)
             Text("这里的开关只控制当前项目；MCP 工具仍必须先在 MCP 工具中心获得全局启用授权。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             mcpTools.forEach { tool ->
+                val globallyGranted = appRuntime?.mcpToolCenterRepository?.isToolGranted(tool.id) == true
                 val projectGranted = CapabilityRegistryStore.isToolGranted(
-                    prefs,projectId,tool.serverId,tool.name,defaultGranted=tool.granted
+                    prefs,projectId,tool.serverId,tool.name,defaultGranted=globallyGranted
                 )
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                             Text(tool.name,style=MaterialTheme.typography.titleSmall)
-                            Text(tool.serverName+" · "+if(tool.granted) "全局已授权" else "全局未授权",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(tool.serverName+" · "+if(globallyGranted) "全局已授权" else "全局未授权",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(tool.description,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked=projectGranted,
-                            enabled=tool.granted,
+                            enabled=globallyGranted,
                             onCheckedChange={ enabled ->
                                 runCatching { CapabilityRegistryStore.setToolGranted(prefs,projectId,tool.serverId,tool.name,enabled) }
                                     .onSuccess { capabilityRefresh++ }
