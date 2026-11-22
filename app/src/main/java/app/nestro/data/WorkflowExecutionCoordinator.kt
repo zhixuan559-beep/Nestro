@@ -55,7 +55,7 @@ class WorkflowExecutionCoordinator(
                     title = row.optString("title"),
                     status = row.optString("status"),
                     attempts = row.optInt("attempts").coerceIn(0, 100),
-                    output = row.optString("output").take(1_200),
+                    output = row.optString("output").take(8_000),
                     error = row.optString("error").take(300),
                     iterations = row.optInt("iterations", 1).coerceIn(0, 3)
                 )
@@ -110,7 +110,7 @@ class WorkflowExecutionCoordinator(
                         .put("schemaVersion", 1)
                         .put("workflowId", workflow.id)
                         .put("workflowFingerprint", workflowFingerprint)
-                        .put("input", input.take(12_000))
+                        .put("inputFingerprint", inputFingerprint)
                         .put("completedStepIndex", index)
                         .put("previousOutput", output.take(24_000))
                         .put("stepRuns", JSONArray().apply {
