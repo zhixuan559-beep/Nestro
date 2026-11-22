@@ -209,10 +209,7 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
     ) = withContext(Dispatchers.IO) {
         require(conversationId.isNotBlank() && conversationId.length <= 120) { "会话 ID 无效" }
         require(projectId.isNotBlank() && projectId.length <= 120) { "项目 ID 无效" }
-        require(messages.size <= 2_000) { "会话消息数量超过持久化上限" }
-        require(messages.all { it.id.isNotBlank() && it.role in setOf("user", "assistant") && it.content.length <= 200_000 }) {
-            "会话消息字段无效"
-        }
+        validateChatMessages(messages)
         val dao = database.dao()
         database.withTransaction {
             require(dao.projectExists(projectId)) { "会话所属项目不存在，拒绝持久化" }
@@ -246,10 +243,13 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
 
     /** Persist an interrupted chat recovery directly to Room before startup continues. */
     internal suspend fun persistRecoveredMessages(conversationId: String, messages: List<ChatMessage>) = withContext(Dispatchers.IO) {
+        require(conversationId.isNotBlank() && conversationId.length <= 120) { "会话 ID 无效" }
+        validateChatMessages(messages)
         val dao = database.dao()
         database.withTransaction {
             val current = dao.conversationWithMessages(conversationId)?.conversation
                 ?: return@withTransaction
+            require(dao.projectExists(current.projectId)) { "会话所属项目不存在，拒绝恢复消息" }
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
                 ?.ifBlank { "新对话" } ?: current.title
             val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
@@ -272,6 +272,10 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         knownVersions: Map<String, Int>,
         snapshotTimestamp: Long
     ) = withContext(Dispatchers.IO) {
+        validateConversationRecords(conversations)
+        ProjectPreferencesStore.projectsToJson(projects)
+        val projectIds = projects.mapTo(mutableSetOf()) { it.id }
+        require(conversations.all { it.projectId in projectIds }) { "会话引用了不存在的项目空间" }
         val dao = database.dao()
         val currentIds = conversations.map { it.id }
         val removedIds = dao.conversationIds().filterNot { it in currentIds }
