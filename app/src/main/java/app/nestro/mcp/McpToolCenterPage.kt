@@ -351,6 +351,25 @@ fun McpToolCenterPage(app: NestroApplication) {
                                 }
                             }
                         ) { Text("恢复并重新审批") }
+                        OutlinedButton(
+                            enabled = !loading,
+                            onClick = {
+                                loading = true
+                                scope.launch {
+                                    try {
+                                        withContext(Dispatchers.IO) { service.cancelPending(task.taskId) }
+                                        status = "MCP 待恢复任务已终止。"
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        status = "终止 MCP 任务失败：" + (error.message ?: "未知错误")
+                                    } finally {
+                                        loading = false
+                                        reload()
+                                    }
+                                }
+                            }
+                        ) { Text("终止任务") }
                     }
                 }
             }
