@@ -52,6 +52,10 @@ class CalendarRepository(context: Context) {
             automationUpdatedAt = old?.automationUpdatedAt ?: event.automationUpdatedAt
         )
         dao.put(saved)
+        val nextAutomationRun = if (saved.automationPrompt.isNotBlank()) {
+            CalendarRules.nextOccurrenceStart(saved, now) ?: 0L
+        } else 0L
+        dao.updateAutomationNextRunAt(saved.id, nextAutomationRun, now)
         CalendarReminderScheduler.schedule(appContext, saved)
         return saved
     }
