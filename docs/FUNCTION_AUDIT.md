@@ -464,3 +464,12 @@
 - `MediaAiTaskWorker` 的失败路径当前写入 FAILED，取消写入 CANCELLED；没有统一接入 AgentTaskCoordinator 的自动重试策略。
 - 后续调度引擎需区分可安全重试的幂等任务与必须等待用户核验的设备/外部写入任务；不能对所有失败任务无条件自动重放。
 
+
+## 2026-11-22 生成式插件执行链路权限与任务状态专项审计
+
+- `GeneratedPluginWorkflowExecutor` 会按声明步骤调用 `AgentToolRuntime`，遇到 `requiresUser` 会停止后续步骤并返回等待用户的结果；当前没有保存当前 step/result 的可恢复 checkpoint，也没有返回一个可恢复任务句柄供用户确认后继续。
+- `NestroApplication` 的生成插件执行入口自行创建 `plugin-${plugin.id}-${UUID}` taskId，并直接写 `RoomAgentTaskStateStore`；没有通过 `AgentTaskCoordinator.runInline/enqueue` 管理任务生命周期，也没有为 `generated-plugin:${plugin.id}` 注册可恢复 handler。进程中断后即使统一恢复器把 RUNNING 标记为 PAUSED，也没有插件步骤恢复入口。
+- **权限确认存在明确绕过：** 生成插件的自定义 `AgentPermissionRouter` 对 `READ_ONLY` 和 `EXTERNAL_WRITE` 直接返回 Allow，没有检查 `tool.requiresConfirmation`。而 `media.video.generate` 已声明 `EXTERNAL_WRITE + requiresConfirmation=true`，因此生成插件可以绕过工具级确认直接触发该外部写入/可能计费操作。MCP 工具仍单独检查授权；DEVICE_ACTION/AUTHENTICATION/FINANCIAL 被拒绝。
+- 该问题不是删除插件功能，而是把插件执行接回统一任务基座和统一审批：每步复用 `AgentPermissionRouter` 的确认语义，记录当前步骤 checkpoint；等待用户时持久化 WAITING_FOR_USER；批准后从该步骤恢复，拒绝后终止并记录审计。此项属于高优先级安全/一致性修复。
+- 当前未修改代码；待全量审计完成后以最小补丁修复并补充“requiresConfirmation 不可绕过、批准后续跑、拒绝终止、进程中断恢复”测试。
+
