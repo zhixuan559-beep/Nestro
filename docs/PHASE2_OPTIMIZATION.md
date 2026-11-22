@@ -70,7 +70,7 @@ Finish all feature code and architecture integration first. Only then run the ag
 - Direct model responses are streamed to the chat UI in batches; ordinary streaming output also batches UI deltas and throttles partial-state writes to reduce recomposition and storage churn.
 - MCP calls are allowed only while the persisted tool grant and server-enabled state remain valid; the MCP handler rechecks authorization at execution time.
 - `knowledge.search` is available to the model and can only query the project ID injected by the dispatcher, not an ID supplied by the model.
-- `phone_agent.execute` is the single canonical model-visible Phone Agent capability and is exposed only in explicit task mode. The legacy `phone_agent.plan` registration is hidden from model discovery; both native and compatibility dispatcher paths route the canonical tool through the same task-planning/scheduling callback.
+- `phone_agent.execute` is the single canonical model-visible Phone Agent capability and is exposed only in explicit task mode. The duplicate `phone_agent.plan` registration and schema have been removed; both native and compatibility dispatcher paths route the canonical tool through the same task-planning/scheduling callback.
 - `expert_team.run` is exposed only when the user explicitly selected an enabled team in task mode. Expert-team execution is deferred until the model selects that capability; it no longer runs automatically before the model decision.
 
 ## 专家团双模式与 AI 插件工厂（需求已确认，代码未完成）

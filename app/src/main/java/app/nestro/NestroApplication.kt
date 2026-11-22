@@ -138,15 +138,6 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
-                    id = "phone_agent.plan",
-                    description = "在明确的任务模式下，为用户目标创建并调度 Phone Agent 任务。仅用于需要在手机应用或网页中执行多步操作的目标；不执行付款或最终提交。",
-                    permission = app.nestro.agent.AgentToolPermission.DEVICE_ACTION
-                )
-            ) {
-                app.nestro.agent.AgentToolResult(false, error = "Phone Agent 规划必须经由聊天统一调度器调用")
-            }
-            register(
-                app.nestro.agent.AgentToolSpec(
                     id = "phone_agent.execute",
                     description = "在用户授权的手机执行环境中完成多步应用/网页任务；公开媒体素材下载后自动导入当前项目。仅当目标确实需要手机操作时调用。",
                     permission = app.nestro.agent.AgentToolPermission.DEVICE_ACTION
