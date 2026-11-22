@@ -1114,3 +1114,38 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 授权决定不跨进程自动继承；应用重启后仍需重新确认，历史记录只用于审计，不作为自动授权凭据。
 - DAO 已提供最近记录和待处理记录查询；独立审批记录浏览 UI 尚未制作。
 - 已新增审批记录与 scope 关闭的测试源码；未运行构建或测试。
+
+
+## 2026-11-22 17:04 UTC — 构建前总审计基线刷新与过期结论纠正
+
+审计源码基线：`b394e60f023fc8354d55bbec046cecac30e46ca1`。后续仅有审计文档提交，源码未改。GitHub 中控：Issue #21。
+
+### 当前源码已证明、此前审计/模块清单已过期的判断
+
+- **模块3工具并发：** `AgentToolSpec.parallelSafe` 与 `OpenAiClient.nativeToolLoop` 已支持显式声明的安全只读工具并发，最多 4 个，并按原调用顺序回注。MCP、外部写入、设备操作、需审批工具仍串行；兼容文本协议仍每轮单动作。因此状态为“受限部分实现”，不是“完全没有并发”。
+- **模块3上下文预算：** `ModelDefinition` 当前未声明模型 context window；`ChatRequestPolicy.boundedHistory` 仍使用默认 16,384 context / 2,048 output reserve。按模型真实上下文窗口动态预算仍是实际缺口。
+- **模块7召回 query：** `ChatRequestContextAssembler` 已将最近 7 条用户消息与当前 prompt 合并为 user-memory query；会话 recall 使用最近 8 条历史。旧清单中“只使用单一 prompt/未合并最近轮次”的描述过期。
+- **模块7记忆范围：** `UserMemoryEntity` 仍以 projectId 作为归属；单条记忆可设置 shareAcrossProjects，并且读取其他项目记忆还需要显式 READ grant。当前未发现独立的全局个人记忆作用域，也未发现按全局/项目/会话作用域的 memory-context cache；embedding cache 不等于上下文缓存。
+- **模块7持久层写入边界：** `UserMemoryStore.saveCandidates()` 在 DAO 写入前检查输入 ID 格式、内容安全、mutation token 与同项目指纹冲突，但尚未在同一事务内验证项目仍存在、来源 conversation 属于该项目、source message 确实属于该 conversation。需要沿 Room DAO/事务补归属校验，并确认调用时消息已先持久化。
+- **模块8 Phone Agent 终态保护：** `NestroDatabase.kt` 当前 DAO 更新语句已禁止迟到 plan/progress 写入将 COMPLETED/CANCELLED 任务复活；对应历史回归测试源码已回收。模块清单中该项未勾选属于过期。
+- **模块8 Mika 浮窗交互：** 当前 `PhoneAgentPage.kt` 已移除标题栏和可见按钮；单击窗口切换预览尺寸，双击/长按向虚拟屏注入点击，透明四角拖动调整预览大小，普通拖动注入滑动。缩放只修改 Compose 预览容器尺寸，不修改 VirtualDisplay 分辨率/DPI。旧审计中“仍有标题栏/双击缩放/无点击缩放”的描述已过期；ADB/Helper/虚拟屏真机验证仍待后续统一验收。
+- **模块8 Phone Agent 分类：** `PhoneAgentPlanner.Category` 目前只有 SHOPPING、FOOD_ORDER、BOOKING、WEB_RESEARCH、FORM、CREATIVE_ASSET、GENERAL，没有 TRAVEL；导航路线规划/主屏导航前展示路线并单独授权仍是代码缺口。
+- **模块16插件与能力中心：** 生成式插件已由 `AgentTaskCoordinator.runInline` 管理状态/幂等/步骤 checkpoint；外部写入与显式确认进入统一审批；`GeneratedPluginCenterPage` 已显示待恢复插件任务并提供“恢复插件任务并重新审批”和终止入口；`CapabilityDirectoryPage` 已有项目级能力开关、MCP 项目授权和调用审计。旧清单 L276-L280 的“完全绕开任务机/EXTERNAL_WRITE 直接 Allow/能力总览 UI 不存在”过期。任意代码型插件独立进程沙箱仍未实现，当前产品是声明式工具工作流，不能宣传成任意代码插件沙箱。
+- **模块18日历自动调度：** 当前 `CalendarReminderScheduler.kt` 已为每个 occurrence 生成确定性 taskId/idempotencyKey 并 enqueue 到 AgentTaskCoordinator；`NestroApplication.kt` 注册 `calendar_automation` handler，经 ChatRequestExecutionCoordinator 进入主模型工具链；CalendarEvent 持久化 nextRunAt/lastRunAt/lastTaskId/lastIdempotencyKey、状态、结果和错误；事件编辑/完成/删除会取消关联活动任务；应用启动恢复进程中断的 calendar_automation 任务。旧清单 L325-L328“仅通知/无任务机/无状态回写/无幂等/无重启恢复”过期。
+- **模块18剩余边界：** 当前 CalendarRules 支持 NONE/DAILY/WEEKLY/MONTHLY/YEARLY occurrence；没有独立延迟触发和任意时间条件模型；CalendarEvent 未见独立 retryCount 字段，入队重试主要依赖 WorkManager runAttemptCount，主模型业务失败的错误分类退避仍需核对/补齐。月/周/日页面是否应从主导航收敛为轻量配置入口，按用户最终产品决策实施。
+- **模块17剪辑：** `MediaTimelinePolicy.addTrack` 明确限制每项目一条视频轨、一条音频轨；`validate` 也强制单视频轨/最多单音频轨，`MediaRenderEngine` 使用 single video track。多视频轨/PIP、转场、速度曲线、关键帧、高级音频混音和字幕烧录仍是真实代码缺口，不只是未验收。
+
+### 其他仍需逐项核对的需求
+
+- 模块1双向自由群聊/成员私聊、可编辑 DAG、暂停/恢复/返工、结构化验收协议和临时团队生命周期。
+- 模块4媒体 ZIP 与通用设备备份的整合边界；模块5项目复制/删除时所有资源/权限/引用的一致性及新资源 scope 覆盖保护。
+- 模块7全局记忆作用域、memory-context cache、DAO 项目/会话/消息归属校验。
+- 模块8登录态/私有文件/受限下载源接管边界与 TRAVEL 路由。
+- 模块17多轨/PIP/转场/速度/关键帧/字幕烧录/混音。
+- 模块18延迟/时间条件触发、retryCount/错误分类退避和轻量入口形态。
+- 模块19需按当前实际 Provider 能力分别区分图片理解、音频转写/理解、视频场景检测/通用视频理解、视频生成；不能将 scene detection 描述成任意视频问答。
+- 模块2魔搭 OAuth 的第三方注册/部署/API-Inference 权限、动态余额/价格仍属外部配置或官方接口缺失，不可由源码虚构。
+
+### 审计边界
+
+本节为当前源码定向核验补记，不是十九模块总审计结束。未修改业务代码；未运行 Gradle、JVM/Android 测试、模拟器、真机或外部 API 联调。后续按 Issue #21 继续完成全部需求映射和静态修复。
