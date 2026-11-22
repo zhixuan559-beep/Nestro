@@ -402,7 +402,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 
 - Phone Agent now depends on a host-independent `PhoneAgentExecutionEnvironment` contract; the current AccessibilityService is the existing adapter.
 - Agent execution, WorkManager availability checks, and UI stop requests use one active-environment provider. Detaching the selected environment leaves no implicit fallback to the user's real screen.
-- Phase 2 provides the architecture seam only. A concrete isolated VirtualDisplay adapter is a Phone Agent feature implementation; reuse from Mika requires the exact repository and license to be checked before copying code.
+- 该条是 2026-11-18 的阶段记录，已被 2026-11-22 feature/phase2-optimization 源码覆盖：已从 wangzan101/Mika 选择性复用隔离虚拟屏、shell helper、无线 ADB 与任务交接实现，并保留 Apache-2.0 许可证/NOTICE；具体范围见 docs/PHASE2_CODE_MAP.md。
 - This does not change the unified final-acceptance rule: no APK build or device acceptance until all 19 modules' feature code is complete.
 
 
