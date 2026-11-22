@@ -462,10 +462,28 @@ class NestroApplication : Application() {
                 )
                 val canonicalTask = states.putIfAbsent(initialTaskState)
                 if (canonicalTask.taskId != taskId) {
-                    return@register app.nestro.agent.AgentToolResult(
-                        true,
-                        output = "该插件请求已存在，已阻止重复执行。task_id=${canonicalTask.taskId}; status=${canonicalTask.status.name}"
-                    )
+                    return@register when (canonicalTask.status) {
+                        app.nestro.agent.AgentTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
+                            true,
+                            output = canonicalTask.resultSummary.ifBlank { "该插件请求此前已完成。" } +
+                                "\\ntask_id=${canonicalTask.taskId}"
+                        )
+                        app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER -> app.nestro.agent.AgentToolResult(
+                            false,
+                            error = "该插件请求已暂停在等待用户确认的步骤。task_id=${canonicalTask.taskId}",
+                            requiresUser = true
+                        )
+                        app.nestro.agent.AgentTaskStatus.QUEUED,
+                        app.nestro.agent.AgentTaskStatus.RUNNING,
+                        app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> app.nestro.agent.AgentToolResult(
+                            false,
+                            error = "该插件请求已在执行或等待重试，已阻止重复启动。task_id=${canonicalTask.taskId}; status=${canonicalTask.status.name}"
+                        )
+                        else -> app.nestro.agent.AgentToolResult(
+                            false,
+                            error = "该插件请求此前未成功完成（${canonicalTask.status.name}），已阻止重复执行。请核对任务记录后重新发起。task_id=${canonicalTask.taskId}"
+                        )
+                    }
                 }
                 suspend fun updatePluginTaskState(
                     status: app.nestro.agent.AgentTaskStatus,
