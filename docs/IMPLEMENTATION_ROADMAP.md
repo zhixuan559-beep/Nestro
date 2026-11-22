@@ -593,7 +593,7 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - 当前整合分支与 `feature/module-18-calendar`、`feature/module-17-smart-editing` 的比较显示：这两个功能分支没有领先于整合分支的独有提交；抽查的日历调度器与媒体渲染器文件在两边 blob 完全一致。此前“模块19仍在 feature/module-18-calendar、未合并”的旧描述已不适合作为当前状态依据。
 - 抽查 `feature/module-9-voice-system`、`feature/module-15-ai-coworkbench` 的关键实现文件，与整合分支 blob 完全一致。
 - `feature/module-6-knowledge-base`、`feature/module-13-mcp-tool-center`、`feature/module-14-github-workbench` 虽然与整合分支提交图分叉，但抽查的关键文件在整合分支已有更新版本：模块6采用 attention-mask masked mean pooling，而旧分支仍使用 CLS 向量；模块13整合分支增加损坏审计原文隔离保留；模块14整合分支增加凭据保存失败时的安全回滚与失败显式提示。这些差异不能误判成“功能未合并”，反而说明整合分支包含后续修正。
-- 模块8分支相对整合分支的差异文件集中在 Android CI 脚本/Workflow 与 Gradle 配置；尚需继续核对这些构建配置差异是否全部被整合分支后续提交吸收。
+- `feature/module-8-phone-agent` 的 4 个差异文件已逐项核对：Android instrumentation 脚本、module-8-ci.yml 和 gradle.properties 与整合分支 blob 完全一致；android.yml 在整合分支有更新版本。该分支没有需要回合并的独有代码/CI 修复，不应把旧版 Workflow 覆盖回来。
 - 当前已确认 PR #1/#3 仍开放 Draft；但 PR 状态和分支图不能代替完整文件级审计。全量分支核对尚未完成。
 
 ### 最近新增需求的源码初查
