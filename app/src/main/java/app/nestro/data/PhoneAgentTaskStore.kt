@@ -44,7 +44,7 @@ object PhoneAgentTaskStore {
                     row.put("type", "launch_app").put("package", action.packageName)
                 }
                 is PhoneAgentExecutor.Action.DownloadAsset -> {
-                    require(action.url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "素材下载地址不安全或包含敏感信息" }
+                    require(action.url.length <= 2048 && action.url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(action.url) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.url)) { "素材下载地址不安全或包含敏感信息" }
                     require(action.displayName.length in 1..160 && action.displayName.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "素材文件名或格式无效" }
                     row.put("type", "download_asset").put("url", action.url).put("name", action.displayName)
                 }
@@ -132,7 +132,7 @@ object PhoneAgentTaskStore {
                 "download_asset" -> {
                     val url = row.getString("url").trim()
                     val name = row.getString("name").trim()
-                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的素材下载地址不安全" }
+                    require(url.length <= 2048 && url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "已保存的素材下载地址不安全" }
                     require(name.length in 1..160 && name.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "已保存的素材文件名无效" }
                     PhoneAgentExecutor.Action.DownloadAsset(url, name)
                 }
