@@ -1934,23 +1934,26 @@ fun NestroApp(initialPage: String = "home") {
                                                  savedWorkflowInputForCard == workflowInputDraft.trim() &&
                                                  (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
                                                      prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow)))
+                                             val workflowTaskBusy = savedWorkflowTaskState?.let { task ->
+                                                 task.taskId == savedWorkflowTaskIdForCard &&
+                                                     task.status in setOf(
+                                                         app.nestro.agent.AgentTaskStatus.CREATED,
+                                                         app.nestro.agent.AgentTaskStatus.QUEUED,
+                                                         app.nestro.agent.AgentTaskStatus.RUNNING
+                                                     )
+                                             } == true
                                              if (hasPendingSavedWorkflow && !canResumeSavedWorkflow) {
                                                  Text("上次输入或工作流定义已变化，不能安全续跑原任务；可取消旧任务后重新运行。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                              }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
+                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && !workflowTaskBusy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
                                                      val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
                                                      val savedWorkflowId = prefs.getString("workflow_task_workflow_id_v1", "").orEmpty()
                                                      val savedWorkflowInput = prefs.getString("workflow_resume_input_v1", "").orEmpty()
                                                      val savedWorkflowDefinition = prefs.getString("workflow_resume_definition_v1", "").orEmpty()
                                                      val currentWorkflowDefinition = WorkflowDefinitionCodec.encode(listOf(workflow))
-                                                     val workflowTaskId = if (
-                                                         savedWorkflowId == workflow.id &&
-                                                         savedWorkflowInput == input &&
-                                                         (savedWorkflowDefinition.isBlank() || savedWorkflowDefinition == currentWorkflowDefinition) &&
-                                                         savedWorkflowTaskId.isNotBlank()
-                                                     ) {
+                                                     val workflowTaskId = if (canResumeSavedWorkflow) {
                                                          savedWorkflowTaskId
                                                      } else {
                                                          UUID.randomUUID().toString()
@@ -2143,6 +2146,7 @@ fun NestroApp(initialPage: String = "home") {
                                                      Text(
                                                          when {
                                                              runningWorkflowId == workflow.id -> "执行中…"
+                                                             workflowTaskBusy -> "任务正在执行/排程"
                                                              canResumeSavedWorkflow -> "继续未完成工作流"
                                                              else -> "运行工作流"
                                                          }
