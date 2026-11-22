@@ -63,6 +63,16 @@ interface CalendarDao {
     @Query("DELETE FROM calendar_events")
     suspend fun deleteAll()
 
+    @Query("UPDATE calendar_events SET nextRunAt = :nextRunAt, lastRunAt = :lastRunAt, lastTaskId = :taskId, lastIdempotencyKey = :idempotencyKey, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun recordAutomationDispatch(
+        id: String,
+        nextRunAt: Long,
+        lastRunAt: Long,
+        taskId: String,
+        idempotencyKey: String,
+        updatedAt: Long
+    )
+
     @Query("DELETE FROM calendar_events WHERE id = :id")
     suspend fun delete(id: String): Int
 }
