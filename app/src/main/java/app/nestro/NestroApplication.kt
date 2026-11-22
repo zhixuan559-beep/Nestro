@@ -607,13 +607,19 @@ class NestroApplication : Application() {
                             lastError = error.message.orEmpty().take(2_000),
                             updatedAt = now
                         ))
-                        RoomAgentTaskTraceStore(database.dao()).append(
-                            app.nestro.agent.AgentTaskTrace(
-                                taskId = taskId,
-                                event = "retry_scheduled",
-                                detail = "插件临时错误；第 ${retryAttempt} 次重试将在 ${waitMillis}ms 后执行"
+                        try {
+                            RoomAgentTaskTraceStore(database.dao()).append(
+                                app.nestro.agent.AgentTaskTrace(
+                                    taskId = taskId,
+                                    event = "retry_scheduled",
+                                    detail = "插件临时错误；第 ${retryAttempt} 次重试将在 ${waitMillis}ms 后执行"
+                                )
                             )
-                        )
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // Retry execution must not be blocked by a non-critical trace write.
+                        }
                         try {
                             delay(waitMillis)
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
