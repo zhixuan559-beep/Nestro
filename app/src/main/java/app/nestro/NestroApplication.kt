@@ -512,7 +512,8 @@ class NestroApplication : Application() {
                                 val projectGranted = descriptor?.let {
                                     CapabilityRegistryStore.authorizeToolCall(
                                         capabilityPrefs, task.projectId, it.serverId, it.name,
-                                        defaultGranted = globallyGranted
+                                        defaultGranted = globallyGranted,
+                                        globallyEnabled = globallyGranted
                                     )
                                 } == true
                                 if (globallyGranted && projectGranted) app.nestro.agent.AgentAuthorization.Allow
@@ -652,7 +653,8 @@ class NestroApplication : Application() {
                                 task.projectId,
                                 it.serverId,
                                 it.name,
-                                defaultGranted = globallyGranted
+                                defaultGranted = globallyGranted,
+                                globallyEnabled = globallyGranted
                             )
                         } == true
                         if (globallyGranted && projectGranted) {
