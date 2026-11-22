@@ -479,3 +479,9 @@
 - 但 `NestroApplication` 主模型权限路由和 `McpToolCenterService.invoke()` 对已持久授权的 MCP 工具直接返回 Allow，因此不会再走通用的任务级一次授权/当前任务全部授权弹窗。
 - 这意味着当前 MCP “已授权”实质是跨任务持续授权；撤销后立即阻断。它与工作流的任务级授权范围不同。后续需在权限设计中明确两层含义：MCP 工具中心的长期授权是否代表永久信任；任务执行时是否仍需一次性/本任务确认。不能让 `requiresConfirmation` 字段继续处于“声明为 true、路由却忽略”的含混状态。
 
+
+### 模块18调度记录字段与幂等键缺口
+- 当前 `CalendarEvent` 只记录日程 ID、标题/描述、开始结束时间、地点、重复规则、提醒分钟数、完成标记和系统日历关联；没有 nextRunAt/lastRunAt、触发 occurrence ID、关联 AgentTaskId、执行状态、重试计数或最后错误。
+- 未来周期触发不能直接复用 scheduleId 作为 AgentTaskId，否则 `AgentTaskCoordinator.enqueue()` 的幂等规则会把后续 occurrence 视为同一个已完成任务。应以 scheduleId + plannedAt 生成确定性 occurrence/task ID，并持久化每次触发状态，确保重启/重复唤醒不重复执行。
+- 这进一步确认当前模块18是通知提醒系统，不是统一任务调度引擎。
+
