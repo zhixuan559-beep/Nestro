@@ -250,7 +250,10 @@ class AgentTaskCoordinator(
             try {
                 completion.complete(handler(context))
             } catch (error: Throwable) {
-                completion.completeExceptionally(error)
+                val latest = states.get(taskId)
+                val willRetry = AgentTaskRetryPolicy.isRetryable(error) &&
+                    latest != null && latest.attempts < latest.maxRetries
+                if (!willRetry) completion.completeExceptionally(error)
                 throw error
             }
         }
