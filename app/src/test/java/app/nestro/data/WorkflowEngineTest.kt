@@ -138,6 +138,19 @@ class WorkflowEngineTest {
         }
         assertEquals(true, failure is IllegalArgumentException)
     }
+    @Test fun parallelGroupMustBeContiguousAndHaveAtLeastTwoEnabledSteps() {
+        val invalid = WorkflowDefinition("invalid-parallel", "无效并行组", "", listOf(
+            WorkflowStep(title = "A", instruction = "A", parallelGroup = "research"),
+            WorkflowStep(title = "顺序步骤", instruction = "middle"),
+            WorkflowStep(title = "B", instruction = "B", parallelGroup = "research")
+        ))
+        assertTrue(runCatching { WorkflowDefinitionCodec.validate(invalid) }.isFailure)
+        val single = WorkflowDefinition("single-parallel", "单步组", "", listOf(
+            WorkflowStep(title = "A", instruction = "A", parallelGroup = "research")
+        ))
+        assertTrue(runCatching { WorkflowDefinitionCodec.validate(single) }.isFailure)
+    }
+
     @Test fun codecPreservesApprovalConditionsAndParallelGroups() {
         val workflow = WorkflowDefinition("config", "配置", "", listOf(
             WorkflowStep(
