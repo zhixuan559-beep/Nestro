@@ -9,6 +9,8 @@ import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import java.util.concurrent.atomic.AtomicLong
@@ -31,10 +33,12 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
  private val url=McpEndpointPolicy.requireValid(endpoint)
  private val client=McpHttpClientProvider.client
  private val ids=AtomicLong(0)
- private var protocolVersion="2026-07-28"
- private var legacyMode=false
- private var initialized=false
- private var sessionId:String?=null
+ @Volatile private var protocolVersion="2026-07-28"
+ @Volatile private var legacyMode=false
+ @Volatile private var initialized=false
+ @Volatile private var sessionId:String?=null
+ private val legacyInitializationMutex=Mutex()
+ @Volatile private var legacySessionGeneration=0L
 
  suspend fun listTools():List<McpRemoteTool> {
   val all=mutableListOf<McpRemoteTool>();var cursor:String?=null
@@ -97,8 +101,20 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
    require(response.opt("id")?.toString()==id.toString()){"MCP JSON-RPC 响应 ID 不匹配"};return response
   }
   initializeLegacy()
-  val id=ids.incrementAndGet()
-  val reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false)
+  val sentGeneration=legacySessionGeneration
+  var id=ids.incrementAndGet()
+  var reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false)
+  if(reply.code==404 && !sessionId.isNullOrBlank()){
+   legacyInitializationMutex.withLock {
+    if(legacySessionGeneration==sentGeneration){
+     initialized=false
+     sessionId=null
+     initializeLegacyLocked()
+    }
+   }
+   id=ids.incrementAndGet()
+   reply=post(JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params),method,name,schemaJson,false)
+  }
   require(reply.code in 200..299){"MCP HTTP "+reply.code+"："+reply.body.take(1000)}
   val json=parseBody(reply.body,reply.contentType)?:error("MCP 服务没有返回 JSON-RPC 响应")
   if(json.has("error")){val e=json.optJSONObject("error")?:JSONObject();error("MCP $method 失败（"+e.optInt("code")+"）："+e.optString("message","未知错误"))}
@@ -106,9 +122,14 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
  }
 
  private suspend fun initializeLegacy(){
+  legacyInitializationMutex.withLock { initializeLegacyLocked() }
+ }
+
+ private suspend fun initializeLegacyLocked(){
   if(initialized)return
   var lastError="MCP 初始化失败"
   for(version in listOf("2025-11-25","2025-06-18","2025-03-26")){
+   sessionId=null
    protocolVersion=version
    val id=ids.incrementAndGet()
    val request=JSONObject().put("jsonrpc","2.0").put("id",id).put("method","initialize")
@@ -122,7 +143,9 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
     protocolVersion=negotiated
     val notified=post(JSONObject().put("jsonrpc","2.0").put("method","notifications/initialized"),"notifications/initialized",null,"{}",false)
     require(notified.code in 200..299){"MCP 初始化通知失败：HTTP "+notified.code}
-    initialized=true;return
+    initialized=true
+    legacySessionGeneration+=1
+    return
    }
    lastError=json?.optJSONObject("error")?.optString("message")?:"MCP 初始化 HTTP "+reply.code
   }
@@ -130,15 +153,19 @@ class McpStreamableHttpClient(endpoint:String,private val bearerToken:String) : 
  }
 
  override fun close() {
-  val id=sessionId ?: return
-  if(legacyMode) runCatching {
-   val builder=Request.Builder().url(url).delete().header("Accept","application/json, text/event-stream")
-   if(protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
-   builder.header("Mcp-Session-Id",id)
-   if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
-   client.newCall(builder.build()).execute().close()
-  }
+  val id=sessionId
   sessionId=null
+  initialized=false
+  legacySessionGeneration+=1
+  if(id.isNullOrBlank() || !legacyMode)return
+  val builder=Request.Builder().url(url).delete().header("Accept","application/json, text/event-stream")
+  if(protocolVersion!="2025-03-26")builder.header("MCP-Protocol-Version",protocolVersion)
+  builder.header("Mcp-Session-Id",id)
+  if(bearerToken.isNotBlank())builder.header("Authorization","Bearer $bearerToken")
+  client.newCall(builder.build()).enqueue(object:okhttp3.Callback {
+   override fun onFailure(call:okhttp3.Call,error:java.io.IOException) = Unit
+   override fun onResponse(call:okhttp3.Call,response:okhttp3.Response) { response.close() }
+  })
  }
 
  private fun clientMeta()=JSONObject()
