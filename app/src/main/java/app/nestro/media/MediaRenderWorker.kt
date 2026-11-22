@@ -91,8 +91,8 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
             progress = 0, errorMessage = ""
         )
         if (output.exists() && !output.delete()) {
-            MediaRenderTaskStore.update(applicationContext, projectId, taskId, status = MediaRenderStatus.FAILED, errorMessage = "无法清理上一次未完成的导出文件", expectedStatus = MediaRenderStatus.RUNNING)
-            return Result.failure()
+            MediaRenderTaskStore.update(applicationContext, projectId, taskId, errorMessage = "无法清理上一次未完成的导出文件")
+            return false
         }
 
         val completion = CompletableDeferred<Throwable?>()
@@ -121,21 +121,25 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
             transformer = activeTransformer
             while (!completion.isCompleted) {
-                val latest = withContext(Dispatchers.IO) {
-                    MediaRenderTaskStore.read(applicationContext, projectId, taskId)
-                } ?: error("导出任务状态丢失")
-                if (latest.status == MediaRenderStatus.PAUSED || latest.status == MediaRenderStatus.CANCELLED) {
+                val lifecycle = nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status
+                    ?: error("统一导出任务状态丢失")
+                if (lifecycle == app.nestro.agent.AgentTaskStatus.PAUSED ||
+                    lifecycle == app.nestro.agent.AgentTaskStatus.CANCELLED
+                ) {
                     withContext(Dispatchers.Main.immediate) { activeTransformer.cancel() }
                     output.delete()
-                    if (latest.status == MediaRenderStatus.PAUSED) {
+                    if (lifecycle == app.nestro.agent.AgentTaskStatus.PAUSED) {
                         MediaRenderTaskStore.update(applicationContext, projectId, taskId, progress = 0)
                     }
-                    return Result.success()
+                    return true
+                }
+                require(lifecycle == app.nestro.agent.AgentTaskStatus.RUNNING) {
+                    "统一导出任务状态已变化：$lifecycle"
                 }
                 val holder = ProgressHolder()
                 val state = withContext(Dispatchers.Main.immediate) { activeTransformer.getProgress(holder) }
                 if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
-                    MediaRenderTaskStore.update(applicationContext, projectId, taskId, progress = holder.progress, expectedStatus = MediaRenderStatus.RUNNING)
+                    MediaRenderTaskStore.update(applicationContext, projectId, taskId, progress = holder.progress)
                     setProgress(workDataOf("progress" to holder.progress))
                     setForeground(createForegroundInfo(projectId, taskId, holder.progress))
                 }
@@ -143,43 +147,50 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
             val failure = completion.await()
             if (failure != null) throw failure
-            val finalTask = MediaRenderTaskStore.read(applicationContext, projectId, taskId) ?: error("导出任务状态丢失")
-            if (finalTask.status == MediaRenderStatus.CANCELLED || finalTask.status == MediaRenderStatus.PAUSED) {
+            val finalStatus = nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status
+                ?: error("统一导出任务状态丢失")
+            if (finalStatus == app.nestro.agent.AgentTaskStatus.CANCELLED ||
+                finalStatus == app.nestro.agent.AgentTaskStatus.PAUSED
+            ) {
                 output.delete()
-                return Result.success()
+                return true
             }
-            require(finalTask.status == MediaRenderStatus.RUNNING) { "导出任务状态已变化，拒绝覆盖新状态" }
+            require(finalStatus == app.nestro.agent.AgentTaskStatus.RUNNING) {
+                "统一导出任务状态已变化，拒绝覆盖新状态"
+            }
             require(output.isFile && output.length() > 0) { "导出完成回调已触发，但没有生成有效文件" }
-            MediaRenderTaskStore.update(applicationContext, projectId, taskId, status = MediaRenderStatus.COMPLETED, progress = 100, expectedStatus = MediaRenderStatus.RUNNING)
-            return Result.success()
+            MediaRenderTaskStore.update(applicationContext, projectId, taskId, progress = 100)
+            return true
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 runCatching { withContext(Dispatchers.Main.immediate) { transformer?.cancel() } }
-                val latest = MediaRenderTaskStore.read(applicationContext, projectId, taskId)
-                if (latest?.status == MediaRenderStatus.PAUSED || latest?.status == MediaRenderStatus.CANCELLED) {
+                val latest = nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status
+                if (latest == app.nestro.agent.AgentTaskStatus.PAUSED ||
+                    latest == app.nestro.agent.AgentTaskStatus.CANCELLED
+                ) {
                     output.delete()
-                    if (latest.status == MediaRenderStatus.PAUSED) {
+                    if (latest == app.nestro.agent.AgentTaskStatus.PAUSED) {
                         runCatching { MediaRenderTaskStore.update(applicationContext, projectId, taskId, progress = 0) }
                     }
                 }
             }
             throw cancelled
         } catch (failure: Throwable) {
-            val latest = MediaRenderTaskStore.read(applicationContext, projectId, taskId)
-            if (latest?.status == MediaRenderStatus.CANCELLED || latest?.status == MediaRenderStatus.PAUSED) {
+            val latest = nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status
+            if (latest == app.nestro.agent.AgentTaskStatus.CANCELLED ||
+                latest == app.nestro.agent.AgentTaskStatus.PAUSED
+            ) {
                 output.delete()
-                return Result.success()
+                return true
             }
             output.delete()
             runCatching {
                 MediaRenderTaskStore.update(
                     applicationContext, projectId, taskId,
-                    status = MediaRenderStatus.FAILED,
-                    errorMessage = failure.message ?: failure.javaClass.simpleName,
-                    expectedStatus = MediaRenderStatus.RUNNING
+                    errorMessage = failure.message ?: failure.javaClass.simpleName
                 )
             }
-            return Result.failure()
+            return false
         }
     }
 
