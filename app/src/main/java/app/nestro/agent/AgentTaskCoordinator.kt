@@ -315,6 +315,7 @@ class AgentTaskCoordinator(
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.FAILED,
                     AgentTaskStatus.WAITING_FOR_USER,
+                    AgentTaskStatus.WAITING_FOR_TASK,
                     AgentTaskStatus.RETRY_WAIT
                 )) return@withTransitionLock existing to false
             val next = existing.copy(
@@ -493,7 +494,8 @@ class AgentTaskCoordinator(
                         AgentTaskStatus.PAUSED,
                         AgentTaskStatus.CANCELLED,
                         AgentTaskStatus.COMPLETED,
-                        AgentTaskStatus.WAITING_FOR_USER
+                        AgentTaskStatus.WAITING_FOR_USER,
+                        AgentTaskStatus.WAITING_FOR_TASK
                     )) {
                     cancel(taskId)
                 }
@@ -754,6 +756,7 @@ class AgentTaskCoordinator(
                         ))
                         latest.status in setOf(
                             AgentTaskStatus.WAITING_FOR_USER,
+                            AgentTaskStatus.WAITING_FOR_TASK,
                             AgentTaskStatus.PAUSED,
                             AgentTaskStatus.FAILED,
                             AgentTaskStatus.CANCELLED,
@@ -769,7 +772,11 @@ class AgentTaskCoordinator(
                 }
                 val finalState = states.get(taskId)
                 if (finalState?.status == AgentTaskStatus.COMPLETED) trace(taskId, "completed")
-                if (finalState?.status == AgentTaskStatus.WAITING_FOR_USER) trace(taskId, "waiting_for_user", finalState.lastError)
+                when (finalState?.status) {
+                    AgentTaskStatus.WAITING_FOR_USER -> trace(taskId, "waiting_for_user", finalState.lastError)
+                    AgentTaskStatus.WAITING_FOR_TASK -> trace(taskId, "waiting_for_task", finalState.lastError)
+                    else -> Unit
+                }
             } catch (cancelled: CancellationException) {
                 val requested = withContext(NonCancellable) {
                     withTransitionLock {
