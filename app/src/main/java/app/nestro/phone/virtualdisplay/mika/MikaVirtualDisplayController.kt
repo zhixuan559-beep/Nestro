@@ -7,8 +7,6 @@ package app.nestro.phone.virtualdisplay.mika
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.net.Uri
-import android.os.Build
-import android.util.DisplayMetrics
 import android.view.Display
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -47,6 +45,13 @@ class MikaVirtualDisplayController(context: Context) {
         val logicalWidth get() = display.width
         val logicalHeight get() = display.height
         val frames get() = display.frames
+        val pipInput: MikaPipInput = object : MikaPipInput {
+            override suspend fun tap(fx: Float, fy: Float) { this@Session.tap(fx, fy) }
+            override suspend fun swipe(points: List<Pair<Float, Float>>, durationMs: Long) {
+                this@Session.swipe(points, durationMs)
+            }
+            override suspend fun back() { this@Session.back() }
+        }
 
         suspend fun launchApp(packageName: String): Int = withContext(Dispatchers.IO) {
             shell.startApp(displayId, packageName)
