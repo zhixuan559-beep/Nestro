@@ -227,9 +227,8 @@ internal class ModelLedToolDispatcher(
                 )
                 AgentTaskStatus.RUNNING,
                 AgentTaskStatus.QUEUED,
-                AgentTaskStatus.RETRY_WAIT -> return ModelToolDispatchResult(
-                    directReply = "相同请求的工具任务仍在执行或排队，已阻止重复启动。",
-                    streamedToUi = false
+                AgentTaskStatus.RETRY_WAIT -> throw IllegalStateException(
+                    "相同请求的工具任务仍在执行或排队，已阻止重复启动。"
                 )
                 else -> Unit
             }
