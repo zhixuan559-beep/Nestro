@@ -1925,6 +1925,8 @@ fun NestroApp(initialPage: String = "home") {
                                                      prefs.getString("workflow_task_workflow_id_v1", "").orEmpty() == workflow.id &&
                                                      task.capabilityId == workflow.id &&
                                                      savedWorkflowInputForCard == workflowInputDraft.trim() &&
+                                                     (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
+                                                         prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow))) &&
                                                      task.status in setOf(
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
                                                          app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
@@ -1937,7 +1939,14 @@ fun NestroApp(initialPage: String = "home") {
                                                      val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
                                                      val savedWorkflowId = prefs.getString("workflow_task_workflow_id_v1", "").orEmpty()
                                                      val savedWorkflowInput = prefs.getString("workflow_resume_input_v1", "").orEmpty()
-                                                     val workflowTaskId = if (savedWorkflowId == workflow.id && savedWorkflowInput == input && savedWorkflowTaskId.isNotBlank()) {
+                                                     val savedWorkflowDefinition = prefs.getString("workflow_resume_definition_v1", "").orEmpty()
+                                                     val currentWorkflowDefinition = WorkflowDefinitionCodec.encode(listOf(workflow))
+                                                     val workflowTaskId = if (
+                                                         savedWorkflowId == workflow.id &&
+                                                         savedWorkflowInput == input &&
+                                                         (savedWorkflowDefinition.isBlank() || savedWorkflowDefinition == currentWorkflowDefinition) &&
+                                                         savedWorkflowTaskId.isNotBlank()
+                                                     ) {
                                                          savedWorkflowTaskId
                                                      } else {
                                                          UUID.randomUUID().toString()
@@ -1966,6 +1975,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              .putString("workflow_task_id_v1", effectiveWorkflowTaskId)
                                                              .putString("workflow_task_workflow_id_v1", workflow.id)
                                                              .putString("workflow_resume_input_v1", input)
+                                                             .putString("workflow_resume_definition_v1", currentWorkflowDefinition)
                                                              .apply()
                                                          try {
                                                          val result = runCatchingCancellable {
@@ -2112,6 +2122,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                  .remove("workflow_task_id_v1")
                                                                  .remove("workflow_task_workflow_id_v1")
                                                                  .remove("workflow_resume_input_v1")
+                                                                 .remove("workflow_resume_definition_v1")
                                                                  .apply()
                                                          }
                                                          page = "home"
@@ -2147,6 +2158,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                      .remove("workflow_task_id_v1")
                                                                      .remove("workflow_task_workflow_id_v1")
                                                                      .remove("workflow_resume_input_v1")
+                                                                     .remove("workflow_resume_definition_v1")
                                                                      .apply()
                                                                  workflowInputDraft = ""
                                                                  savedWorkflowTaskState = null
