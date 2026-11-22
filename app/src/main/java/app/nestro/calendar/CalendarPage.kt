@@ -58,6 +58,7 @@ import java.util.Locale
 
 private val calendarDateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
 private val calendarTimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
+private val calendarDateTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT)
 
 @Composable
 fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
@@ -360,7 +361,10 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                         if (event.automationPrompt.isNotBlank()) {
                             Text("自动任务 · ${event.automationStatus}", style = MaterialTheme.typography.labelMedium)
                             if (event.nextRunAt > 0L) {
-                                Text("下次执行时间戳：${event.nextRunAt}", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    "下次执行：" + Instant.ofEpochMilli(event.nextRunAt).atZone(zone).format(calendarDateTimeFormat),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
                             }
                             if (event.automationError.isNotBlank()) {
                                 Text(event.automationError.take(400), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
