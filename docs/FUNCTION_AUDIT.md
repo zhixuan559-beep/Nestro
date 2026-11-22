@@ -449,3 +449,11 @@
 - 当前树仅发现 `VirtualDisplayGeometryTest`；未发现 ADB TLS pairing、helper 启动、UID/签名/nonce Binder handoff、虚拟屏创建/销毁、主屏任务移动/恢复和 UI 手势的专项自动化测试。
 - 因此 Shell 授权/启动和通用屏幕交接属于“代码已实现、自动化/真机验证缺失”，不能误报为代码未实现；也不能在六项阶段完成前提前运行测试。
 
+
+### 模块15 AI 共建工作台安全边界补充核对
+- `AiCoworkbenchService.prepareReview()` 已实现补丁解析、路径安全校验、密钥/签名材料保护、静态分析、变更影响分析和逐文件 diff 预览。
+- `applyApproved()` 仅应用用户选定文件，先持久化快照和审批记录；写入失败会尝试恢复，恢复失败保留 `RECOVERY_REQUIRED` 状态；支持单快照/整批补丁回滚、审批历史和进程中断恢复。
+- `CoworkbenchStaticAnalyzer` 检查 Manifest 权限、导出组件、依赖变更、动态版本和敏感凭据；相关测试源码存在。
+- `GitHubActionsCoworkbenchRunner` 使用 GitHub-hosted Actions runner 执行用户主动触发的 `workflow_dispatch`；仓库代码不会在 Android 进程内执行。当前只支持 GitHub Actions，GitLab/Gitee runner 尚未接入；真实 Workflow、权限和取消联调仍待后续验收。
+- 因此，旧优化文档中“补丁预览、影响分析、明确应用、快照/回滚、隔离构建测试整体尚未实现”的状态已过期；当前已有代码实现。仍需确认远端 workflow 本身的权限最小化和实际运行结果，不能把 runner 代码存在当作真实 Actions 已验证。
+
