@@ -24,7 +24,7 @@
 | 模型 | `ModelRegistry`、`ModelRegistryStore`、`ModelConfigurationRepository`、`ModelConnectionService`、`ModelRequestConfigurationSelector`、`LocalVault` | 新 Registry 与旧 Profile UI 并存；需要收敛唯一数据源，Key 删除后所有依赖模型必须不可选 |
 | 聊天/网络 | `ChatExecutionService`、`OpenAiClient`、`ChatEndpointPolicy`、`ChatRequestPolicy`、`OpenAiSseDecoder`、Conversation repositories | 执行服务与策略已抽出；UI 根仍有请求状态和业务流程 |
 | 数据 | `NestroDatabase.kt` 599 行；`LocalBackupRepository.kt` 568 行；多个 Store/Repository | 数据实体、DAO、迁移及备份职责需要按所有权梳理，不得破坏迁移和备份兼容 |
-| Phone Agent | `phone/` 11 个文件 + `agent/` 协调器 + WorkManager/Accessibility | 任务记录、队列、状态/trace、设备动作必须保持同一生命周期；禁止不确定动作自动重放 |
+| Phone Agent | `phone/` + `phone/virtualdisplay/mika/` + `agent/` 协调器 + WorkManager；Mika VirtualDisplay 唯一执行环境，AccessibilityService 仅作虚拟屏节点桥接 | 任务记录、队列、状态/trace、虚拟屏动作必须保持同一生命周期；禁止真实主屏自动执行回退与不确定动作重放 |
 | 语音 | `speech/` 2 个文件、`VoiceInputButton` | Android 语音输入已有；输出和实时语音目前是 Provider 契约，不是完整功能 |
 | 产物/社区 | `ArtifactStore`、`ArtifactLibraryPage`、`SkillCommunityClient`、签名/解析规则 | 已有产物库与技能社区校验基础；正式社区地址/密钥分发仍有外部依赖 |
 
@@ -58,7 +58,7 @@
 
 1. **UI 根过载**：NestroApp 同时承担页面路由、跨模块状态、模型/聊天/专家/工作流/记忆/项目/Phone Agent 的部分业务流程。应按业务用例提取状态持有者和应用服务，避免把业务搬到另一个超大文件。
 2. **模型双数据源风险**：Registry 已管理 provider/key/model，而 UI 仍保留 legacy profile 流程。应建立单一事实源与兼容迁移，不允许两个列表各自决定模型是否可选。
-3. **Agent 生命周期一致性**：AgentTaskCoordinator、PhoneAgentTaskService、Room 状态/trace、WorkManager 与 Accessibility 执行必须有清晰状态转换；不能再出现平行队列或重复动作。
+3. **Agent 生命周期一致性**：AgentTaskCoordinator、PhoneAgentTaskService、Room 状态/trace、WorkManager 与虚拟屏执行必须有清晰状态转换；AccessibilityService 仅提供虚拟屏节点桥接，不能作为并行执行环境或真实主屏回退。
 4. **数据访问边界**：页面不应直接拼装数据库查询、备份事务、密钥加解密或网络传输；通过既有 Repository/Service 访问。
 5. **模块并非 Gradle 多模块**：先把 package/接口/状态所有权理顺，再依据真实隔离收益决定是否拆 Gradle modules；不为“模块化”而增加构建复杂度。
 
@@ -516,8 +516,8 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 
 ## 2026-11-18 — Phone Agent execution-environment boundary
 
-- Added `PhoneAgentExecutionEnvironment` to separate Phone Agent planning, task scheduling, and typed action execution from the current Android AccessibilityService host.
-- The current AccessibilityService implements the contract. PhoneAgentAgent, PhoneAgentExecutor, WorkManager, and the UI stop control now resolve the active environment through one provider rather than directly depending on `PhoneAgentService.activeService`.
+- `PhoneAgentExecutionEnvironment` now has one active implementation: `MikaPhoneAgentExecutionEnvironment`, bound to the current isolated VirtualDisplay session.
+- `PhoneAgentService` remains an Android AccessibilityService only as the virtual-display node inspection/action bridge; it no longer implements or attaches itself as a real-screen execution environment. The provider has no real-screen fallback, and closing/detaching the virtual display pauses execution until the isolated session is restored.
 - The provider has one active target and deliberately performs no automatic fallback when the selected environment detaches; the task pauses instead of silently switching to the user's real screen.
 - This creates the Phase 2 architecture seam for an isolated VirtualDisplay adapter. The actual VirtualDisplay implementation and any Mika code reuse belong to the Phone Agent feature work after the exact source repository and license are verified; no unverified third-party code has been copied.
 - Added JVM tests for attach, detach, replacement, and no-fallback behavior.
