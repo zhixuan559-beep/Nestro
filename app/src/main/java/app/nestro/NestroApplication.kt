@@ -547,7 +547,7 @@ class NestroApplication : Application() {
                             kind = "generated_plugin",
                             capabilityId = plugin.id,
                             title = plugin.name.take(160),
-                            input = inputs.keys.sorted().joinToString(",").take(1_000)
+                            input = ("request_id=$requestId; inputs=" + inputs.keys.sorted().joinToString(",")).take(1_000)
                         ),
                         idempotencyKey = idempotencyKey,
                         // Plugin tool failures may have an unknown external-write outcome.
