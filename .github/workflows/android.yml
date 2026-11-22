@@ -83,7 +83,7 @@ jobs:
           retention-days: 7
 
   instrumented:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: macos-26-intel
     # The full 70-test suite on the software-rendered emulator needs ~40+ minutes
     # including SDK setup and both APK builds; 35 minutes killed run #1094 at
