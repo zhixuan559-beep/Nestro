@@ -1,5 +1,6 @@
 package app.nestro.model
 
+import app.nestro.data.ChatNetworkPolicy
 import app.nestro.data.ChatMessage
 import app.nestro.data.ModelConfig
 import app.nestro.data.OpenAiClient
@@ -14,8 +15,8 @@ class ChatExecutionService {
         configs: List<ModelConfig>,
         history: List<ChatMessage>,
         systemPrompt: String,
-        connectTimeoutMillis: Int = 20_000,
-        readTimeoutMillis: Int = 90_000,
+        connectTimeoutMillis: Int = ChatNetworkPolicy.timeoutPolicy().connectMs.toInt(),
+        readTimeoutMillis: Int = ChatNetworkPolicy.timeoutPolicy().readMs.toInt(),
         temperature: Double? = null,
         maxTokens: Int? = null,
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },

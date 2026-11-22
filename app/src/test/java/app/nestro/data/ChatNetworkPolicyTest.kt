@@ -21,6 +21,7 @@ class ChatNetworkPolicyTest {
         assertEquals(ChatRetryPlan(1, 2, 800), ChatNetworkPolicy.retryPlan(IOException("connection reset"), 0))
         assertEquals(ChatRetryPlan(2, 2, 1_600), ChatNetworkPolicy.retryPlan(IOException("connection reset"), 1))
         assertNull(ChatNetworkPolicy.retryPlan(IOException("connection reset"), 2))
+        assertNull(ChatNetworkPolicy.retryPlan(IOException("connection reset"), -1))
         assertNull(ChatNetworkPolicy.retryPlan(CancellationException("cancelled"), 0))
     }
 

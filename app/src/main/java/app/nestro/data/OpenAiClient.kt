@@ -108,7 +108,7 @@ internal object OpenAiClient {
             configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
                 if (shouldStop()) throw IllegalStateException("用户停止生成")
                 var attempt = 0
-                while (attempt < 2) {
+                while (attempt < ChatNetworkPolicy.MAX_ATTEMPTS) {
                     if (shouldStop()) throw IllegalStateException("用户停止生成")
                     var emitted = false
                     try {
