@@ -58,6 +58,7 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
                             taskContext.cancel("媒体渲染任务已取消")
                         MediaRenderStatus.FAILED ->
                             taskContext.fail(MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体渲染失败")
+                        null -> taskContext.fail("媒体渲染任务记录丢失，无法继续执行")
                         MediaRenderStatus.PAUSED ->
                             taskContext.pause("媒体渲染任务已暂停")
                         else -> taskContext.pause("媒体渲染 Worker 未完成，等待恢复")
