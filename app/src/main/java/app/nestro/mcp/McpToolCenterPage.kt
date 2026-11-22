@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import java.util.UUID
 import java.text.DateFormat
 import java.util.Date
@@ -26,6 +27,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     var servers by remember { mutableStateOf(repository.listServers()) }
     var tools by remember { mutableStateOf(repository.listTools()) }
     var audits by remember { mutableStateOf(repository.listAudits()) }
+    var recoverableTasks by remember { mutableStateOf(emptyList<app.nestro.agent.AgentTaskState>()) }
     var serverName by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
@@ -62,6 +64,22 @@ fun McpToolCenterPage(app: NestroApplication) {
 
     LaunchedEffect(Unit) {
         reload()
+    }
+
+    LaunchedEffect(app) {
+        while (true) {
+            recoverableTasks = withContext(Dispatchers.IO) {
+                app.agentTaskCoordinator.recoverableTasks().filter {
+                    it.kind == "mcp_tool" &&
+                        it.status in setOf(
+                            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                            app.nestro.agent.AgentTaskStatus.PAUSED,
+                            app.nestro.agent.AgentTaskStatus.FAILED
+                        )
+                }
+            }
+            delay(1_500)
+        }
     }
 
     val enabledServerIds = remember(servers) { servers.filter { it.enabled }.map { it.id }.toSet() }
@@ -299,6 +317,45 @@ fun McpToolCenterPage(app: NestroApplication) {
                 }
             }
         }
+        if (recoverableTasks.isNotEmpty()) {
+            HorizontalDivider()
+            Text("待恢复的 MCP 调用（${recoverableTasks.size}）", style = MaterialTheme.typography.titleMedium)
+            recoverableTasks.forEach { task ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(task.title.ifBlank { task.capabilityId }, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (task.status == app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER) "等待用户审批"
+                            else "任务状态：${task.status}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (task.lastError.isNotBlank()) Text(task.lastError.take(240), style = MaterialTheme.typography.bodySmall)
+                        Button(
+                            enabled = !loading,
+                            onClick = {
+                                loading = true
+                                scope.launch {
+                                    status = "正在恢复 MCP 调用并等待本次审批…"
+                                    try {
+                                        val result = service.resume(task.taskId)
+                                        status = if (result.success) "MCP 恢复调用成功：${result.output}" else "MCP 恢复调用失败：${result.error}"
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        status = "MCP 恢复失败：" + (error.message ?: "未知错误")
+                                    } finally {
+                                        loading = false
+                                        reload()
+                                    }
+                                }
+                            }
+                        ) { Text("恢复并重新审批") }
+                    }
+                }
+            }
+        }
+
         HorizontalDivider()
         Text("最近调用记录（${audits.size}）", style = MaterialTheme.typography.titleMedium)
         if (audits.isEmpty()) {
