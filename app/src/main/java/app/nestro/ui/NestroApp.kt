@@ -1801,7 +1801,7 @@ fun NestroApp(initialPage: String = "home") {
                                              stopRequested = true
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
-                                             workflowApprovalPrompt?.decision?.complete(false)
+                                             workflowApprovalPrompt?.decision?.complete(WorkflowApprovalChoice.REJECT)
                                              workflowApprovalPrompt = null
                                              appRuntime.chatExecutionService.cancel()
                                              workflowRunStatus = "正在停止工作流…"
