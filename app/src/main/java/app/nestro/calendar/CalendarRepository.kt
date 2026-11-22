@@ -17,7 +17,11 @@ class CalendarRepository(context: Context) {
         return save(event.copy(
             completed = old?.completed ?: false,
             automationPrompt = old?.automationPrompt.orEmpty(),
-            automationProjectId = old?.automationProjectId.orEmpty()
+            automationProjectId = old?.automationProjectId.orEmpty(),
+            nextRunAt = old?.nextRunAt ?: 0L,
+            lastRunAt = old?.lastRunAt ?: 0L,
+            lastTaskId = old?.lastTaskId.orEmpty(),
+            lastIdempotencyKey = old?.lastIdempotencyKey.orEmpty()
         ))
     }
 
@@ -33,11 +37,32 @@ class CalendarRepository(context: Context) {
             updatedAt = now,
             sourceSystemEventId = event.sourceSystemEventId ?: old?.sourceSystemEventId,
             sourceSystemCalendarId = event.sourceSystemCalendarId ?: old?.sourceSystemCalendarId,
-            sourceSystemImported = event.sourceSystemImported || old?.sourceSystemImported == true
+            sourceSystemImported = event.sourceSystemImported || old?.sourceSystemImported == true,
+            nextRunAt = old?.nextRunAt ?: event.nextRunAt,
+            lastRunAt = old?.lastRunAt ?: event.lastRunAt,
+            lastTaskId = old?.lastTaskId ?: event.lastTaskId,
+            lastIdempotencyKey = old?.lastIdempotencyKey ?: event.lastIdempotencyKey
         )
         dao.put(saved)
         CalendarReminderScheduler.schedule(appContext, saved)
         return saved
+    }
+
+    suspend fun recordAutomationDispatch(
+        eventId: String,
+        nextRunAt: Long,
+        lastRunAt: Long,
+        taskId: String,
+        idempotencyKey: String
+    ) {
+        dao.recordAutomationDispatch(
+            id = eventId,
+            nextRunAt = nextRunAt,
+            lastRunAt = lastRunAt,
+            taskId = taskId,
+            idempotencyKey = idempotencyKey,
+            updatedAt = System.currentTimeMillis()
+        )
     }
 
     suspend fun create(
