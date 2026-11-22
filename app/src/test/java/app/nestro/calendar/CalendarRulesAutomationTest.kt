@@ -37,9 +37,9 @@ class CalendarRulesAutomationTest {
         val start = System.currentTimeMillis() + 3_600_000L
         val value = event(startAt = start)
 
-        assertEquals(start, CalendarRules.nextOccurrenceStart(value, start - 10_000L))
-        assertNull(CalendarRules.nextOccurrenceStart(value, start + 1L))
-        assertNull(CalendarRules.nextOccurrenceStart(value.copy(completed = true), start - 10_000L))
+        assertEquals(start, CalendarRules.nextAutomationOccurrenceStart(value, start - 10_000L))
+        assertNull(CalendarRules.nextAutomationOccurrenceStart(value, start + 1L))
+        assertNull(CalendarRules.nextAutomationOccurrenceStart(value.copy(completed = true), start - 10_000L))
     }
 
     @Test
@@ -48,11 +48,20 @@ class CalendarRulesAutomationTest {
         val start = LocalDate.now().plusDays(1).atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
         val value = event(startAt = start, recurrence = CalendarRules.DAILY)
 
-        val next = CalendarRules.nextOccurrenceStart(value, start + 1L)
+        val next = CalendarRules.nextAutomationOccurrenceStart(value, start + 1L)
 
         assertTrue(next != null && next > start)
         assertTrue(CalendarRules.isOccurrence(value, start))
         assertTrue(CalendarRules.isOccurrence(value, next!!))
+    }
+
+    @Test
+    fun automationStillRunsWhenReminderLeadTimeHasAlreadyPassed() {
+        val start = System.currentTimeMillis() + 10 * 60_000L
+        val value = event(startAt = start, reminderMinutes = 30)
+
+        assertNull(CalendarRules.nextOccurrenceStart(value, System.currentTimeMillis()))
+        assertEquals(start, CalendarRules.nextAutomationOccurrenceStart(value, System.currentTimeMillis()))
     }
 
     @Test
