@@ -13,11 +13,13 @@ import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
 import kotlinx.coroutines.CompletableDeferred
 
+internal enum class WorkflowApprovalChoice { AUTHORIZE_ONCE, AUTHORIZE_TASK, REJECT }
+
 internal data class WorkflowApprovalPrompt(
     val stepTitle: String,
     val instruction: String,
     val context: String,
-    val decision: CompletableDeferred<Boolean>
+    val decision: CompletableDeferred<WorkflowApprovalChoice>
 )
 
 /** Owns workflow editor, run and history UI state. */
