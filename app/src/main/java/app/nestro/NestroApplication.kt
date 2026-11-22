@@ -466,7 +466,7 @@ class NestroApplication : Application() {
                         app.nestro.agent.AgentTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
                             true,
                             output = canonicalTask.resultSummary.ifBlank { "该插件请求此前已完成。" } +
-                                "\\ntask_id=${canonicalTask.taskId}"
+                                "\ntask_id=${canonicalTask.taskId}"
                         )
                         app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER -> app.nestro.agent.AgentToolResult(
                             false,
