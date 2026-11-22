@@ -14,6 +14,46 @@ internal data class ConversationRecord(
     val messagesLoaded: Boolean = true
 )
 
+internal fun validateChatMessages(messages: List<ChatMessage>) {
+    require(messages.size <= 2_000) { "会话消息数量超过持久化上限" }
+    val ids = mutableSetOf<String>()
+    var totalChars = 0L
+    messages.forEach { message ->
+        require(message.id.isNotBlank() && message.id.length <= 120 &&
+            message.role in setOf("user", "assistant") && message.content.length <= 200_000) {
+            "本机消息字段无效"
+        }
+        require(ids.add(message.id)) { "会话消息 ID 重复" }
+        encodeMessageVersions(message)
+        totalChars += message.content.length.toLong()
+        totalChars += message.versions.sumOf { it.length.toLong() }
+        require(totalChars <= 3_500_000L) { "会话消息快照超过安全容量" }
+    }
+}
+
+internal fun validateConversationRecords(conversations: List<ConversationRecord>) {
+    require(conversations.size <= 200) { "本机会话数量超过持久化上限" }
+    require(conversations.map { it.id }.distinct().size == conversations.size) { "本机会话 ID 重复" }
+    var totalChars = 0L
+    val messageIds = mutableSetOf<String>()
+    conversations.forEach { conversation ->
+        require(conversation.id.isNotBlank() && conversation.id.length <= 120 &&
+            conversation.title.length <= 80 && conversation.projectId.isNotBlank() &&
+            conversation.projectId.length <= 120 && conversation.updatedAt >= 0L) {
+            "本机会话字段无效"
+        }
+        validateChatMessages(conversation.messages)
+        conversation.messages.forEach { message ->
+            require(messageIds.add(message.id)) { "不同会话之间存在重复消息 ID" }
+        }
+        totalChars += conversation.title.length.toLong()
+        totalChars += conversation.messages.sumOf { message ->
+            message.content.length.toLong() + message.versions.sumOf { it.length.toLong() }
+        }
+        require(totalChars <= 3_500_000L) { "本机会话快照超过安全容量" }
+    }
+}
+
 internal object ConversationPreferencesStore {
 fun loadConversations(prefs: android.content.SharedPreferences): List<ConversationRecord> {
     val rawSnapshot = prefs.getString("conversations_v1", null)
@@ -40,7 +80,10 @@ fun loadConversations(prefs: android.content.SharedPreferences): List<Conversati
             )
         }
     }
-    if (stored.isNotEmpty()) return stored
+    if (stored.isNotEmpty()) {
+        validateConversationRecords(stored)
+        return stored
+    }
     val legacy = loadMessages(prefs)
     val migrated = ConversationRecord(
         UUID.randomUUID().toString(),
@@ -71,28 +114,16 @@ private fun parseStoredChatMessage(item: JSONObject): ChatMessage {
 }
 
 fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>, markDirty: Boolean = true) {
+    validateConversationRecords(conversations)
     // Room is authoritative after the one-time migration. Do not overwrite the complete
     // legacy fallback snapshot with the in-memory summary cache.
     if (prefs.getBoolean("room_storage_initialized", false)) return
-    require(conversations.size <= 200) { "本机会话数量超过持久化上限" }
-    val totalChars = conversations.sumOf { conversation ->
-        conversation.title.length.toLong() + conversation.messages.sumOf { message ->
-            message.content.length.toLong() + message.versions.sumOf { it.length.toLong() }
-        }
-    }
-    require(totalChars <= 3_500_000L) { "本机会话快照超过安全容量" }
     val array = JSONArray()
     conversations.forEach { conversation ->
-        require(conversation.id.isNotBlank() && conversation.title.length <= 80 && conversation.messages.size <= 2_000) {
-            "本机会话或消息数量超出持久化上限"
-        }
         val messages = JSONArray()
         conversation.messages.forEach { message ->
-            require(message.id.isNotBlank() && message.role in setOf("user", "assistant") && message.content.length <= 200_000) {
-                "本机消息字段无效"
-            }
             messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", JSONArray(message.versions).also { encodeMessageVersions(message) })
+                .put("versions", JSONArray(message.versions))
                 .put("active_version", message.activeVersion))
         }
         array.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
