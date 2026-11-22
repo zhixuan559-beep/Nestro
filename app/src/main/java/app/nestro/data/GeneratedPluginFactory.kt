@@ -459,16 +459,26 @@ object GeneratedPluginRunCheckpointCodec {
     fun encode(
         plugin: GeneratedPluginPackage,
         inputs: Map<String, String>,
-        completedSteps: List<GeneratedPluginStepResult>
+        completedSteps: List<GeneratedPluginStepResult>,
+        inProgressStepId: String = "",
+        inProgressPermission: app.nestro.agent.AgentToolPermission? = null
     ): String {
         val valid = completedSteps.take(plugin.steps.size)
         require(valid.all { it.success && !it.requiresUser })
+        require(inProgressStepId.isBlank() == (inProgressPermission == null))
+        if (inProgressStepId.isNotBlank()) {
+            require(plugin.steps.getOrNull(valid.size)?.id == inProgressStepId) {
+                "插件正在执行的步骤必须紧跟已完成步骤"
+            }
+        }
         val payload = JSONObject()
             .put("schemaVersion", SCHEMA_VERSION)
             .put("pluginId", plugin.id)
             .put("pluginVersion", plugin.version)
             .put("pluginFingerprint", pluginFingerprint(plugin))
             .put("inputFingerprint", fingerprintInputs(inputs))
+            .put("inProgressStepId", inProgressStepId)
+            .put("inProgressPermission", inProgressPermission?.name.orEmpty())
             .put("completedSteps", JSONArray().apply {
                 valid.forEachIndexed { index, result ->
                     val expected = plugin.steps[index]
@@ -489,7 +499,8 @@ object GeneratedPluginRunCheckpointCodec {
     fun decode(
         plugin: GeneratedPluginPackage,
         inputs: Map<String, String>,
-        checkpoint: String
+        checkpoint: String,
+        discovery: AgentToolDiscovery
     ): List<GeneratedPluginStepResult> {
         if (checkpoint.isBlank()) return emptyList()
         require(checkpoint.startsWith(PREFIX) && checkpoint.length <= 64_000) {
@@ -505,6 +516,23 @@ object GeneratedPluginRunCheckpointCodec {
         }
         val rows = payload.optJSONArray("completedSteps") ?: JSONArray()
         require(rows.length() <= plugin.steps.size) { "插件检查点包含多余步骤" }
+        val inProgressStepId = payload.optString("inProgressStepId")
+        val inProgressPermission = payload.optString("inProgressPermission")
+        if (inProgressStepId.isNotBlank()) {
+            val pending = plugin.steps.getOrNull(rows.length())
+                ?: error("插件检查点声明了不存在的执行中步骤")
+            require(pending.id == inProgressStepId) { "插件检查点执行中步骤顺序无效" }
+            val currentSpec = discovery.find(pending.toolId)
+                ?: error("插件执行中步骤依赖的工具已不存在")
+            require(currentSpec.permission.name == inProgressPermission) {
+                "插件执行中步骤的权限定义已变化，已停止恢复"
+            }
+            require(currentSpec.permission == app.nestro.agent.AgentToolPermission.READ_ONLY) {
+                "上一步外部写入的执行结果不确定。为避免重复提交，系统已停止自动恢复，请先核对外部操作结果。"
+            }
+        } else {
+            require(inProgressPermission.isBlank()) { "插件检查点包含无效的执行中权限标记" }
+        }
         return (0 until rows.length()).map { index ->
             val row = rows.optJSONObject(index) ?: error("插件检查点步骤数据损坏")
             val expected = plugin.steps[index]
@@ -551,7 +579,7 @@ object GeneratedPluginWorkflowExecutor {
         plugin.inputs.filter { it.required }.forEach { field ->
             require(!inputs[field.name].isNullOrBlank()) { "缺少必填插件输入：${field.name}" }
         }
-        val restoredSteps = GeneratedPluginRunCheckpointCodec.decode(plugin, inputs, resumeCheckpoint)
+        val restoredSteps = GeneratedPluginRunCheckpointCodec.decode(plugin, inputs, resumeCheckpoint, discovery)
         val results = linkedMapOf<String, String>()
         restoredSteps.forEachIndexed { index, result ->
             results[plugin.steps[index].resultKey] = result.output
@@ -572,6 +600,15 @@ object GeneratedPluginWorkflowExecutor {
                     }
                 }.take(2_000)
             }
+            val toolSpec = discovery.find(step.toolId) ?: error("插件引用的工具已不存在：${step.toolId}")
+            onStepCheckpoint(
+                stepIndex,
+                GeneratedPluginRunCheckpointCodec.encode(
+                    plugin, inputs, stepResults,
+                    inProgressStepId = step.id,
+                    inProgressPermission = toolSpec.permission
+                )
+            )
             val result = try {
                 invokeThroughRuntime(step.toolId, arguments)
             } catch (cancelled: CancellationException) {
@@ -580,6 +617,12 @@ object GeneratedPluginWorkflowExecutor {
                 AgentToolResult(false, error = error.message?.take(1_000) ?: "插件步骤执行失败")
             }
             if (!result.success || result.requiresUser) {
+                if (result.requiresUser) {
+                    onStepCheckpoint(
+                        stepIndex,
+                        GeneratedPluginRunCheckpointCodec.encode(plugin, inputs, stepResults)
+                    )
+                }
                 val failure = GeneratedPluginStepResult(
                     step.id, step.toolId, false,
                     error = if (result.requiresUser) "该工具需要用户确认：${result.error}" else result.error.ifBlank { result.output },
