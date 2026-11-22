@@ -853,15 +853,18 @@ private fun formatDuration(ms: Long): String {
                     val uri = pendingMediaArchiveUri
                     showMediaArchiveImportConfirm = false
                     pendingMediaArchiveUri = null
-                    if (uri != null) scope.launch {
+                    if (uri != null) {
+                        val hasActiveRender = tasks.any {
+                            it.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING, MediaRenderStatus.PAUSED)
+                        }
+                        val hasActiveAi = mediaAiTasks.any {
+                            it.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)
+                        }
+                        if (hasActiveRender || hasActiveAi) {
+                            status = "当前项目仍有未结束的媒体任务，请结束或等待任务完成后再恢复。"
+                        } else scope.launch {
                         val result = withContext(Dispatchers.IO) {
                             runCatching {
-                                require(tasks.none { it.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING, MediaRenderStatus.PAUSED) }) {
-                                    "当前项目仍有未结束的渲染任务，请结束任务后再恢复"
-                                }
-                                require(mediaAiTasks.none { it.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING) }) {
-                                    "当前项目仍有媒体 AI 任务，请等待任务结束后再恢复"
-                                }
                                 val archive = File(context.cacheDir, "media-import-${UUID.randomUUID()}.zip")
                                 try {
                                     context.contentResolver.openInputStream(uri)?.use { input ->
@@ -896,6 +899,7 @@ private fun formatDuration(ms: Long): String {
                         }.onFailure {
                             status = "媒体工程恢复失败：" + (it.message ?: "备份文件无效")
                         }
+                    }
                     }
                 }) { Text("确认替换") }
             },
