@@ -213,6 +213,9 @@ object ExpertTeamEngine {
             results.removeAt(results.lastIndex)
             visited.remove(retryFailed.name)
         }
+        require(restored.nextMemberName.isBlank() || restored.nextMemberName !in visited) {
+            "专家协作恢复检查点出现重复委派成员"
+        }
         var current: ExpertTeamMemberTask? = restored.nextMemberName.takeIf { it.isNotBlank() }
             ?.let { byName[it] } ?: if (resumeCheckpoint == null ||
                 (restored.completedMembers.isEmpty() && restored.nextMemberName.isBlank())) {
