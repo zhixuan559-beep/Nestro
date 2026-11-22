@@ -256,7 +256,8 @@ ${prompt.take(8_000)}
                                 else args + mapOf(
                                     "__nestro_project_id" to projectId,
                                     "__nestro_conversation_id" to conversationId,
-                                    "__nestro_task_mode" to taskModeEnabled.toString()
+                                    "__nestro_task_mode" to taskModeEnabled.toString(),
+                                    "__nestro_request_id" to requestId
                                 )
                             )
                         }
@@ -437,7 +438,8 @@ ${prompt.take(8_000)}
                             else arguments + mapOf(
                                 "__nestro_project_id" to projectId,
                                 "__nestro_conversation_id" to conversationId,
-                                "__nestro_task_mode" to taskModeEnabled.toString()
+                                "__nestro_task_mode" to taskModeEnabled.toString(),
+                                    "__nestro_request_id" to requestId
                             )
                         )
                     }
