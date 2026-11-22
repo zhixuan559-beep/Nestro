@@ -450,6 +450,9 @@ interface NestroDao {
     @Query("SELECT * FROM agent_approval_audits WHERE status = 'PENDING' ORDER BY createdAt ASC")
     suspend fun pendingAgentApprovalAudits(): List<AgentApprovalAuditEntity>
 
+    @Query("UPDATE agent_approval_audits SET status = :status, updatedAt = :updatedAt WHERE scopeId = :scopeId AND status = 'PENDING'")
+    suspend fun closePendingAgentApprovalAudits(scopeId: String, status: String, updatedAt: Long): Int
+
     @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
     suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
 
