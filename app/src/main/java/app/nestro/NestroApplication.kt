@@ -520,9 +520,8 @@ class NestroApplication : Application() {
         ChatRequestContextAssembler(
             retrieveMemory = conversationContextRepository::retrieveMemory,
             retrieveUserMemory = { projectId, prompt ->
-                readableProjectsFor(projectId).mapNotNull { sourceProjectId ->
-                    userMemoryRepository.recall(sourceProjectId, prompt).context.takeIf { it.isNotBlank() }
-                }.joinToString("\n\n")
+                val readableSources = readableProjectsFor(projectId).filterNot { it == projectId }.toSet()
+                userMemoryRepository.recall(projectId, prompt, readableSources).context
             }
         )
     }
