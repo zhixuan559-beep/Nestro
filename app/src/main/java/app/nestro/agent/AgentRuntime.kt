@@ -414,7 +414,8 @@ data class AgentApprovalAuditRecord(
 )
 
 class AgentApprovalCoordinator(
-    private val persistAudit: suspend (AgentApprovalAuditRecord) -> Unit = {}
+    private val persistAudit: suspend (AgentApprovalAuditRecord) -> Unit = {},
+    private val closePendingAudits: suspend (scopeId: String, status: String, updatedAt: Long) -> Unit = { _, _, _ -> }
 ) {
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
@@ -467,6 +468,14 @@ class AgentApprovalCoordinator(
     fun endScope(scopeId: String) {
         taskWideGrants.remove(scopeId)
         requestLocks.remove(scopeId)
+    }
+
+    suspend fun endScopeAndAudit(scopeId: String, status: String = "CLOSED") {
+        require(status in setOf("CLOSED", "CANCELLED", "FAILED", "COMPLETED"))
+        endScope(scopeId)
+        runCatching {
+            closePendingAudits(scopeId, status, System.currentTimeMillis())
+        }
     }
 }
 
