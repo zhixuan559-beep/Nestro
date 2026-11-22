@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import android.content.SharedPreferences
 import app.nestro.agent.AgentTaskState
 import app.nestro.agent.AgentAuthorization
 import app.nestro.agent.AgentPermissionRouter
@@ -81,6 +82,7 @@ internal class ModelLedToolDispatcher(
     private val catalog: AgentToolCatalog,
     private val database: NestroDatabase,
     private val permissionRouter: AgentPermissionRouter,
+    private val capabilityPreferences: SharedPreferences,
     private val toolDefinitionProvider: (String) -> String? = { null },
     private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
 ) {
@@ -111,6 +113,24 @@ internal class ModelLedToolDispatcher(
             .filter { it.id !in setOf("phone_agent.execute", "phone_agent.wait") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
+        CapabilityRegistryStore.registerAll(
+            capabilityPreferences,
+            candidates.map { spec ->
+                CapabilityDescriptor(
+                    id = spec.id,
+                    title = spec.id,
+                    category = spec.permission.name.lowercase(),
+                    description = spec.description.take(500),
+                    source = when {
+                        spec.id.startsWith("plugin.") -> "plugin"
+                        spec.id.startsWith("mcp_") -> "mcp"
+                        else -> "builtin"
+                    },
+                    requiresConfirmation = spec.requiresConfirmation || spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
+                    defaultGranted = !spec.id.startsWith("plugin.")
+                )
+            }
+        )
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
         var visibleChars = 0
         for (spec in candidates) {
@@ -242,9 +262,15 @@ ${prompt.take(8_000)}
                         }
                 }
                 val requestPermissionRouter = AgentPermissionRouter { task, tool ->
-                    if (tool.id in setOf("phone_agent.execute", "phone_agent.wait") && taskModeEnabled) AgentAuthorization.Allow
-                    else if (tool.id.startsWith("media.project.") && taskModeEnabled) AgentAuthorization.Allow
-                    else permissionRouter.authorize(task, tool)
+                    if (!CapabilityRegistryStore.authorize(capabilityPreferences, task.projectId, tool.id)) {
+                        AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
+                    } else if (tool.id in setOf("phone_agent.execute", "phone_agent.wait") && taskModeEnabled) {
+                        AgentAuthorization.Allow
+                    } else if (tool.id.startsWith("media.project.") && taskModeEnabled) {
+                        AgentAuthorization.Allow
+                    } else {
+                        permissionRouter.authorize(task, tool)
+                    }
                 }
                 val runtime: AgentRuntime = DefaultAgentRuntime(
                     catalog = scopedAccess,
