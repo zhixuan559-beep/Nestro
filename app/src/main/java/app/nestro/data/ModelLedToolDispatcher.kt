@@ -124,8 +124,28 @@ internal class ModelLedToolDispatcher(
 
     private fun findCompletedMcpCall(raw: String, toolId: String, arguments: Map<String, String>, ordinal: Int): String? {
         val calls = decodeMcpReplayLedger(raw).optJSONObject("calls") ?: return null
-        val row = calls.optJSONObject(mcpCallSignature(toolId, arguments, ordinal)) ?: return null
-        return row.optString("output").takeIf { row.optString("state") == "COMPLETED" }
+        val signature = mcpCallSignature(toolId, arguments, ordinal)
+        val exact = calls.optJSONObject(signature)
+        if (exact != null && exact.optString("state") == "COMPLETED") {
+            return exact.optString("output")
+        }
+        val keys = calls.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val row = calls.optJSONObject(key) ?: continue
+            if (row.optInt("ordinal", -1) != ordinal) continue
+            if (key != signature) {
+                throw IllegalStateException(
+                    "恢复时第 $ordinal 个 MCP 调用与持久检查点中的工具或参数不一致，已阻止自动执行。请核对后重新发起。"
+                )
+            }
+            if (row.optString("state") == "EXECUTING") {
+                throw IllegalStateException(
+                    "第 $ordinal 个 MCP 调用结果不确定，已阻止自动重放。请核对服务端结果后重新发起。"
+                )
+            }
+        }
+        return null
     }
 
     private suspend fun saveMcpReplayCall(
@@ -144,6 +164,7 @@ internal class ModelLedToolDispatcher(
             mcpCallSignature(toolId, arguments, ordinal),
             JSONObject()
                 .put("toolId", toolId)
+                .put("ordinal", ordinal)
                 .put("state", state)
                 .put("output", output.take(4_000))
         )
