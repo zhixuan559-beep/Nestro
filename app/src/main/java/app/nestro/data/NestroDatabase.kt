@@ -369,6 +369,9 @@ interface NestroDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertUserMemoryIfAbsent(memory: UserMemoryEntity): Long
+
     @Transaction
     suspend fun upsertUserMemoryByFingerprint(memory: UserMemoryEntity): UserMemoryEntity {
         val existing = userMemoryByFingerprint(memory.projectId, memory.fingerprint)
