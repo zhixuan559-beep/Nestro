@@ -107,8 +107,11 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                             task.status in setOf(
                                 AgentTaskStatus.WAITING_FOR_USER,
                                 AgentTaskStatus.WAITING_FOR_TASK,
-                                AgentTaskStatus.PAUSED,
-                                AgentTaskStatus.FAILED
+                                AgentTaskStatus.PAUSED
+                            ) || (
+                                task.status == AgentTaskStatus.FAILED &&
+                                    !task.lastError.contains("拒绝") &&
+                                    !task.lastError.contains("未批准")
                             )
                     }.orEmpty()
             }
