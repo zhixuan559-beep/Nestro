@@ -141,8 +141,16 @@ internal class AutomaticMemoryExtractionCoordinator(
         val existing = runCatchingCancellable {
             loadExistingMemories(projectId).filter { UserMemoryStore.isSafeContent(it.content) }.takeLast(200)
         }.getOrDefault(emptyList())
+        // Include memories relevant to this correction/update, not only the newest 30.
+        // Keep a small recent tail as context for facts that are not lexical matches.
+        val relevantExisting = MemoryRecallRanker.rank(
+            extractionInput.joinToString("\\n"), existing, limit = 20
+        )
+        val existingForExtraction = (relevantExisting + existing.sortedByDescending { it.updatedAt }.take(10))
+            .distinctBy { it.id }
+            .take(30)
         val candidates = runCatchingCancellable {
-            extractCandidates(modelConfigs, extractionInput, existing)
+            extractCandidates(modelConfigs, extractionInput, existingForExtraction)
         }.getOrDefault(emptyList())
         if (candidates.isNotEmpty()) {
             runCatchingCancellable {
