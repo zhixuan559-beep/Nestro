@@ -37,6 +37,15 @@ data class ExpertTeamMemberRun(
     val error:String=""
 )
 
+data class ExpertTeamCollaborativeCheckpoint(
+    val completedMembers: List<ExpertTeamMemberRun> = emptyList(),
+    val visitedMembers: List<String> = emptyList(),
+    val nextMemberName: String = "",
+    val nextTask: String = "",
+    val handoff: String = "",
+    val delegationCount: Int = 0
+)
+
 data class ExpertTeamRunResult(
     val teamName:String,
     val task:String,
@@ -168,6 +177,8 @@ object ExpertTeamEngine {
         shouldStop: () -> Boolean = { false },
         onMember: (suspend (String, String) -> Unit)? = null,
         onHandoff: (suspend (fromMember: String, toMember: String, subtask: String, handoff: String) -> Unit)? = null,
+        resumeCheckpoint: ExpertTeamCollaborativeCheckpoint? = null,
+        onCheckpoint: suspend (ExpertTeamCollaborativeCheckpoint) -> Unit = {},
         invoke: suspend (ExpertTeamMemberTask, String) -> String
     ): ExpertTeamRunResult {
         require(teamName.isNotBlank() && teamName.length <= 40)
@@ -178,12 +189,35 @@ object ExpertTeamEngine {
         require(maxDelegations in 0..3 && timeoutMillis in 5_000..120_000)
         val started = System.currentTimeMillis()
         val byName = members.associateBy { it.name }
-        val visited = linkedSetOf<String>()
-        val results = mutableListOf<ExpertTeamMemberRun>()
-        var current: ExpertTeamMemberTask? = selectPrimaryExpert(task, members)
-        var currentTask = task
-        var handoff = ""
-        var delegationCount = 0
+        val restored = resumeCheckpoint ?: ExpertTeamCollaborativeCheckpoint()
+        require(restored.completedMembers.map { it.name }.distinct().size == restored.completedMembers.size &&
+            restored.completedMembers.all { row ->
+                row.name in byName && row.status in setOf("success", "failed") &&
+                    row.attempts in 0..2 && row.elapsedMillis >= 0 &&
+                    row.output.length <= 2_200 && row.error.length <= 500 &&
+                    (row.status != "success" || row.output.isNotBlank())
+            } &&
+            restored.visitedMembers.distinct().size == restored.visitedMembers.size &&
+            restored.visitedMembers.all { it in byName } &&
+            restored.completedMembers.all { it.name in restored.visitedMembers } &&
+            restored.nextMemberName.let { it.isBlank() || it in byName } &&
+            restored.nextTask.length <= 2_000 && restored.handoff.length <= 2_000 &&
+            restored.delegationCount in 0..maxDelegations
+        ) { "专家协作恢复检查点无效" }
+        val results = restored.completedMembers.toMutableList()
+        val visited = restored.visitedMembers.toMutableSet()
+        val retryFailed = restored.completedMembers.lastOrNull()?.takeIf {
+            it.status == "failed" && restored.nextMemberName == it.name
+        }
+        if (retryFailed != null) {
+            results.removeAt(results.lastIndex)
+            visited.remove(retryFailed.name)
+        }
+        var current: ExpertTeamMemberTask? = restored.nextMemberName.takeIf { it.isNotBlank() }
+            ?.let { byName[it] } ?: if (resumeCheckpoint == null) selectPrimaryExpert(task, members) else null
+        var currentTask = restored.nextTask.ifBlank { task }
+        var handoff = restored.handoff
+        var delegationCount = restored.delegationCount
 
         while (current != null && results.size < maxDelegations + 1) {
             if (shouldStop()) throw CancellationException("用户停止专家协作")
@@ -237,18 +271,43 @@ object ExpertTeamEngine {
             )
             results += memberResult
             onMember?.invoke(activeMember.name, memberResult.status)
-            if (cleanOutput.isBlank()) break
 
             val request = delegation?.groupValues?.getOrNull(1)?.trim()
             val subtask = delegation?.groupValues?.getOrNull(2)?.trim()
             val target = request?.let { byName[it] }
-            if (target == null || target.name in visited || subtask.isNullOrBlank() || delegationCount >= maxDelegations) break
-
-            handoff = "【" + activeMember.name + "交接】" + cleanOutput.take(1200)
-            onHandoff?.invoke(activeMember.name, target.name, subtask.take(2_000), handoff.take(2_000))
-            currentTask = subtask.take(2000)
-            current = target
-            delegationCount++
+            val validHandoff = cleanOutput.isNotBlank() &&
+                target != null && target.name !in visited &&
+                !subtask.isNullOrBlank() && delegationCount < maxDelegations
+            val nextHandoff = if (validHandoff) {
+                "【" + activeMember.name + "交接】" + cleanOutput.take(1_200)
+            } else handoff
+            val nextMemberName = when {
+                cleanOutput.isBlank() -> activeMember.name
+                validHandoff -> target!!.name
+                else -> ""
+            }
+            val nextTask = when {
+                cleanOutput.isBlank() -> currentTask.take(2_000)
+                validHandoff -> subtask!!.take(2_000)
+                else -> ""
+            }
+            if (validHandoff) {
+                onHandoff?.invoke(activeMember.name, target!!.name, nextTask, nextHandoff.take(2_000))
+                delegationCount++
+            }
+            val checkpoint = ExpertTeamCollaborativeCheckpoint(
+                completedMembers = results.toList(),
+                visitedMembers = visited.toList(),
+                nextMemberName = nextMemberName,
+                nextTask = nextTask,
+                handoff = nextHandoff.take(2_000),
+                delegationCount = delegationCount
+            )
+            onCheckpoint(checkpoint)
+            if (nextMemberName.isBlank()) break
+            current = byName[nextMemberName]
+            currentTask = nextTask
+            handoff = nextHandoff
         }
         return ExpertTeamRunResult(teamName, task.take(12_000), started, System.currentTimeMillis(), results)
     }
