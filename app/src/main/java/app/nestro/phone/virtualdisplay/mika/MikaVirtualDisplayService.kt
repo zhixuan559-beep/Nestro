@@ -34,6 +34,8 @@ internal class MikaVirtualDisplayService(
 ) : IMikaShell.Stub() {
     private val context: Context = MikaShellContext.create()
     private val displays = ConcurrentHashMap<Int, VirtualDisplay>()
+    private val launchLock = Any()
+    private val keptTasks = HashMap<Int, String>()
     private val awakeTimer = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "nestro-display-awake").apply { isDaemon = true }
     }
@@ -111,17 +113,18 @@ internal class MikaVirtualDisplayService(
         info.javaClass.getField("displayGroupId").getInt(info)
     }.getOrNull()
 
-    override fun startApp(displayId: Int, packageName: String): Int {
+    override fun startApp(displayId: Int, packageName: String): Int = synchronized(launchLock) {
         if (!owns(displayId) || !validPackage(packageName)) return START_ERROR
-        val existing = existingTask(packageName)
-        if (existing != null) {
-            val existingDisplay = runCatching { taskInfoClass.getField("displayId").getInt(existing) }.getOrDefault(Display.INVALID_DISPLAY)
-            if (existingDisplay == Display.DEFAULT_DISPLAY) return START_IN_USE_ON_MAIN
-            if (existingDisplay != displayId) return START_IN_USE_BY_OTHER
-            return START_OK
+        try {
+            if (inUseOnMainScreen(packageName)) return START_IN_USE_ON_MAIN
+            if (onOtherOwnDisplay(packageName, displayId)) return START_IN_USE_BY_OTHER
+        } catch (t: Throwable) {
+            Log.e(TAG, "Cannot safely inspect existing app tasks; refusing launch", t)
+            return START_ERROR
         }
+        if (resumeKept(displayId, packageName)) return START_OK
         val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return START_NOT_FOUND
-        return launch(displayId, intent)
+        launch(displayId, intent)
     }
 
     override fun startView(displayId: Int, action: String?, uri: String?, packageName: String?): Int {
@@ -133,25 +136,42 @@ internal class MikaVirtualDisplayService(
             if (!packageName.isNullOrBlank() && validPackage(packageName)) setPackage(packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val resolvedPackage = runCatching {
-            context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
-        }.getOrNull()
-        if (resolvedPackage != null) {
-            val existing = existingTask(resolvedPackage)
-            if (existing != null) {
-                val existingDisplay = runCatching { taskInfoClass.getField("displayId").getInt(existing) }.getOrDefault(Display.INVALID_DISPLAY)
-                if (existingDisplay == Display.DEFAULT_DISPLAY) return START_IN_USE_ON_MAIN
-                if (existingDisplay != displayId) return START_IN_USE_BY_OTHER
+        return synchronized(launchLock) {
+            val resolvedPackage = runCatching {
+                context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
+            }.getOrNull()
+            if (resolvedPackage != null) {
+                try {
+                    if (inUseOnMainScreen(resolvedPackage)) return@synchronized START_IN_USE_ON_MAIN
+                    if (onOtherOwnDisplay(resolvedPackage, displayId)) return@synchronized START_IN_USE_BY_OTHER
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Cannot safely inspect target app tasks; refusing link launch", t)
+                    return@synchronized START_ERROR
+                }
+                if (resumeKept(displayId, resolvedPackage)) return@synchronized START_OK
             }
+            launch(displayId, intent)
         }
-        return launch(displayId, intent)
     }
 
     private fun launch(displayId: Int, intent: Intent): Int = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
-        context.startActivity(intent, options.toBundle())
-        START_OK
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        val result = try {
+            val start = taskManager.javaClass.methods.first { it.name == "startActivityAsUser" && it.parameterTypes.size == 12 }
+            start.invoke(
+                taskManager, null, MikaShellContext.SHELL_PACKAGE, null, intent, null, null, null,
+                0, 0, null, options, Process.myUid() / PER_USER_RANGE
+            ) as Int
+        } catch (t: Throwable) {
+            Log.w(TAG, "startActivityAsUser unavailable; falling back to am start", t)
+            val component = intent.component?.flattenToShortString() ?: return START_NOT_FOUND
+            val process = ProcessBuilder("am", "start", "--display", "$displayId", "-n", component)
+                .redirectErrorStream(true).start()
+            if (process.waitFor() == 0) return START_OK
+            return START_ERROR
+        }
+        if (result >= 0) START_OK else START_ERROR
     } catch (t: Throwable) {
         Log.w(TAG, "Unable to launch app on isolated display", t)
         START_ERROR
@@ -174,15 +194,15 @@ internal class MikaVirtualDisplayService(
 
     override fun moveTask(taskId: Int, displayId: Int): Boolean {
         if (displayId != Display.DEFAULT_DISPLAY && !owns(displayId)) return false
-        return runCatching {
+        return try {
             taskManager.javaClass.getMethod("moveRootTaskToDisplay", Int::class.java, Int::class.java)
                 .invoke(taskManager, taskId, displayId)
             true
-        }.getOrElse {
+        } catch (t: Throwable) {
+            Log.w(TAG, "moveRootTaskToDisplay unavailable; falling back to am", t)
             runCatching {
-                val process = ProcessBuilder("am", "display", "move-stack", "$taskId", "$displayId")
-                    .redirectErrorStream(true).start()
-                process.waitFor() == 0
+                ProcessBuilder("am", "display", "move-stack", "$taskId", "$displayId")
+                    .redirectErrorStream(true).start().waitFor() == 0
             }.getOrDefault(false)
         }
     }
@@ -237,7 +257,8 @@ internal class MikaVirtualDisplayService(
                 runCatching { (taskInfoClass.getField(field).get(item) as? android.content.ComponentName)?.packageName }.getOrNull()
             }
             when {
-                pkg != null && pkg in keepSet -> moveTask(id, Display.DEFAULT_DISPLAY)
+                pkg != null && pkg in keepSet && moveTask(id, Display.DEFAULT_DISPLAY) ->
+                    synchronized(keptTasks) { keptTasks[id] = pkg }
                 pkg != null && pkg in closeSet -> removeTask(id)
             }
         }
@@ -306,11 +327,36 @@ internal class MikaVirtualDisplayService(
         return (result as? List<*>)?.filterNotNull().orEmpty()
     }
 
-    private fun existingTask(packageName: String): Any? = allTasks().firstOrNull { item ->
-        listOf("topActivity", "baseActivity").any { field ->
-            runCatching { (taskInfoClass.getField(field).get(item) as? android.content.ComponentName)?.packageName == packageName }
-                .getOrDefault(false)
+    private fun packagesOf(task: Any): List<String> = listOf("baseActivity", "topActivity").mapNotNull { field ->
+        (taskInfoClass.getField(field).get(task) as? android.content.ComponentName)?.packageName
+    }
+
+    private fun inUseOnMainScreen(packageName: String): Boolean {
+        val visibleField = runCatching { taskInfoClass.getField("isVisible") }.getOrNull()
+        return tasks(Display.DEFAULT_DISPLAY).withIndex().any { (index, item) ->
+            packageName in packagesOf(item) && (visibleField?.getBoolean(item) ?: (index == 0))
         }
+    }
+
+    private fun onOtherOwnDisplay(packageName: String, displayId: Int): Boolean {
+        val others = synchronized(displays) { displays.keys.toSet() } - displayId
+        if (others.isEmpty()) return false
+        val displayField = taskInfoClass.getField("displayId")
+        return allTasks().any { item ->
+            displayField.getInt(item) in others && packageName in packagesOf(item)
+        }
+    }
+
+    private fun resumeKept(displayId: Int, packageName: String): Boolean {
+        val candidate = synchronized(keptTasks) { keptTasks.entries.firstOrNull { it.value == packageName }?.key }
+            ?: return false
+        if (displayOfTask(candidate) != Display.DEFAULT_DISPLAY) {
+            synchronized(keptTasks) { keptTasks.remove(candidate) }
+            return false
+        }
+        if (!moveTask(candidate, displayId)) return false
+        synchronized(keptTasks) { keptTasks.remove(candidate) }
+        return true
     }
 
     private fun task(taskId: Int): Any? =
@@ -336,9 +382,9 @@ internal class MikaVirtualDisplayService(
         private const val START_ERROR = 3
         private const val START_INVALID_LINK = 6
         private const val START_IN_USE_BY_OTHER = 7
+        private const val PER_USER_RANGE = 100_000
         private const val WINDOWING_MODE_FULLSCREEN = 1
         private const val IME_POLICY_LOCAL = 0
-        private const val FLAG_OWN_DISPLAY_GROUP = 1 shl 11
         private const val FLAG_PUBLIC = 1 shl 0
         private const val FLAG_OWN_CONTENT_ONLY = 1 shl 3
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
