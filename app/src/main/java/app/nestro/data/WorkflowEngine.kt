@@ -348,6 +348,7 @@ object WorkflowEngine {
                 runs += stepRun
                 outputs += stepOutput
             }
+            val groupInput = previousOutput
             previousOutput = if (groupName.isNotBlank()) {
                 val groupIds = group.map { it.id }.toSet()
                 runs.filter { it.stepId in groupIds }
@@ -361,9 +362,15 @@ object WorkflowEngine {
             completed.forEachIndexed { resultIndex, pair ->
                 val stepRun = pair.first
                 val stepIndex = ready[resultIndex].first
-                // For a parallel wave, persist the complete merged wave output so a
-                // resumed sibling receives the same deterministic context.
-                onStepCompleted(stepIndex + 1, stepRun, previousOutput)
+                // Until the final sibling is checkpointed, retain the group's input.
+                // A crash mid-wave then resumes remaining siblings without feeding them
+                // a partial output that already includes their not-yet-persisted result.
+                val checkpointOutput = if (groupName.isNotBlank() && resultIndex < completed.lastIndex) {
+                    groupInput
+                } else {
+                    previousOutput
+                }
+                onStepCompleted(stepIndex + 1, stepRun, checkpointOutput)
             }
         }
         return WorkflowRunResult(
