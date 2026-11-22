@@ -398,6 +398,7 @@ fun NestroApp(initialPage: String = "home") {
     var showProjectPackageImportConfirm by remember { mutableStateOf(false) }
     var projectPackageStatus by remember { mutableStateOf("") }
     var voiceStatus by dataTransferUiState.voiceStatus
+    var chatMediaStatus by remember { mutableStateOf("") }
     fun canWriteExpertDependents(expertName: String): Boolean {
         val teamsAllowed = expertTeams.filter { expertName in it.members }
             .all { canWriteProjectResource(ProjectResourceKind.TEAM, it.id) }
@@ -473,6 +474,50 @@ fun NestroApp(initialPage: String = "home") {
         if (uri != null) {
             pendingProjectPackageUri = uri
             showProjectPackageImportConfirm = true
+        }
+    }
+    val chatMediaImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val importProjectId = activeProjectId
+            val importConversationId = activeConversationId
+            if (projectStorageReadOnly || importProjectId.isBlank()) {
+                chatMediaStatus = "当前项目不可写，未导入媒体素材。"
+            } else {
+                chatMediaStatus = "正在导入媒体素材…"
+                scope.launch {
+                    val selectedUris = uris.take(10)
+                    val results = withContext(Dispatchers.IO) {
+                        selectedUris.map { uri ->
+                            runCatching {
+                                app.nestro.media.MediaProjectStore.importAsset(context, importProjectId, uri)
+                            }
+                        }
+                    }
+                    val imported = results.mapNotNull { it.getOrNull() }
+                    val failedCount = results.count { it.isFailure } + (uris.size - selectedUris.size)
+                    if (imported.isNotEmpty() && activeProjectId == importProjectId && activeConversationId == importConversationId) {
+                        val attachmentNote = buildString {
+                            append("已附加到当前项目素材库的媒体素材，请按需理解和分析：")
+                            imported.forEach { asset ->
+                                append("\n- asset_id=").append(asset.id)
+                                    .append("; name=").append(asset.displayName)
+                                    .append("; kind=").append(asset.kind)
+                                    .append("; mime=").append(asset.mimeType)
+                            }
+                        }
+                        draft = listOf(draft.trim(), if (draft.isBlank()) "请理解并分析我附加的媒体素材。" else "")
+                            .filter { it.isNotBlank() }.joinToString("\n\n") + "\n\n" + attachmentNote
+                        prefs.edit().putString("draft_$importConversationId", draft).apply()
+                    }
+                    chatMediaStatus = when {
+                        imported.isEmpty() -> "媒体导入失败：未能导入所选文件。"
+                        failedCount > 0 -> "已导入 ${imported.size} 个素材，另有 ${failedCount} 个文件导入失败或超出 10 个文件限制。"
+                        else -> "已导入 ${imported.size} 个素材，已附加到输入框。"
+                    }
+                }
+            }
         }
     }
     val performBackupRestore: (Uri) -> Unit = { uri ->
@@ -1495,7 +1540,14 @@ fun NestroApp(initialPage: String = "home") {
                                     AssistChip(onClick = { page = "teams" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
+                                if (chatMediaStatus.isNotBlank()) {
+                                    Text(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                }
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        enabled = !busy,
+                                        onClick = { chatMediaImportLauncher.launch(arrayOf("image/*", "audio/*", "video/*")) }
+                                    ) { Text("添加素材") }
                                     VoiceInputButton(
                                         enabled = !busy,
                                         onPartialResult = { spoken ->
