@@ -77,6 +77,9 @@ interface CalendarDao {
         updatedAt: Long
     )
 
+    @Query("UPDATE calendar_events SET nextRunAt = :nextRunAt, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateAutomationNextRunAt(id: String, nextRunAt: Long, updatedAt: Long)
+
     @Query("UPDATE calendar_events SET automationStatus = :status, automationResult = :result, automationError = :error, automationUpdatedAt = :updatedAt WHERE id = :id")
     suspend fun recordAutomationResult(
         id: String,
