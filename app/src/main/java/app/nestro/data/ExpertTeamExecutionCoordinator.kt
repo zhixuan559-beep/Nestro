@@ -416,7 +416,24 @@ class ExpertTeamExecutionCoordinator(
             )
             emit("team_completed", status = if (result.isSuccessful) "success" else "partial",
                 message = "工作包完成：${result.packageResults.count { it.status == "success" }}/${plan.packages.size}")
-            taskContext.checkpoint("team:" + teamId + ":project_finished", result.packageResults.size)
+            taskContext.checkpoint(
+                "expert_project:" + JSONObject()
+                    .put("teamId", teamId)
+                    .put("projectId", projectId)
+                    .put("planFingerprint", planFingerprint)
+                    .put("results", JSONArray().apply {
+                        result.packageResults.forEach { row ->
+                            put(JSONObject()
+                                .put("packageId", row.packageId)
+                                .put("memberName", row.memberName)
+                                .put("status", row.status)
+                                .put("output", row.output.take(4_000))
+                                .put("error", row.error.take(500))
+                                .put("completedAt", row.completedAt))
+                        }
+                    }).toString(),
+                result.packageResults.size
+            )
             result
         }
     }
