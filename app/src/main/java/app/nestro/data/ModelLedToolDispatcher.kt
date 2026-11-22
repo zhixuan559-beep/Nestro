@@ -83,6 +83,7 @@ internal class ModelLedToolDispatcher(
     private val database: NestroDatabase,
     private val permissionRouter: AgentPermissionRouter,
     private val approvalCoordinator: app.nestro.agent.AgentApprovalCoordinator? = null,
+    private val taskCoordinator: app.nestro.agent.AgentTaskCoordinator? = null,
     private val capabilityPreferences: SharedPreferences,
     private val toolDefinitionProvider: (String) -> String? = { null },
     private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
@@ -273,13 +274,31 @@ ${prompt.take(8_000)}
                     } else {
                         when (val authorization = permissionRouter.authorize(task, tool)) {
                             is AgentAuthorization.RequireConfirmation -> {
+                                taskCoordinator?.transitionTask(
+                                    taskId,
+                                    AgentTaskStatus.WAITING_FOR_USER,
+                                    authorization.reason
+                                )
                                 val approved = approvalCoordinator?.authorize(
                                     requestId,
                                     tool.id,
                                     authorization.reason
                                 ) == true
-                                if (approved) AgentAuthorization.Allow
-                                else AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
+                                if (approved) {
+                                    taskCoordinator?.transitionTask(
+                                        taskId,
+                                        AgentTaskStatus.RUNNING,
+                                        "用户已批准：${tool.id}"
+                                    )
+                                    AgentAuthorization.Allow
+                                } else {
+                                    taskCoordinator?.transitionTask(
+                                        taskId,
+                                        AgentTaskStatus.FAILED,
+                                        "用户拒绝：${tool.id}"
+                                    )
+                                    AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
+                                }
                             }
                             else -> authorization
                         }
