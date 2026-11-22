@@ -195,6 +195,45 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
+                    id = "agent_task.wait",
+                    description = "等待当前项目中的任意统一任务完成，再继续当前创作或执行流程。参数：task_id（必填，可传完整统一任务 ID 或工具返回的原始 ID）；timeout_seconds（可选，1 到 600 秒）。子任务运行时父任务会进入等待状态，子任务完成后自动恢复。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val rawTaskId = arguments["task_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "等待子任务缺少 task_id")
+                val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，已阻止跨项目等待任务")
+                val candidates = listOf(
+                    rawTaskId,
+                    "phone-agent:$rawTaskId",
+                    "media-ai:$rawTaskId",
+                    "media-render:$rawTaskId"
+                ).distinct()
+                val child = candidates.firstNotNullOfOrNull { agentTaskCoordinator.state(it) }
+                    ?: return@register app.nestro.agent.AgentToolResult(false, error = "统一任务机中不存在该任务：$rawTaskId")
+                if (child.projectId != projectId) {
+                    return@register app.nestro.agent.AgentToolResult(false, error = "子任务不属于当前项目，已阻止跨项目等待")
+                }
+                val timeoutSeconds = arguments["timeout_seconds"]?.toIntOrNull()?.coerceIn(1, 600) ?: 180
+                val parentTaskId = arguments["__nestro_request_id"]?.trim()?.takeIf(String::isNotBlank)
+                    ?: "detached-wait-${java.util.UUID.randomUUID()}"
+                val completed = runCatching {
+                    agentTaskCoordinator.awaitTaskCompletion(
+                        parentTaskId = parentTaskId,
+                        childTaskId = child.taskId,
+                        timeoutMillis = timeoutSeconds * 1_000L
+                    )
+                }.getOrElse {
+                    return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "等待子任务失败")
+                }
+                app.nestro.agent.AgentToolResult(
+                    true,
+                    output = "子任务已结束。task_id=${completed.taskId}; kind=${completed.kind}; status=${completed.status}; title=${completed.title}; result=${completed.resultSummary.ifBlank { completed.lastError }.take(2_000)}"
+                )
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
                     id = "media.project.assets",
                     description = "列出当前项目素材库中的可用素材，供创作工作引用。可选参数：kind（VIDEO/AUDIO/IMAGE）；limit（1 到 100）。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY,
