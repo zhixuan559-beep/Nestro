@@ -220,6 +220,9 @@ data class ModelRegistry(
             return "模型引用了不存在或不属于该服务商的 API Key"
         }
         if (models.any { model ->
+                model.contextWindowTokens != null && model.contextWindowTokens !in 1_024..2_000_000
+            }) return "模型上下文窗口需为 1024 到 2000000 tokens，或留空使用保守默认值"
+        if (models.any { model ->
                 listOfNotNull(model.inputPricePerMillion, model.outputPricePerMillion)
                     .any { !it.isFinite() || it < 0.0 }
             }) return "模型价格必须是非负有限数值"
