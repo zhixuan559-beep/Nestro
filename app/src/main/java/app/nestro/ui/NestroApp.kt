@@ -1949,9 +1949,6 @@ fun NestroApp(initialPage: String = "home") {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && !workflowTaskBusy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
                                                      val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
-                                                     val savedWorkflowId = prefs.getString("workflow_task_workflow_id_v1", "").orEmpty()
-                                                     val savedWorkflowInput = prefs.getString("workflow_resume_input_v1", "").orEmpty()
-                                                     val savedWorkflowDefinition = prefs.getString("workflow_resume_definition_v1", "").orEmpty()
                                                      val currentWorkflowDefinition = WorkflowDefinitionCodec.encode(listOf(workflow))
                                                      val workflowTaskId = if (canResumeSavedWorkflow) {
                                                          savedWorkflowTaskId
