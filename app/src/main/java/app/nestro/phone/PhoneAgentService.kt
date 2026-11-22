@@ -23,7 +23,11 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         super.onServiceConnected()
         activeService = this
         val controller = (applicationContext as? NestroApplication)?.mikaVirtualDisplayController
-        if (controller?.activatePhoneAgent(this) != true) PhoneAgentExecutionEnvironmentProvider.attach(this)
+        when {
+            controller == null -> PhoneAgentExecutionEnvironmentProvider.attach(this)
+            controller.virtualExecutionPreferred -> controller.activatePhoneAgent(this)
+            else -> controller.restoreAccessibilityEnvironment(this)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

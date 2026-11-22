@@ -15,7 +15,8 @@ class MikaPhoneAgentExecutionEnvironment(
     val service: PhoneAgentService,
     private val session: MikaVirtualDisplayController.Session,
 ) : PhoneAgentExecutionEnvironment {
-    private val handedOffTasks = ConcurrentHashMap<String, Int>()
+    private val preferences = service.getSharedPreferences("nestro_local", android.content.Context.MODE_PRIVATE)
+    private fun handoffKey(taskId: String) = "mika_handoff_" + taskId.take(80)
 
     override fun hasValidGrant() = service.hasValidGrant()
     override fun isTaskStopped(taskId: String) = service.isTaskStopped(taskId)
@@ -37,12 +38,14 @@ class MikaPhoneAgentExecutionEnvironment(
     override fun handoffToUser(taskId: String, reason: String): Boolean = runBlocking(Dispatchers.IO) {
         val taskIdOnDisplay = session.topTaskId()
         if (taskIdOnDisplay < 0 || !session.moveTaskToMain(taskIdOnDisplay)) return@runBlocking false
-        handedOffTasks[taskId] = taskIdOnDisplay
-        true
+        preferences.edit().putInt(handoffKey(taskId), taskIdOnDisplay).commit()
     }
 
     override fun resumeAfterUserHandoff(taskId: String): Boolean = runBlocking(Dispatchers.IO) {
-        val taskIdOnDisplay = handedOffTasks.remove(taskId) ?: return@runBlocking true
-        session.moveTaskBack(taskIdOnDisplay)
+        val taskIdOnDisplay = preferences.getInt(handoffKey(taskId), -1)
+        if (taskIdOnDisplay < 0) return@runBlocking true
+        val moved = session.moveTaskBack(taskIdOnDisplay)
+        if (moved) preferences.edit().remove(handoffKey(taskId)).commit()
+        moved
     }
 }

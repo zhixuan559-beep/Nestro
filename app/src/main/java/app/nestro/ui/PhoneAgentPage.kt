@@ -4,10 +4,18 @@ import app.nestro.NestroApplication
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentService
+import app.nestro.phone.PhoneAgentExecutionEnvironmentProvider
+import app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,14 +27,24 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @Composable
 internal fun PhoneAgentPage(context: Context, projectId: String) {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
-    val taskService = remember {
-        (context.applicationContext as NestroApplication).phoneAgentTaskService
-    }
+    val app = remember { context.applicationContext as NestroApplication }
+    val taskService = remember { app.phoneAgentTaskService }
+    val displayController = remember { app.mikaVirtualDisplayController }
+    val helperBinder by displayController.helperState().collectAsState()
+    var pairingPorts by remember { mutableStateOf(emptyList<Int>()) }
+    var pairingPort by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
+    var virtualSession by remember { mutableStateOf(displayController.currentSession()) }
+    var previewScale by remember { mutableFloatStateOf(0.68f) }
+    val frameFlow = remember(virtualSession) { virtualSession?.frames ?: MutableStateFlow<android.graphics.Bitmap?>(null) }
+    val virtualFrame by frameFlow.collectAsState()
+    val executionAvailable = PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
     var refresh by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
     var tasks by remember { mutableStateOf(emptyList<app.nestro.data.PhoneAgentTaskEntity>()) }
@@ -81,6 +99,173 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             }
         }
         Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("隔离虚拟屏", color = Ink, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        virtualSession != null && displayController.virtualExecutionPreferred -> "已连接隔离屏，Phone Agent 将在独立显示中操作"
+                        displayController.virtualExecutionPreferred -> "已选择隔离执行，但当前会话未恢复；任务会暂停，不会自动切回主屏"
+                        helperBinder != null -> "无线调试助手已连接，可以创建隔离屏"
+                        else -> "尚未连接无线调试助手"
+                    },
+                    color = if (helperBinder != null && virtualSession != null) Mint else Muted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (helperBinder == null) {
+                    Text("先在 Android 开发者选项中开启「无线调试」，进入「使用配对码配对设备」，再填写系统显示的配对端口和六位配对码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                val found = runCatching { displayController.findPairingPorts() }.getOrDefault(emptyList())
+                                pairingPorts = found
+                                if (pairingPort.isBlank()) pairingPort = found.firstOrNull()?.toString().orEmpty()
+                                taskMessage = if (found.isEmpty()) "未发现配对端口，请确认无线调试配对页面仍处于打开状态。" else "发现配对端口：${found.joinToString("、")}"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("查找无线调试配对端口") }
+                    if (pairingPorts.isNotEmpty()) {
+                        Text("发现端口：${pairingPorts.joinToString("、")}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedTextField(
+                        value = pairingPort,
+                        onValueChange = { pairingPort = it.filter(Char::isDigit).take(5) },
+                        label = { Text("配对端口") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = pairingCode,
+                        onValueChange = { pairingCode = it.filter(Char::isDigit).take(6) },
+                        label = { Text("六位配对码") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                taskMessage = "正在配对并启动隔离助手…"
+                                val result = runCatching {
+                                    displayController.pair(pairingPort.toInt(), pairingCode)
+                                    displayController.connectHelper()
+                                }
+                                taskMessage = result.fold({ if (it) "无线调试助手已连接" else "助手尚未完成连接" }, { "连接失败：${it.message ?: "请检查配对端口和配对码"}" })
+                                pairingCode = ""
+                                refresh++
+                            }
+                        },
+                        enabled = pairingPort.toIntOrNull()?.let { it in 1..65535 } == true && pairingCode.length == 6,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                    ) { Text("配对并连接助手") }
+                } else {
+                    if (virtualSession == null) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    taskMessage = "正在创建独立虚拟屏…"
+                                    val result = runCatching {
+                                        displayController.createSession(width = 540, height = 960, densityDpi = 420)
+                                    }
+                                    result.onSuccess { session ->
+                                        virtualSession = session
+                                        PhoneAgentService.activeService?.let(displayController::activatePhoneAgent)
+                                        taskMessage = "隔离虚拟屏已创建"
+                                    }.onFailure { taskMessage = "创建失败：${it.message ?: "虚拟屏不可用"}" }
+                                    refresh++
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                        ) { Text("创建隔离虚拟屏") }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("实时执行画面", color = Ink, style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = {
+                                val service = PhoneAgentService.activeService
+                                if (service != null && displayController.activatePhoneAgent(service)) taskMessage = "Phone Agent 已切换到隔离虚拟屏"
+                                else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
+                            }) { Text("使用隔离屏", color = Mint) }
+                        }
+                        virtualFrame?.let { bitmap ->
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "隔离虚拟屏实时画面",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .width(180.dp * previewScale)
+                                    .height(320.dp * previewScale)
+                                    .pointerInput(virtualSession) {
+                                        val session = virtualSession ?: return@pointerInput
+                                        detectTapGestures { offset ->
+                                            launch {
+                                                session.pipInput.tap(
+                                                    (offset.x / size.width).coerceIn(0f, 1f),
+                                                    (offset.y / size.height).coerceIn(0f, 1f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    .pointerInput(virtualSession) {
+                                        val session = virtualSession ?: return@pointerInput
+                                        var resizing = false
+                                        val points = mutableListOf<Pair<Float, Float>>()
+                                        val corner = 26.dp.toPx()
+                                        detectDragGestures(
+                                            onDragStart = { start ->
+                                                resizing = start.x >= size.width - corner && start.y >= size.height - corner
+                                                points.clear()
+                                                if (!resizing) points += (start.x / size.width).coerceIn(0f, 1f) to (start.y / size.height).coerceIn(0f, 1f)
+                                            },
+                                            onDragEnd = {
+                                                if (!resizing && points.size >= 2) {
+                                                    val path = points.toList()
+                                                    launch { session.pipInput.swipe(path, 500L) }
+                                                }
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                if (resizing) previewScale = (previewScale - dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
+                                                else points += (change.position.x / size.width).coerceIn(0f, 1f) to (change.position.y / size.height).coerceIn(0f, 1f)
+                                                change.consume()
+                                            }
+                                        )
+                                    }
+                            )
+                        } ?: Text("正在等待隔离屏画面帧…", color = Muted, style = MaterialTheme.typography.bodySmall)
+                        Text("轻点屏幕可点击，拖动可滑动；从右下角无标记区域拖动可调整预览大小，不改变虚拟屏真实分辨率。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = {
+                                    PhoneAgentService.activeService?.let(displayController::restoreAccessibilityEnvironment)
+                                    taskMessage = "已切回主屏执行环境"
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("恢复主屏执行") }
+                            TextButton(
+                                onClick = {
+                                    virtualSession?.close()
+                                    virtualSession = null
+                                    taskMessage = "隔离屏已关闭；执行环境不会自动回退，需手动选择主屏执行"
+                                    refresh++
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("关闭隔离屏", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                        }
+                    }
+                }
+                if (displayController.virtualExecutionPreferred && virtualSession == null) {
+                    OutlinedButton(
+                        onClick = {
+                            PhoneAgentService.activeService?.let(displayController::restoreAccessibilityEnvironment)
+                            taskMessage = "已明确切回主屏执行环境"
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("恢复主屏执行") }
+                }
+            }
+        }
+        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("本次授权", color = Ink, style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -124,7 +309,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             }
         }
         OutlinedButton(
-            onClick = { snapshot = PhoneAgentService.activeService?.captureVisibleText() ?: "无障碍服务尚未连接，请先在系统设置中开启。" },
+            onClick = { snapshot = PhoneAgentExecutionEnvironmentProvider.active?.captureVisibleText() ?: "执行环境尚未连接，请先连接无障碍服务或隔离虚拟屏。" },
             enabled = serviceEnabled,
             modifier = Modifier.fillMaxWidth()
         ) { Text("读取当前界面（仅本次主动触发）") }
@@ -150,7 +335,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_FAILED)
+                val canStartAgent = !canResume && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_FAILED)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
@@ -174,7 +359,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                         runCatching { taskService.appendClarification(task.id, clarification) }
                                     }
                                     taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
-                                    if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
+                                    if (result.isSuccess && executionAvailable) {
                                         taskService.enqueue(task.id)
                                     }
                                     if (result.isSuccess) taskClarifications = taskClarifications - task.id
@@ -207,7 +392,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                         )
                                         taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
                                     },
-                                    enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
+                                    enabled = serviceEnabled && executionAvailable && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
                                 ) { Text(when { task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
                             }

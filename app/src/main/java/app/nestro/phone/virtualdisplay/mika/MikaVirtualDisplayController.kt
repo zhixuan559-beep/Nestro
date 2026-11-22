@@ -23,6 +23,8 @@ class MikaVirtualDisplayController(context: Context) {
     @Volatile private var activeAccessibilityService: PhoneAgentService? = null
 
     val helperConnected get() = adb.shell.value != null
+    val virtualExecutionPreferred get() = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
+        .getBoolean("phone_virtual_execution_preferred", false)
     fun helperState() = adb.shell
 
     suspend fun pair(pairingPort: Int, pairingCode: String) = adb.pair(pairingPort, pairingCode)
@@ -44,6 +46,8 @@ class MikaVirtualDisplayController(context: Context) {
     fun activatePhoneAgent(service: PhoneAgentService): Boolean {
         val session = activeSession ?: return false
         activeAccessibilityService = service
+        app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
+            .putBoolean("phone_virtual_execution_preferred", true).apply()
         val environment = MikaPhoneAgentExecutionEnvironment(service, session)
         activeEnvironment = environment
         PhoneAgentExecutionEnvironmentProvider.attach(environment)
@@ -54,6 +58,8 @@ class MikaVirtualDisplayController(context: Context) {
         activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
         activeEnvironment = null
         activeAccessibilityService = service
+        app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
+            .putBoolean("phone_virtual_execution_preferred", false).apply()
         PhoneAgentExecutionEnvironmentProvider.attach(service)
     }
 
@@ -146,7 +152,8 @@ class MikaVirtualDisplayController(context: Context) {
             if (activeSession === this) activeSession = null
             activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
             activeEnvironment = null
-            activeAccessibilityService?.let { PhoneAgentExecutionEnvironmentProvider.attach(it) }
+            // Closing the isolated session must not silently fall back to the user's real screen.
+            // The user can explicitly restore main-screen execution from the Phone Agent page.
             runCatching { shell.finishDisplay(displayId) }
             display.release()
         }
