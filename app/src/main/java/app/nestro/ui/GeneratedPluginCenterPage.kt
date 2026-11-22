@@ -369,7 +369,7 @@ internal fun GeneratedPluginCenterPage(
                                         val result = withContext(Dispatchers.IO) {
                                             runCatching {
                                                 application.agentTaskCoordinator.cancel(entry.state.taskId)
-                                                val separator = entry.state.input.indexOf('\\n')
+                                                val separator = entry.state.input.indexOf('\n')
                                                 if (separator > 0) {
                                                     application.agentApprovalCoordinator.endScope(
                                                         entry.state.input.substring("request_id=".length, separator)
