@@ -205,9 +205,11 @@ object WorkflowDefinitionCodec {
             require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
             require(it.condition.length<=200) { "条件不能超过 200 个字符" }
             require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
-            if(it.parallelGroup.isNotBlank()) {
-                require(workflow.steps.count { step -> step.enabled && step.parallelGroup == it.parallelGroup } in 2..4) {
-                    "并行组“${it.parallelGroup}”必须包含 2 到 4 个启用步骤"
+            if(it.enabled && it.parallelGroup.isNotBlank()) {
+                val enabledGroups = workflow.steps.filter { step -> step.enabled }.map { step -> step.parallelGroup }
+                val positions = enabledGroups.mapIndexedNotNull { index, group -> index.takeIf { group == it.parallelGroup } }
+                require(positions.size in 2..4 && positions.last() - positions.first() + 1 == positions.size) {
+                    "并行组“${it.parallelGroup}”必须由连续的 2 到 4 个启用步骤组成"
                 }
             }
             if(it.kind != WorkflowStepKind.PROMPT) {
