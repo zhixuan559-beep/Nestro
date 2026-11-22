@@ -15,6 +15,7 @@ import kotlinx.coroutines.CompletableDeferred
 
 internal data class WorkflowApprovalPrompt(
     val stepTitle: String,
+    val instruction: String,
     val context: String,
     val decision: CompletableDeferred<Boolean>
 )
