@@ -224,6 +224,38 @@ class WorkflowEngineTest {
         assertEquals(true, prompts["研究 B"]?.contains("用户原始目标") == true)
     }
 
+    @Test fun resumedParallelWaveRejoinsPriorSiblingWithoutFeedingItIntoSiblingPrompt() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("parallel-resume", "并行恢复", "", listOf(
+            WorkflowStep(id = "research-a", title = "研究 A", instruction = "A", parallelGroup = "research"),
+            WorkflowStep(id = "research-b", title = "研究 B", instruction = "B", parallelGroup = "research"),
+            WorkflowStep(id = "synthesis", title = "汇总", instruction = "汇总")
+        ))
+        val prompts = mutableMapOf<String, String>()
+        val result = WorkflowEngine.run(
+            workflow = workflow,
+            userInput = "研究目标",
+            invokeModel = { step, prompt ->
+                prompts[step.id] = prompt
+                if (step.id == "research-b") {
+                    assertEquals(false, prompt.contains("研究 A已完成"))
+                    "研究 B已完成"
+                } else {
+                    assertTrue(prompt.contains("研究 A已完成"))
+                    assertTrue(prompt.contains("研究 B已完成"))
+                    "最终汇总"
+                }
+            },
+            resumeCompletedRuns = listOf(
+                WorkflowStepRun("research-a", "研究 A", "success", 1, output = "研究 A已完成")
+            ),
+            resumeOutput = "研究目标"
+        )
+        assertEquals(2, result.completedSteps)
+        assertTrue(prompts.getValue("synthesis").contains("研究 A已完成"))
+        assertTrue(prompts.getValue("synthesis").contains("研究 B已完成"))
+        assertEquals("最终汇总", result.output)
+    }
+
     @Test fun approvalRequiredFailsClosedWithoutApprovalHandler() = kotlinx.coroutines.test.runTest {
         val workflow = WorkflowDefinition("approval-default", "审批默认拒绝", "", listOf(
             WorkflowStep(title = "外部操作", instruction = "执行", approvalRequired = true)
