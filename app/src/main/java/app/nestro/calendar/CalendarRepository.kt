@@ -83,7 +83,7 @@ class CalendarRepository(context: Context) {
         result: String = "",
         error: String = ""
     ) {
-        require(status in setOf("IDLE", "QUEUED", "RUNNING", "WAITING_FOR_USER", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"))
+        require(status in setOf("IDLE", "QUEUED", "RUNNING", "WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"))
         dao.recordAutomationResult(
             id = eventId,
             status = status,
