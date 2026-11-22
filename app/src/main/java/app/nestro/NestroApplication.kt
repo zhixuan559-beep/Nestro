@@ -602,7 +602,12 @@ class NestroApplication : Application() {
                                 detail = "插件临时错误；第 ${retryAttempt} 次重试将在 ${waitMillis}ms 后执行"
                             )
                         )
-                        delay(waitMillis)
+                        try {
+                            delay(waitMillis)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件重试等待已暂停")
+                            throw cancelled
+                        }
                         val waiting = states.get(taskId) ?: current
                         states.put(waiting.copy(
                             status = app.nestro.agent.AgentTaskStatus.RUNNING,
