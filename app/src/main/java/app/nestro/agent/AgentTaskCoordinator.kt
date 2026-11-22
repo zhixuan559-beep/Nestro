@@ -13,6 +13,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -123,6 +125,18 @@ class AgentTaskCoordinator(
     private val activeJobs = ConcurrentHashMap<String, Deferred<Unit>>()
     private val requestedStops = ConcurrentHashMap<String, AgentTaskStatus>()
 
+    private companion object {
+        const val MAX_CONCURRENT_TASKS = 3
+    }
+    private val globalTaskPermits = Semaphore(MAX_CONCURRENT_TASKS)
+    private val kindPermits = ConcurrentHashMap<String, Semaphore>()
+
+    private fun taskLaneLimit(kind: String): Int = when (kind) {
+        "phone_agent", "media_render", "media_ai" -> 1
+        "calendar_automation", "workflow" -> 2
+        else -> 2
+    }
+
     private suspend fun trace(taskId: String, event: String, detail: String = "") {
         try {
             traces?.append(AgentTaskTrace(taskId = taskId, event = event, detail = detail.take(2_000)))
@@ -143,8 +157,10 @@ class AgentTaskCoordinator(
     }
 
     init {
-        scope.launch {
-            for (taskId in queue) executeQueued(taskId)
+        repeat(MAX_CONCURRENT_TASKS) {
+            scope.launch {
+                for (taskId in queue) executeQueued(taskId)
+            }
         }
     }
 
@@ -582,6 +598,20 @@ class AgentTaskCoordinator(
     }
 
     private suspend fun executeQueued(taskId: String) {
+        val state = states.get(taskId) ?: return
+        if (state.status != AgentTaskStatus.QUEUED) return
+        val laneKey = state.kind.ifBlank { state.owner }
+        val lane = kindPermits.computeIfAbsent(laneKey) {
+            Semaphore(taskLaneLimit(state.kind))
+        }
+        lane.withPermit {
+            globalTaskPermits.withPermit {
+                executeQueuedInternal(taskId)
+            }
+        }
+    }
+
+    private suspend fun executeQueuedInternal(taskId: String) {
         val initial = states.get(taskId) ?: return
         if (initial.status != AgentTaskStatus.QUEUED) return
         val handler = handlers.find(initial.owner)
