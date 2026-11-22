@@ -112,8 +112,16 @@ object ExpertProjectPlanExecutor {
         require(maxParallel in 1..4) { "并发上限必须在 1 到 4 之间" }
         validate(plan, availableMembers)
         val semaphore = Semaphore(maxParallel)
-        require(resumeResults.all { row -> plan.packages.any { it.id == row.packageId } }) {
-            "恢复检查点包含当前项目计划之外的工作包"
+        require(resumeResults.map { it.packageId }.distinct().size == resumeResults.size &&
+            resumeResults.all { row ->
+                val packageDefinition = plan.packages.firstOrNull { it.id == row.packageId }
+                packageDefinition != null &&
+                    packageDefinition.memberName == row.memberName &&
+                    row.status in setOf("success", "failed", "blocked") &&
+                    row.output.length <= 12_000 && row.error.length <= 1_000 &&
+                    (row.status != "success" || row.output.isNotBlank())
+            }) {
+            "恢复检查点包含重复、未知或与当前成员/状态不匹配的工作包结果"
         }
         val results = linkedMapOf<String, ExpertWorkPackageResult>()
         resumeResults.filter { it.status == "success" }.forEach { results[it.packageId] = it }
