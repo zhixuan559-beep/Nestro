@@ -66,6 +66,9 @@ class UserMemoryRepository(
         synchronized(embeddingCache) { embeddingCache.clear() }
     }
 
+    suspend fun saveManual(projectId: String, content: String, category: String = "preference"): Boolean =
+        UserMemoryStore.saveManual(database.dao(), projectId, content, category)
+
     suspend fun importOne(projectId: String, rawJson: String): Boolean {
         val imported = UserMemoryExportCodec.decode(rawJson, projectId)
         val changed = UserMemoryStore.importOne(database.dao(), projectId, imported)
