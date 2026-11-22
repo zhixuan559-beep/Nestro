@@ -220,7 +220,7 @@ class ExpertTeamExecutionCoordinator(
         toolCatalog: AgentToolCatalog? = null,
         invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
     ): ExpertProjectExecutionResult {
-        val planIdentity = JSONObject()
+        val planIdentityJson = JSONObject()
             .put("teamName", teamName)
             .put("teamDescription", teamDescription)
             .put("goal", plan.projectGoal)
@@ -240,6 +240,9 @@ class ExpertTeamExecutionCoordinator(
                         .put("dependsOn", JSONArray(item.dependsOn)))
                 }
             }).toString()
+        val planFingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(planIdentityJson.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
         val savedState = taskCoordinator.state(taskId)
         val savedPayload = savedState?.checkpoint
             ?.takeIf { it.startsWith("expert_project:") }
@@ -248,7 +251,7 @@ class ExpertTeamExecutionCoordinator(
         if (savedPayload != null) {
             require(savedPayload.optString("teamId") == teamId &&
                 savedPayload.optString("projectId") == projectId &&
-                savedPayload.optString("planIdentity") == planIdentity) {
+                savedPayload.optString("planFingerprint") == planFingerprint) {
                 "专家项目检查点与当前团队、项目或任务图不匹配，已停止恢复"
             }
         }
@@ -268,7 +271,7 @@ class ExpertTeamExecutionCoordinator(
         val initialCheckpoint = "expert_project:" + JSONObject()
             .put("teamId", teamId)
             .put("projectId", projectId)
-            .put("planIdentity", planIdentity)
+            .put("planFingerprint", planFingerprint)
             .put("results", JSONArray())
             .toString()
 
