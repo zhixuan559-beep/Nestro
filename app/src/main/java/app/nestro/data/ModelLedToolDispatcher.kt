@@ -279,25 +279,31 @@ ${prompt.take(8_000)}
                                     AgentTaskStatus.WAITING_FOR_USER,
                                     authorization.reason
                                 )
-                                val approved = approvalCoordinator?.authorize(
+                                when (approvalCoordinator?.authorize(
                                     requestId,
                                     tool.id,
                                     authorization.reason
-                                ) == true
-                                if (approved) {
-                                    taskCoordinator?.transitionTask(
-                                        taskId,
-                                        AgentTaskStatus.RUNNING,
-                                        "用户已批准：${tool.id}"
+                                )) {
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE,
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK -> {
+                                        taskCoordinator?.transitionTask(
+                                            taskId,
+                                            AgentTaskStatus.RUNNING,
+                                            "用户已批准：${tool.id}"
+                                        )
+                                        AgentAuthorization.Allow
+                                    }
+                                    app.nestro.agent.AgentApprovalDecision.REJECT -> {
+                                        taskCoordinator?.transitionTask(
+                                            taskId,
+                                            AgentTaskStatus.FAILED,
+                                            "用户拒绝：${tool.id}"
+                                        )
+                                        AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
+                                    }
+                                    null -> throw app.nestro.agent.AgentApprovalPendingException(
+                                        "任务等待用户审批：${tool.id}"
                                     )
-                                    AgentAuthorization.Allow
-                                } else {
-                                    taskCoordinator?.transitionTask(
-                                        taskId,
-                                        AgentTaskStatus.FAILED,
-                                        "用户拒绝：${tool.id}"
-                                    )
-                                    AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
                                 }
                             }
                             else -> authorization
