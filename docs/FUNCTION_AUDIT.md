@@ -828,7 +828,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 ### 历史分叉分支的选择性回收
 
-- `feature/knowledge-retrieval-ranking`：不整分支合并。旧 `CapabilityTaskEngine` / `CapabilityCenterPage` 与当前 `AgentTaskCoordinator` / `CapabilityDirectoryPage` 形成重复任务架构；旧任务引擎测试绑定已淘汰的数据表/API，不迁入。旧 `CapabilityRegistryStoreTest` 依赖当前已改为私有的旧 codec API，不直接复制；其描述符往返、非法 ID/名称、元数据长度限制、默认拒绝、项目授权隔离和工具参数名过滤等仍适用的断言，已按当前公开 API 改写为 Android instrumentation 测试 `app/src/androidTest/java/app/nestro/data/CapabilityRegistryStoreTest.kt`，提交 `cb2fc3537289f58dcf729422bcf5d6b379e733c1`。其数据库终态保护是有效且曾遗漏的实现，已选择性恢复，见提交 `31fedead85e036a870c4eea6e0fbad862cf908d8`。
+- `feature/knowledge-retrieval-ranking`：不整分支合并。旧 `CapabilityTaskEngine` / `CapabilityCenterPage` 与当前 `AgentTaskCoordinator` / `CapabilityDirectoryPage` 形成重复任务架构；旧任务引擎测试绑定已淘汰的数据表/API，不迁入。旧 `CapabilityRegistryStoreTest` 依赖当前已改为私有的旧 codec API，不直接复制；其适用断言已按当前公开 API 改写并追加到整合分支原有的 Android instrumentation 文件 `app/src/androidTest/java/app/nestro/data/CapabilityRegistryStoreTest.kt`。最终保留原有 8 项测试，并新增 4 项描述符/安全边界测试；提交 `48240bb24ede064db9d295c1e770bce7be60fc7f` 已回读确认旧用例未丢失。其数据库终态保护是有效且曾遗漏的实现，已选择性恢复，见提交 `31fedead85e036a870c4eea6e0fbad862cf908d8`。
 - `feature/module-7-skill-library`：旧 `SkillCommunityInstallPlanner`、`SkillInstallPolicy` 和相关测试不整套迁入。当前版本使用更新的 SemVer 2.0、依赖约束回溯求解、签名信任根/撤销与安装计划 API；旧测试面向不同 API。当前 `SkillSemVerTest`、`SkillDependencyRuntimePolicyTest`、`SkillCommunityClientTest` 已覆盖对应核心规则。
 - `wip/module-5-project-space`：唯一缺失路径是详细设计文档 `docs/MODULE_5_PROJECT_SPACE_DESIGN.md`。已将其保留到整合分支，并明确标注为 2026-11-19 历史设计归档，当前实现以功能审计/代码地图/路线图为准；提交 `e84a2fcade2a0a7cb4efc33e38dbeeaf14a9de22`。
 - `main`：独有 `UnifiedAgentDispatcher`、`ChatNetworkPolicy`、`TtsCapability` 及其旧测试不恢复。前者是较弱的关键词路由，后两者分别与现有请求策略和 Android TTS 控制器重复；具体判断见本审计“旧 main 分支独有辅助类的去留判断”。
@@ -838,6 +838,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - `31fedead85e036a870c4eea6e0fbad862cf908d8`：恢复 Phone Agent 终态任务 SQL 保护，并回收数据库回归测试。
 - `e84a2fcade2a0a7cb4efc33e38dbeeaf14a9de22`：保留模块5历史设计文档并标注历史状态。
 - `cf64ff7f83c6548db8163b9770c746835c3629e3`：同步本审计记录。
+- `48240bb24ede064db9d295c1e770bce7be60fc7f`：保留既有 CapabilityRegistryStore instrumentation 用例，并追加适配后的历史安全断言。
 
 ### 当前边界
 
