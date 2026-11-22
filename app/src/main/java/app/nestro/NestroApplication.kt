@@ -699,7 +699,9 @@ class NestroApplication : Application() {
                             )
                         } == true
                         if (globallyGranted && projectGranted) {
-                            app.nestro.agent.AgentAuthorization.Allow
+                            // Persistent MCP grant exposes the capability; it does not replace
+                            // per-task confirmation for tools declared as external writes.
+                            app.nestro.agent.DefaultAgentPermissionRouter().authorize(task, tool)
                         } else {
                             app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
                         }
