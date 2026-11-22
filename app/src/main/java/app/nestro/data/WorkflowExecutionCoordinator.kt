@@ -87,7 +87,8 @@ class WorkflowExecutionCoordinator(
                 capabilityId = workflow.id,
                 title = workflow.id.take(160),
                 input = input.take(12_000)
-            )
+            ),
+            idempotencyKey = "workflow:" + workflow.id + ":" + taskId
         ) { taskContext ->
             val completedRuns = resumeRuns.toMutableList()
             val result = WorkflowEngine.run(
