@@ -98,6 +98,59 @@ class AutomaticMemoryExtractionCoordinatorTest {
     }
 
     @Test
+    fun suppliesRelevantOlderMemoriesAlongsideRecentContextForExplicitCorrections() = kotlinx.coroutines.runBlocking {
+        val recent = (1..40).map { index ->
+            UserMemoryEntity(
+                id = "recent-$index",
+                projectId = "project-1",
+                category = "project",
+                content = "项目近期记录编号 $index 的普通背景信息",
+                fingerprint = "recent-fingerprint-$index",
+                sourceConversationId = "conversation",
+                sourceMessageId = "message-$index",
+                confidence = 0.9,
+                createdAt = index.toLong(),
+                updatedAt = index.toLong()
+            )
+        }
+        val olderRelevant = UserMemoryEntity(
+            id = "older-writing-preference",
+            projectId = "project-1",
+            category = "preference",
+            content = "写作偏好简洁直接的技术文章风格",
+            fingerprint = "older-writing-fingerprint",
+            sourceConversationId = "conversation",
+            sourceMessageId = "old-message",
+            confidence = 0.98,
+            createdAt = 1L,
+            updatedAt = 1L
+        )
+        var supplied = emptyList<UserMemoryEntity>()
+        val prompt = "以后写作请保持技术文章简洁直接的风格。"
+        val coordinator = AutomaticMemoryExtractionCoordinator(
+            extractCandidates = { _, _, existing ->
+                supplied = existing
+                emptyList()
+            },
+            saveCandidates = { _, _, _, _, _ -> },
+            loadExistingMemories = { recent + olderRelevant }
+        )
+
+        coordinator.extractAndSave(
+            enabled = true,
+            prompt = prompt,
+            modelConfigs = emptyList(),
+            projectId = "project-1",
+            conversationId = "conversation",
+            messageId = "message-current"
+        )
+
+        assertEquals(30, supplied.size)
+        assertTrue(supplied.any { it.id == "older-writing-preference" })
+        assertTrue(supplied.any { it.id == "recent-40" })
+    }
+
+    @Test
     fun capturesMemoryVersionBeforeExtractionAndPassesItToSave() = kotlinx.coroutines.runBlocking {
         val initial = MemoryMutationToken(4L, 2L)
         val changedDuringExtraction = MemoryMutationToken(5L, 2L)
