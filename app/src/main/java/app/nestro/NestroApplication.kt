@@ -373,15 +373,15 @@ class NestroApplication : Application() {
                         }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.PAUSED))
+                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.PAUSED))
                     throw cancelled
                 } catch (error: Exception) {
-                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.FAILED, lastError = error.message.orEmpty().take(2_000)))
+                    states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.FAILED, lastError = error.message.orEmpty().take(2_000)))
                     return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
                 }
                 states.put(app.nestro.agent.AgentTaskState(
                     taskId = taskId,
-                    owner = "generated-plugin",
+                    owner = "generated-plugin:${plugin.id}",
                     status = if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
                         else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
                         else app.nestro.agent.AgentTaskStatus.FAILED,
