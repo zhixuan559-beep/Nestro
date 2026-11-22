@@ -33,6 +33,51 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
     override suspend fun doWork(): Result {
         val projectId = inputData.getString(KEY_PROJECT_ID) ?: return Result.failure()
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
+        val app = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
+        return try {
+            app.agentTaskCoordinator.runInline(
+                taskId = "media-render:$taskId",
+                owner = "media_render",
+                initialCheckpoint = "media_render:$projectId:$taskId",
+                metadata = app.nestro.agent.AgentTaskMetadata(
+                    projectId = projectId,
+                    kind = "media_render",
+                    capabilityId = "media.render.export",
+                    title = "媒体渲染：$taskId",
+                    input = taskId
+                ),
+                maxRetries = 0
+            ) { taskContext ->
+                taskContext.checkpoint("media_render:$projectId:$taskId")
+                try {
+                    val result = executeRenderTask(projectId, taskId)
+                    when (MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.status) {
+                        MediaRenderStatus.COMPLETED ->
+                            taskContext.transition(app.nestro.agent.AgentTaskStatus.COMPLETED, resultSummary = "媒体渲染导出完成")
+                        MediaRenderStatus.CANCELLED ->
+                            taskContext.cancel("媒体渲染任务已取消")
+                        MediaRenderStatus.FAILED ->
+                            taskContext.fail(MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体渲染失败")
+                        MediaRenderStatus.PAUSED ->
+                            taskContext.pause("媒体渲染任务已暂停")
+                        else -> taskContext.pause("媒体渲染 Worker 未完成，等待恢复")
+                    }
+                    result
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        taskContext.pause("媒体渲染 Worker 被系统停止，可由 WorkManager 恢复")
+                    }
+                    throw cancelled
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Result.failure()
+        }
+    }
+
+    private suspend fun executeRenderTask(projectId: String, taskId: String): Result {
         val task = MediaRenderTaskStore.read(applicationContext, projectId, taskId) ?: return Result.failure()
         if (task.status !in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING)) return Result.success()
         setForeground(createForegroundInfo(projectId, taskId, task.progress))
