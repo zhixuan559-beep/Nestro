@@ -42,7 +42,6 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     var pairingCode by remember { mutableStateOf("") }
     var virtualSession by remember { mutableStateOf(displayController.currentSession()) }
     var previewScale by remember { mutableFloatStateOf(0.68f) }
-    var previewCollapsed by remember { mutableStateOf(false) }
     val frameFlow = remember(virtualSession) { virtualSession?.frames ?: MutableStateFlow<android.graphics.Bitmap?>(null) }
     val virtualFrame by frameFlow.collectAsState()
     val executionAvailable = PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
@@ -193,22 +192,13 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("实时执行画面", color = Ink, style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { previewCollapsed = !previewCollapsed }) { Text(if (previewCollapsed) "展开" else "收起", color = Mint) }
                             TextButton(onClick = {
                                 val service = PhoneAgentService.activeService
                                 if (service != null && displayController.activatePhoneAgent(service)) taskMessage = "Phone Agent 已切换到隔离虚拟屏"
                                 else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
                             }) { Text("使用隔离屏", color = Mint) }
                         }
-                        if (previewCollapsed) {
-                            Surface(
-                                color = Card,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth().clickable { previewCollapsed = false }
-                            ) {
-                                Text("隔离屏正在后台执行 · 点击展开预览", color = Mint, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
-                            }
-                        } else virtualFrame?.let { bitmap ->
+                        virtualFrame?.let { bitmap ->
                             Image(
                                 bitmap = bitmap.asImageBitmap(),
                                 contentDescription = "隔离虚拟屏实时画面",
@@ -218,14 +208,19 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                     .height(320.dp * previewScale)
                                     .pointerInput(virtualSession) {
                                         val session = virtualSession ?: return@pointerInput
-                                        detectTapGestures { offset ->
-                                            launch {
-                                                session.pipInput.tap(
-                                                    (offset.x / size.width).coerceIn(0f, 1f),
-                                                    (offset.y / size.height).coerceIn(0f, 1f)
-                                                )
+                                        detectTapGestures(
+                                            onDoubleTap = {
+                                                previewScale = if (previewScale < 1f) 1.4f else 0.68f
+                                            },
+                                            onTap = { offset ->
+                                                launch {
+                                                    session.pipInput.tap(
+                                                        (offset.x / size.width).coerceIn(0f, 1f),
+                                                        (offset.y / size.height).coerceIn(0f, 1f)
+                                                    )
+                                                }
                                             }
-                                        }
+                                        )
                                     }
                                     .pointerInput(virtualSession) {
                                         val session = virtualSession ?: return@pointerInput
@@ -245,7 +240,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                                 }
                                             },
                                             onDrag = { change, dragAmount ->
-                                                if (resizing) previewScale = (previewScale - dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
+                                                if (resizing) previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
                                                 else points += (change.position.x / size.width).coerceIn(0f, 1f) to (change.position.y / size.height).coerceIn(0f, 1f)
                                                 change.consume()
                                             }
@@ -253,7 +248,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                     }
                             )
                         } ?: Text("正在等待隔离屏画面帧…", color = Muted, style = MaterialTheme.typography.bodySmall)
-                        Text("轻点屏幕可点击，拖动可滑动；从右下角无标记区域拖动可调整预览大小，不改变虚拟屏真实分辨率。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        Text("单击可操作应用，双击切换预览放大；拖动可滑动，右下角向上拖动缩小、向下拖动放大。预览缩放不改变虚拟屏真实分辨率。", color = Muted, style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
