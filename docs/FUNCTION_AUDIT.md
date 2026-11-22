@@ -535,11 +535,11 @@
 
 后续审计必须分别核验每项能力的源码、入口、端到端调用、状态/产物回传、持久化/恢复和测试覆盖。只有 UI 或 Provider 类存在，不等于功能闭环。
 
-### Phone Agent 终态任务可被旧写入复活：确认的数据库回归
-- 对照 PR #1 的旧版 `NestroDatabase.kt` 与当前整合版发现：旧版 `updatePhoneAgentTaskProgress` 有 `status NOT IN ('completed','cancelled') OR status=:status` 保护，旧版 `updatePhoneAgentTaskPlan` 也禁止覆盖 completed/cancelled；当前整合版这两个 SQL 更新已移除终态条件。
-- 当前 `PhoneAgentTaskStore.persistActions()` 只检查 task 存在，然后调用 `updatePhoneAgentTaskPlan()`；该 SQL 会无条件把 status 重置为 planned。一个已经取消/完成的任务若收到迟到的规划写入，就可能被重新置为 planned；迟到的 Worker progress 也可能覆盖 CANCELLED/COMPLETED。
-- 旧分支 `NestroDatabaseMigrationTest.cancelledPhoneAgentTaskCannotBeRevivedByProgressOrPlanWrites()` 专门覆盖此问题；当前整合版测试缺少该用例，当前 PhoneAgentTaskStoreTest 也没有数据库终态保护测试。
-- 这是确认的 P0 状态一致性 bug，应恢复 SQL 终态保护并让 DAO 返回受影响行数；调用方在更新失败时停止后续动作。修复时保留合法的同终态写入/用户明确恢复语义，不能简单阻止所有状态更新。
+### Phone Agent 终态任务可被旧写入复活：历史修复已回收
+- 对照 PR #1 的旧版 `NestroDatabase.kt` 与整合版，确认曾丢失两条 SQL 终态保护。
+- 已在整合提交 `31fedead85e036a870c4eea6e0fbad862cf908d8` 恢复：`updatePhoneAgentTaskProgress` 禁止将 completed/cancelled 改写为其他状态，但允许同终态更新；`updatePhoneAgentTaskPlan` 禁止重置 completed/cancelled 任务。
+- 同一提交从历史分支回收 `NestroDatabaseMigrationTest.cancelledPhoneAgentTaskCannotBeRevivedByProgressOrPlanWrites()`，覆盖迟到的进度与计划写入不能复活已取消任务。
+- 本次只恢复已存在的历史安全实现和对应回归测试，没有改动任务调度架构；DAO 目前仍返回 Unit，尚未把受影响行数传回调用方。本项 SQL 保护已整合，DAO 结果反馈不属于本次历史代码回收范围。
 
 
 
