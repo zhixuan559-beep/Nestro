@@ -92,7 +92,7 @@ class GeneratedPluginFactoryTest {
         )
         assertTrue(resumed.success)
         assertEquals(listOf("media.render"), resumedCalls)
-        assertEquals("duration=90", resumedCalls.let { "duration=90" })
+        assertTrue(resumed.output.contains("duration=90"))
     }
 
     @Test
