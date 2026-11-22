@@ -44,16 +44,49 @@
 
 - PR #1, `feature/knowledge-retrieval-ranking`, remains open and Draft, based on `main`. Its knowledge/memory/Phone Agent snapshots are older than integration. Its `CapabilityRegistryStore`, `CapabilityTaskEngine`, and `CapabilityCenterPage` are not to be copied as a second capability/task subsystem.
 - The current kernel already has `AgentToolCatalog`, `AgentRuntime`, `AgentTaskCoordinator`, tool/credential leases, and shared traces. The old task engine duplicates this base.
-- PR #1 nevertheless contains semantics not yet represented fully in the current kernel: project-scoped capability metadata/grants/audit overview, business idempotency keys, unified retry/backoff, and complete task metadata. These must be mapped into the existing kernel in the later module-16 integration/repair pass; do not lose them or claim they are complete.
+- PR #1's unique semantics have now been selectively mapped into the integration branch (see the completion record below). The old task engine remains excluded because the existing AgentTaskCoordinator now owns idempotency, retry/backoff, durable metadata, recovery and traces. The old CapabilityCenterPage UI remains deferred to the agreed UI phase; its status/detail/route metadata fields are preserved in the current capability descriptor.
 - `main` has three unreferenced additions: `UnifiedAgentDispatcher` (superseded by the model-led dispatcher), `ChatNetworkPolicy` (overlaps existing timeout/retry handling and is not wired), and `TtsCapability` (not wired into the current TTS controller/UI). Do not copy these as dead parallel implementations; reassess any unique behavior during the unified scan.
 
-## Remaining gate before the full 19-module scan
+## PR #1 selective integration record (2026-11-22)
 
-The first integration stage is **not yet declared complete**. The outstanding merge decision is the PR #1 capability/task semantics listed above. Adapt only the necessary semantics to the existing AgentTaskCoordinator/AgentToolCatalog architecture, with no duplicate engine or stale UI transplant. Then re-read the integration branch and verify all branch dispositions. Only after that should the first full 19-module scan begin, followed by repair and the second full scan.
+The PR was not merged wholesale. Its independent behaviors were mapped into the existing architecture:
+
+1. **Project-scoped capability registry and authorization**
+   - Added `CapabilityRegistryStore` to the integration branch with validated capability descriptors, status/detail/navigation metadata, per-project overrides, fail-closed reads, and atomic permission-change/audit persistence.
+   - Wired project capability authorization into model-led chat tool dispatch and generated-plugin tool execution.
+   - Added MCP service/tool project-level overrides while retaining the existing global MCP grant as an upper bound. A project grant cannot revive a globally revoked MCP tool.
+   - Unregistering a capability removes project grants and records revocation; MCP audit parameter names are filtered to avoid storing common secret fields.
+   - Added Android instrumentation coverage for grants, revocation, fail-closed behavior, metadata round-trip, and MCP overrides.
+   - The legacy CapabilityCenterPage UI was not copied in this phase; the descriptor metadata required by that UI is retained for the later unified UI design.
+
+2. **Unified task metadata, idempotency, and retry**
+   - Extended the existing AgentTaskState/Room persistence with project, conversation, task kind, capability, title/input/result summary, idempotency key, attempts, retry limit, availability time, and lifecycle timestamps.
+   - Added a unique Room idempotency index and checked/transactional insert paths; in-memory and Room stores reject collisions instead of replacing another task.
+   - The existing AgentTaskCoordinator now applies stable idempotency checks, retryable-error classification, bounded exponential backoff, restart recovery, and trace events.
+   - Added project/workflow business keys to expert-team and workflow inline tasks, and persisted chat tool-dispatch metadata/idempotency.
+   - Extended local backup/restore and round-trip tests to preserve and validate task metadata and idempotency.
+   - Did not import PR #1's CapabilityTaskEngine: it would create a second queue/state machine and its transition/retry logic is weaker than the unified kernel.
+
+3. **Memory behavior**
+   - Integrated the PR's BM25/CJK n-gram recall ranker into the existing UserMemoryStore, preserving semantic-vector recall and keyword fallback.
+   - Ported explicit memory supersession into Room with owner-project/category checks and fingerprint-conflict protection; an invalid explicit correction cannot silently become a new memory.
+   - Added ranking, deduplication, project isolation, and correction regression tests.
+
+4. **Knowledge and Phone Agent snapshots**
+   - Kept the integration branch's newer knowledge ingestion/retrieval stack (project-scoped BM25/FTS + vector ranking, chunking, encoding handling, PDF extraction/OCR entry point and existing embedding pipeline); no older PR snapshot was copied over it.
+   - Kept the integration branch's virtual-display-only Phone Agent architecture. PR #1's older AccessibilityService/WorkManager implementation was not transplanted.
+   - Did not copy PR #1's workflow change: it switches to `macos-26-intel`, narrows the instrumentation command to only the migration test, and changes the emulator boot timeout from 600000 to 600. These changes are not a safe substitute for the full validation workflow.
+
+## Integration gate status
+
+The PR #1 functional merge gate is **selectively integrated** on `integration/19-modules`. The branch comparison against the previous audited baseline reports 39 commits ahead and 0 behind. The latest branch HEAD read-back is `4401926740cde6bf79e6571b6fd7602388d45777`.
+
+This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 19-module scan, source cleanup, UI design, or app acceptance is complete. The next authorized stage is to finish the all-branch functional merge inventory and read-back verification; only then begin the first full 19-module scan.
 
 ## Verification boundary
 
-- GitHub commits and changed file blobs were read back after each commit.
-- The latest integration ref at audit time was `7449ef3211ecb2ebc2043abac956a5860274063b`.
-- Static source/call-site checks were performed for the Phone Agent environment boundary.
-- Compilation and tests are intentionally not claimed as passed.
+- GitHub commit refs, changed-file blobs, task/permission call sites, PR #1 patches, and the latest integration branch HEAD were read back.
+- The branch comparison against `f5cbffb9f1a06acb5f53cccc275541e5d9f43de0` reports 39 ahead / 0 behind.
+- No GitHub Actions workflow run or check run exists for the current integration HEAD.
+- A local repository clone/build could not be started because the execution environment could not resolve `github.com`; compilation, JVM tests, Android instrumentation tests, emulator tests, and device tests remain **not run**.
+- No branch was deleted and PR #1 remains open + Draft; it was not merged wholesale.
