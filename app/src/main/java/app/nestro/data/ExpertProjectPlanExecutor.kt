@@ -118,7 +118,7 @@ object ExpertProjectPlanExecutor {
                 packageDefinition != null &&
                     packageDefinition.memberName == row.memberName &&
                     row.status in setOf("success", "failed", "blocked") &&
-                    row.output.length <= 12_000 && row.error.length <= 1_000 &&
+                    row.output.length <= 4_000 && row.error.length <= 1_000 &&
                     (row.status != "success" || row.output.isNotBlank())
             }) {
             "恢复检查点包含重复、未知或与当前成员/状态不匹配的工作包结果"
@@ -170,7 +170,7 @@ object ExpertProjectPlanExecutor {
                                     append("\n\n请提交可交付成果、依据、风险和未解决项；不得伪造前置成果。")
                                 }
                                 try {
-                                    val output = invoke(item.memberName, prompt).trim().take(12_000)
+                                    val output = invoke(item.memberName, prompt).trim().take(4_000)
                                     require(output.isNotBlank()) { "专家未返回有效成果" }
                                     ExpertWorkPackageResult(item.id, item.memberName, "success", output)
                                 } catch (cancelled: CancellationException) {
