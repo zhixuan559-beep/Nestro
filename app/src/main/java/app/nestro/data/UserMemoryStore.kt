@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.math.sqrt
+import kotlin.math.ln
 
 data class MemoryCandidate(
     val category: String,
@@ -24,6 +25,97 @@ data class MemoryMutationToken internal constructor(
     val projectVersion: Long,
     val globalVersion: Long
 )
+
+/** Offline memory recall using BM25-style weighting, CJK n-grams, phrase coverage and recency. */
+internal object MemoryRecallRanker {
+    private const val MAX_TERMS = 32
+    private val stopWords = setOf("这个","那个","怎么","如何","什么","为什么","可以","一下","帮我","请问","之前","现在","然后","就是","一个","我们","你们","他们","还有","因为","所以","如果","的话","时候","进行","一下子","记住","希望","以后")
+
+    fun rank(query: String, memories: List<UserMemoryEntity>, limit: Int = 6, now: Long = System.currentTimeMillis()): List<UserMemoryEntity> {
+        if (limit <= 0 || memories.isEmpty()) return emptyList()
+        val terms = extractTerms(query)
+        if (terms.isEmpty()) return emptyList()
+        val documents = memories.map { it.content.lowercase() }
+        val frequencies = terms.associateWith { term -> documents.count { it.contains(term) } }
+        val averageLength = documents.map { tokenizeLength(it) }.average().coerceAtLeast(1.0)
+        val phrase = normalize(query)
+        val minimumMatches = if (terms.size >= 4) 2 else 1
+        val scored = memories.mapIndexed { index, memory ->
+            val content = documents[index]
+            val length = tokenizeLength(content).toDouble().coerceAtLeast(1.0)
+            var score = 0.0
+            var matched = 0
+            terms.forEach { term ->
+                val tf = countOccurrences(content, term).coerceAtMost(5)
+                if (tf > 0) {
+                    matched++
+                    val df = frequencies[term] ?: 0
+                    val idf = ln(1.0 + (memories.size - df + 0.5) / (df + 0.5))
+                    score += idf * (tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * length / averageLength))
+                }
+            }
+            if (matched == 0) return@mapIndexed memory to 0.0
+            score += 2.4 * matched / terms.size
+            if (phrase.length >= 3 && normalize(content).contains(phrase)) score += 4.0
+            score += memory.confidence.coerceIn(0.0, 1.0) * 0.45
+            val ageDays = (now - memory.updatedAt).coerceAtLeast(0L) / 86_400_000.0
+            score += 0.35 / (1.0 + ageDays / 120.0)
+            memory to score
+        }.filter { (memory, score) -> score > 0.0 && terms.count { memory.content.lowercase().contains(it) } >= minimumMatches }
+            .sortedWith(compareByDescending<Pair<UserMemoryEntity, Double>> { it.second }.thenByDescending { it.first.updatedAt })
+        val selected = mutableListOf<UserMemoryEntity>()
+        val seen = mutableSetOf<String>()
+        for ((memory, _) in scored) {
+            val key = normalize(memory.content)
+            if (key.isNotBlank() && seen.add(key)) selected += memory
+            if (selected.size >= limit) break
+        }
+        return selected
+    }
+
+    internal fun extractTerms(text: String): List<String> {
+        val normalized = text.lowercase()
+        val terms = linkedSetOf<String>()
+        Regex("[a-z0-9_]{2,}|[\\u3400-\\u9fff\\uf900-\\ufaff]{2,}", RegexOption.IGNORE_CASE)
+            .findAll(normalized).forEach { match ->
+                val run = match.value
+                val first = run.first()
+                if (first in 'a'..'z' || first.isDigit() || first == '_') {
+                    terms += run
+                } else {
+                    if (run.length <= 12 && run !in stopWords) terms += run
+                    for (size in listOf(3, 2)) {
+                        var index = 0
+                        while (index + size <= run.length) {
+                            val gram = run.substring(index, index + size)
+                            if (gram !in stopWords) terms += gram
+                            index += if (size == 3) 2 else 1
+                        }
+                    }
+                }
+            }
+        val filtered = terms.filter { it !in stopWords && it.length >= 2 }
+        return if (filtered.size <= MAX_TERMS) filtered else filtered.takeLast(MAX_TERMS)
+    }
+
+    private fun tokenizeLength(value: String): Int =
+        Regex("[a-z0-9_]{2,}|[\\u3400-\\u9fff\\uf900-\\ufaff]{1,}", RegexOption.IGNORE_CASE).findAll(value).count().coerceAtLeast(1)
+
+    private fun countOccurrences(text: String, term: String): Int {
+        var count = 0
+        var start = 0
+        while (start <= text.length - term.length) {
+            val found = text.indexOf(term, start)
+            if (found < 0) break
+            count++
+            start = found + term.length
+        }
+        return count
+    }
+
+    private fun normalize(value: String): String =
+        value.lowercase().replace(Regex("[\\p{Punct}\\s，。！？、；：（）【】《》“”‘’]+"), "")
+}
 
 object UserMemoryStore {
     private val mutationVersions = ConcurrentHashMap<String, AtomicLong>()
@@ -174,19 +266,8 @@ object UserMemoryStore {
         limit
     )
 
-    fun recall(memories: List<UserMemoryEntity>, query: String, limit: Int = 6): MemoryRecall {
-        if (limit <= 0) return MemoryRecall("", emptyList())
-        val terms = extractTerms(query).take(16)
-        if (terms.isEmpty()) return MemoryRecall("", emptyList())
-        val ranked = memories.map { memory ->
-            val score = lexicalScore(memory, query, terms)
-            memory to score
-        }.filter { it.second > 0 }
-            .sortedWith(compareByDescending<Pair<UserMemoryEntity, Int>> { it.second }.thenByDescending { it.first.updatedAt })
-            .take(limit)
-            .map { it.first }
-        return buildRecall(ranked)
-    }
+    fun recall(memories: List<UserMemoryEntity>, query: String, limit: Int = 6): MemoryRecall =
+        buildRecall(MemoryRecallRanker.rank(query, memories, limit))
 
     /**
      * Combines local BGE semantic similarity with lexical matches. Missing or malformed
