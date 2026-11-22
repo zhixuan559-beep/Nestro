@@ -327,6 +327,36 @@ class AgentTaskCoordinator(
         return states.get(taskId)
     }
 
+    /**
+     * Pre-registers a task that will be executed by a feature's runInline handler after
+     * its durable WorkManager request wakes the process. The owner identity matches runInline.
+     */
+    suspend fun registerInlineTask(
+        taskId: String,
+        owner: String,
+        checkpoint: String = "",
+        metadata: AgentTaskMetadata = AgentTaskMetadata()
+    ): AgentTaskState {
+        require(taskId.isNotBlank() && taskId.length <= 120)
+        require(owner.isNotBlank() && owner.length <= 80)
+        val state = AgentTaskState(
+            taskId = taskId,
+            owner = inlineHandlerId(owner, taskId),
+            status = AgentTaskStatus.QUEUED,
+            checkpoint = checkpoint.take(64_000),
+            projectId = metadata.projectId,
+            conversationId = metadata.conversationId,
+            kind = metadata.kind,
+            capabilityId = metadata.capabilityId,
+            title = metadata.title,
+            input = metadata.input
+        )
+        return registerExternallyScheduled(state)
+    }
+
+    private fun inlineHandlerId(owner: String, taskId: String): String =
+        owner.take(32) + "-" + taskId.hashCode().toUInt().toString(16)
+
     suspend fun <T> runInline(
         taskId: String,
         owner: String,
@@ -340,7 +370,7 @@ class AgentTaskCoordinator(
         require(owner.isNotBlank() && owner.length <= 80)
         // Stable task-scoped handler identity allows the owning feature to re-register
         // its handler and resume a durable checkpoint after process recreation.
-        val handlerId = owner.take(32) + "-" + taskId.hashCode().toUInt().toString(16)
+        val handlerId = inlineHandlerId(owner, taskId)
         val existing = states.get(taskId)
         if (existing != null) {
             require(existing.owner == handlerId) { "runInline 任务 ID 已被其他任务占用" }
