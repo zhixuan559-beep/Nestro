@@ -170,28 +170,54 @@ class CalendarAutomationWorker(
             .put("prompt", event.automationPrompt.take(12_000))
             .toString()
         val idempotencyKey = "calendar:$eventId:$occurrenceStart"
-        val nextRunAt = CalendarRules.nextOccurrenceStart(event, occurrenceStart) ?: 0L
-        CalendarRepository(applicationContext).recordAutomationDispatch(
-            eventId = eventId,
-            nextRunAt = nextRunAt,
-            lastRunAt = System.currentTimeMillis(),
-            taskId = taskId,
-            idempotencyKey = idempotencyKey
-        )
-        app.agentTaskCoordinator.enqueue(
-            taskId = taskId,
-            owner = "calendar_automation",
-            metadata = AgentTaskMetadata(
-                projectId = event.automationProjectId,
-                conversationId = "calendar-$eventId",
-                kind = "calendar_automation",
-                capabilityId = "calendar.schedule",
-                title = event.title.take(160),
-                input = input
-            ),
-            idempotencyKey = idempotencyKey,
-            maxRetries = 0
-        )
+        val nextRunAt = CalendarRules.nextAutomationOccurrenceStart(event, occurrenceStart) ?: 0L
+        val repository = CalendarRepository(applicationContext)
+        val existing = app.agentTaskCoordinator.state(taskId)
+        val dispatched = if (existing != null) {
+            existing
+        } else {
+            repository.recordAutomationDispatch(
+                eventId = eventId,
+                nextRunAt = nextRunAt,
+                lastRunAt = System.currentTimeMillis(),
+                taskId = taskId,
+                idempotencyKey = idempotencyKey
+            )
+            app.agentTaskCoordinator.enqueue(
+                taskId = taskId,
+                owner = "calendar_automation",
+                metadata = AgentTaskMetadata(
+                    projectId = event.automationProjectId,
+                    conversationId = "calendar-$eventId",
+                    kind = "calendar_automation",
+                    capabilityId = "calendar.schedule",
+                    title = event.title.take(160),
+                    input = input
+                ),
+                idempotencyKey = idempotencyKey,
+                maxRetries = 0
+            )
+        }
+        val persistedStatus = when (dispatched.status) {
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> "QUEUED"
+            app.nestro.agent.AgentTaskStatus.RUNNING -> "RUNNING"
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER -> "WAITING_FOR_USER"
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK -> "WAITING_FOR_TASK"
+            app.nestro.agent.AgentTaskStatus.PAUSED -> "PAUSED"
+            app.nestro.agent.AgentTaskStatus.COMPLETED -> "COMPLETED"
+            app.nestro.agent.AgentTaskStatus.FAILED -> "FAILED"
+            app.nestro.agent.AgentTaskStatus.CANCELLED -> "CANCELLED"
+        }
+        if (persistedStatus != "QUEUED") {
+            repository.recordAutomationResult(
+                eventId = eventId,
+                status = persistedStatus,
+                result = if (persistedStatus == "COMPLETED") dispatched.resultSummary else "",
+                error = if (persistedStatus in setOf("FAILED", "CANCELLED", "WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED")) dispatched.lastError else ""
+            )
+        }
         CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
         return Result.success()
     }
