@@ -215,14 +215,12 @@ internal class ModelLedToolDispatcher(
         val savedCheckpoint = existingChatTask?.checkpoint.orEmpty()
         if (existingChatTask != null) {
             when (existingChatTask.status) {
-                AgentTaskStatus.COMPLETED -> {
-                    if (existingChatTask.resultSummary.isNotBlank()) {
-                        return ModelToolDispatchResult(
-                            directReply = existingChatTask.resultSummary,
-                            streamedToUi = false
-                        )
-                    }
-                }
+                AgentTaskStatus.COMPLETED -> return ModelToolDispatchResult(
+                    directReply = existingChatTask.resultSummary.ifBlank {
+                        "该请求的工具任务此前已完成，但没有保存可恢复的最终文本；为避免重复执行外部操作，系统未自动重放。"
+                    },
+                    streamedToUi = false
+                )
                 AgentTaskStatus.CANCELLED -> return ModelToolDispatchResult(
                     directReply = "该聊天工具任务此前已取消，不会自动重放。",
                     streamedToUi = false
