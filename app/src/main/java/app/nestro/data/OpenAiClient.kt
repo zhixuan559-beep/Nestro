@@ -1,6 +1,8 @@
 package app.nestro.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -408,7 +410,7 @@ internal object OpenAiClient {
                         }
                         val results = kotlinx.coroutines.coroutineScope {
                             batch.map { call ->
-                                kotlinx.coroutines.async { onToolCall(call.second, call.third) }
+                                async { onToolCall(call.second, call.third) }
                             }.awaitAll()
                         }
                         executed += batch.size
