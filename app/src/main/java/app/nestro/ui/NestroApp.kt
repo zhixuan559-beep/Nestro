@@ -3177,7 +3177,7 @@ fun NestroApp(initialPage: String = "home") {
                             draft = prompt
                             page = "home"
                         }
-                        "capabilities" -> CapabilityDirectoryPage()
+                        "capabilities" -> CapabilityDirectoryPage(activeProjectId)
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "plugins" -> GeneratedPluginCenterPage(
                             application = appRuntime,
