@@ -214,7 +214,10 @@ object ExpertTeamEngine {
             visited.remove(retryFailed.name)
         }
         var current: ExpertTeamMemberTask? = restored.nextMemberName.takeIf { it.isNotBlank() }
-            ?.let { byName[it] } ?: if (resumeCheckpoint == null) selectPrimaryExpert(task, members) else null
+            ?.let { byName[it] } ?: if (resumeCheckpoint == null ||
+                (restored.completedMembers.isEmpty() && restored.nextMemberName.isBlank())) {
+                selectPrimaryExpert(task, members)
+            } else null
         var currentTask = restored.nextTask.ifBlank { task }
         var handoff = restored.handoff
         var delegationCount = restored.delegationCount
