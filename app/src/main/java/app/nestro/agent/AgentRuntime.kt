@@ -438,7 +438,6 @@ class AgentApprovalCoordinator(
             val record: AgentApprovalAuditRecord,
             val deferred: CompletableDeferred<AgentApprovalDecision>
         ) : ApprovalRegistration()
-        object Unavailable : ApprovalRegistration()
     }
 
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
@@ -545,8 +544,8 @@ class AgentApprovalCoordinator(
                     updatedAt = now
                 )
                 val deferred = CompletableDeferred<AgentApprovalDecision>()
-                activeRequests[record.id] = ActiveApproval(record, deferred)
                 if (pending == null) persistAudit(record)
+                activeRequests[record.id] = ActiveApproval(record, deferred)
                 ApprovalRegistration.Pending(record, deferred)
             }
 
