@@ -12,6 +12,7 @@ import app.nestro.agent.DefaultAgentRuntime
 import app.nestro.agent.AgentToolRequest
 import app.nestro.data.GeneratedPluginStore
 import app.nestro.data.GeneratedPluginWorkflowExecutor
+import app.nestro.data.GeneratedPluginRunCheckpointCodec
 import app.nestro.data.GeneratedPluginPackageCodec
 import app.nestro.media.MediaAiTask
 import app.nestro.media.MediaAiTaskStore
@@ -452,16 +453,14 @@ class NestroApplication : Application() {
                 val inputs = rawArguments.filterKeys { it in inputNames }
                 val requestId = rawArguments["__nestro_request_id"]?.trim()?.take(120).orEmpty()
                     .ifBlank { java.util.UUID.randomUUID().toString() }
-                val inputFingerprint = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(inputs.toSortedMap().entries.joinToString("|") { "${it.key}=${it.value}" }.toByteArray())
-                    .joinToString("") { "%02x".format(it) }
+                val inputFingerprint = GeneratedPluginRunCheckpointCodec.fingerprintInputs(inputs)
                 val idempotencyKey = "plugin:" + java.security.MessageDigest.getInstance("SHA-256")
                     .digest("$projectId|${plugin.id}|$requestId|$inputFingerprint".toByteArray())
                     .joinToString("") { "%02x".format(it) }
                 val taskDigest = java.security.MessageDigest.getInstance("SHA-256")
                     .digest(idempotencyKey.toByteArray())
                     .joinToString("") { "%02x".format(it) }
-                val taskId = "plugin-${plugin.id}-${taskDigest.take(32)}".take(120)
+                val taskId = "plugin-${taskDigest.take(48)}"
                 val states = RoomAgentTaskStateStore(database.dao())
                 val existingTask = states.getByIdempotencyKey(idempotencyKey)
                 if (existingTask != null) {
@@ -496,7 +495,7 @@ class NestroApplication : Application() {
                 val execution = try {
                     coordinator.runInline(
                         taskId = taskId,
-                        owner = "generated-plugin:${plugin.id}",
+                        owner = "generated-plugin:${plugin.id}".take(80),
                         initialCheckpoint = GeneratedPluginRunCheckpointCodec.encode(plugin, inputs, emptyList()),
                         metadata = app.nestro.agent.AgentTaskMetadata(
                             projectId = projectId,
