@@ -237,6 +237,57 @@ class WorkflowEngineTest {
         assertEquals(true, prompts["研究 B"]?.contains("用户原始目标") == true)
     }
 
+    @Test fun parallelWavePersistsSuccessfulSiblingWhenAnotherSiblingFails() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("parallel-partial", "并行部分恢复", "", listOf(
+            WorkflowStep(id = "research-a", title = "研究 A", instruction = "A", parallelGroup = "research", retries = 0),
+            WorkflowStep(id = "research-b", title = "研究 B", instruction = "B", parallelGroup = "research", retries = 0),
+            WorkflowStep(id = "synthesis", title = "汇总", instruction = "汇总", retries = 0)
+        ))
+        val bothStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val checkpointed = mutableListOf<String>()
+        val failure = runCatching {
+            WorkflowEngine.run(
+                workflow = workflow,
+                userInput = "研究目标",
+                invokeModel = { step, _ ->
+                    if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+                    bothStarted.await()
+                    if (step.id == "research-b") error("B 暂时失败")
+                    "研究 A已完成"
+                },
+                onStepCompleted = { _, run, checkpointOutput ->
+                    checkpointed += "${run.stepId}:$checkpointOutput"
+                }
+            )
+        }.exceptionOrNull() as WorkflowExecutionException
+        assertTrue(checkpointed.any { it.startsWith("research-a:研究目标") })
+        assertTrue(failure.stepRuns.any { it.stepId == "research-b" && it.status == "failed" })
+
+        val resumedCalls = mutableListOf<String>()
+        val resumed = WorkflowEngine.run(
+            workflow = workflow,
+            userInput = "研究目标",
+            invokeModel = { step, prompt ->
+                resumedCalls += step.id
+                if (step.id == "research-b") {
+                    assertEquals(false, prompt.contains("研究 A已完成"))
+                    "研究 B已完成"
+                } else {
+                    assertTrue(prompt.contains("研究 A已完成"))
+                    assertTrue(prompt.contains("研究 B已完成"))
+                    "汇总完成"
+                }
+            },
+            resumeCompletedRuns = listOf(
+                WorkflowStepRun("research-a", "研究 A", "success", 1, output = "研究 A已完成")
+            ),
+            resumeOutput = "研究目标"
+        )
+        assertEquals(listOf("research-b", "synthesis"), resumedCalls)
+        assertEquals("汇总完成", resumed.output)
+    }
+
     @Test fun resumedParallelWaveRejoinsPriorSiblingWithoutFeedingItIntoSiblingPrompt() = kotlinx.coroutines.test.runTest {
         val workflow = WorkflowDefinition("parallel-resume", "并行恢复", "", listOf(
             WorkflowStep(id = "research-a", title = "研究 A", instruction = "A", parallelGroup = "research"),
