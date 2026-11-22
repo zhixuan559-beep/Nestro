@@ -371,9 +371,22 @@ class AgentTaskCoordinator(
         // Stable task-scoped handler identity allows the owning feature to re-register
         // its handler and resume a durable checkpoint after process recreation.
         val handlerId = inlineHandlerId(owner, taskId)
-        val existing = states.get(taskId)
+        val existing = withTransitionLock {
+            val current = states.get(taskId)
+            if (current == null) {
+                null
+            } else {
+                require(current.owner == handlerId) { "runInline 任务 ID 已被其他任务占用" }
+                if (current.status == AgentTaskStatus.RUNNING && !activeJobs.containsKey(taskId)) {
+                    current.copy(
+                        status = AgentTaskStatus.PAUSED,
+                        lastError = "外部 Worker 已重新唤醒任务，正在从持久检查点恢复",
+                        updatedAt = System.currentTimeMillis()
+                    ).also(states::put)
+                } else current
+            }
+        }
         if (existing != null) {
-            require(existing.owner == handlerId) { "runInline 任务 ID 已被其他任务占用" }
             require(existing.status !in setOf(AgentTaskStatus.RUNNING, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) {
                 "任务当前状态为 ${existing.status}，不能重复启动"
             }
