@@ -321,10 +321,10 @@ object MediaAiTaskScheduler {
     }
 
     suspend fun list(context: Context, projectId: String): List<MediaAiTask> {
-        val app = context.applicationContext as? app.nestro.NestroApplication
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
             ?: return MediaAiTaskStore.list(context, projectId)
         return MediaAiTaskStore.list(context, projectId).map { task ->
-            val unified = app.agentTaskCoordinator.state("media-ai:${task.id}")
+            val unified = nestroApp.agentTaskCoordinator.state("media-ai:${task.id}")
             val status = when (unified?.status) {
                 app.nestro.agent.AgentTaskStatus.CREATED,
                 app.nestro.agent.AgentTaskStatus.QUEUED,
