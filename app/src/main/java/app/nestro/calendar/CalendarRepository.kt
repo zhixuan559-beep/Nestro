@@ -33,6 +33,16 @@ class CalendarRepository(context: Context) {
         CalendarRules.validate(event)?.let { error(it) }
         val now = System.currentTimeMillis()
         val old = dao.event(event.id)
+        val automationDefinitionChanged = old != null && (
+            old.automationPrompt != event.automationPrompt ||
+                old.automationProjectId != event.automationProjectId ||
+                old.startAt != event.startAt ||
+                old.recurrence != event.recurrence ||
+                old.completed != event.completed
+            )
+        if (automationDefinitionChanged) {
+            cancelActiveAutomation(old!!, "日历自动任务配置已修改，旧任务已停止")
+        }
         val saved = event.copy(
             title = event.title.trim(),
             description = event.description.trim(),
@@ -108,6 +118,7 @@ class CalendarRepository(context: Context) {
 
     suspend fun delete(id: String) {
         val event = dao.event(id)
+        if (event != null) cancelActiveAutomation(event, "关联日程已删除")
         if (event != null && event.sourceSystemEventId != null && !event.sourceSystemImported) {
             CalendarProviderBridge.deleteExportedEvent(appContext, event)
         }
@@ -117,9 +128,29 @@ class CalendarRepository(context: Context) {
 
     suspend fun setCompleted(id: String, completed: Boolean) {
         val event = dao.event(id) ?: return
+        if (completed) cancelActiveAutomation(event, "日程已标记完成，自动任务已停止")
         val updated = event.copy(completed = completed, updatedAt = System.currentTimeMillis())
         dao.put(updated)
         CalendarReminderScheduler.schedule(appContext, updated)
+    }
+
+    private suspend fun cancelActiveAutomation(event: CalendarEvent, reason: String) {
+        if (event.lastTaskId.isBlank()) return
+        val nestroApp = appContext as? app.nestro.NestroApplication ?: return
+        val state = nestroApp.agentTaskCoordinator.state(event.lastTaskId) ?: return
+        if (state.status in setOf(
+                app.nestro.agent.AgentTaskStatus.CREATED,
+                app.nestro.agent.AgentTaskStatus.QUEUED,
+                app.nestro.agent.AgentTaskStatus.RUNNING,
+                app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                app.nestro.agent.AgentTaskStatus.PAUSED
+            )
+        ) {
+            nestroApp.agentTaskCoordinator.cancel(event.lastTaskId)
+            recordAutomationResult(event.id, "CANCELLED", error = reason)
+        }
     }
 
     suspend fun reconcileSchedules() {
