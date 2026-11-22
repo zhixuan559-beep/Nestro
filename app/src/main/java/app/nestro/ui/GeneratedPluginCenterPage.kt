@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,12 +34,21 @@ import app.nestro.data.GeneratedPluginPackage
 import app.nestro.data.GeneratedPluginPackageCodec
 import app.nestro.data.GeneratedPluginPackageValidator
 import app.nestro.data.GeneratedPluginStore
+import app.nestro.data.AgentTaskStateEntity
+import app.nestro.data.AgentTaskTraceEntity
 import app.nestro.model.ModelConfig
 import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
 import java.io.OutputStreamWriter
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private data class GeneratedPluginAuditEntry(
+    val state: AgentTaskStateEntity,
+    val traces: List<AgentTaskTraceEntity>
+)
 
 @Composable
 internal fun GeneratedPluginCenterPage(
@@ -62,6 +72,24 @@ internal fun GeneratedPluginCenterPage(
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("插件以声明式工作流安装，不执行任意代码。") }
     var pluginToExport by remember { mutableStateOf<GeneratedPluginPackage?>(null) }
+    var auditEntries by remember { mutableStateOf<List<GeneratedPluginAuditEntry>>(emptyList()) }
+
+    suspend fun reloadAudit() {
+        auditEntries = withContext(Dispatchers.IO) {
+            val dao = application.database.dao()
+            dao.allAgentTaskStates()
+                .filter { it.owner.startsWith("generated-plugin:") }
+                .take(10)
+                .map { state ->
+                    GeneratedPluginAuditEntry(
+                        state = state,
+                        traces = dao.recentAgentTaskTraces(state.taskId, 20).reversed()
+                    )
+                }
+        }
+    }
+
+    LaunchedEffect(application) { reloadAudit() }
 
     fun reload() {
         store.list(application.agentToolCatalog)
@@ -222,6 +250,35 @@ internal fun GeneratedPluginCenterPage(
                             }.onFailure { status = it.message ?: "插件安装/更新失败" }
                         }) { Text(if (updateTarget == null) "安装（默认关闭）" else "更新版本（默认关闭）") }
                         OutlinedButton(onClick = { draft = null; updateTarget = null }) { Text("丢弃草案") }
+                    }
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("执行审计", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            OutlinedButton(onClick = { scope.launch { reloadAudit() } }, enabled = !busy) { Text("刷新记录") }
+        }
+        if (auditEntries.isEmpty()) {
+            Text("暂无插件执行记录。插件运行后会记录工具调用、结果和失败原因。", style = MaterialTheme.typography.bodySmall)
+        } else {
+            auditEntries.forEach { entry ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "${entry.state.owner.removePrefix("generated-plugin:")} · ${entry.state.status}",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(DateFormat.getDateTimeInstance().format(Date(entry.state.updatedAt)), style = MaterialTheme.typography.labelSmall)
+                        if (entry.state.lastError.isNotBlank()) {
+                            Text(entry.state.lastError.take(600), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                        entry.traces.forEach { trace ->
+                            Text(
+                                "${trace.event}：${trace.detail.take(400)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }
