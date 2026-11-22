@@ -65,7 +65,11 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
                     result
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                        taskContext.pause("媒体渲染 Worker 被系统停止，可由 WorkManager 恢复")
+                        if (MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.status == MediaRenderStatus.CANCELLED) {
+                            taskContext.cancel("媒体渲染任务已取消")
+                        } else {
+                            taskContext.pause("媒体渲染 Worker 被系统停止或任务已暂停")
+                        }
                     }
                     throw cancelled
                 }
