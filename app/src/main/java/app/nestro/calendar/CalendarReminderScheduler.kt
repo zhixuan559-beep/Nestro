@@ -30,7 +30,9 @@ object CalendarReminderScheduler {
         val now = System.currentTimeMillis()
         val occurrenceStart = CalendarRules.nextOccurrenceStart(event, now)
         if (occurrenceStart == null) {
-            cancel(context, event.id)
+            val workManager = WorkManager.getInstance(context)
+            workManager.cancelUniqueWork(workName(event.id))
+            if (replaceAutomation) workManager.cancelAllWorkByTag(automationTag(event.id))
             return
         }
         val workManager = WorkManager.getInstance(context)
