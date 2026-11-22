@@ -305,7 +305,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.ai.run",
-                    description = "对当前项目已导入素材执行媒体理解或处理。参数：asset_id（必填）；action（必填，image/transcribe/scenes/audio-clean）；prompt（图片理解时可选）；provider_id（可选）。image=图片内容理解；transcribe=音频/视频中的语音转写；scenes=视频场景分段与描述，不等于任意视频问答；audio-clean=降噪并生成新音频素材。会把素材发送到所选第三方服务商，可能产生费用。",
+                    description = "对当前项目已导入素材执行媒体理解或处理。参数：asset_id（必填）；action（必填，image/transcribe/scenes/audio-clean）；prompt（图片理解时可选）；language（转写语言，默认 auto 自动识别）；provider_id（可选）。image=图片内容理解；transcribe=音频/视频中的语音转写；scenes=视频场景分段与描述，不等于任意视频问答；audio-clean=降噪并生成新音频素材。会把素材发送到所选第三方服务商，可能产生费用。",
                     permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
                     requiresConfirmation = true
                 )
@@ -354,8 +354,12 @@ class NestroApplication : Application() {
                     error = if (requestedProviderId != null) "指定服务商未配置所需的 $action 能力" else "当前没有已配置且支持 $action 的媒体服务商；请先配置对应模型/API 路径"
                 )
                 val prompt = arguments["prompt"]?.trim().orEmpty().take(2_000)
+                val languageTag = arguments["language"]?.trim()?.takeIf(String::isNotBlank) ?: "auto"
                 val task = runCatching {
-                    MediaAiTaskStore.create(this@NestroApplication, projectId, asset.id, provider.providerId, action, prompt)
+                    MediaAiTaskStore.create(
+                        this@NestroApplication, projectId, asset.id, provider.providerId, action,
+                        prompt = prompt, languageTag = languageTag
+                    )
                 }.getOrElse {
                     return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "媒体任务创建失败")
                 }
