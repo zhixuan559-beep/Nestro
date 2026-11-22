@@ -39,7 +39,8 @@ internal class MikaVirtualDisplayService(
     }
     private val awake = DisplayAwake(::pokeDisplay) { runnable ->
         val future = awakeTimer.scheduleWithFixedDelay(runnable, 0, DisplayAwake.PERIOD_MS, TimeUnit.MILLISECONDS)
-        { futureCancel -> futureCancel.cancel(false) }
+        val cancel: () -> Unit = { future.cancel(false) }
+        cancel
     }
 
     @SuppressLint("PrivateApi")
