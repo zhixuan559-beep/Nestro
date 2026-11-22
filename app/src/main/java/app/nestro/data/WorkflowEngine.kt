@@ -3,6 +3,8 @@ package app.nestro.data
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 enum class WorkflowStepKind { PROMPT, EXPERT, SKILL }
 
@@ -334,9 +336,9 @@ object WorkflowEngine {
             }
             if (ready.isEmpty()) continue
             val completed = if (ready.size > 1 && groupName.isNotBlank()) {
-                kotlinx.coroutines.coroutineScope {
+                coroutineScope {
                     ready.map { (index, step) ->
-                        kotlinx.coroutines.async { executeStep(index, step, previousOutput) }
+                        async { executeStep(index, step, previousOutput) }
                     }.map { it.await() }
                 }
             } else {
