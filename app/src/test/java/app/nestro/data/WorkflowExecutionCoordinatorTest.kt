@@ -169,4 +169,92 @@ class WorkflowExecutionCoordinatorTest {
         tasks.close()
     }
 
+
+    @Test
+    fun approvalWaitIsPersistedAndApprovedWorkflowResumesSharedTask() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val workflows = WorkflowExecutionCoordinator(tasks)
+        val approvalRequested = CompletableDeferred<Unit>()
+        val decision = CompletableDeferred<Boolean>()
+        val workflow = WorkflowDefinition(
+            id = "workflow-approval-wait",
+            name = "审批恢复",
+            description = "",
+            steps = listOf(
+                WorkflowStep(
+                    id = "approval-step",
+                    title = "外部写入",
+                    instruction = "执行外部写入",
+                    approvalRequired = true
+                )
+            )
+        )
+        try {
+            val execution = launch {
+                workflows.execute(
+                    workflow = workflow,
+                    input = "执行审批测试",
+                    taskId = "workflow-approval-wait-task",
+                    invokeModel = { _, _ -> "已执行" },
+                    requestApproval = { _, _ ->
+                        approvalRequested.complete(Unit)
+                        decision.await()
+                    }
+                )
+            }
+            withTimeout(2_000) { approvalRequested.await() }
+            withTimeout(2_000) {
+                while (tasks.state("workflow-approval-wait-task")?.status != AgentTaskStatus.WAITING_FOR_USER) {
+                    delay(10)
+                }
+            }
+            assertEquals(AgentTaskStatus.WAITING_FOR_USER, tasks.state("workflow-approval-wait-task")?.status)
+            decision.complete(true)
+            withTimeout(2_000) { execution.join() }
+            assertEquals(AgentTaskStatus.COMPLETED, tasks.state("workflow-approval-wait-task")?.status)
+        } finally {
+            tasks.close()
+        }
+    }
+
+    @Test
+    fun rejectedApprovalEndsWorkflowTaskAsFailed() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val workflows = WorkflowExecutionCoordinator(tasks)
+        val workflow = WorkflowDefinition(
+            id = "workflow-approval-rejected",
+            name = "拒绝审批",
+            description = "",
+            steps = listOf(
+                WorkflowStep(
+                    id = "approval-step",
+                    title = "外部写入",
+                    instruction = "执行外部写入",
+                    approvalRequired = true
+                )
+            )
+        )
+        try {
+            assertTrue(runCatching {
+                workflows.execute(
+                    workflow = workflow,
+                    input = "执行拒绝测试",
+                    taskId = "workflow-approval-rejected-task",
+                    invokeModel = { _, _ -> "不应执行" },
+                    requestApproval = { _, _ -> false }
+                )
+            }.isFailure)
+            withTimeout(2_000) {
+                while (tasks.state("workflow-approval-rejected-task")?.status != AgentTaskStatus.FAILED) {
+                    delay(10)
+                }
+            }
+            assertEquals(AgentTaskStatus.FAILED, tasks.state("workflow-approval-rejected-task")?.status)
+        } finally {
+            tasks.close()
+        }
+    }
+
 }
