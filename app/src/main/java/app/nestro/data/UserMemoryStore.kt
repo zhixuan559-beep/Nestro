@@ -2,6 +2,10 @@ package app.nestro.data
 
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.sqrt
 
 data class MemoryCandidate(
@@ -15,7 +19,48 @@ data class MemoryRecall(
     val memories: List<UserMemoryEntity>
 )
 
+data class MemoryMutationToken internal constructor(
+    val projectVersion: Long,
+    val globalVersion: Long
+)
+
 object UserMemoryStore {
+    private val mutationVersions = ConcurrentHashMap<String, AtomicLong>()
+    private val mutationLocks = ConcurrentHashMap<String, Mutex>()
+    private val globalMutationVersion = AtomicLong(0L)
+
+    private fun mutationLock(projectId: String): Mutex =
+        mutationLocks.computeIfAbsent(projectId) { Mutex() }
+
+    fun mutationVersion(projectId: String): MemoryMutationToken {
+        require(projectId.isNotBlank()) { "记忆项目 ID 无效" }
+        return MemoryMutationToken(
+            projectVersion = mutationVersions.computeIfAbsent(projectId) { AtomicLong(0L) }.get(),
+            globalVersion = globalMutationVersion.get()
+        )
+    }
+
+    internal fun isCurrentMutationVersion(projectId: String, token: MemoryMutationToken): Boolean =
+        mutationVersion(projectId) == token
+
+    private fun bumpMutationVersion(projectId: String) {
+        mutationVersions.computeIfAbsent(projectId) { AtomicLong(0L) }.incrementAndGet()
+    }
+
+    /** Invalidate in-flight extraction before deleting or replacing a project's memory/conversation data. */
+    suspend fun invalidateAndAwaitPendingExtractions(projectId: String) {
+        require(projectId.isNotBlank()) { "记忆项目 ID 无效" }
+        bumpMutationVersion(projectId)
+        mutationLock(projectId).withLock { }
+    }
+
+    /** Invalidate every in-flight extraction before a full backup restore or global memory shutdown. */
+    suspend fun invalidateAndAwaitPendingExtractions() {
+        globalMutationVersion.incrementAndGet()
+        mutationVersions.values.forEach { it.incrementAndGet() }
+        mutationLocks.values.toList().forEach { lock -> lock.withLock { } }
+    }
+
     private val allowedCategories = setOf("preference", "workflow", "project", "constraint")
 
     fun isSafeContent(value: String): Boolean = !containsSensitiveData(value)
@@ -25,38 +70,63 @@ object UserMemoryStore {
         projectId: String,
         conversationId: String,
         messageId: String,
-        candidates: List<MemoryCandidate>
+        candidates: List<MemoryCandidate>,
+        expectedMutationVersion: MemoryMutationToken? = null
     ): Int {
         require(projectId.isNotBlank() && projectId.length <= 120) { "记忆项目 ID 无效" }
         require(conversationId.isNotBlank() && conversationId.length <= 120) { "记忆来源会话 ID 无效" }
         require(messageId.isNotBlank() && messageId.length <= 120) { "记忆来源消息 ID 无效" }
-        var saved = 0
-        candidates.take(5).forEach { candidate ->
-            val category = candidate.category.trim().lowercase()
-            val content = candidate.content.trim().replace(Regex("\\s+"), " ")
-            if (category !in allowedCategories || content.length !in 8..180) return@forEach
-            if (!candidate.confidence.isFinite() || candidate.confidence !in 0.8..1.0 || containsSensitiveData(content)) return@forEach
-            val fingerprint = fingerprint(category + "|" + content.lowercase())
-            val old = dao.userMemoryByFingerprint(projectId, fingerprint)
-            val now = System.currentTimeMillis()
-            dao.putUserMemory(
-                UserMemoryEntity(
-                    id = old?.id ?: UUID.randomUUID().toString(),
-                    projectId = projectId,
-                    category = category,
-                    content = content,
-                    fingerprint = fingerprint,
-                    sourceConversationId = conversationId,
-                    sourceMessageId = messageId,
-                    confidence = candidate.confidence,
-                    createdAt = old?.createdAt ?: now,
-                    updatedAt = now
+        val tokenAtStart = expectedMutationVersion ?: mutationVersion(projectId)
+        return mutationLock(projectId).withLock {
+            if (!isCurrentMutationVersion(projectId, tokenAtStart)) return@withLock 0
+            var saved = 0
+            candidates.take(5).forEach { candidate ->
+                val category = candidate.category.trim().lowercase()
+                val content = candidate.content.trim().replace(Regex("\\s+"), " ")
+                if (category !in allowedCategories || content.length !in 8..180) return@forEach
+                if (!candidate.confidence.isFinite() || candidate.confidence !in 0.8..1.0 || containsSensitiveData(content)) return@forEach
+                val fingerprint = fingerprint(category + "|" + content.lowercase())
+                val old = dao.userMemoryByFingerprint(projectId, fingerprint)
+                val now = System.currentTimeMillis()
+                dao.putUserMemory(
+                    UserMemoryEntity(
+                        id = old?.id ?: UUID.randomUUID().toString(),
+                        projectId = projectId,
+                        category = category,
+                        content = content,
+                        fingerprint = fingerprint,
+                        sourceConversationId = conversationId,
+                        sourceMessageId = messageId,
+                        confidence = candidate.confidence,
+                        createdAt = old?.createdAt ?: now,
+                        updatedAt = now
+                    )
                 )
-            )
-            saved++
+                saved++
+            }
+            if (saved > 0) {
+                dao.trimUserMemories(projectId, 200)
+                bumpMutationVersion(projectId)
+            }
+            saved
         }
-        dao.trimUserMemories(projectId, 200)
-        return saved
+    }
+
+    suspend fun importOne(dao: NestroDao, projectId: String, memory: UserMemoryEntity): Boolean {
+        require(projectId.isNotBlank() && memory.projectId == projectId) { "导入记忆项目范围不匹配" }
+        return mutationLock(projectId).withLock {
+            val imported = dao.importUserMemoryIfAbsent(memory)
+            if (imported) bumpMutationVersion(projectId)
+            imported
+        }
+    }
+
+    suspend fun clearProject(dao: NestroDao, projectId: String) {
+        require(projectId.isNotBlank()) { "记忆项目 ID 无效" }
+        mutationLock(projectId).withLock {
+            dao.deleteUserMemoriesForProject(projectId)
+            bumpMutationVersion(projectId)
+        }
     }
 
     suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall =
@@ -144,17 +214,23 @@ object UserMemoryStore {
         require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
         require(category in allowedCategories) { "记忆分类无效" }
         require(!containsSensitiveData(normalized)) { "记忆包含敏感信息，请勿自动保存" }
-        val nextFingerprint = fingerprint(category + "|" + normalized.lowercase())
-        val duplicate = dao.userMemoryByFingerprint(projectId, nextFingerprint)
-        require(duplicate == null || duplicate.id == id) { "已有相同记忆，请直接编辑现有条目" }
-        val updated = dao.updateUserMemory(id, projectId, normalized, category, nextFingerprint, System.currentTimeMillis())
-        check(updated == 1) { "记忆不存在或已被删除，未执行更新" }
+        mutationLock(projectId).withLock {
+            val nextFingerprint = fingerprint(category + "|" + normalized.lowercase())
+            val duplicate = dao.userMemoryByFingerprint(projectId, nextFingerprint)
+            require(duplicate == null || duplicate.id == id) { "已有相同记忆，请直接编辑现有条目" }
+            val updated = dao.updateUserMemory(id, projectId, normalized, category, nextFingerprint, System.currentTimeMillis())
+            check(updated == 1) { "记忆不存在或已被删除，未执行更新" }
+            bumpMutationVersion(projectId)
+        }
     }
 
     suspend fun delete(dao: NestroDao, id: String, projectId: String) {
         require(id.isNotBlank() && projectId.isNotBlank()) { "记忆 ID 或项目 ID 无效" }
-        val deleted = dao.deleteUserMemory(id, projectId)
-        check(deleted == 1) { "记忆不存在或已被删除" }
+        mutationLock(projectId).withLock {
+            val deleted = dao.deleteUserMemory(id, projectId)
+            check(deleted == 1) { "记忆不存在或已被删除" }
+            bumpMutationVersion(projectId)
+        }
     }
 
     private fun extractTerms(query: String): List<String> {
