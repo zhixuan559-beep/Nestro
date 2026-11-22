@@ -515,7 +515,7 @@
 - 但旧分支 `UserMemoryStore` 曾有 `mutationVersion`、每项目 `Mutex`、`invalidateAndAwaitPendingExtractions()` 和 `saveCandidates(expectedMutationVersion)`。当前整合版删除了这些保护：自动提取直接调用 `saveCandidates()`，不校验项目仍存在或提取开始时的 mutation version；`edit/delete/clearProject` 也不等待并使旧提取失效。**存在已删除记忆被并发中的旧自动提取重新写回的竞态风险**，这是应恢复的正确性保护，不是新增业务功能。
 - 旧分支的 `buildRecallQuery(recentUserTurns,currentPrompt)` 会合并最近用户轮次与当前问题，并保证当前 prompt 在 token budget 中优先保留；当前整合版把两类召回拆开：conversation recall query 只取 requestHistory，user-memory recall 只传当前 prompt，没有形成“近期用户上下文 + 当前问题”的统一 query。应核对是否造成跨轮约束漏召回。
 - 旧分支 `prepareExtractionInput/shouldExtractFrom` 会对最近多条用户消息做安全筛选和信号判断；当前自动提取仅检查当前 prompt 并只传当前 prompt，可能丢失跨轮表达的稳定偏好/项目约束。
-- 旧分支还支持 `setShareAcrossProjects` 与显式共享记忆；当前 `UserMemoryEntity` 没有共享字段，检索仅按当前项目。此项需确认是否为用户已接受的产品边界：若项目严格隔离是最终决定，则保留现状；若仍需显式共享，必须重新设计受审计的授权，不可直接复制旧实现。
+- 旧分支还支持 `setShareAcrossProjects` 与显式共享记忆；当前 `UserMemoryEntity` 没有共享字段，`UserMemoryRepository.recall()` 只按当前 projectId 查询，`ProjectResourceScopeStore` 也未包含 MEMORY。根据用户 2026-11-15 明确决策：全局个人长期记忆应跨聊天窗口共享；项目资料默认隔离，不自动串项目，但用户可以主动发起跨项目检索。当前实现缺少全局记忆范围和用户主动跨项目检索/授权/撤销/来源标识，属于明确功能缺口，不再作为待确认事项。
 - PR #1 的 `CapabilityRegistryStore/CapabilityTaskEngine/CapabilityCenterPage` 是旧版独立能力注册/任务队列体系；当前整合版已使用 `AgentToolCatalog/AgentRuntime/AgentTaskCoordinator`。不应整套合并回去，但旧版的 retry/backoff/idempotency、项目能力目录/审计 UI 可能包含未迁移的产品能力，需逐项映射到新基座。
 
 
