@@ -612,15 +612,15 @@ ${prompt.take(8_000)}
             }
             val raw = decisionText.toString()
             val decision = ModelToolDecisionParser.parse(raw) ?: run {
-                markTerminal(AgentTaskStatus.COMPLETED)
                 val finalRaw = attachGeneratedVideo(raw)
+                markTerminal(AgentTaskStatus.COMPLETED, resultSummary = finalRaw)
                 onDirectAnswer(finalRaw)
                 return ModelToolDispatchResult(directReply = finalRaw)
             }
             if (decision.action == "reply") {
                 val answer = decision.text.ifBlank { if (directMode) "模型没有返回正文。" else raw }.take(24_000)
-                markTerminal(AgentTaskStatus.COMPLETED)
                 val finalAnswer = attachGeneratedVideo(answer)
+                markTerminal(AgentTaskStatus.COMPLETED, resultSummary = finalAnswer)
                 onDirectAnswer(finalAnswer)
                 return ModelToolDispatchResult(
                     directReply = finalAnswer,
@@ -629,7 +629,7 @@ ${prompt.take(8_000)}
                 )
             }
             if (decision.action != "tool") {
-                markTerminal(AgentTaskStatus.COMPLETED)
+                markTerminal(AgentTaskStatus.COMPLETED, resultSummary = raw)
                 return ModelToolDispatchResult(directReply = raw)
             }
             if (round == MAX_TOOL_ROUNDS - 1) {
