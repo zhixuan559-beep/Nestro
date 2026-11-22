@@ -245,7 +245,8 @@ class AgentTaskCoordinator(
                     AgentTaskStatus.CREATED,
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.FAILED,
-                    AgentTaskStatus.WAITING_FOR_USER
+                    AgentTaskStatus.WAITING_FOR_USER,
+                    AgentTaskStatus.RETRY_WAIT
                 )) return@withTransitionLock existing to false
             val next = existing.copy(
                 status = AgentTaskStatus.QUEUED,

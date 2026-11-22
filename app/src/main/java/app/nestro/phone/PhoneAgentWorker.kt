@@ -70,13 +70,13 @@ class PhoneAgentWorker(
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
             AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)
+            AgentTaskStatus.RETRY_WAIT -> coordinator.dispatchExternallyScheduled(taskId, "phone_agent")
             // After process recreation, the durable Room state can still say RUNNING
             // while the in-memory coordinator has no active handler. Reattach only when idle;
             // if another Worker already owns the active handler this is a no-op.
             AgentTaskStatus.RUNNING -> coordinator.requeueRunningTaskIfIdle(taskId)
             AgentTaskStatus.COMPLETED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.COMPLETED, "任务已完成")
             AgentTaskStatus.CANCELLED -> return PhoneAgentAgent.Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
-            null -> error("无法初始化 Phone Agent 任务状态")
         }
 
         try {
