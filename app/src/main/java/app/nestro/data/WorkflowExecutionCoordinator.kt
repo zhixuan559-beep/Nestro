@@ -6,6 +6,8 @@ import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Owns workflow task registration and shared AgentTaskCoordinator lifecycle. */
 class WorkflowExecutionCoordinator(
@@ -17,6 +19,7 @@ class WorkflowExecutionCoordinator(
         taskId: String = UUID.randomUUID().toString(),
         invokeModel: suspend (WorkflowStep, String) -> String,
         onStep: suspend (Int, WorkflowStep) -> Unit = { _, _ -> },
+        onStepCompleted: suspend (Int, WorkflowStepRun, String) -> Unit = { _, _, _ -> },
         requestApproval: suspend (WorkflowStep, String) -> Boolean = { _, _ -> false },
         toolCatalog: AgentToolCatalog? = null,
         invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolDiscovery?) -> String)? = null
@@ -26,6 +29,7 @@ class WorkflowExecutionCoordinator(
         initialCheckpoint = "workflow:" + workflow.id + ":queued"
     ) { taskContext ->
         taskContext.checkpoint("workflow:" + workflow.id + ":running", 0)
+        val completedRuns = mutableListOf<WorkflowStepRun>()
         val result = WorkflowEngine.run(
             workflow = workflow,
             userInput = input,
@@ -47,6 +51,29 @@ class WorkflowExecutionCoordinator(
                 }
             },
             onStep = onStep,
+            onStepCompleted = { index, stepRun, output ->
+                completedRuns += stepRun
+                val checkpoint = JSONObject()
+                    .put("schemaVersion", 1)
+                    .put("workflowId", workflow.id)
+                    .put("input", input.take(12_000))
+                    .put("completedStepIndex", index)
+                    .put("previousOutput", output.take(24_000))
+                    .put("stepRuns", JSONArray().apply {
+                        completedRuns.takeLast(20).forEach { row ->
+                            put(JSONObject()
+                                .put("stepId", row.stepId)
+                                .put("title", row.title)
+                                .put("status", row.status)
+                                .put("attempts", row.attempts)
+                                .put("output", row.output.take(12_000))
+                                .put("error", row.error.take(2_000))
+                                .put("iterations", row.iterations))
+                        }
+                    }).toString()
+                taskContext.checkpoint("workflow_run:" + checkpoint, index)
+                onStepCompleted(index, stepRun, output)
+            },
             requestApproval = requestApproval
         )
         taskContext.checkpoint("workflow:" + workflow.id + ":finished", result.completedSteps)
