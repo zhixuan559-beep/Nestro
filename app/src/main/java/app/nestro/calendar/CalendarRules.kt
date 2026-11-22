@@ -19,6 +19,10 @@ object CalendarRules {
         if (event.title.isBlank() || event.title.length > 120) return "标题不能为空，且不能超过 120 个字符"
         if (event.description.length > 4000) return "备注不能超过 4000 个字符"
         if (event.location.length > 300) return "地点不能超过 300 个字符"
+        if (event.automationPrompt.length > 12_000) return "自动执行目标不能超过 12000 个字符"
+        if (event.automationPrompt.isNotBlank() &&
+            !event.automationProjectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))
+        ) return "自动执行任务必须绑定有效项目"
         if (event.startAt <= 0L || event.endAt <= event.startAt) return "结束时间必须晚于开始时间"
         if (event.endAt - event.startAt > 3660L * 24 * 60 * 60 * 1000) return "单次日程时长不能超过 10 年"
         if (event.recurrence !in recurrenceValues) return "重复规则无效"
@@ -56,10 +60,10 @@ object CalendarRules {
 
     /** Returns the next occurrence whose reminder time is strictly after now. */
     fun nextOccurrenceStart(event: CalendarEvent, now: Long): Long? {
-        if (event.completed || event.reminderMinutes < 0) return null
+        if (event.completed || (event.reminderMinutes < 0 && event.automationPrompt.isBlank())) return null
         var candidate = event.startAt
         val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
-        val reminderMillis = event.reminderMinutes * 60_000L
+        val reminderMillis = if (event.reminderMinutes >= 0) event.reminderMinutes * 60_000L else 0L
         if (event.recurrence == NONE) {
             return candidate.takeIf { it - reminderMillis > now }
         }
