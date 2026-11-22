@@ -382,6 +382,54 @@ class InMemoryAgentToolCatalog : AgentToolCatalog {
     }
 }
 
+
+enum class AgentApprovalDecision { AUTHORIZE_ONCE, AUTHORIZE_TASK, REJECT }
+
+data class AgentApprovalRequest(
+    val scopeId: String,
+    val toolId: String,
+    val reason: String
+)
+
+/**
+ * One approval boundary shared by chat tools, generated plugins, MCP and workflows.
+ * Task-wide grants are process-local and scoped to one user request; they never
+ * become persistent service/project permissions.
+ */
+class AgentApprovalCoordinator {
+    private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
+    private val requestLocks = ConcurrentHashMap<String, Mutex>()
+    @Volatile private var handler: (suspend (AgentApprovalRequest) -> AgentApprovalDecision)? = null
+
+    fun setHandler(value: (suspend (AgentApprovalRequest) -> AgentApprovalDecision)?) {
+        handler = value
+    }
+
+    suspend fun authorize(scopeId: String, toolId: String, reason: String): Boolean {
+        require(scopeId.isNotBlank() && scopeId.length <= 160)
+        require(toolId.isNotBlank() && toolId.length <= 100)
+        if (scopeId in taskWideGrants) return true
+        val lock = requestLocks.computeIfAbsent(scopeId) { Mutex() }
+        return lock.withLock {
+            if (scopeId in taskWideGrants) return@withLock true
+            val approvalHandler = handler ?: return@withLock false
+            when (approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))) {
+                AgentApprovalDecision.AUTHORIZE_ONCE -> true
+                AgentApprovalDecision.AUTHORIZE_TASK -> {
+                    taskWideGrants += scopeId
+                    true
+                }
+                AgentApprovalDecision.REJECT -> false
+            }
+        }
+    }
+
+    fun endScope(scopeId: String) {
+        taskWideGrants.remove(scopeId)
+        requestLocks.remove(scopeId)
+    }
+}
+
 fun interface AgentPermissionRouter {
     suspend fun authorize(
         task: AgentTaskState,
