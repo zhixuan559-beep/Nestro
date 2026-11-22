@@ -84,13 +84,13 @@ The PR was not merged wholesale. Its independent behaviors were mapped into the 
 
 The PR #1 functional merge gate is **selectively integrated** on `integration/19-modules`. Capability authorization, MCP project grants/audit, memory correction/ranking, task metadata, idempotency, and retry/backoff semantics have been mapped into the current shared architecture. The old duplicate task engine and stale UI snapshot remain excluded.
 
-This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 19-module scan, source cleanup, UI design, or app acceptance is complete. The next authorized stage is to finish the all-branch functional merge inventory and consolidated read-back verification; only then begin the first full 19-module scan.
+This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 19-module scan, source cleanup, UI design, or app acceptance is complete. The all-branch comparison, PR #1 selective semantic integration, and consolidated read-back record are complete for this first integration gate. The next authorized stage is the first full 19-module scan.
 
 ## Verification boundary
 
 - GitHub commit refs, changed-file blobs, task/permission call sites, PR #1 patches, and the latest integration branch HEAD were read back.
 - The branch comparison against the original integration baseline `7449ef3211ecb2ebc2043abac956a5860274063b` reports 63 ahead / 0 behind. Latest code commit read-back before this audit-document update: `dadd88eacb9a2daa78478f9abaf7f9af103ba446`.
-- All 28 non-integration branches were compared against the integration target. The two branches not listed in the initial 28-branch audit (`feature/modelscope-oauth` and `feature/phase2-optimization`) are behind with no ahead commits. Previously identified diverged branches remain subject to the file-level dispositions above; no source branch was deleted.
+- All 28 non-integration branches were compared against the integration target. The two newly observed branches (`feature/modelscope-oauth` and `feature/phase2-optimization`) are behind with no ahead commits. Previously identified diverged branches remain subject to the file-level dispositions above; no source branch was deleted.
 - No GitHub Actions workflow run or check run exists for the current integration HEAD.
 - A local repository clone/build could not be started because the execution environment could not resolve `github.com`; compilation, JVM tests, Android instrumentation tests, emulator tests, and device tests remain **not run**.
 - No branch was deleted and PR #1 remains open + Draft; it was not merged wholesale.
