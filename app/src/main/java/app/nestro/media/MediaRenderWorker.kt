@@ -50,26 +50,25 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
             ) { taskContext ->
                 taskContext.checkpoint("media_render:$projectId:$taskId")
                 try {
-                    val result = executeRenderTask(projectId, taskId)
-                    when (MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.status) {
-                        MediaRenderStatus.COMPLETED ->
-                            taskContext.transition(app.nestro.agent.AgentTaskStatus.COMPLETED, resultSummary = "媒体渲染导出完成")
-                        MediaRenderStatus.CANCELLED ->
-                            taskContext.cancel("媒体渲染任务已取消")
-                        MediaRenderStatus.FAILED ->
+                    val succeeded = executeRenderTask(projectId, taskId, nestroApp)
+                    when (nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status) {
+                        app.nestro.agent.AgentTaskStatus.CANCELLED -> taskContext.cancel("媒体渲染任务已取消")
+                        app.nestro.agent.AgentTaskStatus.PAUSED -> taskContext.pause("媒体渲染任务已暂停")
+                        else -> if (succeeded) {
+                            taskContext.transition(
+                                app.nestro.agent.AgentTaskStatus.COMPLETED,
+                                resultSummary = "媒体渲染导出完成"
+                            )
+                        } else {
                             taskContext.fail(MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体渲染失败")
-                        null -> taskContext.fail("媒体渲染任务记录丢失，无法继续执行")
-                        MediaRenderStatus.PAUSED ->
-                            taskContext.pause("媒体渲染任务已暂停")
-                        else -> taskContext.pause("媒体渲染 Worker 未完成，等待恢复")
+                        }
                     }
-                    result
+                    if (succeeded) Result.success() else Result.failure()
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                        if (MediaRenderTaskStore.read(applicationContext, projectId, taskId)?.status == MediaRenderStatus.CANCELLED) {
-                            taskContext.cancel("媒体渲染任务已取消")
-                        } else {
-                            taskContext.pause("媒体渲染 Worker 被系统停止或任务已暂停")
+                        when (nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status) {
+                            app.nestro.agent.AgentTaskStatus.CANCELLED -> taskContext.cancel("媒体渲染任务已取消")
+                            else -> taskContext.pause("媒体渲染 Worker 被系统停止或任务已暂停")
                         }
                     }
                     throw cancelled
@@ -82,22 +81,15 @@ class MediaRenderWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
     }
 
-    private suspend fun executeRenderTask(projectId: String, taskId: String): Result {
-        val task = MediaRenderTaskStore.read(applicationContext, projectId, taskId) ?: return Result.failure()
-        if (task.status !in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING)) return Result.success()
+    private suspend fun executeRenderTask(projectId: String, taskId: String, nestroApp: app.nestro.NestroApplication): Boolean {
+        val task = MediaRenderTaskStore.read(applicationContext, projectId, taskId) ?: return false
+        if (nestroApp.agentTaskCoordinator.state("media-render:$taskId")?.status != app.nestro.agent.AgentTaskStatus.RUNNING) return false
         setForeground(createForegroundInfo(projectId, taskId, task.progress))
         val output = MediaProjectStore.exportFile(applicationContext, projectId, taskId)
-        val started = runCatching {
-            MediaRenderTaskStore.update(
-                applicationContext, projectId, taskId,
-                status = MediaRenderStatus.RUNNING, progress = 0, errorMessage = "",
-                expectedStatus = task.status
-            )
-        }
-        if (started.isFailure) {
-            val latest = MediaRenderTaskStore.read(applicationContext, projectId, taskId)
-            return if (latest?.status == MediaRenderStatus.PAUSED || latest?.status == MediaRenderStatus.CANCELLED) Result.success() else Result.failure()
-        }
+        MediaRenderTaskStore.update(
+            applicationContext, projectId, taskId,
+            progress = 0, errorMessage = ""
+        )
         if (output.exists() && !output.delete()) {
             MediaRenderTaskStore.update(applicationContext, projectId, taskId, status = MediaRenderStatus.FAILED, errorMessage = "无法清理上一次未完成的导出文件", expectedStatus = MediaRenderStatus.RUNNING)
             return Result.failure()
