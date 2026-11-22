@@ -2081,7 +2081,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
                                                          if (!waitingForApproval) {
-                                                             appRuntime.agentApprovalCoordinator.endScope(effectiveWorkflowTaskId)
+                                                             appRuntime.agentApprovalCoordinator.endScopeAndAudit(effectiveWorkflowTaskId, if (stopRequested) "CANCELLED" else "CLOSED")
                                                          }
                                                          val runRecord = WorkflowRunRecord(
                                                              workflowId = workflow.id,
@@ -2156,7 +2156,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              val result = withContext(Dispatchers.IO) {
                                                                  runCatching {
                                                                      appRuntime.agentTaskCoordinator.cancel(savedWorkflowTaskIdForCard)
-                                                                     appRuntime.agentApprovalCoordinator.endScope(savedWorkflowTaskIdForCard)
+                                                                     appRuntime.agentApprovalCoordinator.endScopeAndAudit(savedWorkflowTaskIdForCard, "CANCELLED")
                                                                  }
                                                              }
                                                              if (result.isSuccess) {
