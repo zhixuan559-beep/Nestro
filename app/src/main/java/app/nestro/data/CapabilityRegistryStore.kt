@@ -60,7 +60,7 @@ object CapabilityRegistryStore {
     private const val AUDIT = "capability_audit_v1"
     private const val TOOL_GRANTS = "capability_tool_grants_v1"
     private const val TOOL_AUDIT = "capability_tool_audit_v1"
-    private const val MAX_CAPABILITIES = 100
+    private const val MAX_CAPABILITIES = 512
     private const val MAX_AUDIT = 200
 
     private fun validId(value: String) = value.matches(Regex("[a-zA-Z0-9_.-]{1,100}"))
