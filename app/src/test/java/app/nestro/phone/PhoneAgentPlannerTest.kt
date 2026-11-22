@@ -96,4 +96,21 @@ class PhoneAgentPlannerTest {
         assertTrue(selected.none { it.id == "支付" })
     }
 
+    @Test
+    fun navigationGoalRequiresRouteVerificationAndExplicitUserHandoff() {
+        val plan = PhoneAgentPlanner.plan("帮我导航到成都东站，开车去")
+        assertEquals(PhoneAgentPlanner.Category.NAVIGATION, plan.category)
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.VERIFY_PAGE })
+        assertTrue(plan.steps.any {
+            it.kind == PhoneAgentPlanner.StepKind.REQUEST_USER_CONFIRMATION &&
+                it.risk == PhoneAgentPlanner.Risk.HIGH &&
+                it.requiresUserConfirmation
+        })
+        assertTrue(plan.steps.any {
+            it.kind == PhoneAgentPlanner.StepKind.HANDOFF_TO_USER &&
+                it.requiresUserConfirmation
+        })
+        assertTrue(PhoneAgentPlanner.contextFor("导航到成都东站").contains("不得在未确认时自动开始导航"))
+    }
+
 }
