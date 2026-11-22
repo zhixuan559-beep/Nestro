@@ -623,6 +623,14 @@ object GeneratedPluginWorkflowExecutor {
             )
             val result = try {
                 invokeThroughRuntime(step.toolId, arguments)
+            } catch (pending: app.nestro.agent.AgentApprovalPendingException) {
+                // Authorization was requested before the tool handler ran; no external side effect occurred.
+                // Clear the in-progress marker so the same step can safely re-enter the approval gate.
+                onStepCheckpoint(
+                    stepIndex,
+                    GeneratedPluginRunCheckpointCodec.encode(plugin, inputs, stepResults)
+                )
+                throw pending
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
