@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * This kernel owns tool discovery, authorization, execution state and checkpoints.
  */
 enum class AgentTaskStatus {
-    CREATED, QUEUED, RUNNING, WAITING_FOR_USER, PAUSED, RETRY_WAIT, COMPLETED, FAILED, CANCELLED
+    CREATED, QUEUED, RUNNING, WAITING_FOR_USER, WAITING_FOR_TASK, PAUSED, RETRY_WAIT, COMPLETED, FAILED, CANCELLED
 }
 
 enum class AgentToolPermission {
