@@ -132,7 +132,7 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             val legacyProjects = ProjectPreferencesStore.loadProjects(prefs)
             val conversationIds = legacyConversations.map { it.id }
             val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
-            val staleConversationProjects = staleConversationIds.mapNotNull { dao.conversationProjectId(it) }.toSet()
+            val staleConversationProjects = dao.conversationProjectIds(staleConversationIds).toSet()
             val projectIds = legacyProjects.map { it.id }
             val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
             (staleConversationProjects + staleProjectIds).forEach {
@@ -229,7 +229,7 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         val dao = database.dao()
         val currentIds = conversations.map { it.id }
         val removedIds = dao.conversationIds().filterNot { it in currentIds }
-        val removedConversationProjects = removedIds.mapNotNull { dao.conversationProjectId(it) }.toSet()
+        val removedConversationProjects = dao.conversationProjectIds(removedIds).toSet()
         val currentProjectIds = projects.map { it.id }
         val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
         (removedConversationProjects + removedProjectIds).forEach {
