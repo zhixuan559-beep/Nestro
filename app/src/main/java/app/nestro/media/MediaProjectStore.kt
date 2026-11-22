@@ -16,6 +16,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.zip.ZipEntry
@@ -472,6 +473,7 @@ object MediaProjectStore {
         val manifest = readManifest(context, projectId)
         val manifestBytes = manifest.toString().toByteArray(Charsets.UTF_8)
         val target = destination.canonicalFile
+        require(!target.exists()) { "媒体项目备份目标文件已存在，拒绝覆盖" }
         require(target.parentFile?.isDirectory == true || target.parentFile?.mkdirs() == true) {
             "无法创建媒体项目备份目录"
         }
@@ -507,10 +509,7 @@ object MediaProjectStore {
                     }
                 }
             }
-            require(staging.renameTo(target) || run {
-                staging.copyTo(target, overwrite = true)
-                staging.delete()
-            }) { "无法完成媒体项目备份文件写入" }
+            require(staging.renameTo(target)) { "无法原子提交媒体项目备份文件" }
             return target
         } catch (error: Throwable) {
             staging.delete()
@@ -543,9 +542,18 @@ object MediaProjectStore {
                     when {
                         entry.name == "project.json" -> {
                             require(manifestRaw == null) { "媒体项目备份包含重复索引" }
-                            val bytes = zip.readBytes()
-                            require(bytes.size in 1..MAX_MANIFEST_BYTES.toInt()) { "媒体项目索引超出大小限制" }
-                            manifestRaw = bytes.toString(Charsets.UTF_8)
+                            val bytes = ByteArrayOutputStream()
+                            val buffer = ByteArray(16 * 1024)
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                require(bytes.size().toLong() + count <= MAX_MANIFEST_BYTES) {
+                                    "媒体项目索引超出大小限制"
+                                }
+                                bytes.write(buffer, 0, count)
+                            }
+                            require(bytes.size() > 0) { "媒体项目索引为空" }
+                            manifestRaw = bytes.toString(Charsets.UTF_8.name())
                         }
                         entry.name.startsWith("assets/") -> {
                             val fileName = entry.name.removePrefix("assets/")
@@ -607,7 +615,9 @@ object MediaProjectStore {
                 rewrittenAssets.put(MediaProjectCodec.encodeAsset(imported))
             }
             require(importedAssets.map { it.id }.distinct().size == importedAssets.size) { "媒体项目包含重复素材 ID" }
-            val timeline = MediaProjectCodec.decodeTimeline(manifest.getJSONObject("timeline")).copy(projectId = targetProjectId)
+            val sourceTimeline = MediaProjectCodec.decodeTimeline(manifest.getJSONObject("timeline"))
+            require(sourceTimeline.projectId == sourceProjectId) { "媒体项目时间线来源项目不匹配" }
+            val timeline = sourceTimeline.copy(projectId = targetProjectId)
             MediaTimelinePolicy.validate(timeline, importedAssets)
             manifest.put("projectId", targetProjectId)
                 .put("assets", rewrittenAssets)
@@ -616,9 +626,9 @@ object MediaProjectStore {
                 val history = manifest.optJSONArray(key) ?: JSONArray()
                 val rewritten = JSONArray()
                 for (index in 0 until history.length()) {
-                    rewritten.put(MediaProjectCodec.encodeTimeline(
-                        MediaProjectCodec.decodeTimeline(history.getJSONObject(index)).copy(projectId = targetProjectId)
-                    ))
+                    val sourceHistory = MediaProjectCodec.decodeTimeline(history.getJSONObject(index))
+                    require(sourceHistory.projectId == sourceProjectId) { "媒体项目历史记录来源项目不匹配" }
+                    rewritten.put(MediaProjectCodec.encodeTimeline(sourceHistory.copy(projectId = targetProjectId)))
                 }
                 manifest.put(key, rewritten)
             }
