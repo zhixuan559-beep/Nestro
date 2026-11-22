@@ -432,9 +432,18 @@ class AgentApprovalCoordinator(
         val decision: CompletableDeferred<AgentApprovalDecision>
     )
 
+    private sealed class ApprovalRegistration {
+        data class Resolved(val decision: AgentApprovalDecision) : ApprovalRegistration()
+        data class Pending(
+            val record: AgentApprovalAuditRecord,
+            val deferred: CompletableDeferred<AgentApprovalDecision>
+        ) : ApprovalRegistration()
+        object Unavailable : ApprovalRegistration()
+    }
+
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
-    private val responseLocks = ConcurrentHashMap<String, Mutex>()
+    private val approvalScopeLocks = ConcurrentHashMap<String, Mutex>()
     private val promptMutex = Mutex()
     private val activeRequests = ConcurrentHashMap<String, ActiveApproval>()
     @Volatile private var handler: (suspend (AgentApprovalRequest) -> Unit)? = null
@@ -455,8 +464,10 @@ class AgentApprovalCoordinator(
         decision: AgentApprovalDecision,
         resumeTaskIfInactive: Boolean = true
     ): Boolean {
-        val responseLock = responseLocks.computeIfAbsent(approvalId) { Mutex() }
-        return responseLock.withLock {
+        val knownRecord = activeRequests[approvalId]?.record ?: loadAudit(approvalId) ?: return false
+        val approvalScopeLock = approvalScopeLocks.computeIfAbsent(knownRecord.scopeId) { Mutex() }
+        var resumeScope: String? = null
+        val accepted = approvalScopeLock.withLock {
             val active = activeRequests[approvalId]
             if (active != null) {
                 if (!active.decision.isActive) return@withLock false
@@ -467,21 +478,15 @@ class AgentApprovalCoordinator(
             val record = loadAudit(approvalId) ?: return@withLock false
             if (record.status != "PENDING") return@withLock false
             persistAudit(record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
-
-            // authorize() registers its continuation under the same short-lived lock.
-            // If it is already entering this scope, it will consume the persisted decision
-            // itself; do not enqueue a duplicate task execution.
-            val activeAfterPersist = activeRequests[approvalId]
-            if (activeAfterPersist != null) {
-                activeAfterPersist.decision.complete(decision)
-            } else if (
-                resumeTaskIfInactive &&
-                requestLocks[record.scopeId]?.isLocked != true
-            ) {
-                runCatching { resumeTask(record.scopeId) }
+            if (resumeTaskIfInactive && requestLocks[record.scopeId]?.isLocked != true) {
+                resumeScope = record.scopeId
             }
             true
         }
+        if (accepted && resumeScope != null) {
+            runCatching { resumeTask(resumeScope!!) }
+        }
+        return accepted
     }
 
     /** Reattach decisions committed just before a process interruption. */
@@ -502,94 +507,70 @@ class AgentApprovalCoordinator(
         return lock.withLock scopeLock@{
             if (scopeId in taskWideGrants) return@scopeLock AgentApprovalDecision.AUTHORIZE_TASK
 
-            // Read the durable scope once while holding its request lock. This catches
-            // decisions already committed by a restored approval prompt before creating
-            // another request for the same tool.
-            val scopeAudits = loadAuditsForScope(scopeId).sortedBy { it.createdAt }
-            if (scopeAudits.any { it.status == "AUTHORIZED_TASK" }) {
-                taskWideGrants += scopeId
-                return@scopeLock AgentApprovalDecision.AUTHORIZE_TASK
-            }
-
-            val priorDecision = scopeAudits.firstOrNull {
-                it.toolId == toolId && it.status in setOf("AUTHORIZED_ONCE", "REJECTED")
-            }
-            if (priorDecision != null) {
-                val decision = if (priorDecision.status == "AUTHORIZED_ONCE") {
-                    AgentApprovalDecision.AUTHORIZE_ONCE
-                } else {
-                    AgentApprovalDecision.REJECT
+            val approvalScopeLock = approvalScopeLocks.computeIfAbsent(scopeId) { Mutex() }
+            val registration = approvalScopeLock.withLock {
+                val scopeAudits = loadAuditsForScope(scopeId).sortedBy { it.createdAt }
+                if (scopeAudits.any { it.status == "AUTHORIZED_TASK" }) {
+                    taskWideGrants += scopeId
+                    return@withLock ApprovalRegistration.Resolved(AgentApprovalDecision.AUTHORIZE_TASK)
                 }
-                val consumedStatus = if (decision == AgentApprovalDecision.AUTHORIZE_ONCE) {
-                    "CONSUMED_ONCE"
-                } else {
-                    "CONSUMED_REJECTED"
-                }
-                persistAudit(priorDecision.copy(status = consumedStatus, updatedAt = System.currentTimeMillis()))
-                return@scopeLock decision
-            }
 
-            // Register the continuation before any further suspension. The audit row is
-            // persisted before waiting for the global UI slot, so another task can be
-            // approved from the durable queue while the first prompt is open.
-            val pending = scopeAudits.firstOrNull { it.toolId == toolId && it.status == "PENDING" }
-            val now = System.currentTimeMillis()
-            val record = pending ?: AgentApprovalAuditRecord(
-                id = UUID.randomUUID().toString(),
-                scopeId = scopeId,
-                toolId = toolId,
-                reason = reason.take(2_000),
-                status = "PENDING",
-                createdAt = now,
-                updatedAt = now
-            )
-            val deferred = CompletableDeferred<AgentApprovalDecision>()
-            val responseLock = responseLocks.computeIfAbsent(record.id) { Mutex() }
-            val persistedDecision = responseLock.withLock {
-                when (val latestStatus = loadAudit(record.id)?.status) {
-                    "AUTHORIZED_TASK" -> {
-                        taskWideGrants += scopeId
-                        AgentApprovalDecision.AUTHORIZE_TASK
-                    }
-                    "AUTHORIZED_ONCE" -> {
-                        val latest = loadAudit(record.id) ?: record
-                        persistAudit(latest.copy(status = "CONSUMED_ONCE", updatedAt = System.currentTimeMillis()))
+                val priorDecision = scopeAudits.firstOrNull {
+                    it.toolId == toolId && it.status in setOf("AUTHORIZED_ONCE", "REJECTED")
+                }
+                if (priorDecision != null) {
+                    val decision = if (priorDecision.status == "AUTHORIZED_ONCE") {
                         AgentApprovalDecision.AUTHORIZE_ONCE
-                    }
-                    "REJECTED" -> {
-                        val latest = loadAudit(record.id) ?: record
-                        persistAudit(latest.copy(status = "CONSUMED_REJECTED", updatedAt = System.currentTimeMillis()))
+                    } else {
                         AgentApprovalDecision.REJECT
                     }
-                    "PENDING" -> {
-                        val latest = loadAudit(record.id) ?: record
-                        activeRequests[record.id] = ActiveApproval(latest, deferred)
-                        null
+                    val consumedStatus = if (decision == AgentApprovalDecision.AUTHORIZE_ONCE) {
+                        "CONSUMED_ONCE"
+                    } else {
+                        "CONSUMED_REJECTED"
                     }
-                    null -> {
-                        activeRequests[record.id] = ActiveApproval(record, deferred)
-                        persistAudit(record)
-                        null
-                    }
-                    else -> null
+                    persistAudit(priorDecision.copy(status = consumedStatus, updatedAt = System.currentTimeMillis()))
+                    return@withLock ApprovalRegistration.Resolved(decision)
                 }
-            }
-            if (persistedDecision != null) return@scopeLock persistedDecision
-            if (activeRequests[record.id] == null) return@scopeLock null
 
-            try {
-                val approvalHandler = handler
-                if (approvalHandler == null && !deferred.isCompleted) return@scopeLock null
-                if (approvalHandler != null && !deferred.isCompleted) {
-                    // Serialize only the UI enqueue operation, never the user's wait.
-                    // Other tasks can publish approvals and receive decisions concurrently.
-                    promptMutex.withLock {
-                        if (!deferred.isCompleted) approvalHandler(record.toRequest())
+                val pending = scopeAudits.firstOrNull { it.toolId == toolId && it.status == "PENDING" }
+                val now = System.currentTimeMillis()
+                val record = pending ?: AgentApprovalAuditRecord(
+                    id = UUID.randomUUID().toString(),
+                    scopeId = scopeId,
+                    toolId = toolId,
+                    reason = reason.take(2_000),
+                    status = "PENDING",
+                    createdAt = now,
+                    updatedAt = now
+                )
+                val deferred = CompletableDeferred<AgentApprovalDecision>()
+                activeRequests[record.id] = ActiveApproval(record, deferred)
+                if (pending == null) persistAudit(record)
+                ApprovalRegistration.Pending(record, deferred)
+            }
+
+            when (registration) {
+                is ApprovalRegistration.Resolved -> registration.decision
+                ApprovalRegistration.Unavailable -> null
+                is ApprovalRegistration.Pending -> {
+                    val record = registration.record
+                    val deferred = registration.deferred
+                    try {
+                        val approvalHandler = handler
+                        if (approvalHandler == null && !deferred.isCompleted) return@scopeLock null
+                        if (approvalHandler != null && !deferred.isCompleted) {
+                            // Serialize only the UI enqueue operation, never the user's wait.
+                            // Other tasks can publish approvals and receive decisions concurrently.
+                            promptMutex.withLock {
+                                if (!deferred.isCompleted) approvalHandler(record.toRequest())
+                            }
+                        }
+                        consumeDecision(record, deferred.await())
+                    } finally {
+                        activeRequests.remove(record.id)
                     }
                 }
-                consumeDecision(record, deferred.await())
-            } finally {
-                activeRequests.remove(record.id)
             }
         }
     }
