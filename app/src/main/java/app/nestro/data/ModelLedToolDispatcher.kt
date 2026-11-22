@@ -489,6 +489,7 @@ ${prompt.take(8_000)}
                 properties.put("action", JSONObject().put("type", "string")
                     .put("enum", JSONArray().put("image").put("transcribe").put("scenes").put("audio-clean")))
                 properties.put("prompt", JSONObject().put("type", "string").put("description", "图片理解指令，可选"))
+                properties.put("language", JSONObject().put("type", "string").put("description", "转写语言 BCP-47 标识；默认 auto 自动识别"))
                 properties.put("provider_id", JSONObject().put("type", "string").put("description", "可选的已配置且支持所选 action 的服务商 ID"))
                 required.put("asset_id")
                 required.put("action")
