@@ -147,6 +147,30 @@ internal class ModelLedToolDispatcher(
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
+        val existingChatTask = stateStore.get(taskId)
+        val savedCheckpoint = existingChatTask?.checkpoint.orEmpty()
+        if (savedCheckpoint.startsWith("mcp:v1:executing:")) {
+            val reason = "MCP 外部调用在中断前已开始，但结果未可靠落盘；为避免重复写入，系统未自动重放。请核对服务端结果后重新发起。"
+            stateStore.put(existingChatTask.copy(
+                status = AgentTaskStatus.FAILED,
+                lastError = reason,
+                updatedAt = System.currentTimeMillis()
+            ))
+            throw IllegalStateException(reason)
+        }
+        if (savedCheckpoint.startsWith("mcp:v1:completed:")) {
+            val recoveredOutput = savedCheckpoint.substringAfter('\\n').take(8_000)
+            stateStore.put(existingChatTask.copy(
+                status = AgentTaskStatus.COMPLETED,
+                resultSummary = recoveredOutput,
+                lastError = "",
+                updatedAt = System.currentTimeMillis()
+            ))
+            return ModelToolDispatchResult(
+                directReply = "MCP 工具已完成，恢复的结果如下：\\n$recoveredOutput",
+                streamedToUi = false
+            )
+        }
         val chatTask = stateStore.putIfAbsent(
             AgentTaskState(
                 taskId = taskId,
@@ -253,16 +277,23 @@ ${prompt.take(8_000)}
                                 if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
                                 else AgentToolResult(true, output = output)
                             }
-                            else -> lease.access.invoke(
-                                id,
-                                if (id.startsWith("mcp_")) args
-                                else args + mapOf(
+                            else -> {
+                                val invocationArguments = if (id.startsWith("mcp_")) args else args + mapOf(
                                     "__nestro_project_id" to projectId,
                                     "__nestro_conversation_id" to conversationId,
                                     "__nestro_task_mode" to taskModeEnabled.toString(),
                                     "__nestro_request_id" to requestId
                                 )
-                            )
+                                if (id.startsWith("mcp_")) {
+                                    stateStore.get(taskId)?.let { current ->
+                                        stateStore.put(current.copy(
+                                            checkpoint = "mcp:v1:executing:$id",
+                                            updatedAt = System.currentTimeMillis()
+                                        ))
+                                    }
+                                }
+                                lease.access.invoke(id, invocationArguments)
+                            }
                         }
                 }
                 val requestPermissionRouter = AgentPermissionRouter { task, tool ->
@@ -354,6 +385,15 @@ ${prompt.take(8_000)}
                     }
                 } finally {
                     AgentToolLeaseRegistry.release(lease.id)
+                }
+                if (spec.id.startsWith("mcp_") && result.success) {
+                    stateStore.get(taskId)?.let { current ->
+                        stateStore.put(current.copy(
+                            checkpoint = "mcp:v1:completed:${spec.id}\\n" + result.output.take(8_000),
+                            resultSummary = result.output.take(8_000),
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                    }
                 }
                 if (result.requiresUser) {
                     NativeToolCallResult(
