@@ -45,10 +45,10 @@ class MikaVirtualDisplayController(context: Context) {
 
     fun activatePhoneAgent(service: PhoneAgentService): Boolean {
         val session = activeSession ?: return false
-        activeAccessibilityService = service
         val preferenceSaved = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
             .putBoolean("phone_virtual_execution_preferred", true).commit()
         if (!preferenceSaved) return false
+        activeAccessibilityService = service
         val environment = MikaPhoneAgentExecutionEnvironment(service, session)
         activeEnvironment = environment
         PhoneAgentExecutionEnvironmentProvider.attach(environment)
