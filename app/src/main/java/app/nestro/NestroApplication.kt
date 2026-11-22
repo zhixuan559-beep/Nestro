@@ -1040,7 +1040,19 @@ class NestroApplication : Application() {
             // Restore persisted calendar reminders whenever the app process starts.
             runCatching { calendarRepository.reconcileSchedules() }
             mcpToolCenterService.restoreEnabledTools()
-            agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+            val recoveredTasks = agentTaskCoordinator.recoverAfterProcessRestart(
+                externallyScheduledOwners = setOf("phone_agent")
+            )
+            val processRestartReason = "应用曾在任务执行期间退出；请核对当前状态后继续"
+            recoveredTasks
+                .filter {
+                    it.owner == "calendar_automation" &&
+                        it.status == AgentTaskStatus.PAUSED &&
+                        it.lastError == processRestartReason
+                }
+                .forEach { task ->
+                    runCatching { agentTaskCoordinator.resume(task.taskId) }
+                }
             agentApprovalCoordinator.resumeResolvedTasks()
             val activePhoneTaskIds = database.dao().allAgentTaskStates()
                 .filter {
