@@ -28,10 +28,9 @@ class PhoneAgentTaskService(
         val tasks = database.dao().phoneAgentTasks(projectId, limit.coerceIn(1, 100))
         return tasks.map { task ->
             val state = coordinator.state(task.id) ?: return@map task
-            task.copy(
-                status = state.status.toPhoneAgentStatus(),
-                currentStep = state.currentStep
-            )
+            // Keep the domain status as the safety marker for ambiguous in-flight actions;
+            // the coordinator remains authoritative for queue/lifecycle state.
+            task.copy(currentStep = state.currentStep)
         }
     }
 
@@ -148,13 +147,4 @@ class PhoneAgentTaskService(
         }
     }
 
-    private fun AgentTaskStatus.toPhoneAgentStatus(): String = when (this) {
-        AgentTaskStatus.CREATED, AgentTaskStatus.QUEUED -> PhoneAgentTaskStore.STATUS_PLANNED
-        AgentTaskStatus.RUNNING, AgentTaskStatus.RETRY_WAIT -> PhoneAgentTaskStore.STATUS_RUNNING
-        AgentTaskStatus.WAITING_FOR_USER -> PhoneAgentTaskStore.STATUS_WAITING_USER
-        AgentTaskStatus.PAUSED -> PhoneAgentTaskStore.STATUS_PAUSED
-        AgentTaskStatus.COMPLETED -> PhoneAgentTaskStore.STATUS_COMPLETED
-        AgentTaskStatus.FAILED -> PhoneAgentTaskStore.STATUS_FAILED
-        AgentTaskStatus.CANCELLED -> PhoneAgentTaskStore.STATUS_CANCELLED
-    }
 }
