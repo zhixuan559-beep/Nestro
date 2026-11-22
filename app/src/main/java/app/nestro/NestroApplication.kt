@@ -523,22 +523,7 @@ class NestroApplication : Application() {
                             invokeThroughRuntime = { stepToolId, stepArguments ->
                             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
                             val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
-                                CapabilityRegistryStore.registerIfAbsent(
-                                    capabilityPrefs,
-                                    CapabilityDescriptor(
-                                        id = tool.id,
-                                        title = tool.id,
-                                        category = tool.permission.name.lowercase(),
-                                        description = tool.description.take(500),
-                                        source = if (tool.id.startsWith("mcp_")) "mcp" else "builtin",
-                                        requiresConfirmation = tool.requiresConfirmation ||
-                                            tool.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
-                                        defaultGranted = if (tool.id.startsWith("mcp_")) {
-                                            mcpToolCenterRepository.isToolGranted(tool.id)
-                                        } else true
-                                    )
-                                )
-                                if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
+                                val baseAuthorization = if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
                                     app.nestro.agent.AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
                                 } else if (tool.id.startsWith("mcp_")) {
                                     val descriptor = mcpToolCenterRepository.findTool(tool.id)
@@ -550,18 +535,17 @@ class NestroApplication : Application() {
                                             globallyEnabled = globallyGranted
                                         )
                                     } == true
-                                    if (globallyGranted && projectGranted) {
-                                        GeneratedPluginAuthorizationPolicy.authorize(tool)
-                                    } else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
+                                    if (globallyGranted && projectGranted) GeneratedPluginAuthorizationPolicy.authorize(tool)
+                                    else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
                                 } else GeneratedPluginAuthorizationPolicy.authorize(tool)
-                            }
-                            if (authorization is app.nestro.agent.AgentAuthorization.RequireConfirmation) {
-                                if (agentApprovalCoordinator.authorize(requestId, tool.id, authorization.reason)) {
-                                    app.nestro.agent.AgentAuthorization.Allow
-                                } else {
-                                    app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
-                                }
-                            } else authorization
+
+                                if (baseAuthorization is app.nestro.agent.AgentAuthorization.RequireConfirmation) {
+                                    if (agentApprovalCoordinator.authorize(requestId, tool.id, baseAuthorization.reason)) {
+                                        app.nestro.agent.AgentAuthorization.Allow
+                                    } else {
+                                        app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
+                                    }
+                                } else baseAuthorization
                             }
                             val runtime = DefaultAgentRuntime(
                                 catalog = lease.access,
