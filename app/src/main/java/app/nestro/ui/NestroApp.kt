@@ -2658,7 +2658,7 @@ fun NestroApp(initialPage: String = "home") {
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
                                 ) { Text("添加到当前项目") }
-                                Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                Text("项目记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
                                         onClick = { importMemoryLauncher.launch(arrayOf("application/json", "text/plain")) },
@@ -2734,7 +2734,7 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                                 Text(embeddingModelStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (automaticMemories.isEmpty()) {
-                                    Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    Text("当前项目还没有记忆。你可以手动添加，也可以明确表达长期偏好或项目约束后让系统尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 } else {
                                     automaticMemories.forEach { memory ->
                                         Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2744,7 +2744,7 @@ fun NestroApp(initialPage: String = "home") {
                                                     (sourceConversation.projectId == activeProjectId || sourceConversation.projectId in readableProjectIds)
                                                 var categoryMenuExpanded by remember(memory.id) { mutableStateOf(false) }
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("分类：${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                    Text((if (memory.sourceConversationId.isBlank()) "手动添加" else "自动提取") + " · 分类：${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
                                                     Spacer(Modifier.weight(1f))
                                                     TextButton(onClick = { categoryMenuExpanded = true }) { Text("修改分类") }
                                                     DropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
