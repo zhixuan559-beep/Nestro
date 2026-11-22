@@ -4,8 +4,6 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.ColumnInfo
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -38,7 +36,11 @@ data class CalendarEvent(
     val sourceSystemCalendarId: Long? = null,
     val sourceSystemImported: Boolean = false,
     @ColumnInfo(defaultValue = "''") val automationPrompt: String = "",
-    @ColumnInfo(defaultValue = "''") val automationProjectId: String = ""
+    @ColumnInfo(defaultValue = "''") val automationProjectId: String = "",
+    @ColumnInfo(defaultValue = "0") val nextRunAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val lastRunAt: Long = 0L,
+    @ColumnInfo(defaultValue = "''") val lastTaskId: String = "",
+    @ColumnInfo(defaultValue = "''") val lastIdempotencyKey: String = ""
 )
 
 @Dao
@@ -65,7 +67,7 @@ interface CalendarDao {
     suspend fun delete(id: String): Int
 }
 
-@Database(entities = [CalendarEvent::class], version = 2, exportSchema = false)
+@Database(entities = [CalendarEvent::class], version = 3, exportSchema = false)
 abstract class CalendarDatabase : RoomDatabase() {
     abstract fun calendarDao(): CalendarDao
 
@@ -77,6 +79,15 @@ abstract class CalendarDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN nextRunAt INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN lastRunAt INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN lastTaskId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN lastIdempotencyKey TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile private var instance: CalendarDatabase? = null
 
         fun get(context: Context): CalendarDatabase =
@@ -85,7 +96,7 @@ abstract class CalendarDatabase : RoomDatabase() {
                     context.applicationContext,
                     CalendarDatabase::class.java,
                     "nestro_calendar.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }
