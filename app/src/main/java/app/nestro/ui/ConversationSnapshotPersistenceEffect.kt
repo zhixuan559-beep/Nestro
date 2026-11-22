@@ -37,7 +37,7 @@ internal fun ConversationSnapshotPersistenceEffect(
             persistLatest.value(conversationSnapshot, projectSnapshot)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             failureLatest.value(error)
         }
     }
