@@ -13,6 +13,12 @@ import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
 import kotlinx.coroutines.CompletableDeferred
 
+internal data class WorkflowApprovalPrompt(
+    val stepTitle: String,
+    val context: String,
+    val decision: CompletableDeferred<Boolean>
+)
+
 /** Owns workflow editor, run and history UI state. */
 @Stable
 internal class WorkflowUiState(preferences: SharedPreferences) {
@@ -49,4 +55,5 @@ internal class WorkflowUiState(preferences: SharedPreferences) {
     val runningWorkflowId: MutableState<String> = mutableStateOf("")
     val workflowPaused: MutableState<Boolean> = mutableStateOf(false)
     val workflowPauseGate: MutableState<CompletableDeferred<Unit>?> = mutableStateOf(null)
+    val workflowApprovalPrompt: MutableState<WorkflowApprovalPrompt?> = mutableStateOf(null)
 }
