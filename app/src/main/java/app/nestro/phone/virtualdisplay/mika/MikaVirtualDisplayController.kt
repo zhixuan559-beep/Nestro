@@ -157,7 +157,8 @@ class MikaVirtualDisplayController(context: Context) {
             activeEnvironment = null
             // Closing the isolated session must not silently fall back to the user's real screen.
             // The user can explicitly restore main-screen execution from the Phone Agent page.
-            runCatching { shell.finishDisplay(displayId) }
+            // MikaAgentDisplay.release() already releases the remote display; calling
+            // finishDisplay here first would send a duplicate Binder release.
             display.release()
         }
     }

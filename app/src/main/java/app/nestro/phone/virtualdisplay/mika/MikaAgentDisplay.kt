@@ -88,7 +88,7 @@ class MikaAgentDisplay(
             if (released) { continuation.resume(false); return@post }
             val target = geometry.resized(newWidth, newHeight)
             if (bufferWidth == target.bufferWidth && bufferHeight == target.bufferHeight && dpi == newDpi) {
-                continuation.resume(true); return@post
+                if (continuation.isActive) continuation.resume(true); return@post
             }
             var next: ImageReader? = null
             val resized = try {
@@ -115,7 +115,7 @@ class MikaAgentDisplay(
                 }
             } catch (_: Exception) { false }
             finally { next?.close() }
-            continuation.resume(resized)
+            if (continuation.isActive) continuation.resume(resized)
         }
         if (!posted) continuation.resume(false)
     }
