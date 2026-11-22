@@ -6,11 +6,11 @@ Status: implementation in progress. This document records the agreed target; a c
 
 ## Cross-module improvements recovered from development
 
-- [ ] AI co-development workbench: isolated execution sandbox, scoped permissions, patch preview, impact analysis, isolated build/test, explicit approval, snapshots and rollback.
+- [x] AI co-development workbench source: protected-path policy, patch preview, impact analysis, explicit per-file approval, durable snapshots, transactional apply/recovery and rollback; GitHub-hosted Actions runner provides remote build/test isolation. GitLab/Gitee runners and real Actions execution validation remain pending.
 - [x] Shared Agent capability foundation exists: `AgentToolCatalog`, task-scoped sessions/leases, `AgentRuntime`, permission routing and MCP registration reuse the process-wide catalog. Remaining: unify Skill/plugin catalog lifecycle and verify every invocation path goes through the same boundary.
-- [ ] Project spaces: project and cross-project scope primitives exist; complete project-level ownership and lifecycle for files, experts, teams, Skills, workflows and artifacts, with explicit auditable cross-project access.
-- [ ] Model routing: multi-provider/model/key registry, fallback and usage attribution exist; complete capability-aware selection, rate limits, budgets and cost-aware routing.
-- [ ] Community ecosystem: signature/trust-root/revocation and SemVer dependency foundations exist; complete trusted catalog distribution, import/export/share, safe updates and rollback.
+- [x] Project-space and cross-project READ/WRITE/resource-scope primitives exist, including auditable grants. [ ] Full lifecycle consistency across files, experts, teams, Skills, workflows, media and artifacts still needs integration verification.
+- [x] Multi-provider/model/key registry, protocol-native OpenAI/Anthropic/Gemini calling, model selection, fallback and usage attribution exist. [ ] Rate limits, budgets and cost-aware routing remain incomplete.
+- [x] SemVer dependency solving, atomic install/rollback, independent trust root and revocation code exist. [ ] Official signed catalog distribution, operator-provided trust root/revocation feed and real community source validation remain pending.
 
 ## Second optimization: device adaptation and responsiveness
 
