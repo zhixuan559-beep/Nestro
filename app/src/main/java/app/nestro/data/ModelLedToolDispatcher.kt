@@ -82,6 +82,7 @@ internal class ModelLedToolDispatcher(
     private val catalog: AgentToolCatalog,
     private val database: NestroDatabase,
     private val permissionRouter: AgentPermissionRouter,
+    private val approvalCoordinator: app.nestro.agent.AgentApprovalCoordinator? = null,
     private val capabilityPreferences: SharedPreferences,
     private val toolDefinitionProvider: (String) -> String? = { null },
     private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
@@ -270,7 +271,18 @@ ${prompt.take(8_000)}
                     } else if (tool.id.startsWith("media.project.") && taskModeEnabled) {
                         AgentAuthorization.Allow
                     } else {
-                        permissionRouter.authorize(task, tool)
+                        when (val authorization = permissionRouter.authorize(task, tool)) {
+                            is AgentAuthorization.RequireConfirmation -> {
+                                val approved = approvalCoordinator?.authorize(
+                                    requestId,
+                                    tool.id,
+                                    authorization.reason
+                                ) == true
+                                if (approved) AgentAuthorization.Allow
+                                else AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
+                            }
+                            else -> authorization
+                        }
                     }
                 }
                 val runtime: AgentRuntime = DefaultAgentRuntime(
