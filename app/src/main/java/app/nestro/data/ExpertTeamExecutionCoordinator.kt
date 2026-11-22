@@ -263,7 +263,7 @@ class ExpertTeamExecutionCoordinator(
                     memberName = row.optString("memberName"),
                     status = row.optString("status"),
                     output = row.optString("output").take(4_000),
-                    error = row.optString("error").take(1_000),
+                    error = row.optString("error").take(500),
                     completedAt = row.optLong("completedAt")
                 )
             }
@@ -337,7 +337,7 @@ class ExpertTeamExecutionCoordinator(
                                         .put("memberName", row.memberName)
                                         .put("status", row.status)
                                         .put("output", row.output.take(4_000))
-                                        .put("error", row.error.take(1_000))
+                                        .put("error", row.error.take(500))
                                         .put("completedAt", row.completedAt))
                                 }
                             }).toString(),
