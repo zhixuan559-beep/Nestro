@@ -390,7 +390,7 @@ class ExpertTeamExecutionCoordinator(
                         "expert_project:" + JSONObject()
                             .put("teamId", teamId)
                             .put("projectId", projectId)
-                            .put("planIdentity", planIdentity)
+                            .put("planFingerprint", planFingerprint)
                             .put("results", JSONArray().apply {
                                 rows.forEach { row ->
                                     put(JSONObject()
