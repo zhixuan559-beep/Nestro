@@ -73,8 +73,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                     it.kind == "mcp_tool" &&
                         it.status in setOf(
                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
-                            app.nestro.agent.AgentTaskStatus.PAUSED,
-                            app.nestro.agent.AgentTaskStatus.FAILED
+                            app.nestro.agent.AgentTaskStatus.PAUSED
                         )
                 }
             }
