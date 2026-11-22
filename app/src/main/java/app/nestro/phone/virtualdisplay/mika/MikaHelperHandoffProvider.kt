@@ -53,13 +53,15 @@ class MikaHelperHandoffProvider : ContentProvider() {
             if (!constantTimeEquals(expected, nonce ?: "")) return reject("bad_nonce")
             val next = randomNonce()
             prefs.edit().putString(KEY_NONCE_STORE, next).apply()
-            runCatching {
+            val linked = runCatching {
                 binder.linkToDeath({
                     synchronized(lock) {
                         if (_shell.value?.asBinder() === binder) _shell.value = null
                     }
                 }, 0)
-            }
+                true
+            }.getOrDefault(false)
+            if (!linked) return reject("dead_binder")
             _shell.value = shell
             return Bundle().apply {
                 putBoolean(KEY_ACCEPTED, true)
