@@ -157,7 +157,9 @@ internal class ModelLedToolDispatcher(
         state: String,
         output: String = ""
     ) {
-        val current = stateStore.get(taskId) ?: return
+        val current = requireNotNull(stateStore.get(taskId)) {
+            "MCP 调用无法持久化重放检查点，已阻止外部执行"
+        }
         val ledger = decodeMcpReplayLedger(current.checkpoint)
         val calls = ledger.optJSONObject("calls") ?: JSONObject()
         calls.put(
