@@ -284,3 +284,32 @@
 - 仓库 README 已说明本地优先和凭据不托管，但“免 Nestro 账号、第三方账号由用户自行登录、Nestro 私人记忆/技能与公开项目严格隔离”此前没有完整写入统一产品基线；现已补入路线图 H 节。
 - 这项仍需后续全量检查：公开仓库/构建产物/日志/备份中不得出现真实 API Key、OAuth Client Secret、PAT 或灵犀私人记忆文件；当前仅确认本地凭据存储实现，未执行秘密扫描与发布包检查。
 
+
+## 2026-11-22 模块 5–9 源码定向复核
+
+### 模块5：项目空间与跨项目资源
+- 当前 `ProjectSpaceRepository` 负责 Room 项目数据关系、空项目删除、复制和失败回滚；`ProjectAccessControlStore` 实施方向性 READ/WRITE 授权和审计；`ProjectResourceScopeStore` 负责专家/团队/技能/工作流/文件等资源归属范围。
+- 与旧 `wip/module-5-project-space` 对照，当前整合版对 WRITE 必须包含 READ 的授权规则、资源 key 校验和范围去重更严格；不应将 WIP 旧版覆盖当前实现。
+- 仍需统一验证跨项目授权撤销是否即时影响知识召回、专家/技能/工作流调用、媒体素材和资源删除/迁移；项目复制/删除的全资源类型一致性仍需和模块4/17联测。
+
+### 模块6：知识库
+- 当前 `KnowledgeRepository` 统一文档导入、项目检索、全文重组和向量索引重建；`KnowledgeSearchEngine` 提供本地词法/BM25，`KnowledgeVectorSearch` 提供向量相似度排序，`KnowledgeEmbeddingModelManager` 使用 BGE ONNX 模型。
+- 整合分支的 BGE token 级向量采用 attention-mask masked mean pooling；旧 WIP 版本采用 CLS 向量，保留整合分支当前版本。
+- 文档导入、PDF OCR、chunking、词法检索和向量检索有 JVM/Android 测试源码；真实模型下载、Android ONNX Runtime 性能、Room 迁移和设备耗电尚未验证。
+
+### 模块7：我的记忆
+- `UserMemoryRepository`、`UserMemoryStore`、`AutomaticMemoryExtractionCoordinator`、`ConversationMemoryStore` 已形成项目记忆保存、编辑、删除、语义/关键词召回、会话记忆和来源关联。
+- 本地 BGE embeddingCache 与用户提出的记忆上下文缓存不同；目前没有独立全局/项目/会话记忆上下文缓存，详见“记忆关联缓存专项核对”。
+- 编辑/删除记忆后 embeddingCache 不会即时清除旧 fingerprint 项，但新内容使用新 fingerprint，不会命中旧向量；旧条目会留至 LRU 淘汰。后续可在同一 repository 中做精确失效，不另建缓存服务。
+
+### 模块8：Phone Agent
+- `PhoneAgentTaskService` 创建、排队和取消任务；`PhoneAgentWorker` 通过 WorkManager 与持久任务协调器执行，并区分用户取消与系统中断：用户取消进入终态，后台中断暂停并要求核对后继续，不自动重放不确定动作。
+- `PhoneAgentService.downloadAsset()` 使用 Android DownloadManager 下载，随后调用 `MediaProjectStore.importAsset()` 将真实文件导入当前项目；主模型通过任务结果与 `media.project.assets` 获取素材 ID/元信息。
+- 已有 parser、planner、risk、screen safety、URL policy、cancellation、task store 等多组测试源码；真实设备上不同 App、后台限制、登录/验证码和虚拟屏稳定性仍待真机矩阵验证。
+- Mika 虚拟屏的具体交互差异已在前文记录；底层移植不应重写，后续只改 UI 手势/显示元素和接管状态接线。
+
+### 模块9：语音系统
+- 当前 `SpeechProviders` 抽象本机/远程 STT、TTS；`OpenAiCompatibleSpeechProviders` 提供 HTTP 音频输入/输出；`OpenAiRealtimeVoiceProvider` 使用 WebSocket 事件流；`AndroidTextToSpeechController` 负责本机 TTS。
+- 语音 Provider 配置和接口测试源码存在；当前旧 main 分支的 `TtsCapability` 不在整合分支中，整合版控制器已有设备语言枚举与 setLanguage 能力，暂不恢复旧 helper。
+- 真实音频设备路由、厂商系统行为、实时会话稳定性、耳机/扬声器切换与功耗仍待设备验收。
+
