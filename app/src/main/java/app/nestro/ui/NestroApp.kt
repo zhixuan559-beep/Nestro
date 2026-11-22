@@ -414,6 +414,17 @@ fun NestroApp(initialPage: String = "home") {
     var workflowPauseGate by workflowUiState.workflowPauseGate
     var agentApprovalPrompt by workflowUiState.agentApprovalPrompt
     var workflowApprovalVisible by workflowUiState.workflowApprovalVisible
+    var savedWorkflowTaskState by remember { mutableStateOf<app.nestro.agent.AgentTaskState?>(null) }
+    LaunchedEffect(page, runningWorkflowId, workflowInputDraft) {
+        if (page == "workflows") {
+            val savedTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+            savedWorkflowTaskState = if (savedTaskId.isBlank()) null else withContext(Dispatchers.IO) {
+                appRuntime.agentTaskCoordinator.state(savedTaskId)
+            }
+        } else {
+            savedWorkflowTaskState = null
+        }
+    }
     val dataTransferUiState = remember { DataTransferUiState() }
     var backupStatus by dataTransferUiState.backupStatus
     var pendingBackupUri by dataTransferUiState.pendingBackupUri
@@ -1903,6 +1914,19 @@ fun NestroApp(initialPage: String = "home") {
                                                  Text(if (workflowIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
                                              }
                                              workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}", color = Mint, style = MaterialTheme.typography.bodySmall) }
+                                             val savedWorkflowTaskIdForCard = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                             val savedWorkflowInputForCard = prefs.getString("workflow_resume_input_v1", "").orEmpty()
+                                             val canResumeSavedWorkflow = savedWorkflowTaskState?.let { task ->
+                                                 task.taskId == savedWorkflowTaskIdForCard &&
+                                                     prefs.getString("workflow_task_workflow_id_v1", "").orEmpty() == workflow.id &&
+                                                     task.capabilityId == workflow.id &&
+                                                     savedWorkflowInputForCard == workflowInputDraft.trim() &&
+                                                     task.status in setOf(
+                                                         app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                                                         app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                                                         app.nestro.agent.AgentTaskStatus.PAUSED
+                                                     )
+                                             } == true
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
@@ -2096,7 +2120,15 @@ fun NestroApp(initialPage: String = "home") {
                                                              stopRequested = false
                                                          }
                                                      }
-                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (runningWorkflowId == workflow.id) "执行中…" else "运行") }
+                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                                     Text(
+                                                         when {
+                                                             runningWorkflowId == workflow.id -> "执行中…"
+                                                             canResumeSavedWorkflow -> "继续未完成工作流"
+                                                             else -> "运行工作流"
+                                                         }
+                                                     )
+                                                 }
                                                  TextButton(onClick = {
                                                      if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
                                                       editingWorkflowId = workflow.id
