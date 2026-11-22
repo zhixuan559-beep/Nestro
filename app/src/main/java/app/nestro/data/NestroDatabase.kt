@@ -350,6 +350,9 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
     suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
 
+    @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recentGeneratedPluginTaskStates(limit: Int = 10): List<AgentTaskStateEntity>
+
     @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'FAILED') ORDER BY updatedAt ASC")
     suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
 
