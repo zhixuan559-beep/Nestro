@@ -381,23 +381,24 @@ fun NestroApp(initialPage: String = "home") {
 
     DisposableEffect(appRuntime, workflowUiState) {
         appRuntime.agentApprovalCoordinator.setHandler { request ->
-            val decision = CompletableDeferred<app.nestro.agent.AgentApprovalDecision>()
             withContext(Dispatchers.Main.immediate) {
-                workflowUiState.agentApprovalPrompt.value = UnifiedApprovalPrompt(request, decision)
+                workflowUiState.enqueueApproval(request)
                 workflowUiState.workflowApprovalVisible.value = true
-            }
-            try {
-                decision.await()
-            } finally {
-                withContext(Dispatchers.Main.immediate) {
-                    if (workflowUiState.agentApprovalPrompt.value?.decision === decision) {
-                        workflowUiState.agentApprovalPrompt.value = null
-                        workflowUiState.workflowApprovalVisible.value = false
-                    }
-                }
             }
         }
         onDispose { appRuntime.agentApprovalCoordinator.setHandler(null) }
+    }
+    suspend fun refreshApprovalQueue(showNext: Boolean) {
+        val pending = withContext(Dispatchers.IO) {
+            appRuntime.agentApprovalCoordinator.pendingRequests()
+        }
+        withContext(Dispatchers.Main.immediate) {
+            workflowUiState.setPendingApprovals(pending)
+            workflowUiState.workflowApprovalVisible.value = showNext && pending.isNotEmpty()
+        }
+    }
+    LaunchedEffect(appRuntime, workflowUiState) {
+        refreshApprovalQueue(showNext = false)
     }
     var workflowHistory by workflowUiState.workflowHistory
     var workflows by workflowUiState.workflows
@@ -1901,8 +1902,21 @@ fun NestroApp(initialPage: String = "home") {
                                              stopRequested = true
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
-                                             agentApprovalPrompt?.decision?.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
-                                             agentApprovalPrompt = null
+                                             val approval = agentApprovalPrompt
+                                             val activeWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                             if (approval != null && approval.request.scopeId == activeWorkflowTaskId && activeWorkflowTaskId.isNotBlank()) {
+                                                 scope.launch {
+                                                     withContext(Dispatchers.IO) {
+                                                         appRuntime.agentApprovalCoordinator.respond(
+                                                             approval.request.id,
+                                                             app.nestro.agent.AgentApprovalDecision.REJECT,
+                                                             resumeTaskIfInactive = false
+                                                         )
+                                                         appRuntime.agentTaskCoordinator.cancel(activeWorkflowTaskId)
+                                                     }
+                                                     refreshApprovalQueue(showNext = false)
+                                                 }
+                                             }
                                              appRuntime.chatExecutionService.cancel()
                                              workflowRunStatus = "正在停止工作流…"
                                          }) { Text("停止", color = ColorStop) }
@@ -4273,7 +4287,13 @@ fun NestroApp(initialPage: String = "home") {
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("有一项任务操作等待授权", color = Ink, modifier = Modifier.weight(1f))
+                Text(
+                    if (workflowUiState.agentApprovalRequests.value.size > 1)
+                        "有 ${workflowUiState.agentApprovalRequests.value.size} 项任务操作等待授权"
+                    else "有一项任务操作等待授权",
+                    color = Ink,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(onClick = { workflowApprovalVisible = true }) { Text("查看审批", color = Mint) }
             }
         }
@@ -4294,10 +4314,26 @@ fun NestroApp(initialPage: String = "home") {
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = {
-                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE)
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE
+                                )
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
                     }) { Text("授权一次", color = Mint) }
                     TextButton(onClick = {
-                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK)
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK
+                                )
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
                     }) { Text("当前任务全部授权", color = Mint) }
                 }
             },
@@ -4305,7 +4341,15 @@ fun NestroApp(initialPage: String = "home") {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = { workflowApprovalVisible = false }) { Text("稍后处理", color = Muted) }
                     TextButton(onClick = {
-                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.REJECT
+                                )
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
                     }) { Text("拒绝", color = Muted) }
                 }
             }

@@ -450,8 +450,17 @@ interface NestroDao {
     @Query("SELECT * FROM agent_approval_audits WHERE status = 'PENDING' ORDER BY createdAt ASC")
     suspend fun pendingAgentApprovalAudits(): List<AgentApprovalAuditEntity>
 
-    @Query("UPDATE agent_approval_audits SET status = :status, updatedAt = :updatedAt WHERE scopeId = :scopeId AND status = 'PENDING'")
-    suspend fun closePendingAgentApprovalAudits(scopeId: String, status: String, updatedAt: Long): Int
+    @Query("SELECT * FROM agent_approval_audits WHERE id = :id LIMIT 1")
+    suspend fun agentApprovalAudit(id: String): AgentApprovalAuditEntity?
+
+    @Query("SELECT * FROM agent_approval_audits WHERE scopeId = :scopeId ORDER BY createdAt ASC")
+    suspend fun agentApprovalAuditsForScope(scopeId: String): List<AgentApprovalAuditEntity>
+
+    @Query("SELECT * FROM agent_approval_audits WHERE status IN ('AUTHORIZED_ONCE', 'AUTHORIZED_TASK', 'REJECTED') ORDER BY updatedAt ASC")
+    suspend fun resumableAgentApprovalAudits(): List<AgentApprovalAuditEntity>
+
+    @Query("UPDATE agent_approval_audits SET status = :status, updatedAt = :updatedAt WHERE scopeId = :scopeId AND status IN ('PENDING', 'AUTHORIZED_ONCE', 'AUTHORIZED_TASK', 'REJECTED')")
+    suspend fun closeActiveAgentApprovalAudits(scopeId: String, status: String, updatedAt: Long): Int
 
     @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
     suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>

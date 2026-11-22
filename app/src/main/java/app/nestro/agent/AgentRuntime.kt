@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
@@ -391,6 +392,7 @@ class InMemoryAgentToolCatalog : AgentToolCatalog {
 enum class AgentApprovalDecision { AUTHORIZE_ONCE, AUTHORIZE_TASK, REJECT }
 
 data class AgentApprovalRequest(
+    val id: String,
     val scopeId: String,
     val toolId: String,
     val reason: String
@@ -398,8 +400,11 @@ data class AgentApprovalRequest(
 
 /**
  * One approval boundary shared by chat tools, generated plugins, MCP and workflows.
- * Task-wide grants are process-local and scoped to one user request; they never
- * become persistent service/project permissions.
+ *
+ * Durable approval continuation is adapted from NoHarry/android-agent-runtime's
+ * ThreadApproval and ThreadApprovalContinuation patterns (MIT; see the third-party license).
+ * Decisions are persisted before waking an active caller, so interrupted tasks can
+ * consume the same decision after process recovery.
  */
 class AgentApprovalPendingException(message: String) : CancellationException(message)
 
@@ -415,50 +420,134 @@ data class AgentApprovalAuditRecord(
 
 class AgentApprovalCoordinator(
     private val persistAudit: suspend (AgentApprovalAuditRecord) -> Unit = {},
-    private val closePendingAudits: suspend (scopeId: String, status: String, updatedAt: Long) -> Unit = { _, _, _ -> }
+    private val closeActiveAudits: suspend (scopeId: String, status: String, updatedAt: Long) -> Unit = { _, _, _ -> },
+    private val loadPendingAudits: suspend () -> List<AgentApprovalAuditRecord> = { emptyList() },
+    private val loadAudit: suspend (id: String) -> AgentApprovalAuditRecord? = { null },
+    private val loadAuditsForScope: suspend (scopeId: String) -> List<AgentApprovalAuditRecord> = { emptyList() },
+    private val loadResumableAudits: suspend () -> List<AgentApprovalAuditRecord> = { emptyList() },
+    private val resumeTask: suspend (scopeId: String) -> Unit = {}
 ) {
+    private data class ActiveApproval(
+        val record: AgentApprovalAuditRecord,
+        val decision: CompletableDeferred<AgentApprovalDecision>
+    )
+
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
-    @Volatile private var handler: (suspend (AgentApprovalRequest) -> AgentApprovalDecision)? = null
+    private val promptMutex = Mutex()
+    private val activeRequests = ConcurrentHashMap<String, ActiveApproval>()
+    @Volatile private var handler: (suspend (AgentApprovalRequest) -> Unit)? = null
 
-    fun setHandler(value: (suspend (AgentApprovalRequest) -> AgentApprovalDecision)?) {
+    fun setHandler(value: (suspend (AgentApprovalRequest) -> Unit)?) {
         handler = value
+    }
+
+    suspend fun pendingRequests(): List<AgentApprovalRequest> =
+        loadPendingAudits().map { it.toRequest() }
+
+    /**
+     * Resolves an approval either in the live coroutine or, after process death,
+     * in the durable audit store and resumes the owning task.
+     */
+    suspend fun respond(
+        approvalId: String,
+        decision: AgentApprovalDecision,
+        resumeTaskIfInactive: Boolean = true
+    ): Boolean {
+        val active = activeRequests[approvalId]
+        if (active != null) {
+            if (!active.decision.isActive) return false
+            persistAudit(active.record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
+            return active.decision.complete(decision)
+        }
+
+        val record = loadAudit(approvalId) ?: return false
+        if (record.status != "PENDING") return false
+        persistAudit(record.copy(status = decisionStatus(decision), updatedAt = System.currentTimeMillis()))
+        if (resumeTaskIfInactive) resumeTask(record.scopeId)
+        return true
+    }
+
+    /** Reattach decisions committed just before a process interruption. */
+    suspend fun resumeResolvedTasks() {
+        loadResumableAudits()
+            .distinctBy { it.scopeId }
+            .forEach { record ->
+                runCatching { resumeTask(record.scopeId) }
+            }
     }
 
     suspend fun authorize(scopeId: String, toolId: String, reason: String): AgentApprovalDecision? {
         require(scopeId.isNotBlank() && scopeId.length <= 160)
         require(toolId.isNotBlank() && toolId.length <= 100)
         if (scopeId in taskWideGrants) return AgentApprovalDecision.AUTHORIZE_TASK
+
         val lock = requestLocks.computeIfAbsent(scopeId) { Mutex() }
-        return lock.withLock {
-            if (scopeId in taskWideGrants) return@withLock AgentApprovalDecision.AUTHORIZE_TASK
-            val now = System.currentTimeMillis()
-            val auditId = UUID.randomUUID().toString()
-            val pendingAudit = AgentApprovalAuditRecord(
-                id = auditId,
-                scopeId = scopeId,
-                toolId = toolId,
-                reason = reason.take(2_000),
-                status = "PENDING",
-                createdAt = now,
-                updatedAt = now
-            )
-            persistAudit(pendingAudit)
-            val approvalHandler = handler ?: return@withLock null
-            val decision = approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))
-            val decisionStatus = when (decision) {
-                AgentApprovalDecision.AUTHORIZE_ONCE -> "AUTHORIZED_ONCE"
-                AgentApprovalDecision.AUTHORIZE_TASK -> "AUTHORIZED_TASK"
-                AgentApprovalDecision.REJECT -> "REJECTED"
+        return lock.withLock scopeLock@{
+            if (scopeId in taskWideGrants) return@scopeLock AgentApprovalDecision.AUTHORIZE_TASK
+
+            val scopeAudits = loadAuditsForScope(scopeId).sortedBy { it.createdAt }
+            if (scopeAudits.any { it.status == "AUTHORIZED_TASK" }) {
+                taskWideGrants += scopeId
+                return@scopeLock AgentApprovalDecision.AUTHORIZE_TASK
             }
-            persistAudit(pendingAudit.copy(status = decisionStatus, updatedAt = System.currentTimeMillis()))
-            when (decision) {
-                AgentApprovalDecision.AUTHORIZE_ONCE -> AgentApprovalDecision.AUTHORIZE_ONCE
-                AgentApprovalDecision.AUTHORIZE_TASK -> {
-                    taskWideGrants += scopeId
-                    AgentApprovalDecision.AUTHORIZE_TASK
+
+            val priorDecision = scopeAudits.firstOrNull {
+                it.toolId == toolId && it.status in setOf("AUTHORIZED_ONCE", "REJECTED")
+            }
+            if (priorDecision != null) {
+                val decision = if (priorDecision.status == "AUTHORIZED_ONCE") {
+                    AgentApprovalDecision.AUTHORIZE_ONCE
+                } else {
+                    AgentApprovalDecision.REJECT
                 }
-                AgentApprovalDecision.REJECT -> AgentApprovalDecision.REJECT
+                val consumedStatus = if (decision == AgentApprovalDecision.AUTHORIZE_ONCE) {
+                    "CONSUMED_ONCE"
+                } else {
+                    "CONSUMED_REJECTED"
+                }
+                persistAudit(priorDecision.copy(status = consumedStatus, updatedAt = System.currentTimeMillis()))
+                return@scopeLock decision
+            }
+
+            promptMutex.withLock promptLock@{
+                val pending = loadAuditsForScope(scopeId)
+                    .firstOrNull { it.toolId == toolId && it.status == "PENDING" }
+                val now = System.currentTimeMillis()
+                val record = pending ?: AgentApprovalAuditRecord(
+                    id = UUID.randomUUID().toString(),
+                    scopeId = scopeId,
+                    toolId = toolId,
+                    reason = reason.take(2_000),
+                    status = "PENDING",
+                    createdAt = now,
+                    updatedAt = now
+                )
+                if (pending == null) persistAudit(record)
+
+                val approvalHandler = handler ?: return@promptLock null
+                val deferred = CompletableDeferred<AgentApprovalDecision>()
+                activeRequests[record.id] = ActiveApproval(record, deferred)
+                try {
+                    approvalHandler(record.toRequest())
+                    when (val decision = deferred.await()) {
+                        AgentApprovalDecision.AUTHORIZE_ONCE -> {
+                            persistAudit(record.copy(status = "CONSUMED_ONCE", updatedAt = System.currentTimeMillis()))
+                            AgentApprovalDecision.AUTHORIZE_ONCE
+                        }
+                        AgentApprovalDecision.AUTHORIZE_TASK -> {
+                            taskWideGrants += scopeId
+                            persistAudit(record.copy(status = "AUTHORIZED_TASK", updatedAt = System.currentTimeMillis()))
+                            AgentApprovalDecision.AUTHORIZE_TASK
+                        }
+                        AgentApprovalDecision.REJECT -> {
+                            persistAudit(record.copy(status = "CONSUMED_REJECTED", updatedAt = System.currentTimeMillis()))
+                            AgentApprovalDecision.REJECT
+                        }
+                    }
+                } finally {
+                    activeRequests.remove(record.id)
+                }
             }
         }
     }
@@ -472,8 +561,17 @@ class AgentApprovalCoordinator(
         require(status in setOf("CLOSED", "CANCELLED", "FAILED", "COMPLETED"))
         endScope(scopeId)
         runCatching {
-            closePendingAudits(scopeId, status, System.currentTimeMillis())
+            closeActiveAudits(scopeId, status, System.currentTimeMillis())
         }
+    }
+
+    private fun AgentApprovalAuditRecord.toRequest() =
+        AgentApprovalRequest(id = id, scopeId = scopeId, toolId = toolId, reason = reason)
+
+    private fun decisionStatus(decision: AgentApprovalDecision): String = when (decision) {
+        AgentApprovalDecision.AUTHORIZE_ONCE -> "AUTHORIZED_ONCE"
+        AgentApprovalDecision.AUTHORIZE_TASK -> "AUTHORIZED_TASK"
+        AgentApprovalDecision.REJECT -> "REJECTED"
     }
 }
 

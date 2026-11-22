@@ -955,6 +955,9 @@ class NestroApplication : Application() {
     }
 
     val agentApprovalCoordinator: AgentApprovalCoordinator by lazy {
+        fun app.nestro.data.AgentApprovalAuditEntity.toRecord() =
+            app.nestro.agent.AgentApprovalAuditRecord(id, scopeId, toolId, reason, status, createdAt, updatedAt)
+
         AgentApprovalCoordinator(
             persistAudit = { record ->
                 database.dao().putAgentApprovalAudit(
@@ -969,8 +972,38 @@ class NestroApplication : Application() {
                     )
                 )
             },
-            closePendingAudits = { scopeId, status, updatedAt ->
-                database.dao().closePendingAgentApprovalAudits(scopeId, status, updatedAt)
+            closeActiveAudits = { scopeId, status, updatedAt ->
+                database.dao().closeActiveAgentApprovalAudits(scopeId, status, updatedAt)
+            },
+            loadPendingAudits = {
+                database.dao().pendingAgentApprovalAudits().map { it.toRecord() }
+            },
+            loadAudit = { id ->
+                database.dao().agentApprovalAudit(id)?.toRecord()
+            },
+            loadAuditsForScope = { scopeId ->
+                database.dao().agentApprovalAuditsForScope(scopeId).map { it.toRecord() }
+            },
+            loadResumableAudits = {
+                database.dao().resumableAgentApprovalAudits().map { it.toRecord() }
+            },
+            resumeTask = { scopeId ->
+                val restartReason = "应用曾在任务执行期间退出；请核对当前状态后继续"
+                suspend fun resumeIfInterrupted(taskId: String): Boolean {
+                    val state = agentTaskCoordinator.state(taskId) ?: return false
+                    val resumable = state.status == AgentTaskStatus.WAITING_FOR_USER ||
+                        (state.status == AgentTaskStatus.PAUSED && state.lastError == restartReason)
+                    if (!resumable) return false
+                    agentTaskCoordinator.resume(taskId)
+                    return true
+                }
+
+                val chatTaskId = "chat-tools-$scopeId".take(120)
+                if (!resumeIfInterrupted(scopeId) && !resumeIfInterrupted(chatTaskId)) {
+                    database.dao().recoverableGeneratedPluginTaskStates()
+                        .filter { it.input.contains("request_id=$scopeId") }
+                        .forEach { row -> resumeIfInterrupted(row.taskId) }
+                }
             }
         )
     }
@@ -1002,6 +1035,7 @@ class NestroApplication : Application() {
             runCatching { calendarRepository.reconcileSchedules() }
             mcpToolCenterService.restoreEnabledTools()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
+            agentApprovalCoordinator.resumeResolvedTasks()
             val activePhoneTaskIds = database.dao().allAgentTaskStates()
                 .filter {
                     it.owner == "phone_agent" &&
