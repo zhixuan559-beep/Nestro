@@ -160,7 +160,7 @@ internal class ModelLedToolDispatcher(
         }
         if (savedCheckpoint.startsWith("mcp:v1:completed:")) {
             val recoveredOutput = savedCheckpoint.substringAfter('\n').take(8_000)
-            stateStore.put(existingChatTask.copy(
+            stateStore.put(requireNotNull(existingChatTask).copy(
                 status = AgentTaskStatus.COMPLETED,
                 resultSummary = recoveredOutput,
                 lastError = "",
