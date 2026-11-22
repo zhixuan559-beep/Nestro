@@ -39,7 +39,8 @@ private fun supportsOpenAiStreamUsage(config: ModelConfig): Boolean =
 internal data class NativeToolDefinition(
     val id: String,
     val description: String,
-    val parametersJson: String = """{"type":"object","properties":{},"additionalProperties":true}"""
+    val parametersJson: String = """{"type":"object","properties":{},"additionalProperties":true}""",
+    val parallelSafe: Boolean = false
 )
 internal data class NativeToolCallResult(val output: String, val requiresUser: Boolean = false)
 internal data class NativeToolCompletion(val text: String, val requiresUser: Boolean = false, val toolCallsExecuted: Int = 0)
@@ -390,13 +391,41 @@ internal object OpenAiClient {
                 if (round == MAX_NATIVE_TOOL_ROUNDS - 1 || executed + calls.size > MAX_NATIVE_TOOL_CALLS) {
                     return NativeToolCompletion("工具调用达到本轮安全上限，已停止继续调度。", toolCallsExecuted = executed)
                 }
+                val completedCalls = mutableListOf<Pair<Triple<String, String, Map<String, String>>, NativeToolCallResult>>()
+                var callIndex = 0
+                while (callIndex < calls.size) {
+                    if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
+                    val current = calls[callIndex]
+                    val currentDefinition = toolNames.values.firstOrNull { it.id == current.second }
+                    if (currentDefinition?.parallelSafe == true) {
+                        val batch = mutableListOf<Triple<String, String, Map<String, String>>>()
+                        while (callIndex < calls.size) {
+                            val candidate = calls[callIndex]
+                            val candidateDefinition = toolNames.values.firstOrNull { it.id == candidate.second }
+                            if (candidateDefinition?.parallelSafe != true) break
+                            batch += candidate
+                            callIndex++
+                        }
+                        val results = kotlinx.coroutines.coroutineScope {
+                            batch.map { call ->
+                                kotlinx.coroutines.async { onToolCall(call.second, call.third) }
+                            }.awaitAll()
+                        }
+                        executed += batch.size
+                        completedCalls += batch.zip(results)
+                    } else {
+                        val result = onToolCall(current.second, current.third)
+                        executed++
+                        completedCalls += current to result
+                        callIndex++
+                        if (result.requiresUser) break
+                    }
+                }
                 val openAiResults = JSONArray()
                 val anthropicResults = JSONArray()
                 val geminiResults = JSONArray()
-                for ((callId, toolId, arguments) in calls) {
-                    if (shouldStop()) throw kotlinx.coroutines.CancellationException("用户停止生成")
-                    val result = onToolCall(toolId, arguments)
-                    executed++
+                for ((call, result) in completedCalls) {
+                    val (callId, toolId, _) = call
                     if (result.requiresUser) {
                         return NativeToolCompletion(result.output, requiresUser = true, toolCallsExecuted = executed)
                     }
