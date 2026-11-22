@@ -443,9 +443,15 @@ ${prompt.take(8_000)}
                     }
             }
             val requestPermissionRouter = AgentPermissionRouter { task, tool ->
-                if (tool.id == "phone_agent.execute" && taskModeEnabled) AgentAuthorization.Allow
-                else if (tool.id.startsWith("media.project.") && taskModeEnabled) AgentAuthorization.Allow
-                else permissionRouter.authorize(task, tool)
+                if (!CapabilityRegistryStore.authorize(capabilityPreferences, task.projectId, tool.id)) {
+                    AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
+                } else if (tool.id == "phone_agent.execute" && taskModeEnabled) {
+                    AgentAuthorization.Allow
+                } else if (tool.id.startsWith("media.project.") && taskModeEnabled) {
+                    AgentAuthorization.Allow
+                } else {
+                    permissionRouter.authorize(task, tool)
+                }
             }
             val runtime: AgentRuntime = DefaultAgentRuntime(
                 catalog = scopedAccess,
