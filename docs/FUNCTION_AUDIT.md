@@ -732,3 +732,15 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 该功能现已从 PR #1 的旧架构移植到当前 UserMemoryStore/Repository/Room/备份体系；不是整分支合并。
 - **验证状态**：仅代码与测试源码已提交，尚未执行编译、迁移 instrumentation、跨项目召回测试或备份恢复测试。
 
+
+
+## 2026-11-22 主模型媒体理解入口已接通（代码已提交，未执行测试）
+
+- `NestroApplication.agentToolCatalog` 新增 `media.ai.run` 与 `media.ai.status`；`media.provider.list` 现在列出配置实际具备的图片理解、音频转写、视频场景分析、音频处理和视频生成能力。
+- `ModelLedToolDispatcher.nativeToolSchema` 已补齐媒体分析工具参数 schema；主模型系统提示明确先列出当前项目素材、检查 Provider 能力，再按素材类型选择 image/transcribe/scenes/audio-clean；超时后使用 task_id 查询，不得虚构结果。
+- 工具复用原有 `MediaAiTaskStore`、`MediaAiTaskWorker`、`MediaAiTaskScheduler`、`MediaProviderConfigStore` 和 `MediaProjectStore`；未新建 Provider、任务表或 Worker。媒体上传到第三方服务前要求确认。
+- 图片理解调用现有视觉模型；音频/视频转写返回带时间戳文本；视频场景分析返回时间段/场景描述；音频降噪生成新素材并导入当前项目。
+- **能力边界**：只处理当前项目已导入素材；当前 ChatMessage/OpenAiClient 仍是纯文本，不能直接读取未导入的聊天附件。视频场景分析不等于通用视频问答；音频转写不等于非语音声音事件理解。
+- 主要提交：`04dfa43f6fdd6f663ed2843433c4e6c03ecfef53`、`55640f9f218916ca16a582fb154847ea464fc51e`。
+- **验证状态**：代码已提交；尚未执行 Kotlin 编译、主模型原生工具调用、第三方 API 联调或设备验收；尚无专门的 ModelLedToolDispatcher 媒体工具端到端测试。
+
