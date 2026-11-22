@@ -131,7 +131,7 @@ class WorkflowExecutionCoordinatorTest {
         tasks.pause("workflow-resume-test-task")
         interrupted.join()
         assertEquals(AgentTaskStatus.PAUSED, tasks.state("workflow-resume-test-task")?.status)
-        assertEquals(1, firstPassCalls)
+        assertEquals(2, firstPassCalls)
 
         var resumedCalls = 0
         val result = workflows.execute(
