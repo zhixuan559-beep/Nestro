@@ -32,7 +32,8 @@ data class MediaAiTask(
     val error: String = "",
     val createdAt: Long,
     val updatedAt: Long,
-    val parentTaskId: String = ""
+    val parentTaskId: String = "",
+    val languageTag: String = "auto"
 )
 
 object MediaAiTaskStore {
@@ -48,7 +49,7 @@ object MediaAiTaskStore {
         require(taskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "AI 任务 ID 无效" }
         return File(directory(context,projectId),"$taskId.json")
     }
-    @Synchronized fun create(context: Context, projectId: String, assetId: String, providerId: String, action: String, prompt: String = "", parentTaskId: String = ""): MediaAiTask {
+    @Synchronized fun create(context: Context, projectId: String, assetId: String, providerId: String, action: String, prompt: String = "", parentTaskId: String = "", languageTag: String = "auto"): MediaAiTask {
         require(action in setOf("transcribe","scenes","audio-clean","image","video-generate")) { "媒体 AI 操作无效" }
         require(
             (action == "video-generate" && assetId.isBlank()) ||
@@ -56,6 +57,9 @@ object MediaAiTaskStore {
         ) { "素材 ID 无效" }
         require(providerId.matches(Regex("[A-Za-z0-9._-]{1,80}"))) { "服务商 ID 无效" }
         require(prompt.length <= (if (action == "video-generate") 12_000 else 2_000)) { "媒体 AI 指令过长" }
+        require(languageTag == "auto" || languageTag.matches(Regex("^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$"))) {
+            "转写语言标识无效"
+        }
         if (parentTaskId.isNotBlank()) {
             require(parentTaskId.matches(Regex("^[A-Fa-f0-9-]{36}$"))) { "上一个视频任务 ID 无效" }
             val parent = read(context, projectId, parentTaskId)
@@ -65,7 +69,7 @@ object MediaAiTaskStore {
         }
         val now=System.currentTimeMillis()
         return MediaAiTask(UUID.randomUUID().toString(),projectId,assetId,providerId,action,prompt,MediaAiTaskStatus.QUEUED,0,
-            createdAt=now,updatedAt=now,parentTaskId=parentTaskId).also { write(context,it) }
+            createdAt=now,updatedAt=now,parentTaskId=parentTaskId,languageTag=languageTag).also { write(context,it) }
     }
     @Synchronized fun read(context: Context, projectId: String, taskId: String): MediaAiTask? {
         val target=file(context,projectId,taskId)
@@ -75,7 +79,7 @@ object MediaAiTaskStore {
             MediaAiTask(j.getString("id"),j.getString("projectId"),j.getString("assetId"),j.getString("providerId"),
                 j.getString("action"),j.optString("prompt"),MediaAiTaskStatus.valueOf(j.getString("status")),
                 j.optInt("progress").coerceIn(0,100),j.optString("resultJson"),j.optBoolean("resultConsumed",false),j.optString("error").take(1000),
-                j.getLong("createdAt"),j.getLong("updatedAt"),j.optString("parentTaskId")).also { require(it.id==taskId && it.projectId==projectId) }
+                j.getLong("createdAt"),j.getLong("updatedAt"),j.optString("parentTaskId"),j.optString("languageTag","auto")).also { require(it.id==taskId && it.projectId==projectId) }
         }.getOrNull()
     }
     fun list(context: Context, projectId: String): List<MediaAiTask> =
@@ -107,7 +111,7 @@ object MediaAiTaskStore {
             .put("providerId",task.providerId).put("action",task.action).put("prompt",task.prompt)
             .put("status",task.status.name).put("progress",task.progress).put("resultJson",task.resultJson)
             .put("resultConsumed",task.resultConsumed).put("error",task.error.take(1000)).put("createdAt",task.createdAt).put("updatedAt",task.updatedAt)
-            .put("parentTaskId", task.parentTaskId)
+            .put("parentTaskId", task.parentTaskId).put("languageTag", task.languageTag)
         val atomic=android.util.AtomicFile(file(context,task.projectId,task.id))
         val stream=atomic.startWrite()
         try { stream.write(json.toString().toByteArray(Charsets.UTF_8)); stream.fd.sync(); atomic.finishWrite(stream) }
@@ -168,7 +172,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             val result=withContext(Dispatchers.IO) {
                 when(task.action) {
                     "transcribe" -> {
-                        val cues=provider.transcribe(mediaAsset,file,"zh-CN",progress)
+                        val cues=provider.transcribe(mediaAsset,file,task.languageTag,progress)
                         JSONObject().put("type","transcribe").put("cues",JSONArray().apply {
                             cues.forEach { put(JSONObject().put("id",it.id).put("startMs",it.startMs).put("endMs",it.endMs).put("text",it.text)) }
                         }).toString()
