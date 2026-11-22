@@ -62,37 +62,80 @@ class GeneratedPluginFactoryTest {
 
     @Test
     fun executorCheckpointsEachSuccessfulStepAndResumesWithoutReplayingIt() = runBlocking {
+        val resumePlugin = plugin().copy(
+            enabled = true,
+            steps = plugin().steps + GeneratedPluginStep(
+                "verify", "media.inspect",
+                mapOf("source" to "${steps.video.output}"), "verified"
+            )
+        )
         val checkpoints = mutableListOf<Pair<Int, String>>()
         val firstCalls = mutableListOf<String>()
         val interrupted = GeneratedPluginWorkflowExecutor.execute(
-            plugin = plugin().copy(enabled = true),
+            plugin = resumePlugin,
             inputs = mapOf("source" to "content://video/1"),
             discovery = discovery,
             invokeThroughRuntime = { toolId, _ ->
                 firstCalls += toolId
-                if (toolId == "media.inspect") AgentToolResult(true, output = "duration=90")
-                else AgentToolResult(false, error = "temporary failure")
+                when (firstCalls.size) {
+                    1 -> AgentToolResult(true, output = "duration=90")
+                    2 -> AgentToolResult(true, output = "content://video/output")
+                    else -> AgentToolResult(false, error = "temporary read-only failure")
+                }
             },
             onStepCheckpoint = { step, checkpoint -> checkpoints += step to checkpoint }
         )
         assertFalse(interrupted.success)
-        assertEquals(listOf("media.inspect", "media.render"), firstCalls)
-        assertEquals(1, checkpoints.single().first)
+        assertEquals(listOf("media.inspect", "media.render", "media.inspect"), firstCalls)
+        val saved = checkpoints.last()
+        assertEquals(2, saved.first)
+        assertEquals(2, GeneratedPluginRunCheckpointCodec.decode(
+            resumePlugin, mapOf("source" to "content://video/1"), saved.second, discovery
+        ).size)
 
         val resumedCalls = mutableListOf<String>()
         val resumed = GeneratedPluginWorkflowExecutor.execute(
-            plugin = plugin().copy(enabled = true),
+            plugin = resumePlugin,
             inputs = mapOf("source" to "content://video/1"),
             discovery = discovery,
             invokeThroughRuntime = { toolId, args ->
                 resumedCalls += toolId
-                AgentToolResult(true, output = if (toolId == "media.render") args["metadata"].orEmpty() else "")
+                assertEquals("content://video/output", args["source"])
+                AgentToolResult(true, output = "verified")
             },
-            resumeCheckpoint = checkpoints.single().second
+            resumeCheckpoint = saved.second
         )
         assertTrue(resumed.success)
-        assertEquals(listOf("media.render"), resumedCalls)
+        assertEquals(listOf("media.inspect"), resumedCalls)
         assertTrue(resumed.output.contains("duration=90"))
+    }
+
+    @Test
+    fun executorRefusesToReplayAnInterruptedExternalWrite() = runBlocking {
+        val checkpoints = mutableListOf<String>()
+        val result = runCatching {
+            GeneratedPluginWorkflowExecutor.execute(
+                plugin = plugin().copy(enabled = true),
+                inputs = mapOf("source" to "content://video/1"),
+                discovery = discovery,
+                invokeThroughRuntime = { toolId, _ ->
+                    if (toolId == "media.inspect") AgentToolResult(true, output = "duration=90")
+                    else throw kotlinx.coroutines.CancellationException("process interrupted")
+                },
+                onStepCheckpoint = { _, checkpoint -> checkpoints += checkpoint }
+            )
+        }
+        assertTrue(result.isFailure)
+        val interruptedCheckpoint = checkpoints.last()
+        val resumeError = runCatching {
+            GeneratedPluginRunCheckpointCodec.decode(
+                plugin().copy(enabled = true),
+                mapOf("source" to "content://video/1"),
+                interruptedCheckpoint,
+                discovery
+            )
+        }.exceptionOrNull()
+        assertTrue(resumeError?.message?.contains("外部写入") == true)
     }
 
     @Test
@@ -104,10 +147,10 @@ class GeneratedPluginFactoryTest {
             listOf(GeneratedPluginStepResult("inspect", "media.inspect", true, "duration=90"))
         )
         assertFalse(runCatching {
-            GeneratedPluginRunCheckpointCodec.decode(original, mapOf("source" to "content://video/2"), checkpoint)
+            GeneratedPluginRunCheckpointCodec.decode(original, mapOf("source" to "content://video/2"), checkpoint, discovery)
         }.isSuccess)
         assertFalse(runCatching {
-            GeneratedPluginRunCheckpointCodec.decode(original.copy(version = "0.2.0"), mapOf("source" to "content://video/1"), checkpoint)
+            GeneratedPluginRunCheckpointCodec.decode(original.copy(version = "0.2.0"), mapOf("source" to "content://video/1"), checkpoint, discovery)
         }.isSuccess)
     }
 
