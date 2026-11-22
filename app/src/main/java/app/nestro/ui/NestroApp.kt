@@ -1939,7 +1939,8 @@ fun NestroApp(initialPage: String = "home") {
                                                      task.status in setOf(
                                                          app.nestro.agent.AgentTaskStatus.CREATED,
                                                          app.nestro.agent.AgentTaskStatus.QUEUED,
-                                                         app.nestro.agent.AgentTaskStatus.RUNNING
+                                                         app.nestro.agent.AgentTaskStatus.RUNNING,
+                                                         app.nestro.agent.AgentTaskStatus.RETRY_WAIT
                                                      )
                                              } == true
                                              if (hasPendingSavedWorkflow && !canResumeSavedWorkflow) {
