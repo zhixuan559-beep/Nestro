@@ -104,3 +104,12 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - Diverged 候选分支包括 PR #1 的知识检索/能力中心旧快照、模块6/7/8/9/13/14/15 历史分支、模块13审计修复分支、模块5/6 WIP 分支、旧 main 和临时写权限测试分支。此前专项审计已确认：PR #1 仅选择性回收独立语义，不合入旧 CapabilityTaskEngine；模块6/7/13/14/15 整合分支有较新的修复；模块8差异主要是 CI/脚本；旧 main 的 UnifiedAgentDispatcher/ChatNetworkPolicy/TtsCapability 不应复制回来。仍需对本轮列出的候选文件做 blob/语义复核，不能仅凭 compare 状态下最终结论。
 - 当前仍开放的 Draft PR 只有：PR #1 `feature/knowledge-retrieval-ranking → main`；PR #3 `refactor/phase-2-architecture → feature/voice-system`。两者都不是 integration 目标分支的待合并 PR，PR #3 所在 refactor 分支当前相对 integration behind 0 ahead。
 - 本节只完成分支图谱和 PR 元数据刷新，不代表全部分支文件差异已逐文件核验，也不代表所有功能都已合并/验收。
+
+
+## 2026-11-22 17:18 UTC — main 分支旧代码状态复核纠正
+
+上一版本报告写明 main 的 `ChatNetworkPolicy` 与 `TtsCapability` 未接入当前路径；该判断已被当前整合分支源码推翻，属于过期记录：
+- 当前 integration 有独立版本 `app/src/main/java/app/nestro/data/ChatNetworkPolicy.kt`（与 main blob 不同），`OpenAiClient.streamWithFallback` 已调用 `timeoutPolicy()` 和 `retryPlan()`，并有当前测试 `ChatNetworkPolicyTest.kt`；不能再标为未接线。
+- `TtsCapability.kt` 与 main blob 一致，当前 `AndroidTextToSpeechController` 已调用 `TtsCapability.chineseVoices/isLocaleAvailable`；不能再标为未接线。
+- `UnifiedAgentDispatcher.kt` 当前 integration 不存在；顶层调度由 `ModelLedToolDispatcher` 承担，不能把 main 的旧 dispatcher 复制回来。
+- 这进一步说明分支审计必须以当前 integration 源码调用链为准，旧审计文档也必须随源码复核修订。
