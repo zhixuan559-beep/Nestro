@@ -14,7 +14,11 @@ class CalendarRepository(context: Context) {
 
     suspend fun importSystemEvent(event: CalendarEvent): CalendarEvent {
         val old = dao.event(event.id)
-        return save(event.copy(completed = old?.completed ?: false))
+        return save(event.copy(
+            completed = old?.completed ?: false,
+            automationPrompt = old?.automationPrompt.orEmpty(),
+            automationProjectId = old?.automationProjectId.orEmpty()
+        ))
     }
 
     suspend fun save(event: CalendarEvent): CalendarEvent {
