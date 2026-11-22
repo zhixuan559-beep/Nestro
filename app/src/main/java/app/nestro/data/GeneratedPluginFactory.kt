@@ -511,7 +511,7 @@ object GeneratedPluginRunCheckpointCodec {
             payload.optString("pluginId") == plugin.id &&
             payload.optString("pluginVersion") == plugin.version &&
             payload.optString("pluginFingerprint") == pluginFingerprint(plugin) &&
-            payload.optString("inputFingerprint") == inputFingerprint(inputs)) {
+            payload.optString("inputFingerprint") == fingerprintInputs(inputs)) {
             "插件检查点与当前插件版本或输入不匹配，已停止恢复"
         }
         val rows = payload.optJSONArray("completedSteps") ?: JSONArray()
