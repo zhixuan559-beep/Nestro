@@ -101,6 +101,7 @@ internal class ModelLedToolDispatcher(
         shouldStop: () -> Boolean,
         taskModeEnabled: Boolean,
         expertTeamEnabled: Boolean,
+        parentTaskId: String? = null,
         planPhoneAgent: suspend (Map<String, String>) -> AgentToolResult,
         runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
@@ -279,6 +280,9 @@ ${prompt.take(8_000)}
                                     AgentTaskStatus.WAITING_FOR_USER,
                                     authorization.reason
                                 )
+                                parentTaskId?.let {
+                                    taskCoordinator?.transitionTask(it, AgentTaskStatus.WAITING_FOR_USER, authorization.reason)
+                                }
                                 when (approvalCoordinator?.authorize(
                                     requestId,
                                     tool.id,
@@ -291,6 +295,9 @@ ${prompt.take(8_000)}
                                             AgentTaskStatus.RUNNING,
                                             "用户已批准：${tool.id}"
                                         )
+                                        parentTaskId?.let {
+                                            taskCoordinator?.transitionTask(it, AgentTaskStatus.RUNNING, "用户已批准：${tool.id}")
+                                        }
                                         AgentAuthorization.Allow
                                     }
                                     app.nestro.agent.AgentApprovalDecision.REJECT -> {
@@ -299,6 +306,9 @@ ${prompt.take(8_000)}
                                             AgentTaskStatus.FAILED,
                                             "用户拒绝：${tool.id}"
                                         )
+                                        parentTaskId?.let {
+                                            taskCoordinator?.transitionTask(it, AgentTaskStatus.FAILED, "用户拒绝：${tool.id}")
+                                        }
                                         AgentAuthorization.Deny("用户未批准本次操作：${tool.id}")
                                     }
                                     null -> throw app.nestro.agent.AgentApprovalPendingException(
