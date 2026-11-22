@@ -198,7 +198,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                 else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
                             }) { Text("使用隔离屏", color = Mint) }
                         }
-                        Text("实时画面已独立悬浮；可拖动标题栏移动窗口，点标题栏折叠为任务胶囊。", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        Text("实时画面无标题栏悬浮；单击切换大小，双击或长按屏幕触控，拖动屏幕滑动，拖动任一角调整大小。", color = Muted, style = MaterialTheme.typography.labelSmall)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = {
@@ -390,127 +390,87 @@ private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.m
     val scope = rememberCoroutineScope()
     val virtualFrame by session.frames.collectAsState()
     var previewScale by remember(session) { mutableFloatStateOf(0.68f) }
-    var floatingPreviewCollapsed by remember(session) { mutableStateOf(false) }
-    var floatingPreviewOffset by remember(session) { mutableStateOf(Offset.Zero) }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        val previewWidthDp = 180.dp * previewScale
-        val frameAspect = virtualFrame?.let { it.height.toFloat() / it.width.toFloat() } ?: (320f / 180f)
-        val previewHeightDp = previewWidthDp * frameAspect
-        val panelWidthDp = if (floatingPreviewCollapsed) 164.dp else previewWidthDp
-        val panelHeightDp = 34.dp + if (floatingPreviewCollapsed) 0.dp else previewHeightDp
-        val maxWidthPx = with(density) { maxWidth.toPx() }
-        val maxHeightPx = with(density) { maxHeight.toPx() }
-        val edgeInsetPx = with(density) { 12.dp.toPx() }
-        val panelWidthPx = with(density) { panelWidthDp.toPx() }
-        val panelHeightPx = with(density) { panelHeightDp.toPx() }
-        LaunchedEffect(panelWidthPx, panelHeightPx, maxWidthPx, maxHeightPx) {
-            val minX = -(maxWidthPx - panelWidthPx - edgeInsetPx).coerceAtLeast(0f)
-            val minY = -(maxHeightPx - panelHeightPx - edgeInsetPx).coerceAtLeast(0f)
-            floatingPreviewOffset = Offset(
-                floatingPreviewOffset.x.coerceIn(minX, 0f),
-                floatingPreviewOffset.y.coerceIn(minY, 0f)
-            )
-        }
+    val previewWidthDp = 180.dp * previewScale
+    val frameAspect = virtualFrame?.let { it.height.toFloat() / it.width.toFloat() } ?: (320f / 180f)
+    val previewHeightDp = previewWidthDp * frameAspect
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
         Surface(
             color = Card,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(12.dp),
             tonalElevation = 8.dp,
             modifier = Modifier
-                .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 12.dp)
-                .offset { IntOffset(floatingPreviewOffset.x.roundToInt(), floatingPreviewOffset.y.roundToInt()) }
-                .width(panelWidthDp)
+                .width(previewWidthDp)
+                .height(previewHeightDp)
         ) {
-            Column {
-                Row(
+            val bitmap = virtualFrame
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "隔离虚拟屏实时画面",
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(34.dp)
-                        .pointerInput(session, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, edgeInsetPx, panelWidthPx, panelHeightPx) {
-                            detectDragGestures { change, dragAmount ->
-                                val minX = -(maxWidthPx - panelWidthPx - edgeInsetPx).coerceAtLeast(0f)
-                                val minY = -(maxHeightPx - panelHeightPx - edgeInsetPx).coerceAtLeast(0f)
-                                floatingPreviewOffset = Offset(
-                                    (floatingPreviewOffset.x + dragAmount.x).coerceIn(minX, 0f),
-                                    (floatingPreviewOffset.y + dragAmount.y).coerceIn(minY, 0f)
-                                )
-                                change.consume()
-                            }
-                        }
-                        .pointerInput(session, floatingPreviewCollapsed) {
-                            detectTapGestures { floatingPreviewCollapsed = !floatingPreviewCollapsed }
-                        }
-                        .padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (floatingPreviewCollapsed) "Phone Agent · 执行中" else "Phone Agent",
-                        color = Mint,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(if (floatingPreviewCollapsed) "展开" else "收起", color = Muted, style = MaterialTheme.typography.labelSmall)
-                }
-                if (!floatingPreviewCollapsed) {
-                    val bitmap = virtualFrame
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "隔离虚拟屏悬浮实时画面",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .width(previewWidthDp)
-                                .height(previewHeightDp)
-                                .pointerInput(session, previewScale) {
-                                    detectTapGestures(
-                                        onDoubleTap = {
-                                            previewScale = if (previewScale < 1f) 1.4f else 0.68f
-                                        },
-                                        onTap = { offset ->
-                                            scope.launch {
-                                                session.pipInput.tap(
-                                                    (offset.x / size.width).coerceIn(0f, 1f),
-                                                    (offset.y / size.height).coerceIn(0f, 1f)
-                                                )
-                                            }
-                                        }
-                                    )
+                        .fillMaxSize()
+                        .pointerInput(session, previewScale) {
+                            detectTapGestures(
+                                onTap = {
+                                    previewScale = if (previewScale < 1f) 1.4f else 0.68f
+                                },
+                                onDoubleTap = { offset ->
+                                    scope.launch {
+                                        session.pipInput.tap(
+                                            (offset.x / size.width).coerceIn(0f, 1f),
+                                            (offset.y / size.height).coerceIn(0f, 1f)
+                                        )
+                                    }
+                                },
+                                onLongPress = { offset ->
+                                    scope.launch {
+                                        session.pipInput.tap(
+                                            (offset.x / size.width).coerceIn(0f, 1f),
+                                            (offset.y / size.height).coerceIn(0f, 1f)
+                                        )
+                                    }
                                 }
-                                .pointerInput(session, previewScale) {
-                                    var resizing = false
-                                    val points = mutableListOf<Pair<Float, Float>>()
-                                    val corner = 26.dp.toPx()
-                                    detectDragGestures(
-                                        onDragStart = { start ->
-                                            resizing = start.x >= size.width - corner && start.y >= size.height - corner
-                                            points.clear()
-                                            if (!resizing) {
-                                                points += (start.x / size.width).coerceIn(0f, 1f) to
-                                                    (start.y / size.height).coerceIn(0f, 1f)
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            if (!resizing && points.size >= 2) {
-                                                val path = points.toList()
-                                                scope.launch { session.pipInput.swipe(path, 500L) }
-                                            }
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            if (resizing) {
-                                                previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
-                                            } else {
-                                                points += (change.position.x / size.width).coerceIn(0f, 1f) to
-                                                    (change.position.y / size.height).coerceIn(0f, 1f)
-                                            }
-                                            change.consume()
-                                        }
-                                    )
+                            )
+                        }
+                        .pointerInput(session, previewScale) {
+                            var resizing = false
+                            val points = mutableListOf<Pair<Float, Float>>()
+                            val corner = 26.dp.toPx()
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    resizing =
+                                        (start.x <= corner || start.x >= size.width - corner) &&
+                                        (start.y <= corner || start.y >= size.height - corner)
+                                    points.clear()
+                                    if (!resizing) {
+                                        points += (start.x / size.width).coerceIn(0f, 1f) to
+                                            (start.y / size.height).coerceIn(0f, 1f)
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (!resizing && points.size >= 2) {
+                                        val path = points.toList()
+                                        scope.launch { session.pipInput.swipe(path, 500L) }
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    if (resizing) {
+                                        previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
+                                    } else {
+                                        points += (change.position.x / size.width).coerceIn(0f, 1f) to
+                                            (change.position.y / size.height).coerceIn(0f, 1f)
+                                    }
+                                    change.consume()
                                 }
-                        )
-                    } else {
-                        Text("正在等待隔离屏画面帧…", color = Muted, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
-                    }
+                            )
+                        }
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("等待虚拟屏画面…", color = Muted, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
