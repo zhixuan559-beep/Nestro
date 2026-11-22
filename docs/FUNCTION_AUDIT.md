@@ -374,3 +374,13 @@
 ### 当前判定
 模块18的“日程 CRUD、周期计算、通知提醒、系统日历互操作”代码存在；但用户真正要求的“统一自动时间调度引擎”尚未实现。此项是明确的功能缺口，不是待验收状态。后续应复用现有统一任务基座和 WorkManager，补齐最小执行接线，不另建第二套任务系统。尚未修改代码。
 
+
+## 2026-11-22 场景路由与主屏导航交接专项审计
+
+- `ModelLedToolDispatcher` 已按主模型决策“直接回答或调用已声明能力”，并有创作/专家/手机执行组合规则；专家团工具仅在当前项目至少两位专家启用时开放。场景路由不是每轮强制调用工具或专家。
+- `PhoneAgentPlanner` 当前分类包含 SHOPPING、FOOD_ORDER、BOOKING、WEB_RESEARCH、FORM、CREATIVE_ASSET、GENERAL；购物/点餐计划已包含多来源比价、最终到手价比较和付款前用户确认；创作素材计划包含下载、导入当前项目素材库。
+- **未发现 TRAVEL/导航场景分类、地图路线规划步骤或“虚拟屏预览→主屏导航”专用交接动作。** `PhoneAgentExecutor.Action` 当前只有 OpenUrl/LaunchApp/DownloadAsset/ClickText/EnterText/Scroll/Wait/VerifyText/Back/ConfirmSensitive；`PhoneAgentService.openUrl()` 走普通 ACTION_VIEW，不能替代带路线预览、主屏目标确认和单独授权的导航交接流程。
+- 当前风险策略能阻止支付/提交等高风险点击并要求用户接手，但这不等于已实现“切换到主屏导航前展示目的地并授权”。该场景是明确缺口，后续应在现有 Phone Agent/统一权限路由中增加专用 handoff 能力，不能用普通 openUrl 变相实现。
+- 响应式方面，`NestroApp.kt` 已有 `adaptiveDrawerWidthDp` / `adaptiveContentPaddingDp`，`ChatRequestContextAssembler` 并行执行独立记忆检索；这是代码层面的适配/并行优化证据，手机/平板/大屏真实布局、帧率、内存和耗电仍待设备验证。
+- 用户要求的场景最短路径与主屏交接已补入路线图 J 节；本轮未修改代码。
+
