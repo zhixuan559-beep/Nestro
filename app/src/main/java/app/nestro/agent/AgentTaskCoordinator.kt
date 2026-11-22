@@ -11,6 +11,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -81,7 +82,7 @@ class AgentTaskExecutionContext internal constructor(
 class AgentTaskCoordinator(
     private val states: AgentTaskStateStore,
     private val handlers: AgentTaskHandlerRegistry,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val traces: AgentTaskTraceStore? = null
 ) {
     private val queue = Channel<String>(Channel.UNLIMITED)
@@ -118,30 +119,72 @@ class AgentTaskCoordinator(
         queue.close()
     }
 
-    suspend fun enqueue(taskId: String, owner: String, checkpoint: String? = null): AgentTaskState {
+    suspend fun enqueue(
+        taskId: String,
+        owner: String,
+        checkpoint: String? = null,
+        metadata: AgentTaskMetadata = AgentTaskMetadata(),
+        idempotencyKey: String? = null,
+        maxRetries: Int = 2
+    ): AgentTaskState {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
-        val queued = withTransitionLock {
+        require(idempotencyKey == null || (idempotencyKey.isNotBlank() && idempotencyKey.length <= 240))
+        require(maxRetries in 0..5)
+        val (queued, shouldQueue) = withTransitionLock {
+            val keyed = idempotencyKey?.let { states.getByIdempotencyKey(it) }
+            if (keyed != null) {
+                require(keyed.owner == owner) { "幂等键已被其他模块占用" }
+                if (keyed.status in setOf(AgentTaskStatus.QUEUED, AgentTaskStatus.RUNNING, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) {
+                    return@withTransitionLock keyed to false
+                }
+                val resumed = keyed.copy(
+                    status = AgentTaskStatus.QUEUED,
+                    lastError = "",
+                    availableAt = System.currentTimeMillis(),
+                    finishedAt = 0L,
+                    updatedAt = System.currentTimeMillis()
+                )
+                states.put(resumed)
+                return@withTransitionLock resumed to true
+            }
             val existing = states.get(taskId)
             if (existing != null) require(existing.owner == owner) { "任务 ID 已被其他模块占用" }
             if (existing != null && existing.status in setOf(
                     AgentTaskStatus.QUEUED,
                     AgentTaskStatus.RUNNING,
-                    AgentTaskStatus.COMPLETED
-                )) return@withTransitionLock existing
+                    AgentTaskStatus.COMPLETED,
+                    AgentTaskStatus.CANCELLED
+                )) return@withTransitionLock existing to false
+            val now = System.currentTimeMillis()
             val next = (existing ?: AgentTaskState(taskId, owner)).copy(
                 owner = owner,
                 status = AgentTaskStatus.QUEUED,
                 checkpoint = checkpoint?.take(64_000) ?: existing?.checkpoint.orEmpty(),
                 lastError = "",
-                updatedAt = System.currentTimeMillis()
+                projectId = metadata.projectId.ifBlank { existing?.projectId.orEmpty() },
+                conversationId = metadata.conversationId.ifBlank { existing?.conversationId.orEmpty() },
+                kind = metadata.kind.ifBlank { existing?.kind.orEmpty() },
+                capabilityId = metadata.capabilityId.ifBlank { existing?.capabilityId.orEmpty() },
+                title = metadata.title.ifBlank { existing?.title.orEmpty() },
+                input = metadata.input.ifBlank { existing?.input.orEmpty() },
+                idempotencyKey = idempotencyKey ?: existing?.idempotencyKey,
+                maxRetries = maxRetries,
+                availableAt = now,
+                finishedAt = 0L,
+                updatedAt = now
             )
-            states.put(next)
-            next
+            if (existing != null) {
+                states.put(next)
+                next to true
+            } else {
+                val canonical = states.putIfAbsent(next)
+                if (canonical.taskId != next.taskId) canonical to false else next to true
+            }
         }
-        if (queued.status == AgentTaskStatus.QUEUED) {
-            queue.send(taskId)
-            trace(taskId, "queued", owner)
+        if (shouldQueue) {
+            queue.send(queued.taskId)
+            trace(queued.taskId, "queued", owner)
         }
         return queued
     }
@@ -198,6 +241,7 @@ class AgentTaskCoordinator(
         taskId: String,
         owner: String,
         initialCheckpoint: String = "",
+        metadata: AgentTaskMetadata = AgentTaskMetadata(),
         handler: suspend (AgentTaskExecutionContext) -> T
     ): T {
         require(taskId.isNotBlank() && taskId.length <= 120)
@@ -222,7 +266,7 @@ class AgentTaskCoordinator(
             }
         }
         try {
-            val queued = enqueue(taskId, handlerId, if (existing == null) initialCheckpoint else null)
+            val queued = enqueue(taskId, handlerId, if (existing == null) initialCheckpoint else null, metadata = metadata)
             check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
             return completion.await()
         } catch (cancelled: CancellationException) {
@@ -294,6 +338,28 @@ class AgentTaskCoordinator(
                             paused
                         }
                     }
+                    AgentTaskStatus.RETRY_WAIT -> {
+                        val waitMillis = (latest.availableAt - System.currentTimeMillis()).coerceAtLeast(0L)
+                        if (latest.owner in externallyScheduledOwners) {
+                            latest
+                        } else if (handlers.find(latest.owner) == null) {
+                            val paused = latest.copy(
+                                status = AgentTaskStatus.PAUSED,
+                                lastError = "任务处理器尚未恢复；请重新打开对应功能后再继续",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            states.put(paused)
+                            paused
+                        } else if (waitMillis == 0L) {
+                            val queued = latest.copy(status = AgentTaskStatus.QUEUED, updatedAt = System.currentTimeMillis())
+                            states.put(queued)
+                            queuedIds += latest.taskId
+                            queued
+                        } else {
+                            scheduleRetry(latest.taskId, waitMillis)
+                            latest
+                        }
+                    }
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.WAITING_FOR_USER,
                     AgentTaskStatus.FAILED -> latest
@@ -330,6 +396,24 @@ class AgentTaskCoordinator(
         trace(taskId, if (status == AgentTaskStatus.PAUSED) "pause_requested" else "cancel_requested")
     }
 
+    private fun scheduleRetry(taskId: String, delayMillis: Long) {
+        scope.launch {
+            delay(delayMillis.coerceAtLeast(0L))
+            val shouldQueue = withTransitionLock {
+                val latest = states.get(taskId) ?: return@withTransitionLock false
+                if (latest.status != AgentTaskStatus.RETRY_WAIT || latest.availableAt > System.currentTimeMillis()) {
+                    return@withTransitionLock false
+                }
+                states.put(latest.copy(status = AgentTaskStatus.QUEUED, lastError = "", updatedAt = System.currentTimeMillis()))
+                true
+            }
+            if (shouldQueue) {
+                queue.send(taskId)
+                trace(taskId, "retry_ready", "退避结束，任务重新进入队列")
+            }
+        }
+    }
+
     private suspend fun executeQueued(taskId: String) {
         val initial = states.get(taskId) ?: return
         if (initial.status != AgentTaskStatus.QUEUED) return
@@ -360,6 +444,8 @@ class AgentTaskCoordinator(
                     states.put(latest.copy(
                         status = AgentTaskStatus.RUNNING,
                         lastError = "",
+                        startedAt = if (latest.startedAt == 0L) System.currentTimeMillis() else latest.startedAt,
+                        finishedAt = 0L,
                         updatedAt = System.currentTimeMillis()
                     ))
                     activeJobs[taskId] = job
@@ -393,6 +479,7 @@ class AgentTaskCoordinator(
                         else -> states.put(latest.copy(
                             status = AgentTaskStatus.COMPLETED,
                             lastError = "",
+                            finishedAt = System.currentTimeMillis(),
                             updatedAt = System.currentTimeMillis()
                         ))
                     }
@@ -431,16 +518,34 @@ class AgentTaskCoordinator(
                     trace(taskId, "paused", "任务执行被中断")
                 }
             } catch (error: Exception) {
+                var retryDelayMillis = 0L
                 withContext(NonCancellable) {
                     val latest = states.get(taskId) ?: initial
                     val message = error.message?.take(2_000) ?: "任务执行失败"
-                    states.put(latest.copy(
-                        status = AgentTaskStatus.FAILED,
-                        lastError = message,
-                        updatedAt = System.currentTimeMillis()
-                    ))
-                    trace(taskId, "failed", message)
+                    if (AgentTaskRetryPolicy.isRetryable(error) && latest.attempts < latest.maxRetries) {
+                        val nextAttempt = latest.attempts + 1
+                        retryDelayMillis = AgentTaskRetryPolicy.backoffMillis(nextAttempt)
+                        val now = System.currentTimeMillis()
+                        states.put(latest.copy(
+                            status = AgentTaskStatus.RETRY_WAIT,
+                            attempts = nextAttempt,
+                            availableAt = now + retryDelayMillis,
+                            lastError = message,
+                            finishedAt = 0L,
+                            updatedAt = now
+                        ))
+                        trace(taskId, "retry_scheduled", "第 " + nextAttempt + " 次重试将在 " + retryDelayMillis + "ms 后执行：" + message)
+                    } else {
+                        states.put(latest.copy(
+                            status = AgentTaskStatus.FAILED,
+                            lastError = message,
+                            finishedAt = System.currentTimeMillis(),
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                        trace(taskId, "failed", message)
+                    }
                 }
+                if (retryDelayMillis > 0L) scheduleRetry(taskId, retryDelayMillis)
             } finally {
                 AgentToolLeaseRegistry.revokeTask(taskId)
                 AgentCredentialLeaseRegistry.revokeTask(taskId)
