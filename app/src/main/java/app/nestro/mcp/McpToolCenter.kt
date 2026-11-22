@@ -240,6 +240,40 @@ class McpToolCenterService(
  fun setToolGranted(id:String,on:Boolean){repository.setToolGranted(id,on);val t=requireNotNull(repository.findTool(id));if(on)registerTool(t)else{catalog.remove(id);cancelActiveCalls(id)}}
  fun setServerEnabled(id:String,on:Boolean){repository.setServerEnabled(id,on);repository.listTools().filter{it.serverId==id}.forEach{if(on&&it.granted)registerTool(it)else{catalog.remove(it.id);cancelActiveCalls(it.id)}}}
  fun deleteServer(id:String){val ids=repository.listTools().filter{it.serverId==id}.map{it.id};repository.deleteServer(id);ids.forEach{catalog.remove(it);cancelActiveCalls(it)}}
+
+ suspend fun setToolGrantedWithRecovery(id: String, on: Boolean) {
+  setToolGranted(id, on)
+  if (!on) cancelPendingTasksForTools(setOf(id))
+ }
+
+ suspend fun setServerEnabledWithRecovery(id: String, on: Boolean) {
+  val toolIds = repository.listTools().filter { it.serverId == id }.map { it.id }.toSet()
+  setServerEnabled(id, on)
+  if (!on) cancelPendingTasksForTools(toolIds)
+ }
+
+ suspend fun deleteServerWithRecovery(id: String) {
+  val toolIds = repository.listTools().filter { it.serverId == id }.map { it.id }.toSet()
+  deleteServer(id)
+  cancelPendingTasksForTools(toolIds)
+ }
+
+ private suspend fun cancelPendingTasksForTools(toolIds: Set<String>) {
+  if (toolIds.isEmpty()) return
+  val coordinator = taskCoordinator ?: return
+  coordinator.recoverableTasks().filter { task ->
+   task.kind == "mcp_tool" &&
+    task.capabilityId in toolIds &&
+    task.status in setOf(
+     app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+     app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+     app.nestro.agent.AgentTaskStatus.PAUSED
+    )
+  }.forEach { task ->
+   coordinator.cancel(task.taskId)
+   approvalCoordinator?.endScope(task.taskId)
+  }
+ }
  suspend fun invoke(id:String,argsJson:String):AgentToolResult =
   invokeWithTaskId("mcp-ui-${UUID.randomUUID()}", id, argsJson)
 
