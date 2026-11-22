@@ -1149,3 +1149,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ### 审计边界
 
 本节为当前源码定向核验补记，不是十九模块总审计结束。未修改业务代码；未运行 Gradle、JVM/Android 测试、模拟器、真机或外部 API 联调。后续按 Issue #21 继续完成全部需求映射和静态修复。
+
+
+## 2026-11-22 17:20 UTC — 静态调用符号核查与首个编译阻塞修复
+
+- 在 `NestroApp.kt` 发现 `ConversationSnapshotPersistenceEffect(...)` 调用，但整合分支完整 Git tree 中不存在定义/导入/生成来源；GitHub 代码搜索也没有定义。该符号无法由当前仓库源码解析，属于确定的编译阻塞，不能等到统一构建时才发现。
+- 已新增 `app/src/main/java/app/nestro/ui/ConversationSnapshotPersistenceEffect.kt`：使用 Compose `LaunchedEffect` 对 Room 快照写入做 300ms debounce，使用最新 callback，区分协程取消与持久化异常；持久化实现仍委托给现有 `ConversationPersistenceService`，未另建存储层。
+- 已修正 `NestroApp.kt` 持久化回调：成功写入后同步 `persistedConversationVersions`，并清理已移除会话的版本 marker，避免每次快照变动都把所有会话重复写入。
+- 提交顺序：`478c2e386ae793da2e479b72f01dbcbcc17d84e4`（新增 effect）、`7b1eadf0f62b419cb97fd48712786044f544c1ab`（回写版本 marker）、`f7b36a32653f582a582fcc0677276f8d03161737`（异常边界收窄为 Exception）。已回读两个文件并确认调用点与定义存在。
+- 该修复尚未 Gradle 编译或运行测试；不能标记编译通过。后续仍需继续静态扫描其他 unresolved references/遗漏接线。
