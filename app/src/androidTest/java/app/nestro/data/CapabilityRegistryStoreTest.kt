@@ -72,6 +72,17 @@ class CapabilityRegistryStoreTest {
     }
 
     @Test
+    fun malformedRegistryFailsClosedWithoutBeingSilentlyOverwritten() {
+        preferences.edit().clear().putString("capability_registry_v1", "{invalid").commit()
+
+        CapabilityRegistryStore.registerIfAbsent(preferences, descriptor(defaultGranted = true))
+
+        assertTrue(CapabilityRegistryStore.list(preferences).isEmpty())
+        assertFalse(CapabilityRegistryStore.authorize(preferences, "project-a", "knowledge.search"))
+        assertEquals("{invalid", preferences.getString("capability_registry_v1", null))
+    }
+
+    @Test
     fun unregisterAtomicallyRemovesProjectGrantAndRecordsRevocation() {
         preferences.edit().clear().commit()
         CapabilityRegistryStore.registerAll(preferences, listOf(descriptor()))
