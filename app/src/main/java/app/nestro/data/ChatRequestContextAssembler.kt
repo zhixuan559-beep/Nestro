@@ -28,13 +28,17 @@ internal class ChatRequestContextAssembler(
         val recallQuery = requestHistory.takeLast(8)
             .joinToString("\n") { it.content.take(500) }
             .take(2_400)
+        val userMemoryQuery = buildMemoryRecallQuery(
+            requestHistory.filter { it.role == "user" }.takeLast(7).map { it.content },
+            prompt
+        )
 
         return coroutineScope {
             val recallTask = if (recallEnabled) async {
                 retrieveMemory(projectId, conversationId, recallQuery)
             } else null
             val userMemoryTask = if (userMemoryEnabled) async {
-                retrieveUserMemory(projectId, prompt)
+                retrieveUserMemory(projectId, userMemoryQuery)
             } else null
 
             val recall = recallTask?.await() ?: ConversationRecallResult("", emptyList())
