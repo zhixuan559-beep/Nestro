@@ -21,7 +21,11 @@ class CalendarRepository(context: Context) {
             nextRunAt = old?.nextRunAt ?: 0L,
             lastRunAt = old?.lastRunAt ?: 0L,
             lastTaskId = old?.lastTaskId.orEmpty(),
-            lastIdempotencyKey = old?.lastIdempotencyKey.orEmpty()
+            lastIdempotencyKey = old?.lastIdempotencyKey.orEmpty(),
+            automationStatus = old?.automationStatus ?: "IDLE",
+            automationResult = old?.automationResult.orEmpty(),
+            automationError = old?.automationError.orEmpty(),
+            automationUpdatedAt = old?.automationUpdatedAt ?: 0L
         ))
     }
 
@@ -41,7 +45,11 @@ class CalendarRepository(context: Context) {
             nextRunAt = old?.nextRunAt ?: event.nextRunAt,
             lastRunAt = old?.lastRunAt ?: event.lastRunAt,
             lastTaskId = old?.lastTaskId ?: event.lastTaskId,
-            lastIdempotencyKey = old?.lastIdempotencyKey ?: event.lastIdempotencyKey
+            lastIdempotencyKey = old?.lastIdempotencyKey ?: event.lastIdempotencyKey,
+            automationStatus = old?.automationStatus ?: event.automationStatus,
+            automationResult = old?.automationResult ?: event.automationResult,
+            automationError = old?.automationError ?: event.automationError,
+            automationUpdatedAt = old?.automationUpdatedAt ?: event.automationUpdatedAt
         )
         dao.put(saved)
         CalendarReminderScheduler.schedule(appContext, saved)
@@ -61,6 +69,22 @@ class CalendarRepository(context: Context) {
             lastRunAt = lastRunAt,
             taskId = taskId,
             idempotencyKey = idempotencyKey,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    suspend fun recordAutomationResult(
+        eventId: String,
+        status: String,
+        result: String = "",
+        error: String = ""
+    ) {
+        require(status in setOf("IDLE", "QUEUED", "RUNNING", "WAITING_FOR_USER", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"))
+        dao.recordAutomationResult(
+            id = eventId,
+            status = status,
+            result = result.take(8_000),
+            error = error.take(2_000),
             updatedAt = System.currentTimeMillis()
         )
     }
