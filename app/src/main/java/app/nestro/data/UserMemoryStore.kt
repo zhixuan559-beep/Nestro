@@ -221,6 +221,44 @@ object UserMemoryStore {
         }
     }
 
+    suspend fun saveManual(
+        dao: NestroDao,
+        projectId: String,
+        content: String,
+        category: String = "preference"
+    ): Boolean {
+        require(projectId.isNotBlank() && projectId.length <= 120 && dao.projectExists(projectId)) {
+            "项目空间不存在或已被删除"
+        }
+        val normalized = content.trim().replace(Regex("[\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ")
+        val normalizedCategory = category.trim().lowercase()
+        require(normalized.length in 8..180) { "记忆内容长度必须为 8 到 180 个字符" }
+        require(normalizedCategory in allowedCategories) { "记忆分类无效" }
+        require(isSafeContent(normalized)) { "记忆包含敏感信息，请勿保存" }
+        return mutationLock(projectId).withLock {
+            val now = System.currentTimeMillis()
+            val fingerprint = fingerprint(normalizedCategory + "|" + normalized.lowercase())
+            val inserted = dao.insertUserMemoryIfAbsent(
+                UserMemoryEntity(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    category = normalizedCategory,
+                    content = normalized,
+                    fingerprint = fingerprint,
+                    sourceConversationId = "",
+                    sourceMessageId = "",
+                    confidence = 1.0,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+            if (inserted == -1L) return@withLock false
+            bumpMutationVersion(projectId)
+            dao.trimUserMemories(projectId, 200)
+            true
+        }
+    }
+
     suspend fun importOne(dao: NestroDao, projectId: String, memory: UserMemoryEntity): Boolean {
         require(projectId.isNotBlank() && memory.projectId == projectId) { "导入记忆项目范围不匹配" }
         return mutationLock(projectId).withLock {
