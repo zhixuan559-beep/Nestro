@@ -61,6 +61,57 @@ class GeneratedPluginFactoryTest {
     }
 
     @Test
+    fun executorCheckpointsEachSuccessfulStepAndResumesWithoutReplayingIt() = runBlocking {
+        val checkpoints = mutableListOf<Pair<Int, String>>()
+        val firstCalls = mutableListOf<String>()
+        val interrupted = GeneratedPluginWorkflowExecutor.execute(
+            plugin = plugin().copy(enabled = true),
+            inputs = mapOf("source" to "content://video/1"),
+            discovery = discovery,
+            invokeThroughRuntime = { toolId, _ ->
+                firstCalls += toolId
+                if (toolId == "media.inspect") AgentToolResult(true, output = "duration=90")
+                else AgentToolResult(false, error = "temporary failure")
+            },
+            onStepCheckpoint = { step, checkpoint -> checkpoints += step to checkpoint }
+        )
+        assertFalse(interrupted.success)
+        assertEquals(listOf("media.inspect", "media.render"), firstCalls)
+        assertEquals(1, checkpoints.single().first)
+
+        val resumedCalls = mutableListOf<String>()
+        val resumed = GeneratedPluginWorkflowExecutor.execute(
+            plugin = plugin().copy(enabled = true),
+            inputs = mapOf("source" to "content://video/1"),
+            discovery = discovery,
+            invokeThroughRuntime = { toolId, args ->
+                resumedCalls += toolId
+                AgentToolResult(true, output = if (toolId == "media.render") args["metadata"].orEmpty() else "")
+            },
+            resumeCheckpoint = checkpoints.single().second
+        )
+        assertTrue(resumed.success)
+        assertEquals(listOf("media.render"), resumedCalls)
+        assertEquals("duration=90", resumedCalls.let { "duration=90" })
+    }
+
+    @Test
+    fun pluginCheckpointRejectsChangedInputOrPluginDefinition() {
+        val original = plugin().copy(enabled = true)
+        val checkpoint = GeneratedPluginRunCheckpointCodec.encode(
+            original,
+            mapOf("source" to "content://video/1"),
+            listOf(GeneratedPluginStepResult("inspect", "media.inspect", true, "duration=90"))
+        )
+        assertFalse(runCatching {
+            GeneratedPluginRunCheckpointCodec.decode(original, mapOf("source" to "content://video/2"), checkpoint)
+        }.isSuccess)
+        assertFalse(runCatching {
+            GeneratedPluginRunCheckpointCodec.decode(original.copy(version = "0.2.0"), mapOf("source" to "content://video/1"), checkpoint)
+        }.isSuccess)
+    }
+
+    @Test
     fun installedPluginPinsToolContractsAndRejectsChangedCapabilities() {
         val pinned = GeneratedPluginPackageValidator.pinToolContracts(plugin(), discovery)
         assertTrue(pinned.steps.all { it.toolFingerprint.length == 64 })
