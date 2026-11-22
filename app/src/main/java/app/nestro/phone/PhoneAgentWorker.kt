@@ -67,20 +67,28 @@ class PhoneAgentWorker(
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val existing = stateStore.get(taskId)
         if (existing == null) {
-            stateStore.put(AgentTaskState(
-                taskId = taskId,
-                owner = "phone_agent",
-                status = AgentTaskStatus.QUEUED,
-                currentStep = task.currentStep,
-                checkpoint = task.planJson.take(64_000)
-            ))
+            coordinator.registerExternallyScheduled(
+                AgentTaskState(
+                    taskId = taskId,
+                    owner = "phone_agent",
+                    status = AgentTaskStatus.QUEUED,
+                    currentStep = task.currentStep,
+                    checkpoint = task.planJson.take(64_000),
+                    projectId = task.projectId,
+                    conversationId = task.conversationId,
+                    kind = "phone_agent",
+                    capabilityId = "phone_agent.execute",
+                    title = task.goal.take(160),
+                    input = task.goal.take(48_000)
+                )
+            )
         } else {
             require(existing.owner == "phone_agent") { "Phone Agent 任务 ID 已被其他模块占用" }
         }
 
         when (stateStore.get(taskId)?.status) {
             AgentTaskStatus.CREATED,
-            AgentTaskStatus.QUEUED -> coordinator.enqueue(taskId, "phone_agent", task.planJson.take(64_000))
+            AgentTaskStatus.QUEUED -> coordinator.dispatchExternallyScheduled(taskId, "phone_agent")
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
             AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)

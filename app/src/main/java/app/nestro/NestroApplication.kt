@@ -813,9 +813,16 @@ class NestroApplication : Application() {
             runCatching { calendarRepository.reconcileSchedules() }
             mcpToolCenterService.restoreEnabledTools()
             agentTaskCoordinator.recoverAfterProcessRestart(externallyScheduledOwners = setOf("phone_agent"))
-            val activePhoneTaskIds = database.dao().allPhoneAgentTasks()
-                .filter { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }
-                .map { it.id }
+            val activePhoneTaskIds = database.dao().allAgentTaskStates()
+                .filter {
+                    it.owner == "phone_agent" &&
+                        it.status in setOf(
+                            AgentTaskStatus.QUEUED.name,
+                            AgentTaskStatus.RUNNING.name,
+                            AgentTaskStatus.RETRY_WAIT.name
+                        )
+                }
+                .map { it.taskId }
                 .toSet()
             PhoneAgentWorkScheduler.reconcilePending(this@NestroApplication, activePhoneTaskIds)
         }

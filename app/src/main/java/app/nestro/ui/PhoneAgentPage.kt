@@ -311,7 +311,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                     }
                                     taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
                                     if (result.isSuccess && executionAvailable) {
-                                        taskService.enqueue(task.id)
+                                        withContext(Dispatchers.IO) { taskService.enqueue(task.id) }
                                     }
                                     if (result.isSuccess) taskClarifications = taskClarifications - task.id
                                     refresh++
@@ -336,12 +336,22 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                             ) {
                                 Button(
                                     onClick = {
-                                        taskService.enqueue(
-                                            task.id,
-                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                            allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
-                                        )
-                                        taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
+                                        scope.launch {
+                                            runCatching {
+                                                withContext(Dispatchers.IO) {
+                                                    taskService.enqueue(
+                                                        task.id,
+                                                        afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
+                                                        allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                                                    )
+                                                }
+                                            }.onSuccess {
+                                                taskMessage = "已提交统一任务队列，切换会话不会中断任务记录。"
+                                            }.onFailure {
+                                                taskMessage = "任务提交失败：${it.message ?: "未知错误"}"
+                                            }
+                                            refresh++
+                                        }
                                     },
                                     enabled = serviceEnabled && executionAvailable && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)

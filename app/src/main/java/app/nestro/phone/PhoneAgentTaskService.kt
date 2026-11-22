@@ -2,6 +2,9 @@ package app.nestro.phone
 
 import android.content.Context
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentTaskMetadata
+import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentTaskStatus
 import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
@@ -21,8 +24,16 @@ class PhoneAgentTaskService(
 ) {
     private val appContext = context.applicationContext
 
-    suspend fun loadTasks(projectId: String, limit: Int = 30): List<PhoneAgentTaskEntity> =
-        database.dao().phoneAgentTasks(projectId, limit.coerceIn(1, 100))
+    suspend fun loadTasks(projectId: String, limit: Int = 30): List<PhoneAgentTaskEntity> {
+        val tasks = database.dao().phoneAgentTasks(projectId, limit.coerceIn(1, 100))
+        return tasks.map { task ->
+            val state = coordinator.state(task.id) ?: return@map task
+            task.copy(
+                status = state.status.toPhoneAgentStatus(),
+                currentStep = state.currentStep
+            )
+        }
+    }
 
     suspend fun loadLogs(
         tasks: List<PhoneAgentTaskEntity>,
@@ -42,15 +53,48 @@ class PhoneAgentTaskService(
         plan: PhoneAgentPlanner.Plan
     ): PhoneAgentTaskEntity {
         val task = PhoneAgentTaskStore.create(database.dao(), projectId, conversationId, plan)
+        coordinator.registerExternallyScheduled(
+            AgentTaskState(
+                taskId = task.id,
+                owner = "phone_agent",
+                status = AgentTaskStatus.CREATED,
+                currentStep = task.currentStep,
+                checkpoint = task.planJson.take(64_000),
+                projectId = task.projectId,
+                conversationId = task.conversationId,
+                kind = "phone_agent",
+                capabilityId = "phone_agent.execute",
+                title = task.goal.take(160),
+                input = task.goal.take(48_000)
+            )
+        )
         if (PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true) enqueue(task.id)
         return task
     }
 
-    fun enqueue(
+    suspend fun enqueue(
         taskId: String,
         afterUserHandoff: Boolean = false,
         allowRetryCurrentAction: Boolean = false
     ) {
+        val task = database.dao().phoneAgentTask(taskId) ?: error("Phone Agent 任务不存在")
+        ensureUnifiedState(task)
+        val prepared = coordinator.prepareExternallyScheduled(
+            taskId = taskId,
+            owner = "phone_agent",
+            checkpoint = task.planJson.take(64_000),
+            metadata = AgentTaskMetadata(
+                projectId = task.projectId,
+                conversationId = task.conversationId,
+                kind = "phone_agent",
+                capabilityId = "phone_agent.execute",
+                title = task.goal.take(160),
+                input = task.goal.take(48_000)
+            )
+        ) ?: error("统一任务记录不存在，已阻止 Phone Agent 入队")
+        check(prepared.status !in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) {
+            "已结束的 Phone Agent 任务不能重新入队"
+        }
         PhoneAgentWorkScheduler.enqueue(
             appContext,
             taskId,
@@ -59,19 +103,58 @@ class PhoneAgentTaskService(
         )
     }
 
+    private suspend fun ensureUnifiedState(task: PhoneAgentTaskEntity) {
+        if (coordinator.state(task.id) != null) return
+        val status = when (task.status) {
+            PhoneAgentTaskStore.STATUS_RUNNING -> AgentTaskStatus.RUNNING
+            PhoneAgentTaskStore.STATUS_WAITING_USER -> AgentTaskStatus.WAITING_FOR_USER
+            PhoneAgentTaskStore.STATUS_PAUSED -> AgentTaskStatus.PAUSED
+            PhoneAgentTaskStore.STATUS_COMPLETED -> AgentTaskStatus.COMPLETED
+            PhoneAgentTaskStore.STATUS_FAILED -> AgentTaskStatus.FAILED
+            PhoneAgentTaskStore.STATUS_CANCELLED -> AgentTaskStatus.CANCELLED
+            else -> AgentTaskStatus.CREATED
+        }
+        coordinator.registerExternallyScheduled(
+            AgentTaskState(
+                taskId = task.id,
+                owner = "phone_agent",
+                status = status,
+                currentStep = task.currentStep,
+                checkpoint = task.planJson.take(64_000),
+                projectId = task.projectId,
+                conversationId = task.conversationId,
+                kind = "phone_agent",
+                capabilityId = "phone_agent.execute",
+                title = task.goal.take(160),
+                input = task.goal.take(48_000)
+            )
+        )
+    }
+
     suspend fun appendClarification(taskId: String, clarification: String) {
         PhoneAgentTaskStore.appendClarification(database.dao(), taskId, clarification)
     }
 
     suspend fun cancel(taskId: String, stopCurrent: Boolean) {
-        // Commit the terminal state first. A stale UI tap must not cancel a task
-        // whose completion was already persisted by the worker.
-        val cancelled = PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
-        if (!cancelled) return
+        val task = database.dao().phoneAgentTask(taskId) ?: return
+        ensureUnifiedState(task)
+        val state = coordinator.state(taskId) ?: return
+        if (state.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return
         withContext(NonCancellable) {
+            coordinator.cancel(taskId)
+            PhoneAgentTaskStore.cancelIfActive(database.dao(), taskId)
             PhoneAgentWorkScheduler.cancel(appContext, taskId, stopCurrent)
             PhoneAgentNotifications.cancel(appContext, taskId)
-            coordinator.cancel(taskId)
         }
+    }
+
+    private fun AgentTaskStatus.toPhoneAgentStatus(): String = when (this) {
+        AgentTaskStatus.CREATED, AgentTaskStatus.QUEUED -> PhoneAgentTaskStore.STATUS_PLANNED
+        AgentTaskStatus.RUNNING, AgentTaskStatus.RETRY_WAIT -> PhoneAgentTaskStore.STATUS_RUNNING
+        AgentTaskStatus.WAITING_FOR_USER -> PhoneAgentTaskStore.STATUS_WAITING_USER
+        AgentTaskStatus.PAUSED -> PhoneAgentTaskStore.STATUS_PAUSED
+        AgentTaskStatus.COMPLETED -> PhoneAgentTaskStore.STATUS_COMPLETED
+        AgentTaskStatus.FAILED -> PhoneAgentTaskStore.STATUS_FAILED
+        AgentTaskStatus.CANCELLED -> PhoneAgentTaskStore.STATUS_CANCELLED
     }
 }

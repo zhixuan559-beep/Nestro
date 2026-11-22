@@ -55,6 +55,44 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun externallyScheduledTasksAreRegisteredBeforeWorkerDispatch() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("phone_agent") { calls.incrementAndGet() }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val registered = coordinator.registerExternallyScheduled(
+            AgentTaskState(
+                taskId = "phone-external",
+                owner = "phone_agent",
+                status = AgentTaskStatus.CREATED,
+                projectId = "project-a",
+                kind = "phone_agent"
+            )
+        )
+        assertEquals(AgentTaskStatus.CREATED, registered.status)
+        delay(40)
+        assertEquals(0, calls.get())
+
+        val prepared = coordinator.prepareExternallyScheduled(
+            "phone-external",
+            "phone_agent",
+            metadata = AgentTaskMetadata(projectId = "project-a", kind = "phone_agent")
+        )
+        assertEquals(AgentTaskStatus.QUEUED, prepared?.status)
+        delay(40)
+        assertEquals(0, calls.get())
+
+        coordinator.dispatchExternallyScheduled("phone-external", "phone_agent")
+        withTimeout(2_000) {
+            while (states.get("phone-external")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals(1, calls.get())
+        coordinator.close()
+    }
+
+    @Test
     fun retryableFailureUsesBackoffAndRetriesWithinConfiguredLimit() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()

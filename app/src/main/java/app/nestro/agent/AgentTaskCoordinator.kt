@@ -178,6 +178,73 @@ class AgentTaskCoordinator(
         return queued
     }
 
+    /**
+     * Registers a task whose durable wake-up is owned by a platform scheduler such as WorkManager.
+     * Registration persists the canonical task state but deliberately does not dispatch it in-process.
+     */
+    suspend fun registerExternallyScheduled(state: AgentTaskState): AgentTaskState {
+        val canonical = withTransitionLock {
+            val existing = states.get(state.taskId)
+            if (existing != null) {
+                require(existing.owner == state.owner) { "任务 ID 已被其他模块占用" }
+                existing
+            } else {
+                states.putIfAbsent(state)
+            }
+        }
+        return canonical
+    }
+
+    /**
+     * Moves an externally scheduled task into the shared queue without starting execution.
+     * The platform Worker will call dispatchExternallyScheduled when its durable request runs.
+     */
+    suspend fun prepareExternallyScheduled(
+        taskId: String,
+        owner: String,
+        checkpoint: String? = null,
+        metadata: AgentTaskMetadata = AgentTaskMetadata()
+    ): AgentTaskState? {
+        val (prepared, changed) = withTransitionLock {
+            val existing = states.get(taskId) ?: return@withTransitionLock null to false
+            require(existing.owner == owner) { "任务 ID 已被其他模块占用" }
+            if (existing.status !in setOf(
+                    AgentTaskStatus.CREATED,
+                    AgentTaskStatus.PAUSED,
+                    AgentTaskStatus.FAILED,
+                    AgentTaskStatus.WAITING_FOR_USER
+                )) return@withTransitionLock existing to false
+            val next = existing.copy(
+                status = AgentTaskStatus.QUEUED,
+                checkpoint = checkpoint?.take(64_000) ?: existing.checkpoint,
+                lastError = "",
+                projectId = metadata.projectId.ifBlank { existing.projectId },
+                conversationId = metadata.conversationId.ifBlank { existing.conversationId },
+                kind = metadata.kind.ifBlank { existing.kind },
+                capabilityId = metadata.capabilityId.ifBlank { existing.capabilityId },
+                title = metadata.title.ifBlank { existing.title },
+                input = metadata.input.ifBlank { existing.input },
+                availableAt = System.currentTimeMillis(),
+                finishedAt = 0L,
+                updatedAt = System.currentTimeMillis()
+            )
+            states.put(next)
+            next to true
+        }
+        if (changed && prepared != null) trace(taskId, "externally_queued", owner)
+        return prepared
+    }
+
+    /** Dispatches a previously persisted task only when its WorkManager request starts. */
+    suspend fun dispatchExternallyScheduled(taskId: String, owner: String): AgentTaskState? {
+        val state = prepareExternallyScheduled(taskId, owner) ?: return null
+        if (state.status == AgentTaskStatus.QUEUED && !activeJobs.containsKey(taskId)) {
+            queue.send(taskId)
+            trace(taskId, "external_scheduler_dispatched", owner)
+        }
+        return state
+    }
+
     suspend fun resume(taskId: String): AgentTaskState? {
         val queued = withTransitionLock {
             val existing = states.get(taskId) ?: return@withTransitionLock null
