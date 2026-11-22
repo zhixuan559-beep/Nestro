@@ -354,6 +354,9 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                     status = result.fold({
                         when {
+                            automationPrompt.isNotBlank() && reminder < 0 -> "日程已保存，自动任务已排程"
+                            automationPrompt.isNotBlank() && !notificationsAllowed -> "自动任务已排程，但通知权限未开启"
+                            automationPrompt.isNotBlank() -> "自动任务与日程提醒已排程"
                             reminder < 0 -> "日程已保存"
                             !notificationsAllowed -> "日程已保存，但通知权限未开启"
                             else -> "日程已保存，后台提醒已排程"
