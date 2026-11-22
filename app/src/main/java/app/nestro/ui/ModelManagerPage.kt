@@ -80,6 +80,7 @@ internal fun ModelManager(
     var apiKeyDraft by remember { mutableStateOf("") }
     var modelNameDraft by remember { mutableStateOf("") }
     var modelCodeDraft by remember { mutableStateOf("") }
+    var modelContextWindowDraft by remember { mutableStateOf("") }
     var editingRegistryModelId by remember { mutableStateOf("") }
     var modelInputPriceDraft by remember { mutableStateOf("") }
     var modelOutputPriceDraft by remember { mutableStateOf("") }
@@ -204,6 +205,7 @@ internal fun ModelManager(
                     editingRegistryModelId = ""
                     modelNameDraft = ""
                     modelCodeDraft = ""
+                    modelContextWindowDraft = ""
                     modelInputPriceDraft = ""
                     modelOutputPriceDraft = ""
                     modelCurrencyDraft = "USD"
@@ -416,6 +418,7 @@ internal fun ModelManager(
                             editingRegistryModelId = item.id
                             modelNameDraft = item.name
                             modelCodeDraft = item.modelCode
+                            modelContextWindowDraft = item.contextWindowTokens?.toString().orEmpty()
                             selectedModelKeyIds = item.apiKeyIds.toSet()
                             modelInputPriceDraft = item.inputPricePerMillion?.toString().orEmpty()
                             modelOutputPriceDraft = item.outputPricePerMillion?.toString().orEmpty()
@@ -429,6 +432,8 @@ internal fun ModelManager(
             }
             OutlinedTextField(modelNameDraft, { modelNameDraft = it.take(80) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型显示名称") }, singleLine = true)
             OutlinedTextField(modelCodeDraft, { modelCodeDraft = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型 ID / model code") }, singleLine = true)
+            OutlinedTextField(modelContextWindowDraft, { modelContextWindowDraft = it.filter(Char::isDigit).take(7) }, modifier = Modifier.fillMaxWidth(), label = { Text("上下文窗口 tokens（官方未确认可留空）") }, singleLine = true)
+            Text("按当前模型的官方上下文窗口填写；留空时使用 16,384 tokens 保守预算。故障切换时按候选模型中最小窗口裁剪。", color = Muted, style = MaterialTheme.typography.bodySmall)
             val selectedPresetId = registry.providers.firstOrNull { it.id == selectedProviderId }?.presetId.orEmpty()
             val suggestedModels = ModelProviderPresetCatalog.byId(selectedPresetId)?.suggestedModels.orEmpty()
             if (suggestedModels.isNotEmpty()) {
@@ -462,6 +467,7 @@ internal fun ModelManager(
                 onClick = {
                     val inputPrice = modelInputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
                     val outputPrice = modelOutputPriceDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+                    val contextWindow = modelContextWindowDraft.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
                     val existing = registry.models.firstOrNull { it.id == editingRegistryModelId }
                     val model = ModelDefinition(
                         id = editingRegistryModelId.ifBlank { UUID.randomUUID().toString() },
@@ -473,12 +479,14 @@ internal fun ModelManager(
                         inputPricePerMillion = inputPrice,
                         outputPricePerMillion = outputPrice,
                         currency = modelCurrencyDraft.trim().uppercase(),
-                        supportsReasoningEffort = supportsReasoningEffortDraft
+                        supportsReasoningEffort = supportsReasoningEffortDraft,
+                        contextWindowTokens = contextWindow
                     )
                     onSaveRegistryModel(model)
                     editingRegistryModelId = ""
                     modelNameDraft = ""
                     modelCodeDraft = ""
+                    modelContextWindowDraft = ""
                     selectedModelKeyIds = emptySet()
                     modelInputPriceDraft = ""
                     modelOutputPriceDraft = ""
@@ -488,6 +496,7 @@ internal fun ModelManager(
                     (modelInputPriceDraft.isBlank() || modelInputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
                     (modelOutputPriceDraft.isBlank() || modelOutputPriceDraft.toDoubleOrNull()?.let { it >= 0.0 && it.isFinite() } == true) &&
                     modelCurrencyDraft.trim().length == 3 &&
+                    (modelContextWindowDraft.isBlank() || modelContextWindowDraft.toIntOrNull()?.let { it in 1_024..2_000_000 } == true) &&
                     registry.apiKeys.any { it.providerId == selectedProviderId && it.id in selectedModelKeyIds && loadApiKey(it.id).isNotBlank() },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("添加模型") }
