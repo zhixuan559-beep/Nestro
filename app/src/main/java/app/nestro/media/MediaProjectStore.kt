@@ -522,13 +522,18 @@ object MediaProjectStore {
      * directories are never overwritten; every asset is size- and hash-verified.
      */
     @Synchronized
-    fun importProjectArchive(context: Context, archive: File, targetProjectId: String): MediaTimeline {
+    fun importProjectArchive(
+        context: Context,
+        archive: File,
+        targetProjectId: String,
+        replaceExisting: Boolean = false
+    ): MediaTimeline {
         safeProjectId(targetProjectId)
         require(archive.isFile && archive.length() in 1..2_000_000_000L) { "媒体项目备份不存在或超出 2 GB 限制" }
         val mediaRoot = File(context.filesDir, "media-editor").canonicalFile
         require(mediaRoot.mkdirs() || mediaRoot.isDirectory)
         val target = projectDir(context, targetProjectId)
-        require(!target.exists()) { "目标媒体项目已存在，拒绝覆盖" }
+        require(!target.exists() || replaceExisting) { "目标媒体项目已存在，拒绝覆盖" }
         val staging = File(mediaRoot, ".import-${UUID.randomUUID()}").canonicalFile
         require(staging.parentFile == mediaRoot && staging.mkdirs()) { "无法创建媒体项目导入暂存目录" }
         try {
@@ -633,7 +638,18 @@ object MediaProjectStore {
                 manifest.put(key, rewritten)
             }
             writeAtomically(File(staging, "project.json"), manifest.toString().toByteArray(Charsets.UTF_8))
-            require(staging.renameTo(target)) { "无法提交媒体项目导入结果" }
+            val previous = if (target.exists()) {
+                File(mediaRoot, ".replaced-${UUID.randomUUID()}").also { backup ->
+                    require(target.renameTo(backup)) { "无法暂存当前媒体项目，已取消导入" }
+                }
+            } else null
+            try {
+                require(staging.renameTo(target)) { "无法提交媒体项目导入结果" }
+            } catch (error: Throwable) {
+                previous?.let { backup -> if (backup.exists()) backup.renameTo(target) }
+                throw error
+            }
+            previous?.deleteRecursively()
             return timeline
         } catch (error: Throwable) {
             staging.deleteRecursively()
