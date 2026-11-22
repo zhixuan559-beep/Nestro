@@ -21,6 +21,7 @@ internal data class ModelConfig(
 internal object LocalVault {
     private const val ALIAS = "nestro_api_key_v1"
     private const val MODEL_KEY_PREFIX = "model_api_key_v1_"
+    private const val TASK_PAYLOAD_ALIAS = "nestro_task_payload_v1"
     fun write(context: Context, config: ModelConfig) {
         val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -52,6 +53,28 @@ internal object LocalVault {
             }.getOrDefault(ModelApiProtocol.OPENAI_CHAT_COMPLETIONS)
         )
     }
+    fun encryptTaskPayload(payload: String): String {
+        require(payload.length <= 8_000) { "可恢复任务输入超过安全存储上限" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getKey(TASK_PAYLOAD_ALIAS))
+        val encrypted = cipher.doFinal(payload.toByteArray(Charsets.UTF_8))
+        return "task1:" + Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
+            Base64.encodeToString(encrypted, Base64.NO_WRAP)
+    }
+
+    fun decryptTaskPayload(packed: String): String {
+        require(packed.length in 1..48_000) { "可恢复任务数据长度无效" }
+        val parts = packed.split(":")
+        require(parts.size == 3 && parts[0] == "task1") { "可恢复任务数据格式无效" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            getKey(TASK_PAYLOAD_ALIAS),
+            GCMParameterSpec(128, Base64.decode(parts[1], Base64.NO_WRAP))
+        )
+        return String(cipher.doFinal(Base64.decode(parts[2], Base64.NO_WRAP)), Charsets.UTF_8)
+    }
+
     fun writeApiKey(context: Context, keyId: String, apiKey: String) {
         require(keyId.matches(Regex("[A-Za-z0-9_.-]{1,120}"))) { "API Key 标识无效" }
         val preferences = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
@@ -153,12 +176,12 @@ internal object LocalVault {
             .apply()
     }
 
-    private fun getKey(): SecretKey {
+    private fun getKey(alias: String = ALIAS): SecretKey {
         val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (ks.getKey(alias, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(KeyGenParameterSpec.Builder(
-            ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
         ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setRandomizedEncryptionRequired(true).build())
