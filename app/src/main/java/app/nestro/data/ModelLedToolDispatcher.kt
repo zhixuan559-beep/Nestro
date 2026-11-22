@@ -285,9 +285,19 @@ internal class ModelLedToolDispatcher(
                 streamedToUi = false
             )
         }
-        suspend fun markTerminal(status: AgentTaskStatus, error: String = "") {
+        suspend fun markTerminal(
+            status: AgentTaskStatus,
+            error: String = "",
+            resultSummary: String? = null
+        ) {
             val current = stateStore.get(taskId) ?: AgentTaskState(taskId = taskId, owner = "chat")
-            stateStore.put(current.copy(status = status, lastError = error.take(2_000), updatedAt = System.currentTimeMillis()))
+            stateStore.put(current.copy(
+                status = status,
+                lastError = error.take(2_000),
+                resultSummary = resultSummary?.take(8_000) ?: current.resultSummary,
+                checkpoint = if (status == AgentTaskStatus.COMPLETED) "" else current.checkpoint,
+                updatedAt = System.currentTimeMillis()
+            ))
         }
         val toolList = visibleRows.joinToString("\n") { it.second }
         val toolContext = StringBuilder()
@@ -493,15 +503,6 @@ ${prompt.take(8_000)}
                 } finally {
                     AgentToolLeaseRegistry.release(lease.id)
                 }
-                if (spec.id.startsWith("mcp_") && result.success) {
-                    stateStore.get(taskId)?.let { current ->
-                        stateStore.put(current.copy(
-                            checkpoint = "mcp:v1:completed:${spec.id}\n" + result.output.take(8_000),
-                            resultSummary = result.output.take(8_000),
-                            updatedAt = System.currentTimeMillis()
-                        ))
-                    }
-                }
                 if (result.requiresUser) {
                     NativeToolCallResult(
                         "这项操作尚未执行，需要用户先确认：${result.error}",
@@ -525,10 +526,11 @@ ${prompt.take(8_000)}
                     NativeToolCallResult(output)
                 }
             }
-            markTerminal(
-                if (nativeResult.requiresUser) AgentTaskStatus.WAITING_FOR_USER else AgentTaskStatus.COMPLETED
-            )
             val finalNativeText = attachGeneratedVideo(nativeResult.text)
+            markTerminal(
+                if (nativeResult.requiresUser) AgentTaskStatus.WAITING_FOR_USER else AgentTaskStatus.COMPLETED,
+                resultSummary = if (nativeResult.requiresUser) null else finalNativeText
+            )
             onDirectAnswer(finalNativeText)
             return ModelToolDispatchResult(
                 directReply = finalNativeText,
