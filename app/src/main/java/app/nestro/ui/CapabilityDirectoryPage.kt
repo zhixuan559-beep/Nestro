@@ -11,6 +11,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.nestro.data.SkillBundle
+import app.nestro.data.CapabilityRegistryStore
+import app.nestro.data.CapabilityDescriptor
+import app.nestro.data.CapabilityAuditRecord
+import app.nestro.data.CapabilityToolAuditRecord
+import app.nestro.NestroApplication
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.SkillCommunityClient
 import app.nestro.data.SignedSkillRelease
@@ -23,7 +28,7 @@ import org.json.JSONObject
 private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
 
 @Composable
-fun CapabilityDirectoryPage() {
+fun CapabilityDirectoryPage(projectId: String) {
     val context=LocalContext.current
     val prefs=remember { context.getSharedPreferences("nestro_local",Context.MODE_PRIVATE) }
     val scope=rememberCoroutineScope()
@@ -82,6 +87,20 @@ fun CapabilityDirectoryPage() {
         }.getOrDefault(builtIns)
     }
     val filtered=entries.filter { query.isBlank() || listOf(it.name,it.description,it.source,it.permission).any { value -> value.contains(query,true) } }
+    var capabilityRefresh by remember { mutableIntStateOf(0) }
+    var registeredCapabilities by remember { mutableStateOf(emptyList<CapabilityDescriptor>()) }
+    var capabilityAudit by remember { mutableStateOf(emptyList<CapabilityAuditRecord>()) }
+    var toolAudit by remember { mutableStateOf(emptyList<CapabilityToolAuditRecord>()) }
+    var mcpTools by remember { mutableStateOf(emptyList<app.nestro.mcp.McpToolDescriptor>()) }
+    var showCapabilityAudit by remember { mutableStateOf(false) }
+    val appRuntime = remember(context) { context.applicationContext as? NestroApplication }
+    LaunchedEffect(projectId, capabilityRefresh) {
+        appRuntime?.agentToolCatalog
+        registeredCapabilities = CapabilityRegistryStore.list(prefs)
+        capabilityAudit = CapabilityRegistryStore.recentAudit(prefs, projectId, 50)
+        toolAudit = CapabilityRegistryStore.recentToolAudit(prefs, projectId, 50)
+        mcpTools = appRuntime?.mcpToolCenterRepository?.listTools().orEmpty()
+    }
     fun refreshSignedCatalog(url: String, key: String) {
         loading=true
         scope.launch {
@@ -102,6 +121,72 @@ fun CapabilityDirectoryPage() {
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Text("统一能力授权",style=MaterialTheme.typography.titleLarge)
+        Text("项目：$projectId。此处管理已注册工具的项目级授权；关闭后即使模型选中该工具，也会在执行前被拦截。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if (registeredCapabilities.isEmpty()) {
+            Text("当前还没有已注册的工具能力；打开聊天或对应模块后会自动登记。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        registeredCapabilities.forEach { capability ->
+            val granted = CapabilityRegistryStore.isGranted(prefs, projectId, capability.id)
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                        Text(capability.title,style=MaterialTheme.typography.titleSmall)
+                        Text(capability.category+" · "+capability.source,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(capability.description,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked=granted,
+                        enabled=capability.available && capability.projectScoped,
+                        onCheckedChange={ enabled ->
+                            runCatching { CapabilityRegistryStore.setGranted(prefs,projectId,capability.id,enabled) }
+                                .onSuccess { capabilityRefresh++ }
+                                .onFailure { status="能力授权更新失败："+(it.message ?: "未知错误") }
+                        }
+                    )
+                }
+            }
+        }
+        if (mcpTools.isNotEmpty()) {
+            Text("MCP 工具项目授权",style=MaterialTheme.typography.titleMedium)
+            Text("这里的开关只控制当前项目；MCP 工具仍必须先在 MCP 工具中心获得全局启用授权。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            mcpTools.forEach { tool ->
+                val projectGranted = CapabilityRegistryStore.isToolGranted(
+                    prefs,projectId,tool.serverId,tool.name,defaultGranted=tool.granted
+                )
+                Card(Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                            Text(tool.name,style=MaterialTheme.typography.titleSmall)
+                            Text(tool.serverName+" · "+if(tool.granted) "全局已授权" else "全局未授权",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(tool.description,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked=projectGranted,
+                            enabled=tool.granted,
+                            onCheckedChange={ enabled ->
+                                runCatching { CapabilityRegistryStore.setToolGranted(prefs,projectId,tool.serverId,tool.name,enabled) }
+                                    .onSuccess { capabilityRefresh++ }
+                                    .onFailure { status="MCP 项目授权更新失败："+(it.message ?: "未知错误") }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            Text("项目授权与调用审计",style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
+            TextButton(onClick={showCapabilityAudit=!showCapabilityAudit}) { Text(if(showCapabilityAudit) "收起" else "查看") }
+        }
+        if (showCapabilityAudit) {
+            (capabilityAudit.take(20).map { "${it.capabilityName} · ${it.action} · ${it.outcome} · ${it.createdAt}" } +
+                toolAudit.take(20).map { "${it.serviceId}/${it.toolName} · ${it.action} · ${it.outcome} · ${it.createdAt}" })
+                .forEach { Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (capabilityAudit.isEmpty() && toolAudit.isEmpty()) {
+                Text("当前项目暂无授权审计记录。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        HorizontalDivider()
         Text("能力目录",style=MaterialTheme.typography.headlineSmall)
         Text("社区目录必须由固定 RSA 公钥验签；技能包必须匹配签名目录中的 SHA-256。安装前展示权限声明，不会自动授予 Android 权限。",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(catalogUrl,{catalogUrl=it},label={Text("社区目录 HTTPS 地址")},modifier=Modifier.fillMaxWidth(),singleLine=true)
