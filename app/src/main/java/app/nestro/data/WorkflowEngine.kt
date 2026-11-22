@@ -421,7 +421,7 @@ object WorkflowEngine {
                 )
             }
             completed.forEachIndexed { completedIndex, entry ->
-                val (resultIndex, stepIndex, pair) = entry
+                val (_, stepIndex, pair) = entry
                 // Until the final sibling is checkpointed, retain the group's input.
                 // A crash mid-wave then resumes remaining siblings without feeding them
                 // a partial output that already includes their not-yet-persisted result.
