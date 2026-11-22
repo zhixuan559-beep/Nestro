@@ -1854,6 +1854,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              .putString("workflow_resume_input_v1", input)
                                                              .apply()
                                                          try {
+                                                         var authorizeRemainingWorkflowStepsForTask = false
                                                          val result = runCatchingCancellable {
                                                              appRuntime.workflowExecutionCoordinator.execute(
                                                                  workflow = workflow,
@@ -1906,17 +1907,28 @@ fun NestroApp(initialPage: String = "home") {
                                                                      workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                                  },
                                                                  requestApproval = { step, previousOutput ->
-                                                                     val decision = CompletableDeferred<Boolean>()
-                                                                     workflowApprovalPrompt = WorkflowApprovalPrompt(
-                                                                         stepTitle = step.title,
-                                                                         instruction = step.instruction.take(4_000),
-                                                                         context = previousOutput.take(2_000),
-                                                                         decision = decision
-                                                                     )
-                                                                     try {
-                                                                         decision.await()
-                                                                     } finally {
-                                                                         workflowApprovalPrompt = null
+                                                                     if (authorizeRemainingWorkflowStepsForTask) {
+                                                                         true
+                                                                     } else {
+                                                                         val decision = CompletableDeferred<WorkflowApprovalChoice>()
+                                                                         workflowApprovalPrompt = WorkflowApprovalPrompt(
+                                                                             stepTitle = step.title,
+                                                                             instruction = step.instruction.take(4_000),
+                                                                             context = previousOutput.take(2_000),
+                                                                             decision = decision
+                                                                         )
+                                                                         try {
+                                                                             when (decision.await()) {
+                                                                                 WorkflowApprovalChoice.AUTHORIZE_ONCE -> true
+                                                                                 WorkflowApprovalChoice.AUTHORIZE_TASK -> {
+                                                                                     authorizeRemainingWorkflowStepsForTask = true
+                                                                                     true
+                                                                                 }
+                                                                                 WorkflowApprovalChoice.REJECT -> false
+                                                                             }
+                                                                         } finally {
+                                                                             workflowApprovalPrompt = null
+                                                                         }
                                                                      }
                                                                  },
                                                                  toolCatalog = appRuntime.agentToolCatalog
@@ -3969,11 +3981,10 @@ fun NestroApp(initialPage: String = "home") {
 
     workflowApprovalPrompt?.let { approval ->
         AlertDialog(
-            onDismissRequest = {
-                approval.decision.complete(false)
-                workflowApprovalPrompt = null
-            },
-            title = { Text("工作流步骤需要确认") },
+            // Approval is intentionally non-dismissible: the task waits until the user
+            // chooses one of the explicit authorization decisions or stops the task.
+            onDismissRequest = {},
+            title = { Text("工作流步骤需要授权") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("即将执行：${approval.stepTitle}", color = Ink)
@@ -3981,18 +3992,24 @@ fun NestroApp(initialPage: String = "home") {
                     Text(approval.instruction, color = Ink)
                     Text("前序结果（供判断）：", color = Muted)
                     Text(approval.context.ifBlank { "暂无前序输出" }, color = Ink)
-                    Text("批准后才会继续执行此步骤。", color = Muted)
+                    Text("未选择前，任务会停留在这里等待，不会自动放行或拒绝。", color = Muted)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    approval.decision.complete(true)
-                    workflowApprovalPrompt = null
-                }) { Text("批准执行", color = Mint) }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        approval.decision.complete(WorkflowApprovalChoice.AUTHORIZE_ONCE)
+                        workflowApprovalPrompt = null
+                    }) { Text("授权一次", color = Mint) }
+                    TextButton(onClick = {
+                        approval.decision.complete(WorkflowApprovalChoice.AUTHORIZE_TASK)
+                        workflowApprovalPrompt = null
+                    }) { Text("当前任务全部授权", color = Mint) }
+                }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    approval.decision.complete(false)
+                    approval.decision.complete(WorkflowApprovalChoice.REJECT)
                     workflowApprovalPrompt = null
                 }) { Text("拒绝", color = Muted) }
             }
