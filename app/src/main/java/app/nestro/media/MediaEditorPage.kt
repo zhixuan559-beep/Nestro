@@ -104,7 +104,7 @@ fun MediaEditorPage(
             Triple(
                 MediaProjectStore.listAssets(context, projectId),
                 MediaProjectStore.readTimeline(context, projectId),
-                MediaRenderTaskStore.list(context, projectId)
+                MediaRenderScheduler.list(context, projectId)
             )
         }
         assets = result.first
@@ -119,8 +119,8 @@ fun MediaEditorPage(
         val interrupted = withContext(Dispatchers.IO) { MediaAiTaskStore.recoverable(context, projectId) }
         if (activeMediaAiTaskId.isBlank()) activeMediaAiTaskId = pendingResults.firstOrNull()?.id ?: interrupted.firstOrNull()?.id.orEmpty()
         while (isActive) {
-            tasks = withContext(Dispatchers.IO) { MediaRenderTaskStore.list(context, projectId) }
-            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+            tasks = withContext(Dispatchers.IO) { MediaRenderScheduler.list(context, projectId) }
+            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
             if (imageAnalysis.isBlank()) {
                 val savedImage = mediaAiTasks.firstOrNull { it.action == "image" && it.status == MediaAiTaskStatus.COMPLETED && it.resultJson.isNotBlank() }
                 if (savedImage != null) imageAnalysis = runCatching { JSONObject(savedImage.resultJson).optString("text") }.getOrDefault("")
@@ -228,7 +228,7 @@ fun MediaEditorPage(
                 }
                 mediaAiProgress = task.progress / 100f
                 if (task.status == MediaAiTaskStatus.COMPLETED && task.resultConsumed) {
-                    mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                    mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                     activeMediaAiTaskId = ""
                     break
                 }
@@ -271,7 +271,7 @@ fun MediaEditorPage(
                     val refreshedTasks = withContext(Dispatchers.IO) {
                         MediaAiTaskStore.update(context = context, projectId = projectId, taskId = task.id,
                             status = MediaAiTaskStatus.COMPLETED, resultConsumed = true, errorMessage = applyError)
-                        MediaAiTaskStore.list(context, projectId)
+                        MediaAiTaskScheduler.list(context, projectId)
                     }
                     mediaAiTasks = refreshedTasks
                     mediaAiRunning = false
@@ -448,7 +448,7 @@ fun MediaEditorPage(
                 activeMediaAiTaskId = task.id
                 mediaAiRunning = true
                 mediaAiProgress = 0f
-                mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                 status = "视频生成任务已提交。生成过程在后台运行，完成后视频会自动保存到当前项目。"
             }.onFailure { status = "视频生成任务提交失败：" + (it.message ?: "配置无效") }
         }
@@ -767,7 +767,7 @@ fun MediaEditorPage(
                                         result.onSuccess {
                                             if (activeMediaAiTaskId == task.id) mediaAiRunning = false
                                             status = "媒体 AI 任务已暂停；可在任务列表中恢复。"
-                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                                         }.onFailure { status = "暂停未完成：" + (it.message ?: "任务状态已变化") }
                                     }
                                 }) { Text("暂停") }
@@ -782,7 +782,7 @@ fun MediaEditorPage(
                                                 activeMediaAiTaskId = ""
                                             }
                                             status = "媒体 AI 任务已取消。"
-                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                            mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                                         }.onFailure { status = "取消未完成：" + (it.message ?: "任务状态已变化") }
                                     }
                                 }) { Text("取消") }
@@ -799,7 +799,7 @@ fun MediaEditorPage(
                                         mediaAiRunning = true
                                         mediaAiProgress = 0f
                                         status = "媒体 AI 任务已恢复，将从任务入口重新执行。"
-                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                                     }.onFailure { status = "恢复未完成：" + (it.message ?: "任务状态已变化") }
                                 }
                             }) { Text("恢复") }
@@ -810,7 +810,7 @@ fun MediaEditorPage(
                                     }
                                     result.onSuccess {
                                         status = "媒体 AI 任务已取消。"
-                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskStore.list(context, projectId) }
+                                        mediaAiTasks = withContext(Dispatchers.IO) { MediaAiTaskScheduler.list(context, projectId) }
                                     }.onFailure { status = "取消未完成：" + (it.message ?: "任务状态已变化") }
                                 }
                             }) { Text("取消") }
@@ -883,7 +883,7 @@ fun MediaEditorPage(
                             TextButton(onClick = {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { MediaRenderTaskStore.delete(context, projectId, task.id) }
-                                    tasks = MediaRenderTaskStore.list(context, projectId)
+                                    tasks = MediaRenderScheduler.list(context, projectId)
                                 }
                             }) { Text("清理任务") }
                         }
