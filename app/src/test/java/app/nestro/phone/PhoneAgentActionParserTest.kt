@@ -128,6 +128,22 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun publicMediaDownloadIsParsedForProjectImport() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"download_asset","url":"https://cdn.example.com/night-city.mp4","name":"night-city.mp4"}]}"""
+        ).actions.single()
+        assertEquals(PhoneAgentExecutor.Action.DownloadAsset("https://cdn.example.com/night-city.mp4", "night-city.mp4"), action)
+    }
+
+    @Test
+    fun mediaDownloadWithCredentialUrlIsHandedBackToUser() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"download_asset","url":"https://cdn.example.com/night-city.mp4?access_token=secret","name":"night-city.mp4"}]}"""
+        ).actions.single()
+        assertTrue(action is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""

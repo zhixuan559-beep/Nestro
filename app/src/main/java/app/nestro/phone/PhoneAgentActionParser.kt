@@ -62,10 +62,14 @@ object PhoneAgentActionParser {
                 "download_asset" -> {
                     val url = item.getString("url").trim()
                     val name = item.getString("name").trim()
-                    require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址不安全或无效" }
+                    require(url.length <= 2048) { "素材下载地址过长" }
                     require(name.isNotBlank() && name.length <= 160 && name.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "素材文件名或格式无效" }
-                    if (PhoneAgentRiskPolicy.containsSensitiveValue(url)) PhoneAgentExecutor.Action.ConfirmSensitive("素材下载地址包含敏感凭据，已停止下载。")
-                    else PhoneAgentExecutor.Action.DownloadAsset(url, name)
+                    val credentialQuery = Regex("(?i)([?&])(access_token|refresh_token|api_key|apikey|token|secret|password|session|auth|credential|signature)=").containsMatchIn(url)
+                    if (credentialQuery || PhoneAgentRiskPolicy.containsSensitiveValue(url)) PhoneAgentExecutor.Action.ConfirmSensitive("素材下载地址包含敏感凭据，已停止下载。")
+                    else {
+                        require(PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址不安全或无效" }
+                        PhoneAgentExecutor.Action.DownloadAsset(url, name)
+                    }
                 }
                 "click" -> {
                     val label = item.getString("text").trim()

@@ -25,6 +25,19 @@ class PhoneAgentTaskStoreTest {
     }
 
     @Test
+    fun validatesAndDecodesPersistedMediaDownloadAction() {
+        val url = "https://cdn.example.com/scene.mp4"
+        val encoded = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "download_asset").put("url", url).put("name", "scene.mp4")
+            ))
+            .toString()
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(encoded))
+        assertEquals(PhoneAgentExecutor.Action.DownloadAsset(url, "scene.mp4"), PhoneAgentTaskStore.decodeActions(encoded).single())
+    }
+
+    @Test
     fun rejectsUnknownPersistedActionInsteadOfSilentlySkippingIt() {
         val encoded = JSONObject()
             .put("format", "phone_agent_actions_v1")

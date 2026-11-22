@@ -5,11 +5,11 @@ import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentExecutionEnvironmentProvider
-import app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -42,6 +42,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     var pairingCode by remember { mutableStateOf("") }
     var virtualSession by remember { mutableStateOf(displayController.currentSession()) }
     var previewScale by remember { mutableFloatStateOf(0.68f) }
+    var previewCollapsed by remember { mutableStateOf(false) }
     val frameFlow = remember(virtualSession) { virtualSession?.frames ?: MutableStateFlow<android.graphics.Bitmap?>(null) }
     val virtualFrame by frameFlow.collectAsState()
     val executionAvailable = PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
@@ -112,7 +113,17 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                     style = MaterialTheme.typography.bodySmall
                 )
                 if (helperBinder == null) {
-                    Text("先在 Android 开发者选项中开启「无线调试」，进入「使用配对码配对设备」，再填写系统显示的配对端口和六位配对码。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                val result = runCatching { displayController.connectHelper() }
+                                taskMessage = result.fold({ if (it) "已重新连接配对助手" else "助手尚未连接" }, { "重连失败：${it.message ?: "请确认无线调试仍开启"}" })
+                                refresh++
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("重连已配对助手") }
+                    Text("首次连接时，在 Android 开发者选项中开启「无线调试」，进入「使用配对码配对设备」，再填写系统显示的配对端口和六位配对码。", color = Muted, style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(
                         onClick = {
                             scope.launch {
@@ -182,13 +193,22 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("实时执行画面", color = Ink, style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { previewCollapsed = !previewCollapsed }) { Text(if (previewCollapsed) "展开" else "收起", color = Mint) }
                             TextButton(onClick = {
                                 val service = PhoneAgentService.activeService
                                 if (service != null && displayController.activatePhoneAgent(service)) taskMessage = "Phone Agent 已切换到隔离虚拟屏"
                                 else taskMessage = "无障碍服务尚未连接，无法切换执行环境"
                             }) { Text("使用隔离屏", color = Mint) }
                         }
-                        virtualFrame?.let { bitmap ->
+                        if (previewCollapsed) {
+                            Surface(
+                                color = Card,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().clickable { previewCollapsed = false }
+                            ) {
+                                Text("隔离屏正在后台执行 · 点击展开预览", color = Mint, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                        } else virtualFrame?.let { bitmap ->
                             Image(
                                 bitmap = bitmap.asImageBitmap(),
                                 contentDescription = "隔离虚拟屏实时画面",
@@ -254,7 +274,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         }
                     }
                 }
-                if (displayController.virtualExecutionPreferred && virtualSession == null) {
+                if (displayController.virtualExecutionPreferred && (virtualSession == null || helperBinder == null)) {
                     OutlinedButton(
                         onClick = {
                             PhoneAgentService.activeService?.let(displayController::restoreAccessibilityEnvironment)
