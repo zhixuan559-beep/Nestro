@@ -54,6 +54,30 @@ internal class MikaVirtualDisplayService(
     private val taskManager: Any by lazy {
         Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)!!
     }
+    private val mainScreenWatch by lazy {
+        MainScreenWatch(
+            taskManager = { taskManager },
+            tasks = {
+                allTasks().mapNotNull { item ->
+                    runCatching {
+                        val id = taskInfoClass.getField("taskId").getInt(item)
+                        val displayId = taskInfoClass.getField("displayId").getInt(item)
+                        val top = taskInfoClass.getField("topActivity").get(item) as? android.content.ComponentName
+                        val base = taskInfoClass.getField("baseActivity").get(item) as? android.content.ComponentName
+                        val userId = runCatching { taskInfoClass.getField("userId").getInt(item) }.getOrDefault(0)
+                        MainScreenLog.Task(
+                            taskId = id,
+                            displayId = displayId,
+                            packageName = top?.packageName ?: base?.packageName,
+                            userId = userId,
+                            topActivity = top?.className,
+                            standard = true
+                        )
+                    }.getOrNull()
+                }
+            }
+        )
+    }
 
     override fun onTransact(code: Int, data: android.os.Parcel, reply: android.os.Parcel?, flags: Int): Boolean {
         if (code in FIRST_CALL_TRANSACTION..LAST_CALL_TRANSACTION && Binder.getCallingUid() != allowedUid) {
@@ -269,6 +293,10 @@ internal class MikaVirtualDisplayService(
     private fun removeTask(taskId: Int): Boolean = runCatching {
         taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager, taskId) as? Boolean ?: true
     }.getOrDefault(false)
+
+    override fun watchMainScreen(windowMs: Int): Int = mainScreenWatch.watch(windowMs)
+
+    override fun mainArrivals(sinceUptimeMs: Long): Bundle = mainScreenWatch.arrivals(sinceUptimeMs)
 
     override fun identity(): IntArray = intArrayOf(Process.myUid(), Process.myPid())
 
