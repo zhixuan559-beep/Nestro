@@ -5,6 +5,7 @@ import app.nestro.calendar.CalendarRepository
 import app.nestro.mcp.McpToolCenterRepository
 import app.nestro.mcp.McpToolCenterService
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentApprovalCoordinator
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.InMemoryAgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
@@ -549,9 +550,18 @@ class NestroApplication : Application() {
                                             globallyEnabled = globallyGranted
                                         )
                                     } == true
-                                    if (globallyGranted && projectGranted) GeneratedPluginAuthorizationPolicy.authorize(tool)
-                                    else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
+                                    if (globallyGranted && projectGranted) {
+                                        GeneratedPluginAuthorizationPolicy.authorize(tool)
+                                    } else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
                                 } else GeneratedPluginAuthorizationPolicy.authorize(tool)
+                            }
+                            if (authorization is app.nestro.agent.AgentAuthorization.RequireConfirmation) {
+                                if (agentApprovalCoordinator.authorize(requestId, tool.id, authorization.reason)) {
+                                    app.nestro.agent.AgentAuthorization.Allow
+                                } else {
+                                    app.nestro.agent.AgentAuthorization.Deny("用户未批准本次插件步骤：${tool.id}")
+                                }
+                            } else authorization
                             }
                             val runtime = DefaultAgentRuntime(
                                 catalog = lease.access,
@@ -684,6 +694,7 @@ class NestroApplication : Application() {
                 catalog = agentToolCatalog,
                 database = database,
                 capabilityPreferences = getSharedPreferences("nestro_local", MODE_PRIVATE),
+                approvalCoordinator = agentApprovalCoordinator,
                 permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                     if (tool.id.startsWith("mcp_")) {
                         val descriptor = mcpToolCenterRepository.findTool(tool.id)
@@ -767,6 +778,8 @@ class NestroApplication : Application() {
             }
         }
     }
+
+    val agentApprovalCoordinator: AgentApprovalCoordinator by lazy { AgentApprovalCoordinator() }
 
     val agentTaskCoordinator: AgentTaskCoordinator by lazy {
         val dao = database.dao()
