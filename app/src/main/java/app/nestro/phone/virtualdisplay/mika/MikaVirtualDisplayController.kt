@@ -8,6 +8,8 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.view.Display
+import app.nestro.phone.PhoneAgentExecutionEnvironmentProvider
+import app.nestro.phone.PhoneAgentService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.Closeable
@@ -17,6 +19,8 @@ class MikaVirtualDisplayController(context: Context) {
     private val adb = MikaAdbManager(app)
     private val displayManager = app.getSystemService(DisplayManager::class.java)
     @Volatile private var activeSession: Session? = null
+    @Volatile private var activeEnvironment: MikaPhoneAgentExecutionEnvironment? = null
+    @Volatile private var activeAccessibilityService: PhoneAgentService? = null
 
     val helperConnected get() = adb.shell.value != null
     fun helperState() = adb.shell
@@ -36,6 +40,29 @@ class MikaVirtualDisplayController(context: Context) {
     }
 
     fun currentSession(): Session? = activeSession
+
+    fun activatePhoneAgent(service: PhoneAgentService): Boolean {
+        val session = activeSession ?: return false
+        activeAccessibilityService = service
+        val environment = MikaPhoneAgentExecutionEnvironment(service, session)
+        activeEnvironment = environment
+        PhoneAgentExecutionEnvironmentProvider.attach(environment)
+        return true
+    }
+
+    fun restoreAccessibilityEnvironment(service: PhoneAgentService) {
+        activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
+        activeEnvironment = null
+        activeAccessibilityService = service
+        PhoneAgentExecutionEnvironmentProvider.attach(service)
+    }
+
+    fun detachPhoneAgentEnvironment(service: PhoneAgentService) {
+        if (activeAccessibilityService !== service) return
+        activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
+        activeEnvironment = null
+        activeAccessibilityService = null
+    }
 
     inner class Session internal constructor(
         private val shell: MikaVirtualDisplayShell,
@@ -82,6 +109,17 @@ class MikaVirtualDisplayController(context: Context) {
             shell.injectKey(displayId, android.view.KeyEvent.KEYCODE_BACK)
         }
 
+        suspend fun topTaskId(): Int = withContext(Dispatchers.IO) { shell.topTaskId(displayId) }
+
+        suspend fun topTaskPackage(): String? = withContext(Dispatchers.IO) {
+            val taskId = shell.topTaskId(displayId)
+            if (taskId < 0) null else shell.packageOfTask(taskId)
+        }
+
+        suspend fun moveTaskToMain(taskId: Int): Boolean = withContext(Dispatchers.IO) {
+            taskId >= 0 && shell.moveTask(taskId, Display.DEFAULT_DISPLAY)
+        }
+
         suspend fun moveTopTaskToMain(): Boolean = withContext(Dispatchers.IO) {
             val taskId = shell.topTaskId(displayId)
             taskId >= 0 && shell.moveTask(taskId, Display.DEFAULT_DISPLAY)
@@ -106,6 +144,9 @@ class MikaVirtualDisplayController(context: Context) {
 
         override fun close() {
             if (activeSession === this) activeSession = null
+            activeEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
+            activeEnvironment = null
+            activeAccessibilityService?.let { PhoneAgentExecutionEnvironmentProvider.attach(it) }
             runCatching { shell.finishDisplay(displayId) }
             display.release()
         }

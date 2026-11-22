@@ -118,18 +118,22 @@ object PhoneAgentExecutor {
             val screenBeforeAction = service.captureVisibleText()
             if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screenBeforeAction)) {
                 val message = "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。"
-                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "需要用户接手", false, message)
+                val handedOff = service.handoffToUser(taskId, message)
+                val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请检查执行窗口。"
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "需要用户接手", false, userMessage)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), message))
-                return ExecutionResult(Outcome.WAITING_USER, results.size, results, message)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), userMessage))
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
             action = actions[index]
             if (action is Action.ConfirmSensitive) {
-                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, action.description)
+                val handedOff = service.handoffToUser(taskId, action.description)
+                val userMessage = if (handedOff) action.description else "${action.description} 隔离屏自动交接未成功，请检查执行窗口。"
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户", false, userMessage)
                 PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
-                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), action.description))
-                RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = action.description.take(2_000)))
-                return ExecutionResult(Outcome.WAITING_USER, results.size, results, action.description)
+                agentStates.put(AgentTaskState(taskId, "phone_agent", AgentTaskStatus.WAITING_FOR_USER, index, task.planJson.take(64_000), userMessage))
+                RoomAgentTaskTraceStore(dao).append(app.nestro.agent.AgentTaskTrace(taskId = taskId, event = "waiting_for_user", detail = userMessage.take(2_000)))
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
             val toolId = toolIdFor(action)
             catalog.register(

@@ -6,7 +6,10 @@ import android.app.DownloadManager
 import android.net.Uri
 import android.os.Environment
 import android.os.SystemClock
+import android.os.Build
+import android.view.accessibility.AccessibilityWindowInfo
 import app.nestro.media.MediaProjectStore
+import app.nestro.NestroApplication
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -19,7 +22,8 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     override fun onServiceConnected() {
         super.onServiceConnected()
         activeService = this
-        PhoneAgentExecutionEnvironmentProvider.attach(this)
+        val controller = (applicationContext as? NestroApplication)?.mikaVirtualDisplayController
+        if (controller?.activatePhoneAgent(this) != true) PhoneAgentExecutionEnvironmentProvider.attach(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -31,19 +35,34 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     override fun onDestroy() {
         lastTextUndo = null
         if (activeService === this) activeService = null
+        (applicationContext as? NestroApplication)?.mikaVirtualDisplayController?.detachPhoneAgentEnvironment(this)
         PhoneAgentExecutionEnvironmentProvider.detach(this)
         super.onDestroy()
     }
 
-    override fun captureVisibleText(): String {
-        // Keep observation read-only and bounded. A future virtual-screen renderer can consume this snapshot
-        // without taking input focus or changing the foreground application's window.
-        val root = rootInActiveWindow ?: return "当前页面没有可读取的无障碍节点。"
+    override fun captureVisibleText(): String = captureRoot(rootInActiveWindow)
+
+    /** Read a window on the selected isolated display, never the user's foreground display. */
+    fun captureVisibleText(displayId: Int): String = captureRoot(rootForDisplay(displayId))
+
+    private fun captureRoot(root: AccessibilityNodeInfo?): String {
+        root ?: return "当前页面没有可读取的无障碍节点。"
         val lines = mutableListOf<String>()
         collect(root, lines, 0)
         val result = lines.take(120).joinToString("\n").ifBlank { "当前页面没有可读取的文本。" }
-        audit("SCREEN_READ", "读取当前可访问界面文本")
+        audit("SCREEN_READ", "读取指定执行屏的可访问界面文本")
         return result
+    }
+
+    private fun rootForDisplay(displayId: Int): AccessibilityNodeInfo? {
+        if (Build.VERSION.SDK_INT < 30) return null
+        return runCatching {
+            windows.asSequence()
+                .filter { it.displayId == displayId }
+                .sortedByDescending { it.isFocused }
+                .mapNotNull { window -> runCatching { window.root }.getOrNull() }
+                .firstOrNull()
+        }.getOrNull()
     }
 
     private fun collect(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
@@ -73,13 +92,17 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         audit("TASK_STOP", "用户请求停止任务 " + taskId.take(48))
     }
 
-    override fun clickVisibleText(exactText: String): Boolean {
+    override fun clickVisibleText(exactText: String): Boolean = clickVisibleText(rootInActiveWindow, exactText)
+
+    fun clickVisibleText(displayId: Int, exactText: String): Boolean = clickVisibleText(rootForDisplay(displayId), exactText)
+
+    private fun clickVisibleText(root: AccessibilityNodeInfo?, exactText: String): Boolean {
         val normalized = exactText.trim()
         require(normalized.isNotBlank() && normalized.length <= 80) { "目标文本无效" }
         require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(normalized)) { "该操作属于高风险操作，必须由用户本人完成确认" }
         require(!PhoneAgentRiskPolicy.containsSensitiveValue(normalized)) { "页面目标包含个人敏感信息，已阻止点击" }
         require(hasValidGrant()) { "没有有效的操作授权" }
-        val root = rootInActiveWindow ?: return false
+        val root = root ?: return false
         val matches = findVisibleNodes(root, normalized) { true }
         if (matches.size != 1) {
             audit("CLICK_BLOCKED", if (matches.isEmpty()) "未找到唯一可见目标" else "存在多个同名目标，已阻止点击")
@@ -96,7 +119,11 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return success
     }
 
-    override fun setTextOnVisibleField(label: String, value: String): Boolean {
+    override fun setTextOnVisibleField(label: String, value: String): Boolean = setTextOnVisibleField(rootInActiveWindow, label, value)
+
+    fun setTextOnVisibleField(displayId: Int, label: String, value: String): Boolean = setTextOnVisibleField(rootForDisplay(displayId), label, value)
+
+    private fun setTextOnVisibleField(root: AccessibilityNodeInfo?, label: String, value: String): Boolean {
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
@@ -106,7 +133,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
                 !PhoneAgentRiskPolicy.containsSensitiveValue(target)
         ) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
-        val root = rootInActiveWindow ?: return false
+        val root = root ?: return false
         val matches = findEditableFields(root, target)
         if (matches.size != 1) {
             audit("SET_TEXT_BLOCKED", if (matches.isEmpty()) "未找到唯一可见输入框" else "存在多个同名输入框，已阻止填写")
@@ -133,7 +160,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         val success = performed && node.text?.toString() == value
         if (success) {
             lastTextUndo = if (PhoneAgentRiskPolicy.redactSensitiveText(value) == value) {
-                TextUndoRecord(target, previousValue, value, captureVisibleText())
+                TextUndoRecord(target, previousValue, value, captureRoot(root))
             } else null
         }
         consumeSingleGrantIfNeeded()
@@ -171,10 +198,14 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return restored
     }
 
-    override fun scroll(direction: String): Boolean {
+    override fun scroll(direction: String): Boolean = scroll(rootInActiveWindow, direction)
+
+    fun scroll(displayId: Int, direction: String): Boolean = scroll(rootForDisplay(displayId), direction)
+
+    private fun scroll(root: AccessibilityNodeInfo?, direction: String): Boolean {
         require(direction == "forward" || direction == "backward") { "滚动方向无效" }
         require(hasValidGrant()) { "没有有效的操作授权" }
-        val root = rootInActiveWindow ?: return false
+        val root = root ?: return false
         val node = findScrollableNode(root) ?: return false
         val action = if (direction == "forward") AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         val success = node.performAction(action)
@@ -211,10 +242,14 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
         return success
     }
 
-    override fun verifyVisibleText(expected: String): Boolean {
+    override fun verifyVisibleText(expected: String): Boolean = verifyVisibleText(rootInActiveWindow, expected)
+
+    fun verifyVisibleText(displayId: Int, expected: String): Boolean = verifyVisibleText(rootForDisplay(displayId), expected)
+
+    private fun verifyVisibleText(root: AccessibilityNodeInfo?, expected: String): Boolean {
         val needle = expected.trim()
         if (needle.isBlank()) return false
-        val root = rootInActiveWindow ?: return false
+        val root = root ?: return false
         val found = findVisibleNode(root, needle) { true } != null
         audit("VERIFY", "目标文本=" + redactSensitiveText(needle.take(60)) + "，结果=" + found)
         return found
@@ -334,8 +369,10 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     override fun activePackageName(): String? = rootInActiveWindow?.packageName?.toString()
+    fun activePackageName(displayId: Int): String? = rootForDisplay(displayId)?.packageName?.toString()
 
     override fun screenTextChanged(before: String): Boolean = captureVisibleText() != before
+    fun screenTextChanged(displayId: Int, before: String): Boolean = captureVisibleText(displayId) != before
 
     private fun findScrollableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isVisibleToUser && node.isScrollable) return node

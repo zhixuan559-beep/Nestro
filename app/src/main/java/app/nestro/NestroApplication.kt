@@ -27,6 +27,7 @@ import app.nestro.phone.PhoneAgentAgent
 import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentWorkScheduler
 import app.nestro.phone.PhoneAgentTaskService
+import app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController
 import app.nestro.data.NestroDatabase
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.ConversationPersistenceService
@@ -490,6 +491,11 @@ class NestroApplication : Application() {
 
     val phoneAgentTaskService: PhoneAgentTaskService by lazy {
         PhoneAgentTaskService(this, database, agentTaskCoordinator)
+    }
+
+    /** One shared wireless-debugging helper and isolated-display session for Phone Agent. */
+    val mikaVirtualDisplayController: MikaVirtualDisplayController by lazy {
+        MikaVirtualDisplayController(this)
     }
 
     override fun onCreate() {

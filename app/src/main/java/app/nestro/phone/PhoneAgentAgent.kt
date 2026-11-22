@@ -57,6 +57,9 @@ object PhoneAgentAgent {
         val service = PhoneAgentExecutionEnvironmentProvider.active
             ?: return pause(dao, taskId, "无障碍服务尚未连接")
         if (!service.hasValidGrant()) return pause(dao, taskId, "没有有效的任务授权")
+        if (afterUserHandoff && !service.resumeAfterUserHandoff(taskId)) {
+            return pause(dao, taskId, "无法将用户接管的应用任务恢复到隔离执行屏，请检查虚拟屏状态后重试。")
+        }
         val existingActions = try { PhoneAgentTaskStore.decodeActions(task.planJson) } catch (_: Exception) { null }
         if (existingActions != null) {
             val resumed = PhoneAgentExecutor.resume(
@@ -92,7 +95,7 @@ object PhoneAgentAgent {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, task.currentStep)
             val screen = service.captureVisibleText()
             if (PhoneAgentScreenSafetyPolicy.requiresUserHandoff(screen)) {
-                return handoffToUser(dao, taskId, "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。")
+                return handoffToUser(dao, taskId, service, "检测到登录、验证码或风控页面。请在目标应用中自行完成验证，再回到任务页继续。")
             }
             val plan = try {
                 PhoneAgentModelClient.planNext(
@@ -185,19 +188,21 @@ object PhoneAgentAgent {
         return pause(dao, taskId, "达到单次自动执行轮数上限，任务已暂停，避免无限操作。")
     }
 
-    private suspend fun handoffToUser(dao: NestroDao, taskId: String, message: String): Result {
+    private suspend fun handoffToUser(dao: NestroDao, taskId: String, service: PhoneAgentExecutionEnvironment, message: String): Result {
         val task = dao.phoneAgentTask(taskId) ?: return Result(PhoneAgentExecutor.Outcome.FAILED, "任务不存在")
+        val handedOff = service.handoffToUser(taskId, message)
+        val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请先检查执行窗口。"
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, task.currentStep)
-        PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "需要用户接手", false, message)
+        PhoneAgentTaskStore.recordActionResult(dao, taskId, task.currentStep, "需要用户接手", false, userMessage)
         val stateStore = RoomAgentTaskStateStore(dao)
         stateStore.get(taskId)?.let { state ->
             stateStore.put(state.copy(
                 status = AgentTaskStatus.WAITING_FOR_USER,
-                lastError = message.take(2_000),
+                lastError = userMessage.take(2_000),
                 updatedAt = System.currentTimeMillis()
             ))
         }
-        return Result(PhoneAgentExecutor.Outcome.WAITING_USER, message)
+        return Result(PhoneAgentExecutor.Outcome.WAITING_USER, userMessage)
     }
 
     private fun isCancellationRequested(context: Context, taskId: String, taskStatus: String): Boolean =
