@@ -502,3 +502,9 @@
 - `AndroidManifest.xml` 已声明 `ACTION_ASSIST`；`AndroidAssistantRoleSupport` 在 Android Q+ 检查 `ROLE_ASSISTANT` 可用性/持有状态，并返回系统授权 Intent；`MainActivity` 处理助手入口路由到 Nestro 主聊天。
 - 当前是系统助手调用入口，不是完整 `VoiceInteractionService/VoiceInteractionSessionService`；常驻热词、锁屏语音会话和屏幕上下文理解未实现。该功能属于已实现的基础入口与明确未实现的高级助手能力，不能混为一谈。
 
+
+### 创作/手机混合调度的并行语义补充核对
+- `ModelLedToolDispatcher` 已支持模型在多轮中交替调用专家、Phone Agent、媒体工具；Phone Agent/视频任务可快速入队后由 WorkManager 后台执行，因此存在跨轮交错的基础。
+- 但 `OpenAiClient.nativeToolLoop()` 对同一轮模型返回的多个 tool calls 使用普通 `for` 顺序 await `onToolCall()`；兼容文本协议更明确限制每轮只输出一个动作。也就是说，当前是“可多轮交错 + 后台任务并行”，不是“同一轮独立工具调用并发执行”。
+- 用户明确要求混合调度非串行；后续需加入并发安全策略：只有声明为并行安全且无数据依赖的调用才并发，写同一项目/文件/设备的动作仍需串行或显式依赖；结果按原 callId 顺序回注，取消/失败/权限等待要有一致语义。不能简单把所有工具调用改成 `async` 并发。
+
