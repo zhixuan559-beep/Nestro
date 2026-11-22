@@ -146,8 +146,17 @@ object UserMemoryStore {
         }
     }
 
-    suspend fun recall(dao: NestroDao, projectId: String, query: String, limit: Int = 6): MemoryRecall =
-        recall(dao.userMemoriesForRecall(projectId, 200), query, limit)
+    suspend fun recall(
+        dao: NestroDao,
+        projectId: String,
+        query: String,
+        limit: Int = 6,
+        readableSourceProjectIds: Set<String> = emptySet()
+    ): MemoryRecall = recall(
+        dao.userMemoriesForRecall(projectId, readableSourceProjectIds.sorted(), 200),
+        query,
+        limit
+    )
 
     fun recall(memories: List<UserMemoryEntity>, query: String, limit: Int = 6): MemoryRecall {
         if (limit <= 0) return MemoryRecall("", emptyList())
@@ -217,7 +226,7 @@ object UserMemoryStore {
             "- [${it.category}] ${it.content} (memoryId=${it.id}, sourceProjectId=${it.projectId}, sourceConversationId=${it.sourceConversationId}, sourceMessageId=${it.sourceMessageId})"
         }.take(2600)
         return MemoryRecall(
-            if (context.isBlank()) "" else "当前项目及用户明确共享给当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\n$context",
+            if (context.isBlank()) "" else "当前项目及已获读取授权的来源项目中、由用户明确共享的自动记忆（仅作参考，事实以当前用户输入为准）：\n$context",
             ranked
         )
     }
