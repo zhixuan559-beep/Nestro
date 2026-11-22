@@ -679,6 +679,7 @@ class NestroApplication : Application() {
                 database = database,
                 capabilityPreferences = getSharedPreferences("nestro_local", MODE_PRIVATE),
                 approvalCoordinator = agentApprovalCoordinator,
+                taskCoordinator = agentTaskCoordinator,
                 permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                     if (tool.id.startsWith("mcp_")) {
                         val descriptor = mcpToolCenterRepository.findTool(tool.id)
