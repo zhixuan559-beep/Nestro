@@ -722,7 +722,7 @@ interface NestroDao {
     @Query("DELETE FROM knowledge_chunks_fts WHERE chunkId IN (:chunkIds)")
     suspend fun deleteKnowledgeChunkFts(chunkIds: List<String>)
 
-    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY f.rowid LIMIT :limit")
+    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY (c.position % 17) ASC, c.position DESC, c.documentId ASC LIMIT :limit")
     suspend fun searchKnowledgeChunksFts(projectId: String, query: String, limit: Int = 12): List<KnowledgeChunkEntity>
 
     @Transaction
@@ -763,7 +763,7 @@ interface NestroDao {
         deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }
-        @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY position ASC LIMIT :limit")
+        @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY (position % 17) ASC, position DESC, documentId ASC LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
     @Query("SELECT * FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId ORDER BY position ASC")
     suspend fun knowledgeChunksForDocument(documentId: String, projectId: String): List<KnowledgeChunkEntity>
