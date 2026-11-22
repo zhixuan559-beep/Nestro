@@ -990,3 +990,25 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已改为：全局授权与项目授权只决定 MCP 能力是否可用；通过后仍交由既有 `DefaultAgentPermissionRouter` 判断任务级确认。声明为外部写入/需要确认的 MCP 工具不再因长期授权而静默放行。
 - 这是安全边界修正，不代表审批交互已完成。当前聊天工具调度器能识别 `requiresUser` 并停止执行，但通用“授权一次 / 当前任务授权 / 拒绝”弹窗与批准后恢复仍需统一接入；在此之前，需确认的 MCP 外部写入会被安全阻断，不会自动执行。
 - 本次修改已提交并回读；未运行构建或测试。
+
+
+## 2026-11-22 统一审批、媒体任务、日历与工具并发接线更新
+
+本节修正上文中部分已过期的“媒体/日历尚未接入”与“MCP 直接调用仍使用临时任务状态”等判断。当前代码阶段 HEAD：`f424847bdc263501654ec1e4c328b860c47497f8`。
+
+### 已落地的代码接线
+
+- **工作流审批 UI：** 工作流审批等待写入统一任务状态；批准恢复 `RUNNING`，拒绝写入 `FAILED`。弹窗关闭或点“稍后处理”只隐藏界面，不等于拒绝；待审批横幅可重新打开同一请求。用户停止工作流仍是显式停止。
+- **生成式插件与 MCP：** 生成式插件通过 `AgentTaskCoordinator.runInline`、步骤 checkpoint 和 `AgentTaskExecutionContext` 管理生命周期；MCP 全局服务授权与项目授权只决定能力是否可用，任务级写入仍走统一审批。MCP 管理页直接调用也改为 `runInline`，任务状态由统一任务机持有，并识别 `AUTHORIZE_ONCE/AUTHORIZE_TASK/REJECT/null` 决策，释放任务级授权 scope。
+- **媒体 AI / 媒体渲染：** 两类 Scheduler 在 WorkManager 入队前登记 inline 任务，Worker 通过 `AgentTaskCoordinator.runInline` 执行；WorkManager 只负责可靠唤醒。原有 JSON 记录保留素材 ID、参数、进度、结果等领域数据。系统停止与显式取消分开处理。修正 inline 预登记状态为 `CREATED`，由 `runInline` 真正转入队列，避免已登记 `QUEUED` 被误判为无需派发。
+- **日历自动调度：** CalendarEvent 数据库升级到 v2，增加可选自动执行目标和项目范围；编辑入口可填写执行目标，留空仍只提醒。WorkManager 在 occurrence 到期时创建确定性任务 ID，并以 `eventId + occurrenceStart` 幂等键交给 `AgentTaskCoordinator`；`calendar_automation` handler 通过 `ChatRequestExecutionCoordinator` 调用主模型和现有工具路由，支持 Phone Agent 工具路径；子工具审批状态同步到父日历任务。系统日历导入保留自动执行配置，备份/恢复包含新增字段。
+- **工具并发：** 新增 `AgentToolSpec.parallelSafe`，默认关闭，并强制只有只读且无需确认的工具才能声明安全。原生 tool loop 只并发连续的显式安全调用，使用结构化协程并发，按原调用顺序回注结果；其他工具仍串行。当前仅知识库检索和项目素材列表声明安全；MCP、写入、设备操作、需审批工具默认不并发。共享结果缓冲和调用计数已做并发保护。
+- **父子审批状态：** `ChatRequestExecutionRequest` 支持父任务 ID；日历自动任务调用主模型工具时，子工具等待审批/获批/拒绝会同步更新父任务状态。
+
+### 仍未完成，不能标记为验收通过
+
+- **审批恢复：** 统一任务状态可持久化为 `WAITING_FOR_USER`，当前进程内关闭弹窗后可重新打开；但进程被杀后，审批请求 UI 的完整重建、插件/MCP/工作流执行闭包的安全续跑，以及批准后从原步骤恢复，尚未形成完整持久审批记录与恢复协议。
+- **日历完整性：** 已有按 occurrence 的确定性任务 ID 和幂等键，但 `nextRunAt/lastRunAt`、最后执行结果/错误/重试次数尚未作为日历调度记录完整持久化；日历自动执行目前关闭专家团自动组队，模型失败也尚未按错误类型实现完整退避重试。
+- **并发与协作：** 已实现受限的只读工具并发；通用资源冲突键、动态依赖图、跨模块父子任务/产物引用和创作—执行交替的统一协作协议仍需继续补齐。
+- **验证：** 已新增/调整 inline 预登记、并发安全声明、日历无通知自动触发等测试源码；本轮没有运行 Gradle 编译、JVM 测试、Android instrumentation、模拟器或真机验收。不能据此宣称构建通过。
+
