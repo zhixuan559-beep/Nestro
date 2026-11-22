@@ -192,7 +192,7 @@
 
 ### 当前明确缺口/待核验
 
-- **主模型可调用视频生成，但不能据此认定主模型已能调用所有多模态分析能力。** 当前 `NestroApplication.kt` 的媒体工具注册仅见 `media.provider.list`、`media.video.generate`、`media.video.status` 和项目素材查询；图像理解、音频转写/处理、场景识别目前确认有媒体编辑器内任务入口，尚未发现对应的聊天主模型工具注册。需要判断并补齐用户要求的“文本模型按需调取多模态模型”闭环，避免另造重复媒体任务体系。
+- **主模型可调用视频生成，但不能据此认定主模型已能调用所有多模态分析能力。** 当前 `NestroApplication.kt` 的媒体工具注册仅见 `media.provider.list`、`media.video.generate`、`media.video.status` 和项目素材查询；图像理解、音频转写/处理、场景识别目前确认有媒体编辑器内任务入口，尚未发现对应的聊天主模型工具注册。并且 `media.provider.list` 只返回 `chat_model` 与 `video_model`，没有返回 `transcriptionModel` 或结构化 capability 列表。需要先确定主模型要调用的多模态任务范围，再复用现有 MediaAiTaskStore/Worker/Provider 补最小工具接线，避免另造重复媒体任务体系。
 - 当前通用媒体连接测试验证的是聊天/视觉 `/chat/completions` 路径，不验证视频提交/轮询端点；视频端点真实联调尚未确认。
 - 当前媒体测试目录没有 `MediaVideoGenerationClientTest`；`MediaAiTaskStoreTest` 覆盖视频任务无源素材、已完成父任务版本关联等持久化规则，但没有覆盖 HTTP 请求/轮询/下载/错误/取消全链路。
 - `docs/MULTIMODAL_VIDEO_GENERATION_PIPELINE.md` 明确记载：视频播放由聊天结果按钮跳转媒体编辑器，不是消息气泡内联播放器；通用连接测试不验证视频端点；当前实现未完成编译、测试、Lint、模拟器或真机验收。
