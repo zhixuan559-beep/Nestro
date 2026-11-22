@@ -217,7 +217,7 @@ object UserMemoryStore {
             "- [${it.category}] ${it.content} (memoryId=${it.id}, sourceProjectId=${it.projectId}, sourceConversationId=${it.sourceConversationId}, sourceMessageId=${it.sourceMessageId})"
         }.take(2600)
         return MemoryRecall(
-            if (context.isBlank()) "" else "当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\n$context",
+            if (context.isBlank()) "" else "当前项目及用户明确共享给当前项目的自动记忆（仅作参考，事实以当前用户输入为准）：\n$context",
             ranked
         )
     }
