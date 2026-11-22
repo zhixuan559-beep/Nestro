@@ -301,7 +301,8 @@ class AgentTaskCoordinator(
             if (existing.status !in setOf(
                     AgentTaskStatus.PAUSED,
                     AgentTaskStatus.FAILED,
-                    AgentTaskStatus.WAITING_FOR_USER
+                    AgentTaskStatus.WAITING_FOR_USER,
+                    AgentTaskStatus.WAITING_FOR_TASK
                 )) return@withTransitionLock existing
             val next = existing.copy(
                 status = AgentTaskStatus.QUEUED,
@@ -541,6 +542,22 @@ class AgentTaskCoordinator(
                         } else {
                             scheduleRetry(latest.taskId, waitMillis)
                             latest
+                        }
+                    }
+                    AgentTaskStatus.WAITING_FOR_TASK -> {
+                        if (handlers.find(latest.owner) != null) {
+                            val queued = latest.copy(status = AgentTaskStatus.QUEUED, updatedAt = System.currentTimeMillis())
+                            states.put(queued)
+                            queuedIds += latest.taskId
+                            queued
+                        } else {
+                            val paused = latest.copy(
+                                status = AgentTaskStatus.PAUSED,
+                                lastError = "等待中的子任务已中断；请重新打开对应功能后再继续",
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            states.put(paused)
+                            paused
                         }
                     }
                     AgentTaskStatus.PAUSED,
