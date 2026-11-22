@@ -120,4 +120,5 @@ class WorkflowExecutionCoordinator(
             taskContext.checkpoint("workflow:" + workflow.id + ":finished", result.completedSteps)
             result
         }
-    }}
+    }
+}
