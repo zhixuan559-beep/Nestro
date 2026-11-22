@@ -140,7 +140,20 @@ class WorkflowExecutionCoordinator(
                     taskContext.checkpoint("workflow_run:" + checkpoint, index)
                     onStepCompleted(index, stepRun, output)
                 },
-                requestApproval = requestApproval,
+                requestApproval = { step, previousOutput ->
+                    // Approval is a durable task state, not merely a suspended UI coroutine.
+                    taskContext.waitForUser("等待审批：${step.title}")
+                    val approved = requestApproval(step, previousOutput)
+                    if (approved) {
+                        taskContext.transition(
+                            app.nestro.agent.AgentTaskStatus.RUNNING,
+                            "审批已通过：${step.title}"
+                        )
+                    } else {
+                        taskContext.fail("审批未通过：${step.title}")
+                    }
+                    approved
+                },
                 resumeCompletedRuns = resumeRuns,
                 resumeOutput = resumeOutput
             )
