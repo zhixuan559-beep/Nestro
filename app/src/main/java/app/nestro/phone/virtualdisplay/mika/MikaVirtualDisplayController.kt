@@ -91,6 +91,19 @@ class MikaVirtualDisplayController(context: Context) {
             shell.moveTask(taskId, displayId)
         }
 
+        suspend fun watchMainScreen(windowMs: Int): Int = withContext(Dispatchers.IO) {
+            shell.watchMainScreen(windowMs.coerceIn(0, 30_000))
+        }
+
+        suspend fun mainScreenArrivals(sinceUptimeMs: Long): android.os.Bundle = withContext(Dispatchers.IO) {
+            shell.mainArrivals(sinceUptimeMs)
+        }
+
+        suspend fun resizeVirtualDisplay(width: Int, height: Int, densityDpi: Int): Boolean {
+            val viewport = phoneViewport(width, height, densityDpi)
+            return display.resize(viewport.width, viewport.height, viewport.dpi)
+        }
+
         override fun close() {
             if (activeSession === this) activeSession = null
             runCatching { shell.finishDisplay(displayId) }
