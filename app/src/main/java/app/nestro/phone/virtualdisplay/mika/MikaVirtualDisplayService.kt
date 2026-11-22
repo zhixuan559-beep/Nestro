@@ -303,7 +303,7 @@ internal class MikaVirtualDisplayService(
 
     override fun moveTask(taskId: Int, displayId: Int): Boolean {
         if (displayId != Display.DEFAULT_DISPLAY && !owns(displayId)) return false
-        return try {
+        val commandSucceeded = try {
             taskManager.javaClass.getMethod("moveRootTaskToDisplay", Int::class.java, Int::class.java)
                 .invoke(taskManager, taskId, displayId)
             true
@@ -314,6 +314,9 @@ internal class MikaVirtualDisplayService(
                     .redirectErrorStream(true).start().waitFor() == 0
             }.getOrDefault(false)
         }
+        // The framework method is void and may return normally when the task ID no longer exists.
+        // Confirm the task actually landed on the requested display before reporting success.
+        return commandSucceeded && displayOfTask(taskId) == displayId
     }
 
     override fun injectKey(displayId: Int, keyCode: Int): Boolean {
