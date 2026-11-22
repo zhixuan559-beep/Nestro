@@ -1177,3 +1177,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已把 NestroApp 中新建团队、导入新技能、创建技能、新建团队成员专家、导入新团队、新专家导入、创建工作流、新建专家等 8 个入口切换到 create-only API；现有资源的范围开关仍使用 update API。
 - 新增 `ProjectResourceScopeStoreTest.newResourceAssignmentCannotOverwriteAnExistingScopeKey`，验证新建成功、已存在 scope 拒绝覆盖、原归属不变。
 - 提交：`6460ddd0cccc00c07f709b170eed5ebc59ce58d3`（store）、`34fac631299f2a0d2751b6775e99f6e8b69b3eac`（test）、`9a4c1fbcd757017243da823f9758b7569c834713`（8 个 UI 创建入口接线）。已回读并静态确认 8 个创建入口均使用 create-only API，4 个范围开关仍使用 update API；未运行测试。
+
+
+## 2026-11-22 17:33 UTC — 会话快照持久化与记忆来源边界复核（源码基线 f7b36a3）
+
+- 已修复一个确定的静态编译阻塞：`NestroApp.kt` 原先调用 `ConversationSnapshotPersistenceEffect`，当前仓库没有定义；现新增同包定义，300ms debounce 后把不可变快照交给现有 `ConversationPersistenceService.persist`，取消透传，普通异常回调 UI 状态。成功持久化后同步 `persistedConversationVersions` 并清理已删除会话 marker。源码提交：`478c2e3`、`7b1eadf`、`f7b36a3`。
+- 对比初始业务源码基线 `b394e60` 到 `f7b36a3`，源码改动仅新增 `ConversationSnapshotPersistenceEffect.kt` 与修改 `NestroApp.kt`；其余为文档更新。已回读定义/调用/持久化 service，尚未编译或运行测试。
+- 发现新的跨模块时序要求：聊天完成路径先更新 Compose/本地快照，再立即启动自动记忆提取；Room snapshot effect 有 300ms debounce。不能假设 memory source message 已先写入 Room。后续对 `UserMemoryStore.saveCandidates` 增加 DAO 归属验证时，必须同步在记忆提取前事务性持久化当前 conversation/messages，且确保新建会话也先 upsert；测试 fixture 需真实创建 project/conversation/message。
+- 用户原始记忆缓存定义已恢复：缓存只属于记忆模块，不与统一调度耦合；分全局/项目/会话作用域，命中复用已整理/检索的上下文，未命中才重新本地检索/整理；按当前问题动态取用，新增/修改/删除记忆时更新或失效对应缓存，避免串项目/串会话。目标是节省 Token，本地处理不调用模型。现有 BGE embeddingCache 不满足此要求。
+- 当前源码基线尚未完成所有 19 模块逐项验收；未运行 Gradle、JVM/Android 测试、模拟器/真机/API 联调。
