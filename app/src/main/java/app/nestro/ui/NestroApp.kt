@@ -377,6 +377,25 @@ fun NestroApp(initialPage: String = "home") {
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
+
+    DisposableEffect(appRuntime, workflowUiState) {
+        appRuntime.agentApprovalCoordinator.setHandler { request ->
+            val decision = CompletableDeferred<app.nestro.agent.AgentApprovalDecision>()
+            withContext(Dispatchers.Main.immediate) {
+                workflowUiState.agentApprovalPrompt.value = UnifiedApprovalPrompt(request, decision)
+            }
+            try {
+                decision.await()
+            } finally {
+                withContext(Dispatchers.Main.immediate) {
+                    if (workflowUiState.agentApprovalPrompt.value?.decision === decision) {
+                        workflowUiState.agentApprovalPrompt.value = null
+                    }
+                }
+            }
+        }
+        onDispose { appRuntime.agentApprovalCoordinator.setHandler(null) }
+    }
     var workflowHistory by workflowUiState.workflowHistory
     var workflows by workflowUiState.workflows
     var showWorkflowDialog by workflowUiState.showWorkflowDialog
@@ -392,6 +411,7 @@ fun NestroApp(initialPage: String = "home") {
     var workflowPaused by workflowUiState.workflowPaused
     var workflowPauseGate by workflowUiState.workflowPauseGate
     var workflowApprovalPrompt by workflowUiState.workflowApprovalPrompt
+    var agentApprovalPrompt by workflowUiState.agentApprovalPrompt
     val dataTransferUiState = remember { DataTransferUiState() }
     var backupStatus by dataTransferUiState.backupStatus
     var pendingBackupUri by dataTransferUiState.pendingBackupUri
@@ -4158,38 +4178,30 @@ fun NestroApp(initialPage: String = "home") {
         )
     }
 
-    workflowApprovalPrompt?.let { approval ->
+    agentApprovalPrompt?.let { approval ->
         AlertDialog(
-            // Approval is intentionally non-dismissible: the task waits until the user
-            // chooses one of the explicit authorization decisions or stops the task.
             onDismissRequest = {},
-            title = { Text("工作流步骤需要授权") },
+            title = { Text("任务操作需要授权", color = Ink) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("即将执行：${approval.stepTitle}", color = Ink)
-                    Text("执行要求：", color = Muted)
-                    Text(approval.instruction, color = Ink)
-                    Text("前序结果（供判断）：", color = Muted)
-                    Text(approval.context.ifBlank { "暂无前序输出" }, color = Ink)
-                    Text("未选择前，任务会停留在这里等待，不会自动放行或拒绝。", color = Muted)
+                    Text("能力：${approval.request.toolId}", color = Ink)
+                    Text(approval.request.reason, color = Muted)
+                    Text("授权一次只允许当前操作；当前任务全部授权仅在本次任务中有效。未选择前，任务会保持等待。", color = Muted)
                 }
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = {
-                        approval.decision.complete(WorkflowApprovalChoice.AUTHORIZE_ONCE)
-                        workflowApprovalPrompt = null
+                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE)
                     }) { Text("授权一次", color = Mint) }
                     TextButton(onClick = {
-                        approval.decision.complete(WorkflowApprovalChoice.AUTHORIZE_TASK)
-                        workflowApprovalPrompt = null
+                        approval.decision.complete(app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK)
                     }) { Text("当前任务全部授权", color = Mint) }
                 }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    approval.decision.complete(WorkflowApprovalChoice.REJECT)
-                    workflowApprovalPrompt = null
+                    approval.decision.complete(app.nestro.agent.AgentApprovalDecision.REJECT)
                 }) { Text("拒绝", color = Muted) }
             }
         )
