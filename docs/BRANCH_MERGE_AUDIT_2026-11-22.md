@@ -94,3 +94,13 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - No GitHub Actions workflow run or check run exists for the current integration HEAD.
 - A local repository clone/build could not be started because the execution environment could not resolve `github.com`; compilation, JVM tests, Android instrumentation tests, emulator tests, and device tests remain **not run**.
 - No branch was deleted and PR #1 remains open + Draft; it was not merged wholesale.
+
+
+## 2026-11-22 16:58 UTC — 全分支图谱刷新（源码基线 b394e60）
+
+- 重新读取 GitHub 分支列表：共 30 个分支（含 `integration/19-modules`），逐个将其与整合分支进行 compare。
+- 29 个非整合分支的提交图比较结果：14 个 diverged、15 个 behind、0 个 ahead-only。ahead/behind 是相对共同祖先的提交图差异，不等于有多少功能未合并；尤其 diverged 分支必须继续比较具体文件 blob/语义，禁止整分支覆盖。
+- 已确认完全 behind、没有独有提交的分支包括：`feature/modelscope-oauth`、`feature/module-5-project-space`、`feature/module-7-memory`、`feature/module-10-artifacts`、`feature/module-11-expert-templates`、`feature/module-12-model-comparison`、`feature/module-17-smart-editing`、`feature/module-18-calendar`、`feature/phase2-optimization`、`feature/voice-system`、`refactor/phase-2-architecture` 和四个 phase2 staging 分支。
+- Diverged 候选分支包括 PR #1 的知识检索/能力中心旧快照、模块6/7/8/9/13/14/15 历史分支、模块13审计修复分支、模块5/6 WIP 分支、旧 main 和临时写权限测试分支。此前专项审计已确认：PR #1 仅选择性回收独立语义，不合入旧 CapabilityTaskEngine；模块6/7/13/14/15 整合分支有较新的修复；模块8差异主要是 CI/脚本；旧 main 的 UnifiedAgentDispatcher/ChatNetworkPolicy/TtsCapability 不应复制回来。仍需对本轮列出的候选文件做 blob/语义复核，不能仅凭 compare 状态下最终结论。
+- 当前仍开放的 Draft PR 只有：PR #1 `feature/knowledge-retrieval-ranking → main`；PR #3 `refactor/phase-2-architecture → feature/voice-system`。两者都不是 integration 目标分支的待合并 PR，PR #3 所在 refactor 分支当前相对 integration behind 0 ahead。
+- 本节只完成分支图谱和 PR 元数据刷新，不代表全部分支文件差异已逐文件核验，也不代表所有功能都已合并/验收。
