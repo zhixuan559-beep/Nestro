@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   verify:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -43,6 +43,22 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon --stacktrace testDebugUnitTest
 
+      - name: Export resolved Gradle dependency graphs
+        if: always() && steps.setup_gradle.outcome == 'success'
+        continue-on-error: true
+        run: |
+          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt 2>&1 || true
+          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt 2>&1 || true
+
+      - name: Test CycloneDX SBOM exporter
+        if: always() && steps.setup_gradle.outcome == 'success'
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
+      - name: Generate CycloneDX SBOM
+        if: always() && steps.setup_gradle.outcome == 'success'
+        continue-on-error: true
+        run: python3 .github/scripts/generate-sbom.py gradle-dependencies.txt app/build/reports/coworkbench/bom.cdx.json
+
       - name: Run Android lint
         if: always() && steps.setup_gradle.outcome == 'success'
         run: gradle --no-daemon --stacktrace lintDebug
@@ -57,6 +73,8 @@ jobs:
         with:
           name: Nestro-verification-reports
           path: |
+            gradle-dependencies.txt
+            app/build/reports/coworkbench/bom.cdx.json
             app/build/reports/tests/**
             app/build/test-results/**
             app/build/reports/lint-results-*.html
@@ -92,6 +110,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.10.2"
+      - name: Export resolved Gradle dependency graphs
+        run: |
+          gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath > gradle-dependencies.txt
+          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath >> gradle-dependencies.txt
+
+      - name: Test CycloneDX SBOM exporter
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
+      - name: Generate CycloneDX SBOM
+        run: python3 .github/scripts/generate-sbom.py gradle-dependencies.txt app/build/reports/coworkbench/bom.cdx.json
+
       - name: Run Android instrumentation tests on emulator
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
@@ -103,6 +132,17 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: bash .github/scripts/run-android-instrumentation.sh
+
+      - name: Upload coworkbench dependency evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nestro-coworkbench-dependency-evidence
+          path: |
+            gradle-dependencies.txt
+            app/build/reports/coworkbench/bom.cdx.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload Android instrumentation reports
         if: always()
