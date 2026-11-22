@@ -56,6 +56,20 @@ class AgentRuntimeTest {
         assertEquals(AgentApprovalDecision.AUTHORIZE_TASK, decision)
         assertEquals(listOf("PENDING", "AUTHORIZED_TASK"), records.map { it.status })
         assertEquals(records.first().id, records.last().id)
+
+        var closedScope: String? = null
+        var closedStatus: String? = null
+        val pendingCoordinator = AgentApprovalCoordinator(
+            persistAudit = { },
+            closePendingAudits = { scopeId, status, _ ->
+                closedScope = scopeId
+                closedStatus = status
+            }
+        )
+        assertEquals(null, pendingCoordinator.authorize("scope-pending", "mcp.write", "需要审批"))
+        pendingCoordinator.endScopeAndAudit("scope-pending", "CANCELLED")
+        assertEquals("scope-pending", closedScope)
+        assertEquals("CANCELLED", closedStatus)
     }
 
     @Test
