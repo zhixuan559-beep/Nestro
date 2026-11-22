@@ -2,6 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskMetadata
+import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
