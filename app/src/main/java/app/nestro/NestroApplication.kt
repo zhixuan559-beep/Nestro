@@ -475,7 +475,8 @@ class NestroApplication : Application() {
                     )
                     states.put(current.copy(
                         status = status,
-                        lastError = error.take(2_000),
+                        lastError = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) "" else error.take(2_000),
+                        resultSummary = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) error.take(8_000) else current.resultSummary,
                         finishedAt = if (terminal) System.currentTimeMillis() else 0L,
                         updatedAt = System.currentTimeMillis()
                     ))
