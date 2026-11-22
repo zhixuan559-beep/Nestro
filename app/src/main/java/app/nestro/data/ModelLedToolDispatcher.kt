@@ -221,14 +221,14 @@ ${prompt.take(8_000)}
 - 只能使用本轮明确提供的上下文与已授权工具；不得猜测其他项目的数据或访问权限。
 """.trimIndent()
 
-        var nativeToolCallsExecuted = 0
+        val nativeToolCallsExecuted = java.util.concurrent.atomic.AtomicInteger(0)
         try {
             val nativeResult = chat.completeWithNativeTools(
                 configs = configs,
                 history = requestHistory,
                 systemPrompt = decisionSystem,
                 tools = visibleRows.map { (spec, definition) ->
-                    NativeToolDefinition(spec.id, definition, nativeToolSchema(spec.id, definition))
+                    NativeToolDefinition(spec.id, definition, nativeToolSchema(spec.id, definition), parallelSafe = spec.parallelSafe)
                 },
                 temperature = temperature ?: 0.0,
                 maxTokens = maxTokens,
@@ -239,7 +239,7 @@ ${prompt.take(8_000)}
             ) { toolId, arguments ->
                 val spec = available.firstOrNull { it.id == toolId }
                     ?: return@completeWithNativeTools NativeToolCallResult("工具未注册，已阻止执行：$toolId")
-                nativeToolCallsExecuted++
+                nativeToolCallsExecuted.incrementAndGet()
                 val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
                 val scopedAccess = object : AgentToolAccess {
                     override fun find(id: String) = lease.access.find(id)
@@ -311,7 +311,31 @@ ${prompt.take(8_000)}
                     traces = RoomAgentTaskTraceStore(database.dao())
                 )
                 val result = try {
-                    runtime.execute(AgentToolRequest(taskId, spec.id, arguments))
+                    if (spec.parallelSafe) {
+                        val toolTask = AgentTaskState(
+                            taskId = taskId,
+                            owner = "chat",
+                            projectId = projectId,
+                            conversationId = conversationId
+                        )
+                        when (val authorization = requestPermissionRouter.authorize(toolTask, spec)) {
+                            AgentAuthorization.Allow -> scopedAccess.invoke(
+                                spec.id,
+                                if (spec.id.startsWith("mcp_")) arguments else arguments + mapOf(
+                                    "__nestro_project_id" to projectId,
+                                    "__nestro_conversation_id" to conversationId,
+                                    "__nestro_task_mode" to taskModeEnabled.toString(),
+                                    "__nestro_request_id" to requestId
+                                )
+                            )
+                            is AgentAuthorization.RequireConfirmation ->
+                                AgentToolResult(false, error = authorization.reason, requiresUser = true)
+                            is AgentAuthorization.Deny ->
+                                AgentToolResult(false, error = authorization.reason)
+                        }
+                    } else {
+                        runtime.execute(AgentToolRequest(taskId, spec.id, arguments))
+                    }
                 } finally {
                     AgentToolLeaseRegistry.release(lease.id)
                 }
