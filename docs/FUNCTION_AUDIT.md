@@ -619,3 +619,38 @@
 - HEAD Combined Status 返回空状态列表，关联 PR workflow runs 返回空列表；不能宣称当前 HEAD CI 已通过。
 - 以上统计是源码文件数量，不是完成率；测试源码存在不等于测试执行通过。
 
+
+
+## 2026-11-22 重复实现、旧代码与调用边界初判
+
+本节只记录已取得源码证据的初判；不凭文件名相似就删除。最终删除前仍需全仓引用扫描、构建依赖核对和行为替代验证。
+
+### 明确不应重新合入的旧实现
+- 旧 `UnifiedAgentDispatcher.kt`：旧 main 分支中的关键词计数路由，与当前 `ModelLedToolDispatcher` + provider-native tool calling 重复且能力更弱；不恢复旧文件。
+- 旧 `CapabilityTaskEngine`：PR #1 的独立 CapabilityTaskStore/Engine 与当前 Room-backed `AgentTaskCoordinator` 任务状态、trace、checkpoint、等待用户、暂停/恢复/取消和进程恢复重叠；不复制第二个任务队列。旧能力中心 UI/能力授权总览是另一回事，不能因此一起丢掉。
+- 旧 `ChatNetworkPolicy.kt`：其重试策略与当前 `ChatRequestPolicy`/请求执行层重叠；不恢复第二套网络策略入口。
+- 旧 `TtsCapability.kt`：仅为设备 Voice 排序 helper，当前整合分支未包含；现有 `AndroidTextToSpeechController` 负责真实设备语言能力。暂不恢复，除非后续 UI 明确要求质量/延迟排序。
+- 旧模块9分支 Manifest、LocalVault、NestroApp、模块13 MCP 和模块14 Git 版本已比当前整合分支弱；前文已列出具体差异，禁止整分支/整文件覆盖。
+
+### 当前看似相似、但职责不同，不应直接删除
+- `ChatExecutionService`：底层模型请求/取消传输；`ChatStreamingCoordinator`：流式增量批处理和部分回答持久化；`ChatRequestExecutionCoordinator`：一次聊天请求的上下文、工具调度和最终响应。三者是分层调用，不是三套并行聊天管线。
+- `ConversationContextRepository`：会话历史/知识检索边界；`ConversationMemoryStore`：具体会话检索实现；`ChatRequestContextAssembler`：并行选择并组装上下文。当前 NestroApplication 的 assembler 通过 repository 方法引用调用它，不能误判为未使用。
+- `PhoneAgentTaskService`：设备任务应用层；`PhoneAgentWorkScheduler/Worker`：WorkManager 持久后台执行桥；`AgentTaskCoordinator`：跨功能共享任务状态/trace/生命周期。PhoneAgentTaskService 已持有共享 coordinator，不应仅因都出现“Task”就删掉其中一层。
+- `MediaAiTaskStore/Worker` 与 `MediaRenderTaskStore/Worker`：分别管理媒体 AI 分析/生成和时间线渲染，结果类型、恢复/取消和资源边界不同；目前没有证据证明是重复实现。
+- `CalendarReminderScheduler`：当前只调度日历提醒通知；`AgentTaskCoordinator` 管理可执行任务。二者不是重复代码，问题是日历到期触发尚未分发到 Agent/Workflow。
+
+### 需要做最小整合/修复的真实缺口
+- **专家团工具描述冲突**：`NestroApplication` 注册的 `expert_team.run` 描述仍说“用户明确选择的专家团队”，但 `ModelLedToolDispatcher` 系统提示和 `NestroApp.runExpertTeam` 回调已支持主模型从项目专家目录自动选 2–4 人。描述过时会误导模型，应统一为“优先使用用户已选团队，否则主模型可自主选择可用专家”。
+- **插件审批粒度**：插件总工具 `plugin.*` 标记 `requiresConfirmation=true`，但内部执行为每一步创建自定义 PermissionRouter，对所有 READ_ONLY/EXTERNAL_WRITE 直接 Allow，未尊重内部工具的 `requiresConfirmation`。因此用户对插件入口的一次确认可能绕过具体步骤本应触发的确认；需把工具自身确认要求接回统一审批路由，不能简单全部 Allow。
+- **插件任务生命周期**：插件 handler 直接写 RUNNING/COMPLETED/FAILED/PAUSED 状态，逐步执行却未调用 `AgentTaskCoordinator.enqueue/runInline/checkpoint/resume`；取消后标为 PAUSED，但未见可恢复的步骤检查点/handler 恢复链路。应复用共享 coordinator 补 checkpoint/恢复，不新建第三套任务引擎。
+- **统一能力中心 UI**：当前 `CapabilityDirectoryPage` 是 Skills/社区目录，不等于模型/专家/工作流/知识/记忆/设备/MCP/GitHub/媒体的总览、项目授权、可用状态和任务审计中心。旧 PR #1 的页面不可直接复制，但该产品入口缺口仍需基于现有目录/权限/trace 数据源补齐。
+- **混合调度**：主模型系统提示已有专家/手机/素材按依赖穿插调用的规则，Phone Agent 的任务创建/等待/素材核验代码已接入；仍需联测多轮交替、等待用户接管、失败重试和专家真正读取素材。不能再造新的混合调度器。
+- **多模态理解**：聊天 transport 纯文本、媒体分析工具缺失，已在前文记录；复用现有 Media AI 任务链路补主模型入口。
+- **日历自动调度**：当前提醒只发通知；需要把到期事件关联 Agent/Workflow/Phone Agent、状态回写、审批、失败重试和幂等恢复接通，复用共享任务内核。
+
+### 测试源码覆盖缺口（只统计文件存在，不代表已执行）
+- 当前 87 个 JVM 与 31 个 Android instrumentation 测试文件。
+- 已有 AgentRuntime/AgentTaskCoordinator、专家 DAG/团队、WorkflowEngine/WorkflowExecutionCoordinator、Phone Agent 策略、知识库、记忆、MCP、Git、插件工厂、媒体 Provider/AI Task Store、日历规则等测试源码。
+- 未发现 `ModelLedToolDispatcher` 端到端调度测试；未发现 `GeneratedPluginWorkflowExecutor` 的权限/确认/恢复测试；未发现 `MediaVideoGenerationClientTest` 或媒体 AI Worker 完整 HTTP/结果导入测试；未发现 Calendar Reminder → Agent/Workflow 分发测试。
+- 对应缺口补测应随最小代码修复一起补，不要先创建与现有逻辑脱节的空测试。
+
