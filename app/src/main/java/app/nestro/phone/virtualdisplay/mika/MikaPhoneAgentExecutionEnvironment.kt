@@ -31,8 +31,8 @@ class MikaPhoneAgentExecutionEnvironment(
     override fun verifyVisibleText(expected: String) = service.verifyVisibleText(session.displayId, expected)
     override fun activePackageName() = runBlocking(Dispatchers.IO) { session.topTaskPackage() }
     override fun screenTextChanged(before: String) = service.screenTextChanged(session.displayId, before)
-    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String) =
-        service.downloadAsset(taskId, projectId, url, displayName)
+    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String, sourceUrl: String, licenseLabel: String) =
+        service.downloadAsset(taskId, projectId, url, displayName, sourceUrl, licenseLabel)
 
     override fun handoffToUser(taskId: String, reason: String): Boolean = runBlocking(Dispatchers.IO) {
         val taskIdOnDisplay = session.topTaskId()

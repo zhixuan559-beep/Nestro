@@ -318,9 +318,11 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     fun hasActiveWindow(): Boolean = rootInActiveWindow != null
-    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String): String? {
+    override fun downloadAsset(taskId: String, projectId: String, url: String, displayName: String, sourceUrl: String, licenseLabel: String): String? {
         require(hasValidGrant()) { "没有有效的操作授权" }
         require(url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url) && !PhoneAgentRiskPolicy.containsSensitiveValue(url)) { "素材下载地址必须是安全的公开 HTTPS 直链" }
+        require(sourceUrl.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(sourceUrl) && !PhoneAgentRiskPolicy.containsSensitiveValue(sourceUrl)) { "素材来源页面必须是安全的公开 HTTPS 地址" }
+        require(licenseLabel.isNotBlank() && licenseLabel.length <= 120) { "素材授权说明缺失或过长" }
         require(projectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))) { "当前项目标识无效" }
         require(displayName.length in 1..160 && displayName.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "仅支持图片、视频和音频素材文件" }
         val extension = displayName.substringAfterLast('.').lowercase()
@@ -360,7 +362,7 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
                             val uri = manager.getUriForDownloadedFile(downloadId) ?: error("下载完成但无法读取文件")
                             val asset = MediaProjectStore.importAsset(this, projectId, uri, displayName)
                             audit("ASSET_IMPORTED", "项目素材已导入：${asset.kind}，${asset.byteSize} 字节")
-                            return "素材已下载并导入当前项目素材库：${asset.displayName}；素材 ID：${asset.id}；类型：${asset.kind}；大小：${asset.byteSize} 字节。"
+                            return "素材已下载并导入当前项目素材库：${asset.displayName}；素材 ID：${asset.id}；类型：${asset.kind}；大小：${asset.byteSize} 字节；来源页面：${sourceUrl.take(500)}；授权标记：${licenseLabel.take(120)}。"
                         }
                     }
                 }

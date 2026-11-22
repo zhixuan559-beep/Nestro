@@ -26,7 +26,7 @@ object PhoneAgentExecutor {
     sealed class Action {
         data class OpenUrl(val url: String) : Action()
         data class LaunchApp(val packageName: String) : Action()
-        data class DownloadAsset(val url: String, val displayName: String) : Action()
+        data class DownloadAsset(val url: String, val displayName: String, val sourceUrl: String, val licenseLabel: String) : Action()
         data class ClickText(val exactText: String, val expectedAfter: String? = null) : Action()
         data class EnterText(val fieldLabel: String, val value: String) : Action()
         data class Scroll(val direction: String) : Action()
@@ -162,7 +162,7 @@ object PhoneAgentExecutor {
                                 }
                                 is Action.DownloadAsset -> {
                                     val imported = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                        service.downloadAsset(taskId, task.projectId, executingAction.url, executingAction.displayName)
+                                        service.downloadAsset(taskId, task.projectId, executingAction.url, executingAction.displayName, executingAction.sourceUrl, executingAction.licenseLabel)
                                     }
                                     actionOutput = imported.orEmpty()
                                     actionOutput.isNotBlank()
@@ -250,7 +250,7 @@ object PhoneAgentExecutor {
             }
         }
         is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
-        is Action.DownloadAsset -> "下载并导入素材：" + action.displayName.take(80)
+        is Action.DownloadAsset -> "下载并导入素材：" + action.displayName.take(80) + "；授权：" + action.licenseLabel.take(60)
         is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
         is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
         is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"

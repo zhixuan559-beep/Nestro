@@ -62,13 +62,18 @@ object PhoneAgentActionParser {
                 "download_asset" -> {
                     val url = item.getString("url").trim()
                     val name = item.getString("name").trim()
+                    val sourceUrl = item.getString("source_url").trim()
+                    val licenseLabel = item.getString("license").trim()
                     require(url.length <= 2048) { "素材下载地址过长" }
                     require(name.isNotBlank() && name.length <= 160 && name.matches(Regex("[A-Za-z0-9_ .()\\-\\u4e00-\\u9fff]+\\.(jpg|jpeg|png|webp|heic|mp4|mov|mkv|webm|mp3|m4a|wav|aac|ogg|flac)", RegexOption.IGNORE_CASE))) { "素材文件名或格式无效" }
                     val credentialQuery = Regex("(?i)([?&])(access_token|refresh_token|api_key|apikey|token|secret|password|session|auth|credential|signature)=").containsMatchIn(url)
+                    val licenseUnclear = licenseLabel.isBlank() || licenseLabel.length > 120 || licenseLabel.equals("unknown", true) || licenseLabel in setOf("不明", "未知", "未找到", "无法确认")
                     if (credentialQuery || PhoneAgentRiskPolicy.containsSensitiveValue(url)) PhoneAgentExecutor.Action.ConfirmSensitive("素材下载地址包含敏感凭据，已停止下载。")
+                    else if (licenseUnclear) PhoneAgentExecutor.Action.ConfirmSensitive("素材授权信息无法确认，请先由用户核实来源和许可。")
                     else {
                         require(url.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "素材下载地址必须是安全的公开 HTTPS 直链" }
-                        PhoneAgentExecutor.Action.DownloadAsset(url, name)
+                        require(sourceUrl.startsWith("https://", ignoreCase = true) && PhoneAgentUrlPolicy.isSafePublicWebUrl(sourceUrl) && !PhoneAgentRiskPolicy.containsSensitiveValue(sourceUrl)) { "素材来源页面必须是安全的公开 HTTPS 地址" }
+                        PhoneAgentExecutor.Action.DownloadAsset(url, name, sourceUrl, licenseLabel)
                     }
                 }
                 "click" -> {
