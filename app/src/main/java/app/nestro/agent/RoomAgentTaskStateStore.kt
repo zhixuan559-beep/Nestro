@@ -6,46 +6,65 @@ import app.nestro.data.NestroDao
 class RoomAgentTaskStateStore(
     private val dao: NestroDao
 ) : AgentTaskStateStore {
-    override suspend fun get(taskId: String): AgentTaskState? {
-        val row = dao.agentTaskState(taskId) ?: return null
-        val status = runCatching { AgentTaskStatus.valueOf(row.status) }
-            .getOrDefault(AgentTaskStatus.PAUSED)
-        return AgentTaskState(
-            taskId = row.taskId,
-            owner = row.owner,
-            status = status,
-            currentStep = row.currentStep.coerceAtLeast(0),
-            checkpoint = row.checkpoint,
-            lastError = row.lastError,
-            updatedAt = row.updatedAt
-        )
-    }
+    private fun AgentTaskStateEntity.toState() = AgentTaskState(
+        taskId = taskId,
+        owner = owner,
+        status = runCatching { AgentTaskStatus.valueOf(status) }.getOrDefault(AgentTaskStatus.PAUSED),
+        currentStep = currentStep.coerceAtLeast(0),
+        checkpoint = checkpoint,
+        lastError = lastError,
+        updatedAt = updatedAt,
+        projectId = projectId,
+        conversationId = conversationId,
+        kind = kind,
+        capabilityId = capabilityId,
+        title = title,
+        input = input,
+        resultSummary = resultSummary,
+        idempotencyKey = idempotencyKey,
+        attempts = attempts,
+        maxRetries = maxRetries,
+        availableAt = availableAt,
+        startedAt = startedAt,
+        finishedAt = finishedAt
+    )
+
+    override suspend fun get(taskId: String): AgentTaskState? =
+        dao.agentTaskState(taskId)?.toState()
+
+    override suspend fun getByIdempotencyKey(key: String): AgentTaskState? =
+        dao.agentTaskStateByIdempotencyKey(key)?.toState()
 
     override suspend fun put(state: AgentTaskState) {
-        dao.putAgentTaskState(
-            AgentTaskStateEntity(
-                taskId = state.taskId,
-                owner = state.owner,
-                status = state.status.name,
-                currentStep = state.currentStep,
-                checkpoint = state.checkpoint,
-                lastError = state.lastError,
-                updatedAt = state.updatedAt
-            )
-        )
+        dao.putAgentTaskState(state.toEntity())
     }
 
+    override suspend fun putIfAbsent(state: AgentTaskState): AgentTaskState =
+        dao.putAgentTaskStateIfAbsent(state.toEntity()).toState()
+
+    private fun AgentTaskState.toEntity() = AgentTaskStateEntity(
+        taskId = taskId,
+        owner = owner,
+        status = status.name,
+        currentStep = currentStep,
+        checkpoint = checkpoint,
+        lastError = lastError,
+        updatedAt = updatedAt,
+        projectId = projectId,
+        conversationId = conversationId,
+        kind = kind,
+        capabilityId = capabilityId,
+        title = title,
+        input = input,
+        resultSummary = resultSummary,
+        idempotencyKey = idempotencyKey,
+        attempts = attempts,
+        maxRetries = maxRetries,
+        availableAt = availableAt,
+        startedAt = startedAt,
+        finishedAt = finishedAt
+    )
+
     override suspend fun recoverable(): List<AgentTaskState> =
-        dao.recoverableAgentTaskStates().map { row ->
-            AgentTaskState(
-                taskId = row.taskId,
-                owner = row.owner,
-                status = runCatching { AgentTaskStatus.valueOf(row.status) }
-                    .getOrDefault(AgentTaskStatus.PAUSED),
-                currentStep = row.currentStep.coerceAtLeast(0),
-                checkpoint = row.checkpoint,
-                lastError = row.lastError,
-                updatedAt = row.updatedAt
-            )
-        }
+        dao.recoverableAgentTaskStates().map { it.toState() }
 }
