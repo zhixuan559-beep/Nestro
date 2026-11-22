@@ -500,7 +500,7 @@ ${prompt.take(8_000)}
     }
 
     private companion object {
-        const val MAX_TOOL_ROUNDS = 5
+        const val MAX_TOOL_ROUNDS = 7
         const val DIRECT_UI_UPDATE_CHARS = 16
         const val MAX_TOOL_CATALOG_CHARS = 12_000
     }
