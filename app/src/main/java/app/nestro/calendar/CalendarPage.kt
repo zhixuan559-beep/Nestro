@@ -105,6 +105,7 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                             task.kind == "calendar_automation" &&
                             task.status in setOf(
                                 AgentTaskStatus.WAITING_FOR_USER,
+                                AgentTaskStatus.WAITING_FOR_TASK,
                                 AgentTaskStatus.PAUSED,
                                 AgentTaskStatus.FAILED
                             )
@@ -241,7 +242,11 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(task.title.ifBlank { "日历自动任务" }, style = MaterialTheme.typography.titleSmall)
                             Text(
-                                if (task.status == AgentTaskStatus.WAITING_FOR_USER) "等待用户审批" else "任务状态：${task.status}",
+                                when (task.status) {
+                                    AgentTaskStatus.WAITING_FOR_USER -> "等待用户审批"
+                                    AgentTaskStatus.WAITING_FOR_TASK -> "等待子任务完成"
+                                    else -> "任务状态：${task.status}"
+                                },
                                 color = MaterialTheme.colorScheme.primary
                             )
                             if (task.lastError.isNotBlank()) {
@@ -261,7 +266,13 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                                     )
                                 }
                             }) {
-                                Text(if (task.status == AgentTaskStatus.WAITING_FOR_USER) "继续审批并执行" else "恢复任务")
+                                Text(
+                                    when (task.status) {
+                                        AgentTaskStatus.WAITING_FOR_USER -> "继续审批并执行"
+                                        AgentTaskStatus.WAITING_FOR_TASK -> "恢复任务协作"
+                                        else -> "恢复任务"
+                                    }
+                                )
                             }
                         }
                     }
