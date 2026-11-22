@@ -246,11 +246,11 @@ object MediaRenderScheduler {
     }
 
     private suspend fun registerUnifiedTask(context: Context, projectId: String, taskId: String): app.nestro.NestroApplication {
-        val app = context.applicationContext as? app.nestro.NestroApplication
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
             ?: error("媒体渲染任务无法连接统一任务机")
         val task = MediaRenderTaskStore.read(context, projectId, taskId)
             ?: error("媒体渲染任务不存在")
-        app.agentTaskCoordinator.registerInlineTask(
+        nestroApp.agentTaskCoordinator.registerInlineTask(
             taskId = "media-render:$taskId",
             owner = "media_render",
             checkpoint = "media_render:$projectId:$taskId",
@@ -262,7 +262,7 @@ object MediaRenderScheduler {
                 input = taskId
             )
         )
-        return app
+        return nestroApp
     }
 
     suspend fun enqueue(context: Context, projectId: String, taskId: String, replace: Boolean = false) {
