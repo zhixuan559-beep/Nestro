@@ -550,51 +550,27 @@ Apply these requirements while finishing the Phase 2 chat pipeline and Agent/Pho
 - 上述源码已写入 feature/module-17-smart-editing，最终 HEAD a0286e0f（核心实现 c0ecabee，后续修订 a0286e0f）；已回读分支 tree 与文件 SHA。尚未编译、测试、模拟器/真机验收，不能标记模块完成。
 - 未运行构建、单元测试、模拟器或真机测试，遵守“功能代码全部补齐后再统一验收”的顺序。
 
-## 2026-11-22 — 二次优化与模型统一调度接入（feature/phase2-optimization）
+## 2026-11-22 — feature/phase2-optimization 当前源码状态（权威记录）
 
-### 已写入源码
+### 主模型统一调度与混合能力编排
+- `ModelLedToolDispatcher` 优先使用 OpenAI-compatible Chat Completions、Anthropic Messages、Gemini Generate Content 原生工具调用；仅当服务商明确不支持原生调用时，才回退 DIRECT/TOOL 兼容文本协议。
+- 工具只从当前能力目录选择，经过 task-local lease、`AgentRuntime` 与权限路由执行；工具结果有界回传主模型。普通对话不预先启动 Phone Agent 或专家团。
+- 主模型是唯一顶层决策与汇总者；创作、专家协作、手机执行是可组合能力，不是互斥模式。模型按依赖选择最少必要能力，可在手机采集/导入素材后继续创作，也可在独立子任务间交替推进。
+- `ChatRequestExecutionCoordinator.planPhoneAgent` 使用 `AgentToolResult`，不再把未授权、无需执行或未调度的结果简单包装成成功字符串。
 
-- `data/ModelLedToolDispatcher.kt`：新增模型决策协议。模型输出 `DIRECT` 时直接流式回复；输出 `TOOL` 时只允许选择本轮可见的能力目录项。执行通过 task-local lease、`AgentRuntime`、权限路由和持久化任务状态；工具结果以不可信资料回传模型，最多三轮决策。
-- `NestroApplication.kt`：把模型调度器接入应用级聊天执行链；在共享 `AgentToolCatalog` 注册项目级 `knowledge.search`、受任务模式门控的 `phone_agent.plan` 和受显式团队选择门控的 `expert_team.run`；MCP 使用现有已授权工具状态再次校验。
-- `data/ChatRequestExecutionCoordinator.kt`：聊天请求不再预先执行 Phone Agent 计划或专家团队；由模型选择对应能力后才触发回调。
-- `data/ChatContextRetrievalPolicy.kt` / `data/ChatRequestContextAssembler.kt`：历史对话与用户记忆仍按需并行检索；知识库不再按关键词预取，交由模型决定是否调用项目范围内的 `knowledge.search`。
-- `model/ChatStreamingCoordinator.kt`：小块模型输出合并后再更新 Compose，恢复状态按字符/时间阈值写入，结束或取消时补写最终部分答案。
-- `ui/NestroApp.kt`：导航抽屉宽度按平板可用宽度比例调整；页面顶部内容间距按屏幕宽度适配。
+### Mika 隔离虚拟屏与 Phone Agent
+- 已选择性复用 Mika 的无线 ADB 配对/TLS、shell UID helper、Binder 交接、VirtualDisplay、任务启动/迁移、输入注入和实时帧接收；没有引入 Mika 的无关功能。
+- 原始 Mika AIDL 事务编号保留；shell helper 通过 APK 路径、签名证书指纹、UID/PID 和一次性 nonce 验证后才交接 Binder。
+- Phone Agent 的 AccessibilityService 读取指定 display 的窗口；应用启动、链接打开、点击/滑动/返回由隔离屏 helper 执行。用户接管时持久化 taskId 映射，用户确认后将原任务恢复到隔离屏；环境丢失时暂停，不静默回退主屏。
+- Phone Agent 页面包含无线调试配对/重连、隔离屏创建、实时预览、直接点按/滑动、双击缩放、右下角向上缩小/向下放大、可拖动浮动预览及可折叠任务胶囊、显式恢复主屏和关闭隔离屏。
+- 预览缩放独立于虚拟屏分辨率；旧帧 Bitmap 延迟回收，避免 10fps 预览持续分配后不释放；关闭旧 Session 不会误 detach 新 Session 的执行环境。
+- 第三方归属：Mika Apache-2.0 许可证与 NOTICE 已保留；scrcpy 衍生的 shell-context 文件也已补充 Apache-2.0 许可证副本、NOTICE 和修改说明。
 
-### 新增/调整的测试源码（未执行）
+### 专家协作与插件工厂
+- 专家项目 DAG、主模型自动选择专家、专家中心手动选择、拓扑依赖执行、任务级工具租约和项目事件时间线已有代码落点；独立交互式工作区、双向自由消息、持久化事件分页、工作包返工 UI 和结构化验收协议仍未完成。
+- `GeneratedPluginFactory`、本地 `GeneratedPluginStore` 和 `GeneratedPluginCenterPage` 已支持草案生成/预览、安装（默认关闭）、启停、升级、版本历史回滚和卸载；插件只组合已注册低风险工具，不执行任意代码。
+- 插件签名/来源、依赖锁定、独立资源沙箱、完整插件级审批/审计视图、远程目录及导入/导出仍未完成。
 
-- `data/ModelToolDecisionParserTest.kt`
-- `model/ChatStreamingCoordinatorBatchingTest.kt`
-- `ui/AdaptiveLayoutPolicyTest.kt`
-- `data/ChatRequestExecutionCoordinatorTest.kt`
-- `data/ChatRequestContextAssemblerTest.kt`
-
-### 当前边界
-
-- 已有模型主导的 DIRECT/TOOL 调度路径，但尚未接入 OpenAI/Anthropic/Gemini 原生 tool-call 协议适配。
-- 已有知识库、MCP、Phone Agent 计划、专家团队四类可见能力；其他模块的能力仍需逐项迁入同一目录与权限入口。
-- Phone Agent 和专家团队的调度已经改为模型选择后触发；高风险动作仍由各自任务流程与授权边界处理。
-- 全机型布局、折叠屏/分屏/键盘安全区验证，以及低中高档设备性能/功耗实测仍未完成。
-- AI 代码共建沙箱、补丁影响分析、隔离构建、用户批准、快照回滚仍未完成。
-- 模型费用预算、速率限制与完整社区目录分发仍需补强。
-- 本分支未执行编译、自动化测试、模拟器或真机验收；代码状态与验收状态分开记录。
-
-## 2026-11-22 — 专家团双模式与 AI 插件工厂需求补录
-
-- 新增 docs/EXPERT_TEAM_AUTONOMOUS_PROJECTS_AND_PLUGIN_FACTORY.md，明确专家团手动协作模式、自主项目模式、任务 DAG、成员消息事件、可视化工作区、主模型最终审查交付，以及模型自主创造可执行插件的完整生命周期。
-- 已回读源码确认：ExpertTeamExecutionCoordinator 当前调用 ExpertTeamEngine.runCollaborative()，聊天链路为单专家逐个委派；ExpertTeamEngine.run() 虽有并发执行能力，但未接入自主项目任务分解、持久化成员消息和可视化工作区。
-- 当前只有成员状态与运行历史，没有完整的协作过程查看/干预能力。
-- CapabilityDraftCoordinator 只生成专家/Skill 的 name+prompt 草案，不具备可执行插件生成、沙箱、审批安装、版本升级和回滚。
-- 以上均为已确认的待实现需求，不代表功能代码已完成；不运行测试，不合并，不锁定。
-
-
-## 2026-11-22 专家协作/插件工厂/系统助手入口代码落点
-
-- 专家项目 DAG：`data/ExpertProjectPlanExecutor.kt`；主模型规划结果进入 `ExpertTeamExecutionCoordinator.executeProjectPlan()`，按依赖拓扑波次执行，工具租约复用 `AgentCapabilityRegistry`。
-- 主聊天自动组队：`data/ModelLedToolDispatcher.kt` 增加项目型任务规划指引；`ChatRequestExecutionCoordinator` 将模型选择的专家参数传入 NestroApp；`ui/NestroApp.kt` 将项目可见专家目录注入主模型上下文，并根据模型计划选择 2–4 名专家启动临时团队。
-- 专家中心手动入口：`ui/NestroApp.kt` 的 experts 页面支持临时勾选 2–4 位专家，返回主聊天后使用同一套专家项目调度；固定团队仍可继续复用。
-- 协作事件：`data/ExpertTeamCollaborationEvent.kt` 提供项目级事件结构和有界 codec；协调器记录成员状态、依赖交接和成果提交；NestroApp 将最近 300 条事件保存在本地 SharedPreferences，并在专家团队页展示最近时间线。尚未迁移 Room，也未形成独立交互式工作区。
-- 插件工厂：`data/GeneratedPluginFactory.kt` 生成基于当前 AgentToolCatalog 的声明式插件包，校验 SemVer、工具白名单、输入字段和步骤模板；执行器通过注入的 Runtime 回调调用已有工具。尚未接入产品 UI、插件持久化安装/注册和完整生命周期。
-- Android 系统助手：`AndroidManifest.xml` 声明 ACTION_ASSIST；`MainActivity` 将系统助手入口导向主聊天页；`phone/AndroidAssistantRoleSupport.kt` 检查/请求 ROLE_ASSISTANT；NestroApp 设置页提供系统角色申请入口。VoiceInteractionService、热词和锁屏会话尚未实现。
-- 新增测试源码：`ExpertProjectPlanExecutorTest.kt`、`ExpertTeamCollaborationEventTest.kt`、`GeneratedPluginFactoryTest.kt`；同时更新 `ChatRequestExecutionCoordinatorTest.kt` 的模型工具参数签名。上述测试尚未执行。
-- 以上是代码落点和静态源码记录，不代表编译、测试、模拟器或真机验收通过。
+### 代码阶段边界
+- 本轮已写入源代码与文档修正；没有运行 Kotlin 编译、JVM 测试、Lint、Android instrumentation、模拟器或真机测试。
+- 六项功能补齐与清理完成后，才进入统一构建/验收阶段；不得把源码提交等同于构建通过或真机验收。
