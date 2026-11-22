@@ -94,7 +94,12 @@ internal class ModelManagementUiState(
                 if (activeKey.isNotBlank() && activeModelSelectable) {
                     activeRegistryId = "legacy-model-" + activeMetadata.id
                     preferences.edit().putString("active_model_registry_id", activeRegistryId).apply()
-                    loadedConfig = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, activeKey)
+                    loadedConfig = ModelConfig(
+                        activeMetadata.baseUrl,
+                        activeMetadata.model,
+                        activeKey,
+                        contextWindowTokens = registry.models.firstOrNull { it.id == "legacy-model-${activeMetadata.id}" }?.contextWindowTokens
+                    )
                     repository.writeActiveConfig(loadedConfig)
                 } else {
                     activeProfileId = ""
