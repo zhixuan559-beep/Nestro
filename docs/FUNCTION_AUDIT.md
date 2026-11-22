@@ -491,3 +491,9 @@
 - 当前没有图像生成 action，也没有基于整段视频帧/音轨的多模态视频理解任务；`MediaPromptFactory.summarize()` 只是基于已提供字幕/转写生成摘要，不能冒充视频画面理解。
 - 因此当前能力边界是：视频生成已由主模型工具调用；图片理解/音频转写/场景检测/音频处理由媒体编辑器任务触发；图像生成和完整视频理解尚无实现。后续按用户确认的模型服务商与目标能力接入现有 MediaAiTaskStore/Worker，不另造媒体任务系统。
 
+
+### 工作流与主模型工具调度的接线边界
+- 当前 `WorkflowStepKind` 仅包含 PROMPT、EXPERT、SKILL；`NestroApp.kt` 的工作流 `invokeModel` 直接调用 `ChatExecutionService.completeWithFallback()`，没有经过 `ChatRequestExecutionCoordinator/ModelLedToolDispatcher`，也没有为工作流步骤开放 AgentToolCatalog 工具租约。
+- 因此现有用户工作流可串联提示词、专家和 Skill，但不能在工作流内部直接调用 Phone Agent、媒体视频/多模态工具或 MCP 工具；不能把它描述为完整的工具型自动化工作流。
+- 日历未来若只调度专家/Skill 工作流，可复用当前 WorkflowExecutionCoordinator；若需要定时触发“创作+下载素材+视频生成”等混合任务，则应把该触发交给主模型工具调度器，或为工作流增加显式、权限受控的 TOOL/PHONE_AGENT/MEDIA 步骤。需先确认边界，再复用现有 ModelLedToolDispatcher，不能让工作流绕开统一权限/审批。
+
