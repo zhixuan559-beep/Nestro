@@ -588,7 +588,7 @@ object GeneratedPluginWorkflowExecutor {
                 stepResults += failure
                 break
             }
-            val output = result.output.take(4_000)
+            val output = result.output.take(2_000)
             results[step.resultKey] = output
             stepResults += GeneratedPluginStepResult(step.id, step.toolId, true, output)
             onStepCheckpoint(
