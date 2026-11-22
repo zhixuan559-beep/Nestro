@@ -222,7 +222,7 @@ object WorkflowEngine {
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
         onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
-        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> true }
+        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> false }
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
