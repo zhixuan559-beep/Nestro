@@ -246,7 +246,8 @@ class McpToolCenterService(
   McpToolArgumentValidator.validate(d.inputSchemaJson,argsJson)?.let{return AgentToolResult(false,error=it)}
   val coordinator=requireNotNull(taskCoordinator){"MCP 执行未连接统一任务机"}
   val taskId="mcp-ui-${UUID.randomUUID()}"
-  return coordinator.runInline(
+  return try {
+   coordinator.runInline(
    taskId=taskId,
    owner="mcp_tool",
    metadata=AgentTaskMetadata(
@@ -264,7 +265,9 @@ class McpToolCenterService(
      when(val authorization=DefaultAgentPermissionRouter().authorize(task,tool)){
       is AgentAuthorization.RequireConfirmation -> {
        taskContext.waitForUser(authorization.reason)
-       val approved=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)==true
+       val decision=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)
+       val approved = decision == AgentApprovalDecision.AUTHORIZE_ONCE ||
+        decision == AgentApprovalDecision.AUTHORIZE_TASK
        if(approved) {
         taskContext.transition(AgentTaskStatus.RUNNING,"用户已批准 MCP 工具：${tool.id}")
         AgentAuthorization.Allow
@@ -291,6 +294,9 @@ class McpToolCenterService(
     else -> taskContext.fail(result.error.ifBlank{result.output}.take(2_000))
    }
    result
+   }
+  } finally {
+   approvalCoordinator?.endScope(taskId)
   }
  }
  private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
