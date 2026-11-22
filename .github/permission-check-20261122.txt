@@ -1,0 +1,1 @@
+Temporary GitHub connector write-permission verification. This file is intended to be deleted immediately after read-back verification.
