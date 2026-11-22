@@ -86,6 +86,7 @@ internal class ModelLedToolDispatcher(
 ) {
     suspend fun dispatch(
         requestId: String,
+        conversationId: String,
         projectId: String,
         prompt: String,
         history: List<ChatMessage>,
@@ -96,7 +97,7 @@ internal class ModelLedToolDispatcher(
         shouldStop: () -> Boolean,
         taskModeEnabled: Boolean,
         expertTeamEnabled: Boolean,
-        planPhoneAgent: suspend () -> String,
+        planPhoneAgent: suspend (Map<String, String>) -> String,
         runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
@@ -107,7 +108,7 @@ internal class ModelLedToolDispatcher(
         val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter(visibleToolFilter)
-            .filter { it.id != "phone_agent.plan" || taskModeEnabled }
+            .filter { it.id !in setOf("phone_agent.plan", "phone_agent.execute") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
@@ -200,7 +201,7 @@ ${prompt.take(8_000)}
                     override fun list() = lease.access.list()
                     override suspend fun invoke(id: String, args: Map<String, String>) =
                         when (id) {
-                            "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
+                            "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent(args).take(4_000))
                             "expert_team.run" -> {
                                 val output = runExpertTeam(systemContext, args).take(8_000)
                                 if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
@@ -209,12 +210,17 @@ ${prompt.take(8_000)}
                             else -> lease.access.invoke(
                                 id,
                                 if (id.startsWith("mcp_")) args
-                                else args + ("__nestro_project_id" to projectId)
+                                else args + mapOf(
+                                    "__nestro_project_id" to projectId,
+                                    "__nestro_conversation_id" to conversationId,
+                                    "__nestro_task_mode" to taskModeEnabled.toString()
+                                )
                             )
                         }
                 }
                 val requestPermissionRouter = AgentPermissionRouter { task, tool ->
-                    if (tool.id == "phone_agent.plan" && taskModeEnabled) AgentAuthorization.Allow
+                    if (tool.id in setOf("phone_agent.plan", "phone_agent.execute") && taskModeEnabled) AgentAuthorization.Allow
+                    else if (tool.id.startsWith("media.project.") && taskModeEnabled) AgentAuthorization.Allow
                     else permissionRouter.authorize(task, tool)
                 }
                 val runtime: AgentRuntime = DefaultAgentRuntime(
@@ -370,7 +376,7 @@ ${prompt.take(8_000)}
                 override fun list() = lease.access.list()
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
                     when (toolId) {
-                        "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent().take(4_000))
+                        "phone_agent.plan" -> AgentToolResult(success = true, output = planPhoneAgent(arguments).take(4_000))
                         "expert_team.run" -> {
                             val output = runExpertTeam(systemContext, arguments).take(8_000)
                             if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
@@ -379,12 +385,17 @@ ${prompt.take(8_000)}
                         else -> lease.access.invoke(
                             toolId,
                             if (toolId.startsWith("mcp_")) arguments
-                            else arguments + ("__nestro_project_id" to projectId)
+                            else arguments + mapOf(
+                                "__nestro_project_id" to projectId,
+                                "__nestro_conversation_id" to conversationId,
+                                "__nestro_task_mode" to taskModeEnabled.toString()
+                            )
                         )
                     }
             }
             val requestPermissionRouter = AgentPermissionRouter { task, tool ->
-                if (tool.id == "phone_agent.plan" && taskModeEnabled) AgentAuthorization.Allow
+                if (tool.id in setOf("phone_agent.plan", "phone_agent.execute") && taskModeEnabled) AgentAuthorization.Allow
+                else if (tool.id.startsWith("media.project.") && taskModeEnabled) AgentAuthorization.Allow
                 else permissionRouter.authorize(task, tool)
             }
             val runtime: AgentRuntime = DefaultAgentRuntime(
@@ -439,6 +450,17 @@ ${prompt.take(8_000)}
                 properties.put("query", JSONObject().put("type", "string").put("description", "当前项目知识库检索问题"))
                 properties.put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 8))
                 required.put("query")
+            }
+            "phone_agent.plan" -> {
+                properties.put("goal", JSONObject().put("type", "string").put("description", "需要手机执行的具体目标"))
+                required.put("goal")
+            }
+            "phone_agent.execute" -> {
+                properties.put("goal", JSONObject().put("type", "string").put("description", "需要在当前手机执行环境中完成的有边界子任务"))
+                properties.put("task_id", JSONObject().put("type", "string").put("description", "继续执行已有 Phone Agent 任务时填写"))
+                properties.put("max_loops", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 8))
+                properties.put("collect_downloaded_assets", JSONObject().put("type", "boolean").put("description", "是否把本任务新下载的图片/视频导入当前项目素材库"))
+                required.put("goal")
             }
             "expert_team.run" -> {
                 properties.put("member_names", JSONObject().put("type", "array")
