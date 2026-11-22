@@ -1403,6 +1403,12 @@ fun NestroApp(initialPage: String = "home") {
                                     projectId = requestProjectId,
                                     messages = completedHistory
                                 )
+                                val persistedVersion = conversations.firstOrNull { it.id == requestConversationId }?.hashCode()
+                                if (persistedVersion != null) {
+                                    withContext(Dispatchers.Main) {
+                                        persistedConversationVersions[requestConversationId] = persistedVersion
+                                    }
+                                }
                             } catch (error: Exception) {
                                 withContext(Dispatchers.Main) {
                                     if (activeConversationId == requestConversationId) {
