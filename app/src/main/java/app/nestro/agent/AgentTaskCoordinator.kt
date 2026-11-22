@@ -389,6 +389,23 @@ class AgentTaskCoordinator(
         }
     }
 
+    /** Persist a lifecycle transition for a task coordinated by this shared task machine. */
+    suspend fun transitionTask(
+        taskId: String,
+        status: AgentTaskStatus,
+        reason: String = "",
+        resultSummary: String? = null
+    ): AgentTaskState? {
+        val existing = states.get(taskId) ?: return null
+        if (existing.status in setOf(AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) return existing
+        AgentTaskExecutionContext(taskId, states, traces).transition(
+            status = status,
+            reason = reason,
+            resultSummary = resultSummary
+        )
+        return states.get(taskId)
+    }
+
     /** Read-only durable task snapshot for feature-specific checkpoint restoration. */
     suspend fun state(taskId: String): AgentTaskState? = states.get(taskId)
 
