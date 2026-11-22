@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
+import app.nestro.agent.AgentTaskMetadata
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
@@ -135,7 +136,14 @@ class ExpertTeamExecutionCoordinator(
         return taskCoordinator.runInline(
             taskId = taskId,
             owner = "expert_team",
-            initialCheckpoint = initialCheckpoint
+            initialCheckpoint = initialCheckpoint,
+            metadata = AgentTaskMetadata(
+                projectId = projectId,
+                kind = "expert_team",
+                capabilityId = teamId,
+                title = teamName.take(160),
+                input = task.take(12_000)
+            )
         ) { taskContext ->
         taskContext.checkpoint(initialCheckpoint, resumeMembers.size)
         var collaborativeCheckpoint = resumeCollaborative ?: emptyCollaborativeCheckpoint
