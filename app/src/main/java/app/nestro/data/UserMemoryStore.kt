@@ -172,6 +172,11 @@ object UserMemoryStore {
         val tokenAtStart = expectedMutationVersion ?: mutationVersion(projectId)
         return mutationLock(projectId).withLock {
             if (!isCurrentMutationVersion(projectId, tokenAtStart)) return@withLock 0
+            if (!dao.projectExists(projectId)) return@withLock 0
+            val source = dao.conversationWithMessages(conversationId) ?: return@withLock 0
+            if (source.conversation.projectId != projectId) return@withLock 0
+            val sourceMessage = source.messages.firstOrNull { it.id == messageId } ?: return@withLock 0
+            if (sourceMessage.role != "user") return@withLock 0
             var saved = 0
             candidates.take(5).forEach { candidate ->
                 val category = candidate.category.trim().lowercase()
