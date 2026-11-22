@@ -135,18 +135,7 @@ class AgentTaskCoordinator(
             val keyed = idempotencyKey?.let { states.getByIdempotencyKey(it) }
             if (keyed != null) {
                 require(keyed.owner == owner) { "幂等键已被其他模块占用" }
-                if (keyed.status in setOf(AgentTaskStatus.QUEUED, AgentTaskStatus.RUNNING, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) {
-                    return@withTransitionLock keyed to false
-                }
-                val resumed = keyed.copy(
-                    status = AgentTaskStatus.QUEUED,
-                    lastError = "",
-                    availableAt = System.currentTimeMillis(),
-                    finishedAt = 0L,
-                    updatedAt = System.currentTimeMillis()
-                )
-                states.put(resumed)
-                return@withTransitionLock resumed to true
+                return@withTransitionLock keyed to false
             }
             val existing = states.get(taskId)
             if (existing != null) require(existing.owner == owner) { "任务 ID 已被其他模块占用" }
