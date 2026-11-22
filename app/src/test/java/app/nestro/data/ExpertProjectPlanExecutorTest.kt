@@ -78,4 +78,26 @@ class ExpertProjectPlanExecutorTest {
         assertEquals(listOf(3, 4), checkpointSizes)
     }
 
+    @Test
+    fun resumeRejectsDuplicateOrMismatchedMemberCheckpointRows() = runBlocking {
+        val valid = ExpertWorkPackageResult("research", "研究员", "success", output = "saved")
+        val duplicate = runCatching {
+            ExpertProjectPlanExecutor.execute(
+                plan(), setOf("研究员", "策略师", "文案官", "审校官"),
+                resumeResults = listOf(valid, valid),
+                invoke = { _, _ -> "should not run" }
+            )
+        }
+        assertTrue(duplicate.isFailure)
+
+        val mismatchedMember = runCatching {
+            ExpertProjectPlanExecutor.execute(
+                plan(), setOf("研究员", "策略师", "文案官", "审校官"),
+                resumeResults = listOf(valid.copy(memberName = "冒名成员")),
+                invoke = { _, _ -> "should not run" }
+            )
+        }
+        assertTrue(mismatchedMember.isFailure)
+    }
+
 }
