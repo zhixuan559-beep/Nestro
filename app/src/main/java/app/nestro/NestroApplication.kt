@@ -225,8 +225,7 @@ class NestroApplication : Application() {
                 app.nestro.agent.AgentToolSpec(
                     id = "media.provider.list",
                     description = "列出当前用户已配置的媒体服务商及配置字段声明的媒体能力：视觉模型、音频转写模型、视频场景接口、音频处理接口、视频生成模型。无需参数；配置存在不代表第三方接口已完成联调验证。",
-                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY,
-                    parallelSafe = true
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) {
                 val providers = MediaProviderConfigStore(this@NestroApplication).list()
