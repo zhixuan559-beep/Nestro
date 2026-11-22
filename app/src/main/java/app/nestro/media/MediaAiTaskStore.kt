@@ -124,8 +124,51 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
     @Volatile private var activeVideoClient: MediaVideoGenerationClient?=null
 
     override suspend fun doWork(): Result {
-        val projectId=inputData.getString(KEY_PROJECT) ?: return Result.failure()
-        val taskId=inputData.getString(KEY_TASK) ?: return Result.failure()
+        val projectId = inputData.getString(KEY_PROJECT) ?: return Result.failure()
+        val taskId = inputData.getString(KEY_TASK) ?: return Result.failure()
+        val app = applicationContext as? app.nestro.NestroApplication ?: return Result.failure()
+        return try {
+            app.agentTaskCoordinator.runInline(
+                taskId = "media-ai:$taskId",
+                owner = "media_ai",
+                initialCheckpoint = "media_ai:$projectId:$taskId",
+                metadata = app.nestro.agent.AgentTaskMetadata(
+                    projectId = projectId,
+                    kind = "media_ai",
+                    capabilityId = "media.ai.run",
+                    title = "媒体 AI：$taskId",
+                    input = taskId
+                ),
+                maxRetries = 0
+            ) { taskContext ->
+                taskContext.checkpoint("media_ai:$projectId:$taskId")
+                try {
+                    val result = executeMediaTask(projectId, taskId)
+                    when (MediaAiTaskStore.read(applicationContext, projectId, taskId)?.status) {
+                        MediaAiTaskStatus.COMPLETED ->
+                            taskContext.transition(app.nestro.agent.AgentTaskStatus.COMPLETED, resultSummary = "媒体 AI 处理完成")
+                        MediaAiTaskStatus.CANCELLED ->
+                            taskContext.cancel("媒体 AI 任务已取消")
+                        MediaAiTaskStatus.FAILED ->
+                            taskContext.fail(MediaAiTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体 AI 任务失败")
+                        else -> taskContext.pause("媒体 AI 后台执行未完成，等待 WorkManager 恢复")
+                    }
+                    result
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        taskContext.pause("媒体 AI Worker 被系统停止，可由 WorkManager 恢复")
+                    }
+                    throw cancelled
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Result.failure()
+        }
+    }
+
+    private suspend fun executeMediaTask(projectId: String, taskId: String): Result {
         val task=MediaAiTaskStore.read(applicationContext,projectId,taskId) ?: return Result.failure()
         if(task.status !in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) return Result.success()
         val providerConfig=MediaProviderConfigStore(applicationContext).read(task.providerId)
