@@ -640,8 +640,22 @@ ${prompt.take(8_000)}
         return schema.toString()
     }
 
-    fun endApprovalScope(requestId: String) {
-        approvalCoordinator?.endScope(requestId)
+    suspend fun endApprovalScope(requestId: String) {
+        val pendingStatuses = setOf(
+            AgentTaskStatus.WAITING_FOR_USER,
+            AgentTaskStatus.WAITING_FOR_TASK,
+            AgentTaskStatus.PAUSED
+        )
+        val chatTask = taskCoordinator?.state("chat-tools-$requestId".take(120))
+        val pendingChatApproval = chatTask?.status in pendingStatuses
+        val pendingPluginApproval = taskCoordinator?.recoverableTasks().orEmpty().any { task ->
+            task.kind == "generated_plugin" &&
+                task.input.contains("request_id=$requestId") &&
+                task.status in pendingStatuses
+        }
+        if (!pendingChatApproval && !pendingPluginApproval) {
+            approvalCoordinator?.endScope(requestId)
+        }
     }
 
     private companion object {
