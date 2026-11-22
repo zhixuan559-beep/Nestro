@@ -11,6 +11,9 @@ import app.nestro.data.UserMemoryEntity
 internal class MemoryUiState(preferences: SharedPreferences) {
     val globalMemory: MutableState<String> = mutableStateOf("")
     val memoryDraft: MutableState<String> = mutableStateOf("")
+    val manualMemoryDraft: MutableState<String> = mutableStateOf("")
+    val manualMemoryCategory: MutableState<String> = mutableStateOf("preference")
+    val manualMemoryCategoryExpanded: MutableState<Boolean> = mutableStateOf(false)
     val automaticMemories: MutableState<List<UserMemoryEntity>> = mutableStateOf(emptyList())
     val automaticMemoryEnabled: MutableState<Boolean> =
         mutableStateOf(preferences.getBoolean("automatic_memory_enabled", false))
