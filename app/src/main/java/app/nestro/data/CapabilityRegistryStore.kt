@@ -122,8 +122,28 @@ object CapabilityRegistryStore {
 
     @Synchronized
     fun unregister(prefs: SharedPreferences, id: String) {
-        val rows = JSONArray().apply { descriptors(prefs).filterNot { it.id == id }.forEach { put(encode(it)) } }
-        check(prefs.edit().putString(REGISTRY, rows.toString()).commit()) { "能力注册信息删除失败" }
+        val current = descriptors(prefs)
+        val removed = current.firstOrNull { it.id == id }
+        val rows = JSONArray().apply { current.filterNot { it.id == id }.forEach { put(encode(it)) } }
+        val grants = objectAt(prefs, GRANTS)
+        var audit = arrayAt(prefs, AUDIT)
+        val projectIds = grants.keys()
+        while (projectIds.hasNext()) {
+            val projectId = projectIds.next()
+            val project = grants.optJSONObject(projectId) ?: continue
+            if (project.has(id)) {
+                val wasGranted = project.optBoolean(id, false)
+                project.remove(id)
+                if (wasGranted && removed != null) {
+                    audit = append(audit, capabilityAudit(projectId, removed, "revoke", "capability_unregistered"))
+                }
+            }
+        }
+        check(prefs.edit()
+            .putString(REGISTRY, rows.toString())
+            .putString(GRANTS, grants.toString())
+            .putString(AUDIT, audit.toString())
+            .commit()) { "能力注册删除及项目授权撤销失败" }
     }
 
     private fun append(current: JSONArray, row: JSONObject): JSONArray = JSONArray().apply {
