@@ -489,8 +489,16 @@ class NestroApplication : Application() {
                             if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
                                 app.nestro.agent.AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
                             } else if (tool.id.startsWith("mcp_")) {
-                                if (mcpToolCenterRepository.isToolGranted(tool.id)) app.nestro.agent.AgentAuthorization.Allow
-                                else app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
+                                val descriptor = mcpToolCenterRepository.findTool(tool.id)
+                                val globallyGranted = mcpToolCenterRepository.isToolGranted(tool.id)
+                                val projectGranted = descriptor?.let {
+                                    CapabilityRegistryStore.authorizeToolCall(
+                                        capabilityPrefs, task.projectId, it.serverId, it.name,
+                                        defaultGranted = globallyGranted
+                                    )
+                                } == true
+                                if (globallyGranted && projectGranted) app.nestro.agent.AgentAuthorization.Allow
+                                else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
                             } else if (tool.permission in setOf(
                                 app.nestro.agent.AgentToolPermission.READ_ONLY,
                                 app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
@@ -617,10 +625,21 @@ class NestroApplication : Application() {
                 capabilityPreferences = getSharedPreferences("nestro_local", MODE_PRIVATE),
                 permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                     if (tool.id.startsWith("mcp_")) {
-                        if (mcpToolCenterRepository.isToolGranted(tool.id)) {
+                        val descriptor = mcpToolCenterRepository.findTool(tool.id)
+                        val globallyGranted = mcpToolCenterRepository.isToolGranted(tool.id)
+                        val projectGranted = descriptor?.let {
+                            CapabilityRegistryStore.authorizeToolCall(
+                                getSharedPreferences("nestro_local", MODE_PRIVATE),
+                                task.projectId,
+                                it.serverId,
+                                it.name,
+                                defaultGranted = globallyGranted
+                            )
+                        } == true
+                        if (globallyGranted && projectGranted) {
                             app.nestro.agent.AgentAuthorization.Allow
                         } else {
-                            app.nestro.agent.AgentAuthorization.Deny("MCP 工具授权已撤销或服务已停用")
+                            app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
                         }
                     } else {
                         app.nestro.agent.DefaultAgentPermissionRouter().authorize(task, tool)
