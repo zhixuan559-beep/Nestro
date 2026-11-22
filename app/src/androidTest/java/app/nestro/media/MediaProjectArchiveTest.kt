@@ -20,10 +20,13 @@ class MediaProjectArchiveTest {
         val sourceImage = File(context.cacheDir, "archive-image-$suffix.png")
         val archive = File(context.cacheDir, "archive-$suffix.zip")
         try {
-            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).use { bitmap ->
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+            try {
                 sourceImage.outputStream().use { output ->
                     check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
                 }
+            } finally {
+                bitmap.recycle()
             }
             val asset = MediaProjectStore.importGeneratedFile(
                 context, sourceProject, sourceImage, MediaAssetKind.IMAGE
