@@ -59,7 +59,7 @@ The PR was not merged wholesale. Its independent behaviors were mapped into the 
    - Added Android instrumentation coverage for grants, revocation, fail-closed behavior, metadata round-trip, and MCP overrides.
    - A second authorization path in the model-led text-protocol fallback was found during call-site review and brought under the same project capability gate; both native and compatibility execution paths now enforce it.
    - Propagated the chat request identity to tool execution and derived generated-plugin idempotency keys from project, plugin, request identity, and a SHA-256 fingerprint of declared inputs. Duplicate plugin requests return the canonical persisted task instead of executing again; successful output is saved to the shared task result summary. Existing canonical task states are surfaced according to their actual status, so a prior failure is not misreported as a new success.
-   - Generated-plugin execution now applies the shared retryable-error classifier and bounded backoff policy, persists RETRY_WAIT/attempt/availableAt state, and traces scheduled retries. Whole-workflow replay is disabled as soon as any non-read-only step starts, because a timeout after a write/device action can have an unknown outcome.
+   - Generated-plugin execution now applies the shared retryable-error classifier and bounded backoff policy, persists RETRY_WAIT/attempt/availableAt state, and traces scheduled retries. Whole-workflow replay is disabled as soon as any non-read-only step starts, because a timeout after a write/device action can have an unknown outcome. Cancellation during retry backoff is persisted as PAUSED rather than leaving a stale RETRY_WAIT state.
    - The legacy CapabilityCenterPage UI was not copied. Project-level capability/MCP grant switches and audit visibility were integrated into the existing CapabilityDirectoryPage; descriptor status/detail/route metadata remains available for later visual refinement.
 
 2. **Unified task metadata, idempotency, and retry**
@@ -89,7 +89,7 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 ## Verification boundary
 
 - GitHub commit refs, changed-file blobs, task/permission call sites, PR #1 patches, and the latest integration branch HEAD were read back.
-- The branch comparison against the original integration baseline `7449ef3211ecb2ebc2043abac956a5860274063b` reports 62 ahead / 0 behind. Latest branch HEAD read-back: `cefc40a02e040800c840f8c295e0238dba2efab1`.
+- The branch comparison against the original integration baseline `7449ef3211ecb2ebc2043abac956a5860274063b` reports 63 ahead / 0 behind. Latest code commit read-back before this audit-document update: `dadd88eacb9a2daa78478f9abaf7f9af103ba446`.
 - All 28 non-integration branches were compared against the integration target. The two branches not listed in the initial 28-branch audit (`feature/modelscope-oauth` and `feature/phase2-optimization`) are behind with no ahead commits. Previously identified diverged branches remain subject to the file-level dispositions above; no source branch was deleted.
 - No GitHub Actions workflow run or check run exists for the current integration HEAD.
 - A local repository clone/build could not be started because the execution environment could not resolve `github.com`; compilation, JVM tests, Android instrumentation tests, emulator tests, and device tests remain **not run**.
