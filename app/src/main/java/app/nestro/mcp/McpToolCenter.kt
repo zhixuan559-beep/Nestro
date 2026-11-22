@@ -318,6 +318,13 @@ class McpToolCenterService(
   }
   if (checkpoint.startsWith("mcp:v1:completed:$id\n")) {
    val output = checkpoint.substringAfter('\n').take(8_000)
+   if (existingState?.status == AgentTaskStatus.CANCELLED) {
+    approvalCoordinator?.endScope(taskId)
+    return AgentToolResult(
+     false,
+     error = "MCP 任务已取消，但检查点显示外部调用此前已完成。结果摘要：${output.take(1_000)}"
+    )
+   }
    coordinator.transitionTask(
     taskId,
     AgentTaskStatus.COMPLETED,
