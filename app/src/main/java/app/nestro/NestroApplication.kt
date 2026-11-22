@@ -397,6 +397,18 @@ class NestroApplication : Application() {
                     )
                 )
             }
+            CapabilityRegistryStore.registerIfAbsent(
+                capabilityPrefs,
+                CapabilityDescriptor(
+                    id = "memory",
+                    title = "项目记忆读取与自动提取",
+                    category = "data",
+                    description = "控制当前项目的长期记忆召回与自动候选提取",
+                    source = "builtin",
+                    requiresConfirmation = false,
+                    defaultGranted = true
+                )
+            )
         }
     }
 
@@ -699,8 +711,12 @@ class NestroApplication : Application() {
         ChatRequestContextAssembler(
             retrieveMemory = conversationContextRepository::retrieveMemory,
             retrieveUserMemory = { projectId, prompt ->
-                val readableSources = readableProjectsFor(projectId).filterNot { it == projectId }.toSet()
-                userMemoryRepository.recall(projectId, prompt, readableSources).context
+                if (!CapabilityRegistryStore.authorize(preferences, projectId, "memory")) {
+                    ""
+                } else {
+                    val readableSources = readableProjectsFor(projectId).filterNot { it == projectId }.toSet()
+                    userMemoryRepository.recall(projectId, prompt, readableSources).context
+                }
             }
         )
     }
