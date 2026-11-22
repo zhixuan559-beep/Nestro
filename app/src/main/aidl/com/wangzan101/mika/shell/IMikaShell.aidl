@@ -1,6 +1,7 @@
 package com.wangzan101.mika.shell;
 
 import android.view.Surface;
+import android.os.Bundle;
 
 // Narrow protocol-compatible subset of Mika's IMikaShell. Transaction IDs are preserved.
 interface IMikaShell {
