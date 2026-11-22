@@ -11,9 +11,10 @@ class AutomaticMemoryExtractionCoordinatorTest {
         val saved = mutableListOf<MemoryCandidate>()
         val expectedVersion = MemoryMutationToken(7L, 3L)
         val coordinator = AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { _, messages ->
+            extractCandidates = { _, messages, existing ->
                 extractionCalls += 1
                 assertEquals(listOf(prompt), messages)
+                assertEquals(emptyList<UserMemoryEntity>(), existing)
                 listOf(MemoryCandidate("preference", "偏好简洁直接的表达方式", 0.95))
             },
             saveCandidates = { projectId, conversationId, messageId, candidates, mutationVersion ->
@@ -38,7 +39,7 @@ class AutomaticMemoryExtractionCoordinatorTest {
     fun skipsDisabledAndLowSignalPrompts() = kotlinx.coroutines.runBlocking {
         var extractionCalls = 0
         val coordinator = AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { _, _ -> extractionCalls += 1; emptyList() },
+            extractCandidates = { _, _, _ -> extractionCalls += 1; emptyList() },
             saveCandidates = { _, _, _, _, _ -> }
         )
         coordinator.extractAndSave(
@@ -71,13 +72,39 @@ class AutomaticMemoryExtractionCoordinatorTest {
         assertEquals(0, extractionCalls)
     }
     @Test
+    fun preparesOnlySafeRecentUserMessagesAndRecognizesEnglishCorrections() {
+        val prepared = prepareMemoryExtractionInput(
+            listOf(
+                "今天讨论了普通任务",
+                "我偏好清晰、简洁的项目说明",
+                "我的银行卡号是 6222021234567890123",
+                "From now on, I prefer short technical answers."
+            )
+        )
+        assertEquals(2, prepared.size)
+        assertEquals("我偏好清晰、简洁的项目说明", prepared[0])
+        assertEquals("From now on, I prefer short technical answers.", prepared[1])
+        assertEquals(true, shouldExtractAutomaticMemory(prepared))
+    }
+
+    @Test
+    fun memoryRecallQueryUsesRecentUserTurnsAndCurrentPromptWithinBudget() {
+        val query = buildMemoryRecallQuery(
+            listOf("第一次说明", "第二次说明", "第二次说明"),
+            "以后按这个新规则执行",
+            maxChars = 40
+        )
+        assertEquals("第一次说明\\n第二次说明\\n以后按这个新规则执行", query)
+    }
+
+    @Test
     fun capturesMemoryVersionBeforeExtractionAndPassesItToSave() = kotlinx.coroutines.runBlocking {
         val initial = MemoryMutationToken(4L, 2L)
         val changedDuringExtraction = MemoryMutationToken(5L, 2L)
         var current = initial
         var savedToken: MemoryMutationToken? = null
         val coordinator = AutomaticMemoryExtractionCoordinator(
-            extractCandidates = { _, _ ->
+            extractCandidates = { _, _, _ ->
                 current = changedDuringExtraction
                 listOf(MemoryCandidate("preference", "偏好简洁直接的表达方式", 0.95))
             },
