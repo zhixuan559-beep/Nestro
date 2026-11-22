@@ -80,6 +80,13 @@ internal class MikaVirtualDisplayService(
 
     override fun startApp(displayId: Int, packageName: String): Int {
         if (!owns(displayId) || !validPackage(packageName)) return START_ERROR
+        val existing = existingTask(packageName)
+        if (existing != null) {
+            val existingDisplay = runCatching { taskInfoClass.getField("displayId").getInt(existing) }.getOrDefault(Display.INVALID_DISPLAY)
+            if (existingDisplay == Display.DEFAULT_DISPLAY) return START_IN_USE_ON_MAIN
+            if (existingDisplay != displayId) return START_IN_USE_BY_OTHER
+            return START_OK
+        }
         val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return START_NOT_FOUND
         return launch(displayId, intent)
     }
@@ -92,6 +99,17 @@ internal class MikaVirtualDisplayService(
             if (parsed != null) data = parsed
             if (!packageName.isNullOrBlank() && validPackage(packageName)) setPackage(packageName)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val resolvedPackage = runCatching {
+            context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
+        }.getOrNull()
+        if (resolvedPackage != null) {
+            val existing = existingTask(resolvedPackage)
+            if (existing != null) {
+                val existingDisplay = runCatching { taskInfoClass.getField("displayId").getInt(existing) }.getOrDefault(Display.INVALID_DISPLAY)
+                if (existingDisplay == Display.DEFAULT_DISPLAY) return START_IN_USE_ON_MAIN
+                if (existingDisplay != displayId) return START_IN_USE_BY_OTHER
+            }
         }
         return launch(displayId, intent)
     }
@@ -168,6 +186,7 @@ internal class MikaVirtualDisplayService(
 
     override fun injectAsciiText(displayId: Int, taskId: Int, packageName: String, text: String): Int {
         if (!owns(displayId) || text.length > 4000 || !text.all { it.code in 32..126 }) return 0
+        if (displayOfTask(taskId) != displayId || packageOfTask(taskId) != packageName) return 0
         val events = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray()) ?: return 0
         var sent = true
         events.forEach { event -> sent = inject(event) && sent }
@@ -206,11 +225,23 @@ internal class MikaVirtualDisplayService(
         return (result as? List<*>)?.filterNotNull()?.filter { displayField.getInt(it) == displayId }.orEmpty()
     }
 
-    private fun task(taskId: Int): Any? {
+    private fun allTasks(): List<Any> {
         val methods = taskManager.javaClass.methods.filter { it.name == "getTasks" }
-        val result = methods.first { it.parameterTypes.size == 3 }.invoke(taskManager, 100, false, false) as? List<*>
-        return result?.filterNotNull()?.firstOrNull { taskInfoClass.getField("taskId").getInt(it) == taskId }
+        val withDisplay = methods.firstOrNull { it.parameterTypes.size == 4 }
+        val result = if (withDisplay != null) withDisplay.invoke(taskManager, 100, false, false, Display.INVALID_DISPLAY)
+            else methods.first { it.parameterTypes.size == 3 }.invoke(taskManager, 100, false, false)
+        return (result as? List<*>)?.filterNotNull().orEmpty()
     }
+
+    private fun existingTask(packageName: String): Any? = allTasks().firstOrNull { item ->
+        listOf("topActivity", "baseActivity").any { field ->
+            runCatching { (taskInfoClass.getField(field).get(item) as? android.content.ComponentName)?.packageName == packageName }
+                .getOrDefault(false)
+        }
+    }
+
+    private fun task(taskId: Int): Any? =
+        allTasks().firstOrNull { taskInfoClass.getField("taskId").getInt(it) == taskId }
 
     private val taskInfoClass: Class<*> get() = Class.forName("android.app.TaskInfo")
 
@@ -227,9 +258,11 @@ internal class MikaVirtualDisplayService(
     companion object {
         private const val TAG = "NestroVirtualDisplay"
         private const val START_OK = 0
+        private const val START_IN_USE_ON_MAIN = 1
         private const val START_NOT_FOUND = 2
         private const val START_ERROR = 3
         private const val START_INVALID_LINK = 6
+        private const val START_IN_USE_BY_OTHER = 7
         private const val FLAG_PUBLIC = 1 shl 0
         private const val FLAG_OWN_CONTENT_ONLY = 1 shl 3
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
