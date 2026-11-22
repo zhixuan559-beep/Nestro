@@ -52,7 +52,9 @@ class MikaHelperHandoffProvider : ContentProvider() {
             val expected = prefs.getString(KEY_NONCE_STORE, null) ?: return reject("no_pending_nonce")
             if (!constantTimeEquals(expected, nonce ?: "")) return reject("bad_nonce")
             val next = randomNonce()
-            prefs.edit().putString(KEY_NONCE_STORE, next).apply()
+            if (!prefs.edit().putString(KEY_NONCE_STORE, next).commit()) {
+                return reject("nonce_rotation_persist_failed")
+            }
             val linked = runCatching {
                 binder.linkToDeath({
                     synchronized(lock) {
