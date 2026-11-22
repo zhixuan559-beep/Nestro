@@ -373,6 +373,7 @@ ${prompt.take(8_000)}
                 val spec = available.firstOrNull { it.id == toolId }
                     ?: return@completeWithNativeTools NativeToolCallResult("工具未注册，已阻止执行：$toolId")
                 nativeToolCallsExecuted.incrementAndGet()
+                val mcpOrdinal = if (spec.id.startsWith("mcp_")) mcpCallOrdinal.incrementAndGet() else 0
                 val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
                 val scopedAccess = object : AgentToolAccess {
                     override fun find(id: String) = lease.access.find(id)
@@ -396,17 +397,18 @@ ${prompt.take(8_000)}
                                     val savedOutput = findCompletedMcpCall(
                                         stateStore.get(taskId)?.checkpoint.orEmpty(),
                                         id,
-                                        invocationArguments
+                                        invocationArguments,
+                                        mcpOrdinal
                                     )
                                     if (savedOutput != null) {
                                         AgentToolResult(true, output = savedOutput)
                                     } else {
-                                        saveMcpReplayCall(stateStore, taskId, id, invocationArguments, "EXECUTING")
+                                        saveMcpReplayCall(stateStore, taskId, id, invocationArguments, mcpOrdinal, "EXECUTING")
                                         val result = lease.access.invoke(id, invocationArguments)
                                         if (result.success) {
                                             saveMcpReplayCall(
                                                 stateStore, taskId, id, invocationArguments,
-                                                "COMPLETED", result.output
+                                                mcpOrdinal, "COMPLETED", result.output
                                             )
                                         }
                                         result
