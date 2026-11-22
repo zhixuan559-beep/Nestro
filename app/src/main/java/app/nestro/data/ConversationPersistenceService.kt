@@ -198,6 +198,52 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         }
     }
 
+    /**
+     * Persist the completed conversation before automatic memory extraction references
+     * its source message. This closes the race with the debounced snapshot effect.
+     */
+    internal suspend fun persistConversationMessages(
+        conversationId: String,
+        projectId: String,
+        messages: List<ChatMessage>
+    ) = withContext(Dispatchers.IO) {
+        require(conversationId.isNotBlank() && conversationId.length <= 120) { "会话 ID 无效" }
+        require(projectId.isNotBlank() && projectId.length <= 120) { "项目 ID 无效" }
+        require(messages.size <= 2_000) { "会话消息数量超过持久化上限" }
+        require(messages.all { it.id.isNotBlank() && it.role in setOf("user", "assistant") && it.content.length <= 200_000 }) {
+            "会话消息字段无效"
+        }
+        val dao = database.dao()
+        database.withTransaction {
+            require(dao.projectExists(projectId)) { "会话所属项目不存在，拒绝持久化" }
+            val current = dao.conversationWithMessages(conversationId)?.conversation
+            require(current == null || current.projectId == projectId) {
+                "会话项目归属已变化，拒绝跨项目覆盖"
+            }
+            val now = System.currentTimeMillis()
+            val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
+                ?.ifBlank { "新对话" } ?: current?.title ?: "新对话"
+            val title = if (current == null || current.title == "新对话" || current.title == "旧对话") {
+                firstPrompt
+            } else current.title
+            dao.putConversation(
+                ConversationEntity(conversationId, title, now, projectId)
+            )
+            dao.clearMessages(conversationId)
+            val rows = messages.mapIndexed { index, message ->
+                MessageEntity(
+                    message.id,
+                    conversationId,
+                    index,
+                    message.role,
+                    message.content,
+                    encodeMessageVersions(message)
+                )
+            }
+            if (rows.isNotEmpty()) dao.putMessages(rows)
+        }
+    }
+
     /** Persist an interrupted chat recovery directly to Room before startup continues. */
     internal suspend fun persistRecoveredMessages(conversationId: String, messages: List<ChatMessage>) = withContext(Dispatchers.IO) {
         val dao = database.dao()
