@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * This kernel owns tool discovery, authorization, execution state and checkpoints.
  */
 enum class AgentTaskStatus {
-    CREATED, QUEUED, RUNNING, WAITING_FOR_USER, PAUSED, COMPLETED, FAILED, CANCELLED
+    CREATED, QUEUED, RUNNING, WAITING_FOR_USER, PAUSED, RETRY_WAIT, COMPLETED, FAILED, CANCELLED
 }
 
 enum class AgentToolPermission {
@@ -23,6 +23,32 @@ enum class AgentToolPermission {
     FINANCIAL
 }
 
+data class AgentTaskMetadata(
+    val projectId: String = "",
+    val conversationId: String = "",
+    val kind: String = "",
+    val capabilityId: String = "",
+    val title: String = "",
+    val input: String = ""
+)
+
+class RetryableAgentTaskException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+object AgentTaskRetryPolicy {
+    fun isRetryable(error: Throwable): Boolean = generateSequence(error) { it.cause }.any {
+        it is RetryableAgentTaskException ||
+            it is java.net.SocketTimeoutException ||
+            it is java.net.ConnectException ||
+            it is java.net.UnknownHostException ||
+            it is java.net.SocketException
+    }
+
+    fun backoffMillis(attempt: Int): Long {
+        require(attempt >= 1)
+        return (250L shl (attempt - 1).coerceAtMost(7)).coerceAtMost(30_000L)
+    }
+}
+
 data class AgentTaskState(
     val taskId: String,
     val owner: String,
@@ -30,14 +56,31 @@ data class AgentTaskState(
     val currentStep: Int = 0,
     val checkpoint: String = "",
     val lastError: String = "",
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val projectId: String = "",
+    val conversationId: String = "",
+    val kind: String = "",
+    val capabilityId: String = "",
+    val title: String = "",
+    val input: String = "",
+    val resultSummary: String = "",
+    val idempotencyKey: String? = null,
+    val attempts: Int = 0,
+    val maxRetries: Int = 2,
+    val availableAt: Long = 0L,
+    val startedAt: Long = 0L,
+    val finishedAt: Long = 0L
 ) {
     init {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
-        require(currentStep >= 0)
-        require(checkpoint.length <= 64_000)
-        require(lastError.length <= 2_000)
+        require(currentStep >= 0 && attempts >= 0 && maxRetries in 0..5)
+        require(checkpoint.length <= 64_000 && lastError.length <= 2_000)
+        require(projectId.length <= 120 && conversationId.length <= 120)
+        require(kind.length <= 60 && capabilityId.length <= 100)
+        require(title.length <= 160 && input.length <= 12_000 && resultSummary.length <= 8_000)
+        require(idempotencyKey == null || idempotencyKey.length in 1..240)
+        require(availableAt >= 0L && startedAt >= 0L && finishedAt >= 0L)
     }
 }
 
@@ -373,7 +416,9 @@ class DefaultAgentPermissionRouter(
 
 interface AgentTaskStateStore {
     suspend fun get(taskId: String): AgentTaskState?
+    suspend fun getByIdempotencyKey(key: String): AgentTaskState?
     suspend fun put(state: AgentTaskState)
+    suspend fun putIfAbsent(state: AgentTaskState): AgentTaskState
     suspend fun recoverable(): List<AgentTaskState>
 }
 
@@ -383,8 +428,18 @@ class InMemoryAgentTaskStateStore : AgentTaskStateStore {
 
     override suspend fun get(taskId: String): AgentTaskState? = mutex.withLock { states[taskId] }
 
+    override suspend fun getByIdempotencyKey(key: String): AgentTaskState? =
+        mutex.withLock { states.values.firstOrNull { it.idempotencyKey == key } }
+
     override suspend fun put(state: AgentTaskState) {
         mutex.withLock { states[state.taskId] = state }
+    }
+
+    override suspend fun putIfAbsent(state: AgentTaskState): AgentTaskState = mutex.withLock {
+        state.idempotencyKey?.let { key ->
+            states.values.firstOrNull { it.idempotencyKey == key }?.let { return@withLock it }
+        }
+        states[state.taskId] ?: state.also { states[state.taskId] = it }
     }
 
     override suspend fun recoverable(): List<AgentTaskState> = mutex.withLock {
@@ -393,6 +448,7 @@ class InMemoryAgentTaskStateStore : AgentTaskStateStore {
             AgentTaskStatus.RUNNING,
             AgentTaskStatus.WAITING_FOR_USER,
             AgentTaskStatus.PAUSED,
+            AgentTaskStatus.RETRY_WAIT,
             AgentTaskStatus.FAILED
         ) }
     }
