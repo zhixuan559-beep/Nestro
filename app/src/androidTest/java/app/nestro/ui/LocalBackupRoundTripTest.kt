@@ -172,7 +172,12 @@ class LocalBackupRoundTripTest {
                 PhoneAgentTaskStore.STATUS_RUNNING, "[]", 0, 7L, 8L
             ))
             dao.putAgentTaskState(AgentTaskStateEntity(
-                "phone-task-1", "phone_agent", "RUNNING", 0, "检查点数据", "", 7L
+                "phone-task-1", "phone_agent", "RUNNING", 0, "检查点数据", "", 7L,
+                projectId = "p1", conversationId = "c1", kind = "phone_agent",
+                capabilityId = "phone_agent.execute", title = "整理当前项目资料",
+                input = "查找当前项目内的资料", resultSummary = "尚未完成",
+                idempotencyKey = "phone:p1:request-1", attempts = 1, maxRetries = 3,
+                availableAt = 123L, startedAt = 456L, finishedAt = 0L
             ))
             dao.insertAgentTaskTrace(AgentTaskTraceEntity(
                 "agent-trace-1", "phone-task-1", "checkpoint_saved", "已保存检查点", 8L
@@ -229,8 +234,18 @@ class LocalBackupRoundTripTest {
             assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
             assertTrue("备份恢复必须保留用户主动开启的跨项目共享授权", dao.allUserMemories().single().shareAcrossProjects)
-            assertEquals("检查点数据", dao.agentTaskState("phone-task-1")?.checkpoint)
-            assertEquals("PAUSED", dao.agentTaskState("phone-task-1")?.status)
+            val restoredAgentTask = dao.agentTaskState("phone-task-1")
+            assertEquals("检查点数据", restoredAgentTask?.checkpoint)
+            assertEquals("PAUSED", restoredAgentTask?.status)
+            assertEquals("p1", restoredAgentTask?.projectId)
+            assertEquals("c1", restoredAgentTask?.conversationId)
+            assertEquals("phone_agent.execute", restoredAgentTask?.capabilityId)
+            assertEquals("整理当前项目资料", restoredAgentTask?.title)
+            assertEquals("查找当前项目内的资料", restoredAgentTask?.input)
+            assertEquals("phone:p1:request-1", restoredAgentTask?.idempotencyKey)
+            assertEquals(1, restoredAgentTask?.attempts)
+            assertEquals(3, restoredAgentTask?.maxRetries)
+            assertEquals(456L, restoredAgentTask?.startedAt)
             assertTrue(dao.agentTaskState("phone-task-1")?.lastError?.contains("手动继续") == true)
             assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, dao.phoneAgentTask("phone-task-1")?.status)
             assertEquals("已保存检查点", dao.recentAgentTaskTraces("phone-task-1").single().detail)
