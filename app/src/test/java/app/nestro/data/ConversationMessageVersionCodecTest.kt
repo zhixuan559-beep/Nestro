@@ -43,4 +43,35 @@ class ConversationMessageVersionCodecTest {
             decodeMessageVersions("[]", -1)
         }
     }
+    @Test
+    fun validatesConversationAndMessageIdentityBeforePersistence() {
+        val valid = ConversationRecord(
+            "c1", "对话", 1L,
+            listOf(ChatMessage("m1", "user", "有效消息")),
+            "default"
+        )
+        validateConversationRecords(listOf(valid))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            validateConversationRecords(listOf(valid, valid))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateConversationRecords(listOf(
+                valid,
+                ConversationRecord("c2", "另一对话", 2L, listOf(ChatMessage("m1", "assistant", "重复消息")), "default")
+            ))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateChatMessages(listOf(ChatMessage("m1", "tool", "不允许的角色")))
+        }
+    }
+
+    @Test
+    fun enforcesTheSameAggregateSnapshotLimitForRoomBackedPersistence() {
+        val oversized = (0 until 18).map { index ->
+            ChatMessage("large-$index", if (index % 2 == 0) "user" else "assistant", "x".repeat(200_000))
+        }
+        assertThrows(IllegalArgumentException::class.java) { validateChatMessages(oversized) }
+    }
+
 }
