@@ -113,9 +113,9 @@ internal class ModelLedToolDispatcher(
             .filter { it.id !in setOf("phone_agent.execute", "phone_agent.wait") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
-        CapabilityRegistryStore.registerAll(
-            capabilityPreferences,
-            candidates.map { spec ->
+        candidates.forEach { spec ->
+            CapabilityRegistryStore.registerIfAbsent(
+                capabilityPreferences,
                 CapabilityDescriptor(
                     id = spec.id,
                     title = spec.id,
@@ -129,8 +129,8 @@ internal class ModelLedToolDispatcher(
                     requiresConfirmation = spec.requiresConfirmation || spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
                     defaultGranted = !spec.id.startsWith("plugin.")
                 )
-            }
-        )
+            )
+        }
         val visibleRows = mutableListOf<Pair<AgentToolSpec, String>>()
         var visibleChars = 0
         for (spec in candidates) {
