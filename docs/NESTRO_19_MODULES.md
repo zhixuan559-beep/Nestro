@@ -127,6 +127,7 @@
 - [ ] TRAVEL 分类、地图路线规划、主屏导航前展示路线并单独授权；复用已有通用屏幕交接。
 - [ ] 登录态/应用私有文件/受限下载源的边界与用户接管体验继续审计。
 - [ ] ADB/helper/虚拟屏/手势/设备兼容测试（延后统一执行）。
+- [ ] 恢复 PhoneAgentTask 的终态 SQL 保护，防止迟到的 plan/progress 写入把 CANCELLED/COMPLETED 任务重置为 PLANNED/RUNNING；补回旧分支已有的回归测试。
 
 ## 模块9：语音系统
 
