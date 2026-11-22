@@ -449,6 +449,9 @@ class AgentTaskCoordinator(
         return states.get(taskId)
     }
 
+    /** Lists durable non-terminal tasks for recovery surfaces such as the calendar. */
+    suspend fun recoverableTasks(): List<AgentTaskState> = states.recoverable()
+
     /** Read-only durable task snapshot for feature-specific checkpoint restoration. */
     suspend fun state(taskId: String): AgentTaskState? = states.get(taskId)
 
