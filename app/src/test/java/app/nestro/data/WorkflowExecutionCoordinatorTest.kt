@@ -10,6 +10,9 @@ import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.InMemoryAgentTaskStateStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -89,6 +92,63 @@ class WorkflowExecutionCoordinatorTest {
             AgentCapabilityRegistry.unregister("workflow", "step-research")
             coordinator.close()
         }
+    }
+
+    @Test
+    fun resumesFromPersistedStepWithoutRepeatingCompletedWork() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val workflows = WorkflowExecutionCoordinator(tasks)
+        val workflow = WorkflowDefinition(
+            id = "workflow-resume-test",
+            name = "断点恢复",
+            description = "",
+            steps = listOf(
+                WorkflowStep(id = "step-a", title = "步骤 A", instruction = "完成 A"),
+                WorkflowStep(id = "step-b", title = "步骤 B", instruction = "完成 B")
+            )
+        )
+        val stepBStarted = CompletableDeferred<Unit>()
+        var firstPassCalls = 0
+        val interrupted = launch {
+            runCatching {
+                workflows.execute(
+                    workflow = workflow,
+                    input = "完成测试任务",
+                    taskId = "workflow-resume-test-task",
+                    invokeModel = { step, _ ->
+                        firstPassCalls++
+                        if (step.id == "step-a") "A result"
+                        else {
+                            stepBStarted.complete(Unit)
+                            awaitCancellation()
+                        }
+                    }
+                )
+            }
+        }
+        withTimeout(2_000) { stepBStarted.await() }
+        tasks.pause("workflow-resume-test-task")
+        interrupted.join()
+        assertEquals(AgentTaskStatus.PAUSED, tasks.state("workflow-resume-test-task")?.status)
+        assertEquals(1, firstPassCalls)
+
+        var resumedCalls = 0
+        val result = workflows.execute(
+            workflow = workflow,
+            input = "完成测试任务",
+            taskId = "workflow-resume-test-task",
+            invokeModel = { step, prompt ->
+                resumedCalls++
+                assertEquals("step-b", step.id)
+                assertTrue(prompt.contains("A result"))
+                "B result"
+            }
+        )
+        assertEquals("B result", result.output)
+        assertEquals(1, resumedCalls)
+        assertEquals(AgentTaskStatus.COMPLETED, tasks.state("workflow-resume-test-task")?.status)
+        tasks.close()
     }
 
 }
