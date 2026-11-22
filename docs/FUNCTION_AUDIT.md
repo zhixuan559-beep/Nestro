@@ -384,3 +384,23 @@
 - 响应式方面，`NestroApp.kt` 已有 `adaptiveDrawerWidthDp` / `adaptiveContentPaddingDp`，`ChatRequestContextAssembler` 并行执行独立记忆检索；这是代码层面的适配/并行优化证据，手机/平板/大屏真实布局、帧率、内存和耗电仍待设备验证。
 - 用户要求的场景最短路径与主屏交接已补入路线图 J 节；本轮未修改代码。
 
+
+## 2026-11-22 模块 16–19 源码定向复核
+
+### 模块16：统一能力中心 / 插件工厂
+- `GeneratedPluginFactory` 以声明式插件包组合已登记的 `toolId`、输入 schema、参数映射和结果字段；它不是执行任意生成代码的沙箱。用户要求的“模型自主创造插件”当前可理解为生成可审查、受现有工具目录约束的组合插件。
+- 插件创建、草稿审查、工具指纹、执行前重新校验、已有工具权限复用等源码与 JVM/Android 测试存在；仍需确认撤销工具/插件后已安装组合插件是否即时失效，以及跨项目引用的权限是否持续有效。
+- 任意代码型插件独立沙箱仍未实现；不能把声明式工具组合描述为任意代码沙箱。
+
+### 模块17：智能剪辑
+- `MediaProjectStore` 管理项目素材、时间线、文件校验、导入导出和 ZIP 工程归档；`MediaRenderEngine` 使用 Media3 Transformer 构建本地渲染 composition；媒体任务由 WorkManager 持久化执行。
+- 创作素材混合调度所需的下载文件导入入口已存在；媒体项目 ZIP 归档与通用设备 JSON 备份是不同边界，不应重复实现或删除其一。
+- 当前需要统一验证真实视频编解码器兼容性、长视频内存/磁盘空间、渲染取消与进程恢复、字幕/音轨/多轨时间线、导出文件完整性；相关 policy/codec/archive/Android tests 源码存在但未执行。
+
+### 模块19：多模态服务与社区生态
+- `MediaProviderConfigStore` 分别保存聊天/视觉模型、转写模型和视频生成模型配置；`MediaIntelligenceProvider` 有图像理解、音频转写、场景识别/音频处理入口；`MediaAiTaskStore/Worker` 负责持久任务、进度、取消和恢复。
+- `MediaVideoGenerationClient` 是可配置的异步 JSON 提交/轮询/结果下载适配器；不同签名、multipart、特殊响应协议的服务商必须单独适配。视频生成任务会导入项目素材库并通过工具结果回传主模型。
+- `SkillSemVer`、`SkillDependencyResolver`、`SkillCommunityLifecycleStore`、`SkillTrustStore` 已覆盖版本约束、递归依赖求解、原子安装/回滚和独立信任根撤销。
+- 相关媒体、技能和信任根 JVM/Android 测试源码存在；但没有独立 `MediaVideoGenerationClientTest`，真实视频服务商端点、音频/视觉 API、社区签名撤销源与设备性能仍待测试。
+- 多模态分析尚未接入聊天主模型工具目录，视频生成已接入；详见多模态专项审计。
+
