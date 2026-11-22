@@ -75,4 +75,22 @@ class UserMemoryStoreTest {
         )
         assertEquals(listOf("m1"), result.memories.map { it.id })
     }
+    @Test
+    fun projectInvalidationRejectsAnInFlightExtractionToken() = kotlinx.coroutines.runBlocking {
+        val projectId = "memory-version-project-test"
+        val token = UserMemoryStore.mutationVersion(projectId)
+        assertTrue(UserMemoryStore.isCurrentMutationVersion(projectId, token))
+        UserMemoryStore.invalidateAndAwaitPendingExtractions(projectId)
+        assertFalse(UserMemoryStore.isCurrentMutationVersion(projectId, token))
+    }
+
+    @Test
+    fun globalInvalidationRejectsTokensCapturedBeforeBackupRestore() = kotlinx.coroutines.runBlocking {
+        val projectId = "memory-global-version-project-test"
+        val token = UserMemoryStore.mutationVersion(projectId)
+        assertTrue(UserMemoryStore.isCurrentMutationVersion(projectId, token))
+        UserMemoryStore.invalidateAndAwaitPendingExtractions()
+        assertFalse(UserMemoryStore.isCurrentMutationVersion(projectId, token))
+    }
+
 }
