@@ -207,7 +207,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "expert_team.run",
-                    description = "调用当前会话中用户明确选择的专家团队，分工分析并汇总结果。仅在团队已启用且当前任务模式获得授权时可用。",
+                    description = "调用专家团队完成多专业协作。若用户已选定团队，优先使用该团队；否则主模型可根据项目目标从当前项目已启用专家目录中自主选择 2–4 位专家，拆分工作包、并行执行并汇总。仅在当前任务模式启用且至少有 2 位可用专家时可用。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) {
