@@ -231,6 +231,21 @@
 - 本轮属于模块14既有实现的缺陷修复与复核，不改变十九模块编号/顺序，也不启动模块15。
 - 最后静态回读修正了仓库索引恢复分支的同步返回语义；当前模块14源码提交 `716a8861eb9ad055d75e2e5149cbec1274ba1c7c`，后续文档同步提交将作为分支最新 HEAD。
 
+## 模块16：统一能力中心
+
+### 功能范围（当前整合分支源码盘点）
+- [x] AgentToolCatalog：工具 ID、输入 schema、权限级别、确认要求、调用 handler 和动态注册。
+- [x] AgentRuntime：统一工具参数校验、权限路由、执行、结果结构化和 trace。
+- [x] AgentTaskCoordinator：任务 ID 幂等、排队/运行/等待用户/暂停/失败/完成/取消、checkpoint、重启恢复和重新入队。
+- [x] AgentCapabilityRegistry / AgentToolLeaseRegistry：按任务/操作授权工具集合，防止跨任务复用临时工具租约。
+- [x] AgentCredentialLeaseRegistry：按任务/工具发放短时凭据租约并支持撤销。
+- [x] MCP 动态工具注册、插件目录、声明式 GeneratedPluginFactory 和工具指纹校验。
+- [ ] 生成式插件执行目前绕开 AgentTaskCoordinator，缺可恢复步骤 checkpoint/handler。
+- [ ] 生成式插件自定义权限路由对 EXTERNAL_WRITE 直接 Allow，未尊重 requiresConfirmation；必须接回统一审批。
+- [ ] MCP 工具中心长期授权与任务级一次/当前任务全部授权语义需明确。
+- [ ] 任意代码型插件独立沙箱未实现；当前插件工厂是声明式工具组合，不得宣传为任意代码沙箱。
+- [ ] 对应权限绕过、等待审批恢复、任务撤销和进程中断测试（延后统一执行）。
+
 ## 第十七项：智能剪辑｜功能代码补齐中
 
 ### 当前实现范围（源码阶段，不代表验收通过）
@@ -251,6 +266,21 @@
 - 功能代码已整合至 integration/19-modules（来源分支 feature/module-17-smart-editing，最终 HEAD a0286e0f）；尚未编译、测试、模拟器/真机验收，不得标记模块完成或锁定。
 - 按开发顺序：全部功能代码补齐后统一提交；十九模块代码完成后统一执行编译、JVM、模拟器和真机验收。
 
+
+## 模块18：日历（自动时间调度引擎）
+
+### 功能范围（当前整合分支源码盘点）
+- [x] Room 日程 CRUD、标题/描述/时间/地点/重复规则/提醒配置和本地持久化。
+- [x] NONE/DAILY/WEEKLY/MONTHLY/YEARLY 周期规则计算和 occurrence 展开。
+- [x] WorkManager 单次提醒、到期系统通知和下一次重复提醒安排。
+- [x] 系统日历读写、导入导出、关联事件更新/删除。
+- [ ] 单次/周期/延迟/时间条件触发统一任务；当前没有延迟触发和时间条件调度模型。
+- [ ] 到期分发给 AgentTaskCoordinator、Phone Agent、专家项目或工作流；当前仅发通知。
+- [ ] 触发任务状态回写、审批等待、结果回传、失败重试/退避、暂停/恢复/取消。
+- [ ] nextRunAt/lastRunAt、occurrenceId、关联 AgentTaskId、retryCount 和幂等状态持久化。
+- [ ] 设备/进程重启后的未完成任务恢复和重复触发去重。
+- [ ] 将月/周/日独立日历页收敛为轻量调度管理入口。
+- [ ] 调度/Worker/Agent/Workflow 集成测试（延后统一执行）。
 
 ## 第十九项：多模态服务与社区生态｜四项遗留代码补齐（2026-11-22）
 
