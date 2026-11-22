@@ -833,11 +833,6 @@ fun MediaEditorPage(
             }
         }
     }
-}
-
-private fun formatDuration(ms: Long): String {
-    val seconds = ms.coerceAtLeast(0) / 1_000
-    return "%02d:%02d".format(seconds / 60, seconds % 60)
     if (showMediaArchiveImportConfirm) {
         AlertDialog(
             onDismissRequest = {
@@ -911,6 +906,13 @@ private fun formatDuration(ms: Long): String {
             }
         )
     }
+
+}
+
+private fun formatDuration(ms: Long): String {
+    val seconds = ms.coerceAtLeast(0) / 1_000
+    return "%02d:%02d".format(seconds / 60, seconds % 60)
+
 
 
 }
