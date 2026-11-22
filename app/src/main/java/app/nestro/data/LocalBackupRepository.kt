@@ -877,7 +877,7 @@ private suspend fun applyLocalBackup(
             confidence = confidence,
             createdAt = item.longOrDefault("createdAt", System.currentTimeMillis()),
             updatedAt = item.longOrDefault("updatedAt", System.currentTimeMillis()),
-            shareAcrossProjects = item.optBoolean("shareAcrossProjects", false)
+            shareAcrossProjects = item.booleanOrDefault("shareAcrossProjects", false)
         )
     }
     LocalBackupCompatibility.requireUniqueIds(restoredMemories.map { it.id }, "记忆")
