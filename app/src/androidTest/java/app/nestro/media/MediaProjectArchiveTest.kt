@@ -7,6 +7,8 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
@@ -71,4 +73,48 @@ class MediaProjectArchiveTest {
             archive.delete()
         }
     }
+    @Test fun interruptedProjectReplacementRestoresThePreviousProjectDirectory() {
+        val projectId = "archive-journal-${UUID.randomUUID()}"
+        val mediaRoot = File(context.filesDir, "media-editor")
+        check(mediaRoot.mkdirs() || mediaRoot.isDirectory)
+        val backupName = ".replaced-${UUID.randomUUID()}"
+        val stagingName = ".import-${UUID.randomUUID()}"
+        val backup = File(mediaRoot, backupName)
+        val staging = File(mediaRoot, stagingName)
+        val target = File(mediaRoot, projectId)
+        val journal = File(mediaRoot, ".restore-$projectId.json")
+        try {
+            check(backup.mkdirs())
+            check(staging.mkdirs())
+            val manifest = JSONObject()
+                .put("schemaVersion", 1)
+                .put("projectId", projectId)
+                .put("assets", JSONArray())
+                .put("timeline", MediaProjectCodec.encodeTimeline(MediaTimeline.empty(projectId)))
+                .put("undo", JSONArray())
+                .put("redo", JSONArray())
+            File(backup, "project.json").writeText(manifest.toString(), Charsets.UTF_8)
+            journal.writeText(
+                JSONObject()
+                    .put("projectId", projectId)
+                    .put("backupName", backupName)
+                    .put("stagingName", stagingName)
+                    .toString(),
+                Charsets.UTF_8
+            )
+
+            val restored = MediaProjectStore.readTimeline(context, projectId)
+            assertEquals(projectId, restored.projectId)
+            assertTrue(target.isDirectory)
+            assertEquals(false, journal.exists())
+            assertEquals(false, backup.exists())
+            assertEquals(false, staging.exists())
+        } finally {
+            MediaProjectStore.deleteProject(context, projectId)
+            backup.deleteRecursively()
+            staging.deleteRecursively()
+            journal.delete()
+        }
+    }
+
 }
