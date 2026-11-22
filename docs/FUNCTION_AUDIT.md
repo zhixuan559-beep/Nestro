@@ -691,3 +691,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 仅把上面确认缺失的能力逐项移植到当前架构，并为每项保留对应迁移、备份兼容、并发/撤销/恢复测试。
 - 不得以“旧架构过时”为由把已实现的用户功能直接丢弃，也不得把整条旧分支直接 merge 进来。
 
+
+
+### PR #1 知识库代码的去留复核
+- `KnowledgeTextDecoder.kt` 与当前整合分支 blob 完全一致，无需再次合并。
+- PR #1 的 `KnowledgeChunker.kt` 对 chunkSize/overlap 和 Unicode surrogate 边界约束较弱；当前 integration 增加偶数 overlap、最小新增内容和 UTF-16 code-point 安全边界，保留当前版本。
+- PR #1 的 `KnowledgeSearchEngine.kt` 与当前 integration blob 完全一致。
+- PR #1 的 `KnowledgeStore.kt` 旧版使用 PDFBox 文本抽取，明确没有扫描 PDF OCR，且没有当前版本的 BGE 向量混合检索/检索模式元数据；当前 integration 已有 `KnowledgePdfOcr`、BGE、BM25/FTS 混合排名和来源片段标签。保留当前版本，不回合旧版知识库实现。
+- 因此 PR #1 的知识库核心功能不是整体丢失；真正需要回收的是前述记忆生命周期/共享与统一能力中心功能，不应把旧知识库代码整体移植回来。
+
