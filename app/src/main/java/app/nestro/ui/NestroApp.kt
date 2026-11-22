@@ -2129,6 +2129,30 @@ fun NestroApp(initialPage: String = "home") {
                                                          }
                                                      )
                                                  }
+                                                 if (canResumeSavedWorkflow) {
+                                                     TextButton(onClick = {
+                                                         scope.launch {
+                                                             val result = withContext(Dispatchers.IO) {
+                                                                 runCatching {
+                                                                     appRuntime.agentTaskCoordinator.cancel(savedWorkflowTaskIdForCard)
+                                                                     appRuntime.agentApprovalCoordinator.endScope(savedWorkflowTaskIdForCard)
+                                                                 }
+                                                             }
+                                                             if (result.isSuccess) {
+                                                                 prefs.edit()
+                                                                     .remove("workflow_task_id_v1")
+                                                                     .remove("workflow_task_workflow_id_v1")
+                                                                     .remove("workflow_resume_input_v1")
+                                                                     .apply()
+                                                                 workflowInputDraft = ""
+                                                                 savedWorkflowTaskState = null
+                                                                 workflowRunStatus = "未完成工作流已取消。"
+                                                             } else {
+                                                                 workflowRunStatus = "取消工作流失败：" + (result.exceptionOrNull()?.message ?: "未知错误")
+                                                             }
+                                                         }
+                                                     }) { Text("取消待恢复任务", color = ColorStop) }
+                                                 }
                                                  TextButton(onClick = {
                                                      if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
                                                       editingWorkflowId = workflow.id
