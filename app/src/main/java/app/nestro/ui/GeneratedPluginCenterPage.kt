@@ -350,8 +350,9 @@ internal fun GeneratedPluginCenterPage(
                                             ) {
                                                 val separator = entry.state.input.indexOf('\n')
                                                 if (separator > 0) {
-                                                    application.agentApprovalCoordinator.endScope(
-                                                        entry.state.input.substring("request_id=".length, separator)
+                                                    application.agentApprovalCoordinator.endScopeAndAudit(
+                                                        entry.state.input.substring("request_id=".length, separator),
+                                                        "CLOSED"
                                                     )
                                                 }
                                             }
@@ -371,8 +372,9 @@ internal fun GeneratedPluginCenterPage(
                                                 application.agentTaskCoordinator.cancel(entry.state.taskId)
                                                 val separator = entry.state.input.indexOf('\n')
                                                 if (separator > 0) {
-                                                    application.agentApprovalCoordinator.endScope(
-                                                        entry.state.input.substring("request_id=".length, separator)
+                                                    application.agentApprovalCoordinator.endScopeAndAudit(
+                                                        entry.state.input.substring("request_id=".length, separator),
+                                                        "CANCELLED"
                                                     )
                                                 }
                                             }
