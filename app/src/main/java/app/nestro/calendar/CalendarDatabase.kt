@@ -40,7 +40,11 @@ data class CalendarEvent(
     @ColumnInfo(defaultValue = "0") val nextRunAt: Long = 0L,
     @ColumnInfo(defaultValue = "0") val lastRunAt: Long = 0L,
     @ColumnInfo(defaultValue = "''") val lastTaskId: String = "",
-    @ColumnInfo(defaultValue = "''") val lastIdempotencyKey: String = ""
+    @ColumnInfo(defaultValue = "''") val lastIdempotencyKey: String = "",
+    @ColumnInfo(defaultValue = "'IDLE'") val automationStatus: String = "IDLE",
+    @ColumnInfo(defaultValue = "''") val automationResult: String = "",
+    @ColumnInfo(defaultValue = "''") val automationError: String = "",
+    @ColumnInfo(defaultValue = "0") val automationUpdatedAt: Long = 0L
 )
 
 @Dao
@@ -73,11 +77,20 @@ interface CalendarDao {
         updatedAt: Long
     )
 
+    @Query("UPDATE calendar_events SET automationStatus = :status, automationResult = :result, automationError = :error, automationUpdatedAt = :updatedAt WHERE id = :id")
+    suspend fun recordAutomationResult(
+        id: String,
+        status: String,
+        result: String,
+        error: String,
+        updatedAt: Long
+    )
+
     @Query("DELETE FROM calendar_events WHERE id = :id")
     suspend fun delete(id: String): Int
 }
 
-@Database(entities = [CalendarEvent::class], version = 3, exportSchema = false)
+@Database(entities = [CalendarEvent::class], version = 4, exportSchema = false)
 abstract class CalendarDatabase : RoomDatabase() {
     abstract fun calendarDao(): CalendarDao
 
@@ -98,6 +111,15 @@ abstract class CalendarDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN automationStatus TEXT NOT NULL DEFAULT 'IDLE'")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN automationResult TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN automationError TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN automationUpdatedAt INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile private var instance: CalendarDatabase? = null
 
         fun get(context: Context): CalendarDatabase =
@@ -106,7 +128,7 @@ abstract class CalendarDatabase : RoomDatabase() {
                     context.applicationContext,
                     CalendarDatabase::class.java,
                     "nestro_calendar.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }
