@@ -382,7 +382,7 @@ class AgentTaskCoordinator(
                         status = AgentTaskStatus.PAUSED,
                         lastError = "外部 Worker 已重新唤醒任务，正在从持久检查点恢复",
                         updatedAt = System.currentTimeMillis()
-                    ).also(states::put)
+                    ).also { states.put(it) }
                 } else current
             }
         }
