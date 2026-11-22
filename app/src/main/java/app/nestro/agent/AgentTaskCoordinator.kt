@@ -222,7 +222,7 @@ class AgentTaskCoordinator(
             }
         }
         try {
-            val queued = enqueue(taskId, handlerId, initialCheckpoint)
+            val queued = enqueue(taskId, handlerId, if (existing == null) initialCheckpoint else null)
             check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
             return completion.await()
         } catch (cancelled: CancellationException) {
