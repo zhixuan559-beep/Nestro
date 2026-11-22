@@ -41,7 +41,12 @@ class MikaAdbManager(context: Context) {
 
     /** Launch the shell-UID helper through the already paired local adbd service. */
     suspend fun launchHelper(): Boolean = withContext(Dispatchers.IO) {
-        if (shell.value != null) return@withContext true
+        val existing = shell.value
+        if (existing != null) {
+            if (existing.asBinder().isBinderAlive) return@withContext true
+            withTimeoutOrNull(BINDER_DEATH_SETTLE_MS) { shell.first { it == null } }
+            if (shell.value != null) throw IOException("The previous helper Binder has not detached yet")
+        }
         check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { "Isolated shell helper requires Android 12 or later" }
         val discovered = finder.findPorts(AdbServiceTypes.CONNECT, 3_000L)
         val candidates = (discovered + (systemTlsPort()?.let(::listOf) ?: emptyList())).distinct()
@@ -82,5 +87,6 @@ class MikaAdbManager(context: Context) {
     private companion object {
         const val TAG = "NestroMikaAdb"
         const val HANDOFF_TIMEOUT_MS = 15_000L
+        const val BINDER_DEATH_SETTLE_MS = 2_000L
     }
 }
