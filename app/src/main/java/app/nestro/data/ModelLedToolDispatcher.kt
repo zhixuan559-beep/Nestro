@@ -89,9 +89,9 @@ internal class ModelLedToolDispatcher(
     private val toolDefinitionProvider: (String) -> String? = { null },
     private val visibleToolFilter: (AgentToolSpec) -> Boolean = { true }
 ) {
-    private fun mcpCallSignature(toolId: String, arguments: Map<String, String>): String {
+    private fun mcpCallSignature(toolId: String, arguments: Map<String, String>, ordinal: Int): String {
         val canonical = buildString {
-            append(toolId).append('\n')
+            append(toolId).append('#').append(ordinal).append('\n')
             arguments.toSortedMap().forEach { (key, value) ->
                 append(key.length).append(':').append(key)
                 append(value.length).append(':').append(value).append('\n')
@@ -122,9 +122,9 @@ internal class ModelLedToolDispatcher(
         return null
     }
 
-    private fun findCompletedMcpCall(raw: String, toolId: String, arguments: Map<String, String>): String? {
+    private fun findCompletedMcpCall(raw: String, toolId: String, arguments: Map<String, String>, ordinal: Int): String? {
         val calls = decodeMcpReplayLedger(raw).optJSONObject("calls") ?: return null
-        val row = calls.optJSONObject(mcpCallSignature(toolId, arguments)) ?: return null
+        val row = calls.optJSONObject(mcpCallSignature(toolId, arguments, ordinal)) ?: return null
         return row.optString("output").takeIf { row.optString("state") == "COMPLETED" }
     }
 
@@ -133,6 +133,7 @@ internal class ModelLedToolDispatcher(
         taskId: String,
         toolId: String,
         arguments: Map<String, String>,
+        ordinal: Int,
         state: String,
         output: String = ""
     ) {
@@ -140,7 +141,7 @@ internal class ModelLedToolDispatcher(
         val ledger = decodeMcpReplayLedger(current.checkpoint)
         val calls = ledger.optJSONObject("calls") ?: JSONObject()
         calls.put(
-            mcpCallSignature(toolId, arguments),
+            mcpCallSignature(toolId, arguments, ordinal),
             JSONObject()
                 .put("toolId", toolId)
                 .put("state", state)
@@ -353,6 +354,7 @@ ${prompt.take(8_000)}
 """.trimIndent()
 
         val nativeToolCallsExecuted = java.util.concurrent.atomic.AtomicInteger(0)
+        val mcpCallOrdinal = java.util.concurrent.atomic.AtomicInteger(0)
         try {
             val nativeResult = chat.completeWithNativeTools(
                 configs = configs,
