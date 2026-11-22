@@ -157,7 +157,7 @@ class CalendarRepository(context: Context) {
         if (activeTasks.isNotEmpty() || event.lastTaskId.isNotBlank()) {
             val lastState = event.lastTaskId.takeIf(String::isNotBlank)
                 ?.let { nestroApp.agentTaskCoordinator.state(it) }
-            if (activeTasks.isNotEmpty() || lastState?.status in activeStatuses) {
+            if (activeTasks.isNotEmpty() || lastState?.status?.let { it in activeStatuses } == true) {
                 recordAutomationResult(event.id, "CANCELLED", error = reason)
             }
         }
