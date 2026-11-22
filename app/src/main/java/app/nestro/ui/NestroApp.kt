@@ -1067,11 +1067,14 @@ fun NestroApp(initialPage: String = "home") {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
             }
-            val requestSkills = skills.filterKeys {
+            val visibleRequestSkills = skills.filterKeys {
                 !projectResourceScopesReadOnly &&
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
             }
-            val requestDisabledSkills = disabledSkills.toSet()
+            val requestSkills = SkillDependencyResolver.filterSatisfiedSkills(
+                visibleRequestSkills, skillMetadata, disabledSkills
+            )
+            val requestDisabledSkills = disabledSkills.toSet() + (visibleRequestSkills.keys - requestSkills.keys)
             val requestExperts = experts.filter {
                 !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
@@ -1084,7 +1087,7 @@ fun NestroApp(initialPage: String = "home") {
             val baseSystemContext = listOf(
                 if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
                 if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[requestSelectedExpert]?.enabled != false) requestExpertPrompts[requestSelectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
-                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills) else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills, skillMetadata) else "",
                 requestProjectInstructions,
                 if (manualExpertSelection.size in 2..4) {
                     "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.filter { it in requestExperts }.joinToString("、")
@@ -1096,7 +1099,7 @@ fun NestroApp(initialPage: String = "home") {
                         .take(24)
                         .joinToString("\\n") { name ->
                             val role = requestExpertPrompts[name].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(name) }
-                            val skillContext = ExpertProfileCodec.skillContext(requestExpertProfiles[name], requestSkills, requestDisabledSkills)
+                            val skillContext = ExpertProfileCodec.skillContext(requestExpertProfiles[name], requestSkills, requestDisabledSkills, skillMetadata)
                             "- 专家：$name\\n  角色：${role.take(900)}\\n  专属技能：${skillContext.take(700)}"
                         }.take(8_000)
                 } else "",
@@ -1191,7 +1194,7 @@ fun NestroApp(initialPage: String = "home") {
                     val assignmentJson = runCatching { JSONObject(toolArguments["assignments"].orEmpty()) }.getOrNull()
                     val memberTasks = chosenNames.associateWith { member ->
                         val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
-                        val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills)
+                        val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills, skillMetadata)
                         ExpertTeamMemberTask(
                             name = member,
                             rolePrompt = listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"),
@@ -1935,7 +1938,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                                  !projectResourceScopesReadOnly &&
                                                                                      ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
                                                                              }
-                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
+                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills, skillMetadata)).filter { it.isNotBlank() }.joinToString("\n\n")
                                                                          }
                                                                          WorkflowStepKind.SKILL -> {
                                                                              val skillName = step.targetId.ifBlank { step.title }
@@ -1943,8 +1946,19 @@ fun NestroApp(initialPage: String = "home") {
                                                                                  ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)) {
                                                                                  "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
                                                                              }
-                                                                             check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
-                                                                             skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
+                                                                             val workflowSkills = skills.filterKeys { candidate ->
+                                                                                 !projectResourceScopesReadOnly &&
+                                                                                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, candidate, projectId, workflowReadableProjectIds)
+                                                                             }
+                                                                             val prompt = workflowSkills[skillName]?.takeIf { it.isNotBlank() }
+                                                                                 ?: error("工作流引用的技能「$skillName」不存在")
+                                                                             val dependencyIssues = SkillDependencyResolver.inspectInstalledSkill(
+                                                                                 skillName, workflowSkills, skillMetadata, disabledSkills
+                                                                             )
+                                                                             check(dependencyIssues.isEmpty()) {
+                                                                                 "工作流技能依赖未满足，已阻止执行：${dependencyIssues.joinToString("；")}"
+                                                                             }
+                                                                             prompt
                                                                          }
                                                                          WorkflowStepKind.PROMPT -> ""
                                                                      }
