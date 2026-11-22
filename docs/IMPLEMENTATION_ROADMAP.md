@@ -505,3 +505,14 @@ Tool sessions now snapshot the exact handler as well as the selected capability 
 - 部署方仍需注册魔搭 OAuth 互联应用、注入 Client ID/Secret、配置精确 Redirect URI 和 HTTPS 服务域名；Android 构建通过 Gradle 属性 `modelscopeOAuthBackendUrl` 指定服务地址。
 - OAuth access_token 是否拥有 API-Inference 权限仍需真实账号联调确认；在确认前不宣称推理调用已打通。
 - 本轮未运行构建、单元测试或真机测试，模块2未验收、未锁定。
+
+## 五、报表同步时发现的仓库状态差异（2026-11-22）
+
+- 当前整合基线仍是 `integration/19-modules`；本次先后提交了本节基线同步与 README 指针更新。后续核验必须使用最新分支 HEAD，不能沿用更新前的 SHA。
+- 当前 GitHub 仍显示两个开放 Draft PR：
+  - PR #1 `feature/knowledge-retrieval-ranking` → `main`，未合并。其 PR 描述仍写着“无语义向量检索、无扫描 PDF OCR”等旧限制，与当前整合路线图中已登记的本地 BGE 向量和 OCR 实现不一致；因此 PR 描述不能作为整合分支当前功能状态。
+  - PR #3 `refactor/phase-2-architecture` → `feature/voice-system`，未合并且保持 Draft。PR 描述和代码地图记录的是分层重构批次，不应把它误判为十九模块功能都未进入整合基线，也不能把它视为已合并。
+- PR #2 已关闭但未合并；PR #4 至 #9 等历史 PR 的合并状态，须结合其目标分支与当前整合基线的提交祖先/文件差异判断，不能仅凭“merged”字段推断已进入 `integration/19-modules`。
+- 本次检索到的功能分支仍有多个（包括模块5/6/7/8/9/10/11/12/13/14/15/17/18、模块2 OAuth、phase2 optimization、staging 修复等）。分支仍存在不等于未整合；必须逐分支比较当前整合分支与功能分支的 ahead/behind、差异文件及关键实现内容。
+- 因此，本轮只完成了“报表补录与同步”，尚未完成“所有功能是否已合并”的提交祖先/差异证明，也尚未完成十九模块代码整体性审计。
+
