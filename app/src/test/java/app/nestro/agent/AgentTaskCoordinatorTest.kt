@@ -16,6 +16,34 @@ import java.io.IOException
 
 class AgentTaskCoordinatorTest {
     @Test
+    fun parallelSafeToolsMustBeReadOnlyAndNotRequireConfirmation() {
+        val safe = AgentToolSpec(
+            id = "knowledge.search",
+            description = "只读知识检索",
+            permission = AgentToolPermission.READ_ONLY,
+            parallelSafe = true
+        )
+        assertTrue(safe.parallelSafe)
+        assertTrue(runCatching {
+            AgentToolSpec(
+                id = "unsafe.write",
+                description = "外部写入",
+                permission = AgentToolPermission.EXTERNAL_WRITE,
+                parallelSafe = true
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            AgentToolSpec(
+                id = "unsafe.confirmed",
+                description = "需要确认的读取",
+                permission = AgentToolPermission.READ_ONLY,
+                requiresConfirmation = true,
+                parallelSafe = true
+            )
+        }.isFailure)
+    }
+
+    @Test
     fun idempotencyKeyReturnsExistingTaskAndPreservesProjectMetadata() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
