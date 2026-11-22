@@ -2554,7 +2554,13 @@ fun NestroApp(initialPage: String = "home") {
                                         checked = automaticMemoryEnabled,
                                         onCheckedChange = { enabled ->
                                             automaticMemoryEnabled = enabled
-                                            ProjectMemorySettingsStore.setEnabled(prefs, activeProjectId, enabled)
+                                            val memoryProjectId = activeProjectId
+                                            ProjectMemorySettingsStore.setEnabled(prefs, memoryProjectId, enabled)
+                                            if (!enabled) {
+                                                scope.launch {
+                                                    appRuntime.userMemoryRepository.invalidatePendingExtractions(memoryProjectId)
+                                                }
+                                            }
                                         }
                                     )
                                 }
