@@ -433,3 +433,14 @@
 - 当前 `NestroApp.kt` 已把 `ExpertTeamCollaborationEvent` 持久化，并在专家团队区域显示“最近协作过程”，最多展示最近 16 条事件及消息摘要；因此不是完全没有过程查看能力。
 - 当前实现更接近只读事件时间线，不是独立群聊窗口；尚未确认支持完整历史分页、成员间连续对话视图、实时消息流和用户插话/调整任务。后续界面设计时应保留已有事件记录，不要重复造第二套群聊消息存储。
 
+
+## 2026-11-22 重复实现候选清单（仅标记，不提前删除）
+
+- **通用工作流与专家项目 DAG：** `WorkflowEngine` 实现用户配置步骤、条件、连续 parallelGroup、步骤 checkpoint；`ExpertProjectPlanExecutor` 实现模型生成的任意依赖 DAG、topological waves 和并发工作包。两者有重复的并行/依赖调度算法，但领域数据、失败策略和交接语义不同。应先做行为对照测试，再判断是否只抽取纯调度算法；不能直接合并两套执行器或删除任一模块。
+- **专家团队执行器：** `ExpertTeamEngine` 的成员协作执行与 `ExpertProjectPlanExecutor` 的项目工作包执行由 `ExpertTeamExecutionCoordinator` 统一登记任务、保存 checkpoint 和取消；需检查是否存在可复用的并发/结果收集逻辑，保留两种用户模式的差异。
+- **模型配置：** 旧 profile/active-model 与新 ModelRegistry 是迁移兼容双轨，不能当死代码删除；见“模型配置双轨结构去留判断”。
+- **任务状态：** PhoneAgentTaskStore 与 AgentTaskCoordinator 是领域动作日志/计划和通用生命周期的双层状态；MediaAiTaskStore 则有独立生命周期，后者是统一基座接入缺口。先统一状态映射，不删领域数据。
+- **媒体服务商配置：** MediaProviderConfigStore 与 ModelRegistry 都保存 provider/base URL/Key ID 类元数据，但媒体配置还包含独立转写/视觉/视频模型、multipart 路径、异步任务字段映射；两者共用 LocalVault 保存 API Key。属于配置边界重叠候选，不是重复加密库；需先确认媒体 API 与聊天模型是否要统一服务商实体，再决定迁移。
+- **旧 main 分支：** UnifiedAgentDispatcher、ChatNetworkPolicy、TtsCapability 不在当前 integration 代码树；前两者与当前 ModelLedToolDispatcher/ChatRequestPolicy 有重叠或被替代，不应复制回来。TtsCapability 仅有额外音色排序能力，尚无用户确认需求。
+- **大型 UI 聚合入口：** NestroApp.kt 约 4,505 行，尚未发现重复函数名；必须按状态 owner/路由/调用链抽取，不得只按文件体积拆分。
+
