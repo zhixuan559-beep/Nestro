@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-enum class MediaAiTaskStatus { QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED }
+enum class MediaAiTaskStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
 data class MediaAiTask(
     val id: String,
@@ -149,6 +149,8 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                             taskContext.transition(app.nestro.agent.AgentTaskStatus.COMPLETED, resultSummary = "媒体 AI 处理完成")
                         MediaAiTaskStatus.CANCELLED ->
                             taskContext.cancel("媒体 AI 任务已取消")
+                        MediaAiTaskStatus.PAUSED ->
+                            taskContext.pause("媒体 AI 任务已暂停")
                         MediaAiTaskStatus.FAILED ->
                             taskContext.fail(MediaAiTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体 AI 任务失败")
                         null -> taskContext.fail("媒体 AI 任务记录丢失，无法继续执行")
@@ -306,21 +308,46 @@ object MediaAiTaskScheduler {
         return app
     }
 
-    suspend fun enqueue(context:Context,projectId:String,taskId:String) {
+    suspend fun enqueue(context:Context,projectId:String,taskId:String,replace:Boolean=false) {
         registerUnifiedTask(context, projectId, taskId)
         val request=OneTimeWorkRequestBuilder<MediaAiTaskWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(MediaAiTaskWorker.KEY_PROJECT to projectId,MediaAiTaskWorker.KEY_TASK to taskId)).build()
-        WorkManager.getInstance(context).enqueueUniqueWork(unique(projectId,taskId),ExistingWorkPolicy.KEEP,request)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            unique(projectId,taskId),
+            if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+            request
+        )
     }
 
     suspend fun recover(context:Context,projectId:String) {
         MediaAiTaskStore.recoverable(context,projectId).forEach { enqueue(context,projectId,it.id) }
     }
 
+    suspend fun pause(context: Context, projectId: String, taskId: String) {
+        val task = MediaAiTaskStore.read(context, projectId, taskId) ?: error("媒体 AI 任务不存在")
+        require(task.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)) { "当前媒体 AI 任务不能暂停" }
+        val app = registerUnifiedTask(context, projectId, taskId)
+        MediaAiTaskStore.update(context, projectId, taskId, status = MediaAiTaskStatus.PAUSED)
+        app.agentTaskCoordinator.pause("media-ai:$taskId")
+        WorkManager.getInstance(context).cancelUniqueWork(unique(projectId, taskId))
+    }
+
+    suspend fun resume(context: Context, projectId: String, taskId: String) {
+        val task = MediaAiTaskStore.read(context, projectId, taskId) ?: error("媒体 AI 任务不存在")
+        require(task.status == MediaAiTaskStatus.PAUSED) { "只有暂停的媒体 AI 任务可以恢复" }
+        MediaAiTaskStore.update(
+            context, projectId, taskId,
+            status = MediaAiTaskStatus.QUEUED,
+            progress = 0,
+            errorMessage = ""
+        )
+        enqueue(context, projectId, taskId, replace = true)
+    }
+
     suspend fun cancel(context:Context,projectId:String,taskId:String) {
         val task=MediaAiTaskStore.read(context,projectId,taskId) ?: return
-        require(task.status in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING)) { "当前媒体 AI 任务不可取消" }
+        require(task.status in setOf(MediaAiTaskStatus.QUEUED,MediaAiTaskStatus.RUNNING,MediaAiTaskStatus.PAUSED)) { "当前媒体 AI 任务不可取消" }
         val app = registerUnifiedTask(context, projectId, taskId)
         MediaAiTaskStore.update(context,projectId,taskId,status=MediaAiTaskStatus.CANCELLED)
         app.agentTaskCoordinator.cancel("media-ai:$taskId")
