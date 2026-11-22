@@ -211,14 +211,25 @@ object PhoneAgentExecutor {
             PhoneAgentTaskStore.recordActionResult(dao, taskId, index, result.action, result.success, result.detail)
             onProgress(index + 1, result)
             if (!success) {
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
+                val stoppedOrUnauthorized = service.isTaskStopped(taskId) || !service.hasValidGrant()
                 when {
-                    toolResult.requiresUser -> taskContext.waitForUser(detail)
-                    service.isTaskStopped(taskId) || !service.hasValidGrant() -> taskContext.pause(detail)
-                    else -> taskContext.fail(detail)
+                    toolResult.requiresUser -> {
+                        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                        taskContext.waitForUser(detail)
+                    }
+                    stoppedOrUnauthorized -> {
+                        // Preserve the domain-level ambiguous-action marker so the UI requires
+                        // a manual page check before retrying a possibly completed external action.
+                        PhoneAgentTaskStore.markInterrupted(dao, taskId)
+                        taskContext.pause(detail)
+                    }
+                    else -> {
+                        PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_FAILED, index)
+                        taskContext.fail(detail)
+                    }
                 }
                 val outcome = if (toolResult.requiresUser) Outcome.WAITING_USER
-                    else if (service.isTaskStopped(taskId) || !service.hasValidGrant()) Outcome.PAUSED
+                    else if (stoppedOrUnauthorized) Outcome.PAUSED
                     else Outcome.FAILED
                 return ExecutionResult(outcome, results.count { it.success }, results, detail)
             }
