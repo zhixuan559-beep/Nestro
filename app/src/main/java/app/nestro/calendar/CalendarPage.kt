@@ -1,5 +1,8 @@
 package app.nestro.calendar
 
+import app.nestro.NestroApplication
+import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentTaskStatus
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -42,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -57,8 +62,10 @@ private val calendarTimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ROO
 @Composable
 fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
     val context = LocalContext.current
+    val appRuntime = context.applicationContext as? NestroApplication
     val scope = rememberCoroutineScope()
     var events by remember { mutableStateOf(emptyList<CalendarEvent>()) }
+    var pendingAutomationTasks by remember { mutableStateOf(emptyList<AgentTaskState>()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showEditor by remember { mutableStateOf(false) }
@@ -87,6 +94,24 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
     LaunchedEffect(repository) {
         withContext(Dispatchers.IO) { repository.reconcileSchedules() }
         refresh()
+    }
+
+    LaunchedEffect(appRuntime, activeProjectId) {
+        while (isActive) {
+            pendingAutomationTasks = withContext(Dispatchers.IO) {
+                appRuntime?.agentTaskCoordinator?.recoverableTasks()
+                    ?.filter { task ->
+                        task.projectId == activeProjectId &&
+                            task.kind == "calendar_automation" &&
+                            task.status in setOf(
+                                AgentTaskStatus.WAITING_FOR_USER,
+                                AgentTaskStatus.PAUSED,
+                                AgentTaskStatus.FAILED
+                            )
+                    }.orEmpty()
+            }
+            delay(1_500)
+        }
     }
 
     val zone = remember { ZoneId.systemDefault() }
@@ -206,6 +231,42 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { requestSystemCalendarAction("import") }, modifier = Modifier.weight(1f)) { Text("导入系统日程") }
             OutlinedButton(onClick = { requestSystemCalendarAction("export") }, modifier = Modifier.weight(1f)) { Text("写入系统日历") }
+        }
+
+        if (pendingAutomationTasks.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("等待恢复的自动任务", style = MaterialTheme.typography.titleMedium)
+                pendingAutomationTasks.forEach { task ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(task.title.ifBlank { "日历自动任务" }, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (task.status == AgentTaskStatus.WAITING_FOR_USER) "等待用户审批" else "任务状态：${task.status}",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (task.lastError.isNotBlank()) {
+                                Text(task.lastError.take(240), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Button(onClick = {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            requireNotNull(appRuntime) { "统一任务机暂不可用" }
+                                                .agentTaskCoordinator.resume(task.taskId)
+                                        }
+                                    }
+                                    status = result.fold(
+                                        { "已提交恢复请求：${task.title}" },
+                                        { "恢复失败：${it.message ?: "未知错误"}" }
+                                    )
+                                }
+                            }) {
+                                Text(if (task.status == AgentTaskStatus.WAITING_FOR_USER) "继续审批并执行" else "恢复任务")
+                            }
+                        }
+                    }
+                }
+            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
             listOf("一", "二", "三", "四", "五", "六", "日").forEach {
