@@ -120,8 +120,10 @@ class MikaHelperHandoffProvider : ContentProvider() {
 
         fun issueLaunchNonce(context: android.content.Context): String {
             val nonce = randomNonce()
-            context.applicationContext.getSharedPreferences(PREFS, 0).edit()
-                .putString(KEY_NONCE_STORE, nonce).apply()
+            check(
+                context.applicationContext.getSharedPreferences(PREFS, 0).edit()
+                    .putString(KEY_NONCE_STORE, nonce).commit()
+            ) { "Unable to persist helper launch nonce" }
             return nonce
         }
 
