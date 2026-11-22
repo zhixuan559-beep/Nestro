@@ -1819,6 +1819,19 @@ fun NestroApp(initialPage: String = "home") {
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                  Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
+                                                     val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                                     val savedWorkflowId = prefs.getString("workflow_task_workflow_id_v1", "").orEmpty()
+                                                     val savedWorkflowInput = prefs.getString("workflow_resume_input_v1", "").orEmpty()
+                                                     val workflowTaskId = if (savedWorkflowId == workflow.id && savedWorkflowInput == input && savedWorkflowTaskId.isNotBlank()) {
+                                                         savedWorkflowTaskId
+                                                     } else {
+                                                         UUID.randomUUID().toString()
+                                                     }
+                                                     prefs.edit()
+                                                         .putString("workflow_task_id_v1", workflowTaskId)
+                                                         .putString("workflow_task_workflow_id_v1", workflow.id)
+                                                         .putString("workflow_resume_input_v1", input)
+                                                         .apply()
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
                                                      val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
@@ -1838,6 +1851,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              appRuntime.workflowExecutionCoordinator.execute(
                                                                  workflow = workflow,
                                                                  input = input,
+                                                                 taskId = workflowTaskId,
                                                                  invokeModel = { step, stepPrompt ->
                                                                      val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
                                                                      val roleContext = when (step.kind) {
@@ -1944,6 +1958,13 @@ fun NestroApp(initialPage: String = "home") {
                                                          busy = false
                                                          stopRequested = false
                                                          workflowInputDraft = ""
+                                                         if (result.isSuccess) {
+                                                             prefs.edit()
+                                                                 .remove("workflow_task_id_v1")
+                                                                 .remove("workflow_task_workflow_id_v1")
+                                                                 .remove("workflow_resume_input_v1")
+                                                                 .apply()
+                                                         }
                                                          page = "home"
                                                          } finally {
                                                              workflowPauseGate?.complete(Unit)
