@@ -51,25 +51,31 @@ class UserMemoryRepository(
         projectId: String,
         conversationId: String,
         messageId: String,
-        candidates: List<MemoryCandidate>
+        candidates: List<MemoryCandidate>,
+        expectedMutationVersion: MemoryMutationToken? = null
     ): Int = UserMemoryStore.saveCandidates(
-        database.dao(), projectId, conversationId, messageId, candidates
+        database.dao(), projectId, conversationId, messageId, candidates, expectedMutationVersion
     )
 
-    suspend fun edit(id: String, projectId: String, content: String, category: String) =
+    suspend fun edit(id: String, projectId: String, content: String, category: String) {
         UserMemoryStore.edit(database.dao(), id, projectId, content, category)
-
-    suspend fun importOne(projectId: String, rawJson: String): Boolean {
-        val imported = UserMemoryExportCodec.decode(rawJson, projectId)
-        return database.dao().importUserMemoryIfAbsent(imported)
-    }
-
-    suspend fun clearProject(projectId: String) {
-        require(projectId.isNotBlank()) { "记忆项目 ID 无效" }
-        database.dao().deleteUserMemoriesForProject(projectId)
         synchronized(embeddingCache) { embeddingCache.clear() }
     }
 
-    suspend fun delete(id: String, projectId: String) =
+    suspend fun importOne(projectId: String, rawJson: String): Boolean {
+        val imported = UserMemoryExportCodec.decode(rawJson, projectId)
+        val changed = UserMemoryStore.importOne(database.dao(), projectId, imported)
+        if (changed) synchronized(embeddingCache) { embeddingCache.clear() }
+        return changed
+    }
+
+    suspend fun clearProject(projectId: String) {
+        UserMemoryStore.clearProject(database.dao(), projectId)
+        synchronized(embeddingCache) { embeddingCache.clear() }
+    }
+
+    suspend fun delete(id: String, projectId: String) {
         UserMemoryStore.delete(database.dao(), id, projectId)
+        synchronized(embeddingCache) { embeddingCache.clear() }
+    }
 }
