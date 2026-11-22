@@ -1079,11 +1079,13 @@ fun NestroApp(initialPage: String = "home") {
                     onProviderUsage = recordProviderModelUsage,
                     planPhoneAgent = { toolArguments ->
                         if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
-                            "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。"
+                            app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
                         } else {
                             val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt
                             val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
-                            if (PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
+                            if (!PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
+                                app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                            } else {
                                 val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
                                 val created = withContext(Dispatchers.IO) {
                                     appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
@@ -1092,13 +1094,12 @@ fun NestroApp(initialPage: String = "home") {
                                         phonePlan
                                     )
                                 }
-                                if (canSchedule) {
+                                val message = if (canSchedule) {
                                     "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。实际设备操作仍按任务权限与风险步骤执行。"
                                 } else {
-                                    "已创建 Phone Agent 任务（${created.id}），但设备服务尚未处于有效授权状态，暂未加入后台队列；实际设备操作尚未开始。"
+                                    "已创建 Phone Agent 任务（${created.id}），但设备服务尚未处于有效授权状态，暂未加入队列；实际设备操作尚未开始。"
                                 }
-                            } else {
-                                "当前目标不需要 Phone Agent 后台设备任务，未创建任务。"
+                                app.nestro.agent.AgentToolResult(true, output = message)
                             }
                         }
                     },
