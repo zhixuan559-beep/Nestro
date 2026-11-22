@@ -67,7 +67,7 @@ class ExpertTeamExecutionCoordinator(
                 "专家团队检查点与当前团队、任务或成员配置不匹配，已停止恢复"
             }
         }
-        val resumeMembers = savedPayload?.optJSONArray("members")?.let { rows ->
+        val resumeMembers = if (strategy == ExpertTeamSchedulingStrategy.PARALLEL_WORK_PACKAGES) savedPayload?.optJSONArray("members")?.let { rows ->
             (0 until rows.length()).mapNotNull { index ->
                 val row = rows.optJSONObject(index) ?: return@mapNotNull null
                 ExpertTeamMemberRun(
@@ -79,7 +79,47 @@ class ExpertTeamExecutionCoordinator(
                     error = row.optString("error").take(500)
                 )
             }
-        }.orEmpty()
+        }.orEmpty() else emptyList()
+        val resumeCollaborative = savedPayload?.optJSONObject("collaborative")?.let { item ->
+            val completed = item.optJSONArray("completedMembers") ?: JSONArray()
+            val visited = item.optJSONArray("visitedMembers") ?: JSONArray()
+            ExpertTeamCollaborativeCheckpoint(
+                completedMembers = (0 until completed.length()).mapNotNull { index ->
+                    val row = completed.optJSONObject(index) ?: return@mapNotNull null
+                    ExpertTeamMemberRun(
+                        name = row.optString("name"),
+                        status = row.optString("status"),
+                        attempts = row.optInt("attempts").coerceIn(0, 2),
+                        elapsedMillis = row.optLong("elapsedMillis").coerceAtLeast(0),
+                        output = row.optString("output").take(2_200),
+                        error = row.optString("error").take(500)
+                    )
+                },
+                visitedMembers = (0 until visited.length()).mapNotNull { index ->
+                    visited.optString(index).takeIf { it.isNotBlank() }
+                },
+                nextMemberName = item.optString("nextMemberName"),
+                nextTask = item.optString("nextTask").take(2_000),
+                handoff = item.optString("handoff").take(2_000),
+                delegationCount = item.optInt("delegationCount").coerceIn(0, 3)
+            )
+        }
+        fun encodeCollaborativeCheckpoint(checkpoint: ExpertTeamCollaborativeCheckpoint): JSONObject =
+            JSONObject()
+                .put("completedMembers", JSONArray().apply {
+                    checkpoint.completedMembers.forEach { row ->
+                        put(JSONObject()
+                            .put("name", row.name).put("status", row.status)
+                            .put("attempts", row.attempts).put("elapsedMillis", row.elapsedMillis)
+                            .put("output", row.output.take(2_200)).put("error", row.error.take(500)))
+                    }
+                })
+                .put("visitedMembers", JSONArray(checkpoint.visitedMembers))
+                .put("nextMemberName", checkpoint.nextMemberName)
+                .put("nextTask", checkpoint.nextTask.take(2_000))
+                .put("handoff", checkpoint.handoff.take(2_000))
+                .put("delegationCount", checkpoint.delegationCount)
+        val emptyCollaborativeCheckpoint = ExpertTeamCollaborativeCheckpoint()
         val initialCheckpoint = "team_run:" + JSONObject()
             .put("teamFingerprint", teamFingerprint)
             .put("members", JSONArray().apply {
@@ -89,13 +129,16 @@ class ExpertTeamExecutionCoordinator(
                         .put("attempts", row.attempts).put("elapsedMillis", row.elapsedMillis)
                         .put("output", row.output.take(2_200)).put("error", row.error.take(500)))
                 }
-            }).toString()
+            })
+            .put("collaborative", encodeCollaborativeCheckpoint(resumeCollaborative ?: emptyCollaborativeCheckpoint))
+            .toString()
         return taskCoordinator.runInline(
             taskId = taskId,
             owner = "expert_team",
             initialCheckpoint = initialCheckpoint
         ) { taskContext ->
         taskContext.checkpoint(initialCheckpoint, resumeMembers.size)
+        var collaborativeCheckpoint = resumeCollaborative ?: emptyCollaborativeCheckpoint
         var eventSequence = 0L
         suspend fun emit(
             type: String,
@@ -144,7 +187,7 @@ class ExpertTeamExecutionCoordinator(
                 onMemberResult = { rows ->
                     taskContext.checkpoint(
                         "team_run:" + JSONObject()
-                            .put("identity", teamIdentity)
+                            .put("teamFingerprint", teamFingerprint)
                             .put("members", JSONArray().apply {
                                 rows.forEach { row ->
                                     put(JSONObject()
@@ -155,7 +198,9 @@ class ExpertTeamExecutionCoordinator(
                                         .put("output", row.output.take(2_200))
                                         .put("error", row.error.take(500)))
                                 }
-                            }).toString()
+                            })
+                            .put("collaborative", encodeCollaborativeCheckpoint(collaborativeCheckpoint))
+                            .toString()
                     )
                 },
                 onMember = { name, status ->
@@ -181,6 +226,18 @@ class ExpertTeamExecutionCoordinator(
                     emit("member_handoff", memberName = from, relatedMemberName = to,
                         status = "requested", message = "子任务：" + subtask + "\n交接内容：" + handoff)
                 },
+                resumeCheckpoint = resumeCollaborative,
+                onCheckpoint = { checkpoint ->
+                    collaborativeCheckpoint = checkpoint
+                    taskContext.checkpoint(
+                        "team_run:" + JSONObject()
+                            .put("teamFingerprint", teamFingerprint)
+                            .put("members", JSONArray())
+                            .put("collaborative", encodeCollaborativeCheckpoint(checkpoint))
+                            .toString(),
+                        checkpoint.completedMembers.size
+                    )
+                },
                 invoke = ::invokeWithLease
             )
         }
@@ -191,7 +248,7 @@ class ExpertTeamExecutionCoordinator(
             message = "成功 " + result.successfulMembers + " 人，失败 " + result.failedMembers + " 人")
         taskContext.checkpoint(
             "team_run:" + JSONObject()
-                .put("identity", teamIdentity)
+                .put("teamFingerprint", teamFingerprint)
                 .put("members", JSONArray().apply {
                     result.members.forEach { row ->
                         put(JSONObject()
@@ -199,7 +256,9 @@ class ExpertTeamExecutionCoordinator(
                             .put("attempts", row.attempts).put("elapsedMillis", row.elapsedMillis)
                             .put("output", row.output.take(2_200)).put("error", row.error.take(500)))
                     }
-                }).toString(),
+                })
+                .put("collaborative", encodeCollaborativeCheckpoint(collaborativeCheckpoint))
+                .toString(),
             result.members.size
         )
         result.copy(projectId = projectId)
