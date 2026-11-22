@@ -249,3 +249,29 @@
 - `AgentTaskExecutionContext.waitForUser()` 已存在并会持久化 `AgentTaskStatus.WAITING_FOR_USER`，说明应复用现有能力，而不是再建一套审批状态存储。
 - 本项已确认是具体接线缺口；尚未修改代码，待完成十九模块全量审计后按最小改动修复，并补充“等待时持久状态、批准后恢复、拒绝后终止、停止时取消等待”的测试。
 
+
+## 2026-11-22 模块 1–4 源码定向复核
+
+### 模块1：专家系统
+- 已核实自然语言主模型自动组织团队的调用链：`ModelLedToolDispatcher` 提供 `expert_team.run`；仅当当前项目有至少两位启用专家时开放；`NestroApp.kt` 优先使用用户选定团队/手动成员，否则使用主模型从当前专家目录选出的 2–4 位成员。
+- 主模型生成的 `plan` 会解析为 `ExpertProjectPlan` / `ExpertWorkPackage`，交给 `ExpertTeamExecutionCoordinator.executeProjectPlan()` 执行；独立工作包可并行，依赖包按 DAG 等待，结果回传主模型复核。专家会按配置加载关联 Skill 上下文。
+- `ExpertProjectPlanExecutorTest`、`ExpertTeamExecutionCoordinatorTest`、`ExpertTeamEngineTest` 等测试源码存在。此前记录的检查点/恢复实现确实在当前分支。
+- 当前仍不完整的产品交互：专家双向自由交流/私聊、可编辑任务图、用户可见的暂停/恢复/返工控制、完整历史分页及结构化验收返工协议。不能把“专家可自主分工”扩大解释为上述交互均已完成。
+
+### 模块2：模型管理
+- `ModelRegistry` / `ModelConfigurationRepository` / `ModelRequestConfigurationSelector` 将服务商、模型、API Key ID 分离；实际密钥由 `LocalVault` 按调用时读取，注册表不保存明文 Key。当前 registry 的 `ModelDefinition` 未记录每个模型的 context-window token 数。
+- 魔搭 OAuth Android 回调由 `MainActivity` 在 `Dispatchers.IO` 调用；`ModelScopeOAuthCallback` 校验 scheme/host/path、handoff 格式与 app_state，再向后端兑换 token 并写入 LocalVault/模型注册表。
+- 后端 `services/modelscope-oauth/src/server.mjs` 已存在：服务端保存 Client Secret、校验一次性 OAuth state、交换授权码、获取 userinfo、生成短时一次性 handoff；README 明确多实例部署前需将内存 TTL store 换成共享 Redis。Node 静态安全测试源码存在，但尚未运行；服务部署、第三方应用注册和 API-Inference 权限仍待真实确认。
+- 当前没有发现 ModelScope OAuth Android 回调/端到端服务联调测试；不能将 OAuth 代码已写入描述为 OAuth 已真实可用。
+
+### 模块3：聊天系统与主模型调度
+- `ChatRequestExecutionCoordinator` 负责单次聊天上下文、主模型工具调度、流式输出与最终落库；`ModelLedToolDispatcher` 使用原生工具调用，并只在供应商明确不支持原生 function calling 时回退兼容文本协议。
+- `ChatRequestContextAssembler` 并行获取被策略选中的会话记忆和用户记忆；`ChatRequestRecoveryCoordinator` 保存/恢复中断请求；对应 JVM 与 Android persistence 测试源码存在。
+- 明确缺口：`ChatRequestPolicy.boundedHistory()` 默认固定 16,384 context tokens / 2,048 output reserve；`ModelDefinition` 未提供真实 context window 元数据，尚未实现按当前模型真实上下文窗口动态预算。不能把固定估算称为模型自适应上下文管理。
+- 主模型视频生成工具已接入；多模态分析工具缺口另见本文件专项记录。
+
+### 模块4：数据与备份
+- `LocalBackupRepository` 是全局 JSON 备份主入口，`ProjectPackageCodec` 是项目包边界；媒体编辑器另有独立 ZIP 工程备份/恢复，覆盖时间线、素材原文件和校验。
+- 媒体 ZIP 仍未并入通用 JSON 设备备份/项目包；这不是同一功能重复实现，而是当前数据覆盖边界分离。后续需判断是统一备份格式还是明确保留独立媒体工程包并提供完整恢复说明，不能简单删除其中任一实现。
+- 已有 `LocalBackupRoundTripTest`、`LocalBackupCompatibilityTest`、`ProjectPackageCodecTest` 和 ArtifactStore 备份验证测试源码；全量 Android 往返/升级/媒体素材恢复尚待统一执行。
+
