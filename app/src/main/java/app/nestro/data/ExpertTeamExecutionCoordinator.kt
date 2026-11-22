@@ -217,8 +217,15 @@ class ExpertTeamExecutionCoordinator(
         invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
     ): ExpertProjectExecutionResult {
         val planIdentity = JSONObject()
+            .put("teamName", teamName)
+            .put("teamDescription", teamDescription)
             .put("goal", plan.projectGoal)
             .put("acceptance", plan.finalAcceptanceCriteria)
+            .put("members", JSONArray().apply {
+                members.toSortedMap().forEach { (name, member) ->
+                    put(JSONObject().put("name", name).put("rolePrompt", member.rolePrompt))
+                }
+            })
             .put("packages", JSONArray().apply {
                 plan.packages.forEach { item ->
                     put(JSONObject()
