@@ -103,6 +103,8 @@ object ExpertProjectPlanExecutor {
         availableMembers: Set<String>,
         maxParallel: Int = 4,
         shouldStop: () -> Boolean = { false },
+        resumeResults: List<ExpertWorkPackageResult> = emptyList(),
+        onPackageResult: suspend (List<ExpertWorkPackageResult>) -> Unit = {},
         invoke: suspend (memberName: String, instruction: String) -> String,
         onPackage: suspend (packageId: String, status: String, detail: String) -> Unit = { _, _, _ -> },
         onHandoff: suspend (fromPackageId: String, toPackageId: String, fromMember: String, toMember: String, artifact: String) -> Unit = { _, _, _, _, _ -> }
@@ -110,11 +112,17 @@ object ExpertProjectPlanExecutor {
         require(maxParallel in 1..4) { "并发上限必须在 1 到 4 之间" }
         validate(plan, availableMembers)
         val semaphore = Semaphore(maxParallel)
+        require(resumeResults.all { row -> plan.packages.any { it.id == row.packageId } }) {
+            "恢复检查点包含当前项目计划之外的工作包"
+        }
         val results = linkedMapOf<String, ExpertWorkPackageResult>()
+        resumeResults.filter { it.status == "success" }.forEach { results[it.packageId] = it }
         for (wave in topologicalWaves(plan)) {
+            val pendingWave = wave.filterNot { it.id in results }
+            if (pendingWave.isEmpty()) continue
             if (shouldStop()) throw CancellationException("用户停止专家项目")
             val waveResults = coroutineScope {
-                wave.map { item ->
+                pendingWave.map { item ->
                     async {
                         semaphore.withPermit {
                             if (shouldStop()) throw CancellationException("用户停止专家项目")
@@ -170,7 +178,10 @@ object ExpertProjectPlanExecutor {
                     }
                 }.awaitAll()
             }
-            waveResults.forEach { results[it.packageId] = it }
+            waveResults.forEach { row ->
+                results[row.packageId] = row
+                onPackageResult(results.values.toList())
+            }
         }
         return ExpertProjectExecutionResult(
             plan = plan,
