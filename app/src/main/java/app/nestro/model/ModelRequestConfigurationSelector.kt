@@ -38,7 +38,10 @@ internal object ModelRequestConfigurationSelector {
                 profiles.filter { it.id != activeProfileId && it.id in selectableIds }
                     .forEach { profile ->
                         val key = readKey(profile.id)
-                        if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
+                        if (key.isNotBlank()) add(ModelConfig(
+                            profile.baseUrl, profile.model, key,
+                            contextWindowTokens = registry.models.firstOrNull { it.id == "legacy-model-${profile.id}" }?.contextWindowTokens
+                        ))
                     }
             }
         }.distinctBy { "${it.baseUrl}|${it.model}" }
@@ -79,7 +82,8 @@ internal object ModelRequestConfigurationSelector {
                 ModelConfig(
                     provider.baseUrl, model.modelCode, secret,
                     reasoningEffort.takeIf { model.supportsReasoningEffort },
-                    provider.protocol
+                    provider.protocol,
+                    model.contextWindowTokens
                 )
             }
         }
