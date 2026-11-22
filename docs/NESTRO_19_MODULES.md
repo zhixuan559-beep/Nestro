@@ -240,6 +240,7 @@
 - [x] AgentCapabilityRegistry / AgentToolLeaseRegistry：按任务/操作授权工具集合，防止跨任务复用临时工具租约。
 - [x] AgentCredentialLeaseRegistry：按任务/工具发放短时凭据租约并支持撤销。
 - [x] MCP 动态工具注册、插件目录、声明式 GeneratedPluginFactory 和工具指纹校验。
+- [x] Android `ACTION_ASSIST` 系统助手入口、`ROLE_ASSISTANT` 运行时可用性/持有状态检查和系统授权 Intent；当前是系统助手调用入口。
 - [ ] 生成式插件执行目前绕开 AgentTaskCoordinator，缺可恢复步骤 checkpoint/handler。
 - [ ] 生成式插件自定义权限路由对 EXTERNAL_WRITE 直接 Allow，未尊重 requiresConfirmation；必须接回统一审批。
 - [ ] MCP 工具中心长期授权与任务级一次/当前任务全部授权语义需明确。
