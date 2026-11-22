@@ -988,22 +988,25 @@ class NestroApplication : Application() {
                 database.dao().resumableAgentApprovalAudits().map { it.toRecord() }
             },
             resumeTask = { scopeId ->
-                val restartReason = "应用曾在任务执行期间退出；请核对当前状态后继续"
-                suspend fun resumeIfInterrupted(taskId: String): Boolean {
-                    val state = agentTaskCoordinator.state(taskId) ?: return false
+                val state = agentTaskCoordinator.state(scopeId)
+                if (state != null) {
+                    val restartReason = "应用曾在任务执行期间退出；请核对当前状态后继续"
                     val resumable = state.status == AgentTaskStatus.WAITING_FOR_USER ||
                         (state.status == AgentTaskStatus.PAUSED && state.lastError == restartReason)
-                    if (!resumable) return false
-                    agentTaskCoordinator.resume(taskId)
-                    return true
+                    if (resumable) {
+                        when (state.kind) {
+                            "mcp_tool" -> mcpToolCenterService.resume(scopeId)
+                            "media_ai" -> MediaAiTaskScheduler.resume(this@NestroApplication, state.projectId, state.input)
+                            "media_render" -> app.nestro.media.MediaRenderWorker.resume(this@NestroApplication, state.projectId, state.input)
+                            "calendar_automation", "phone_agent" -> agentTaskCoordinator.resume(scopeId)
+                            // Workflow, expert-team and chat/plugin runInline handlers are
+                            // re-entered by their owning coordinator or restored UI. Enqueuing
+                            // them here without re-registering their handler would fail closed.
+                            else -> Unit
+                        }
+                    }
                 }
-
-                val chatTaskId = "chat-tools-$scopeId".take(120)
-                if (!resumeIfInterrupted(scopeId) && !resumeIfInterrupted(chatTaskId)) {
-                    database.dao().recoverableGeneratedPluginTaskStates()
-                        .filter { it.input.contains("request_id=$scopeId") }
-                        .forEach { row -> resumeIfInterrupted(row.taskId) }
-                }
+                Unit
             }
         )
     }

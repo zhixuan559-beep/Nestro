@@ -36,7 +36,19 @@ class ChatRequestRecoveryPersistenceTest {
 
             val restored = persistence.loadMessages("conversation-1").orEmpty()
             assertEquals(listOf("原始问题", "已生成部分\n\n[请求中断，已保留已接收内容]"), restored.map { it.content })
-            assertNull(preferences.getString("chat_request_state_v1", null))
+            val restoredMarker = ChatRequestStateStore.load(preferences)
+            assertEquals("restored", restoredMarker?.status)
+            assertEquals("request-1", restoredMarker?.requestId)
+            assertEquals("", restoredMarker?.partialAnswer)
+
+            coordinator.recover(
+                preferences = preferences,
+                conversations = listOf(ConversationRecord("conversation-1", "新对话", 1L, restored, "project-1")),
+                databaseReady = true,
+                activeConversationId = "conversation-1"
+            )
+            assertEquals(2, persistence.loadMessages("conversation-1").orEmpty().size)
+            assertEquals("request-1", ChatRequestStateStore.load(preferences)?.requestId)
         } finally {
             preferences.edit().clear().commit()
             database.close()

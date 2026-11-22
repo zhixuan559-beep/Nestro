@@ -1066,13 +1066,25 @@ fun NestroApp(initialPage: String = "home") {
             teamRunStatus = ""
             teamMemberStatuses = emptyMap()
             val requestConversationId = activeConversationId
+            val requestProjectId = activeProjectId
             val requestHistory = messages.toList()
             val previousAssistant = pendingAssistantRevision
             pendingAssistantRevision = null
-            val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
+            val restoredRequest = ChatRequestStateStore.load(prefs)?.takeIf { it.status == "restored" }
+            val resumableRequest = restoredRequest?.takeIf {
+                previousAssistant == null &&
+                    it.conversationId == requestConversationId &&
+                    it.projectId == requestProjectId &&
+                    it.prompt.trim() == prompt
+            }
+            val assistantId = previousAssistant?.id ?: resumableRequest?.requestId ?: UUID.randomUUID().toString()
+            if (restoredRequest != null && resumableRequest == null) {
+                scope.launch(Dispatchers.IO) {
+                    appRuntime.agentApprovalCoordinator.endScopeAndAudit(restoredRequest.requestId, "CANCELLED")
+                }
+            }
             activeRequestId = assistantId
             activeRequestConversationId = requestConversationId
-            val requestProjectId = activeProjectId
             val requestReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
                 prefs, requestProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
             ) else emptySet()
@@ -4321,6 +4333,13 @@ fun NestroApp(initialPage: String = "home") {
                                     app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE
                                 )
                             }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "授权已记录，重新发送恢复的原请求即可继续。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "授权已记录，点击“继续未完成工作流”即可恢复。"
+                            }
                             refreshApprovalQueue(showNext = true)
                         }
                     }) { Text("授权一次", color = Mint) }
@@ -4331,6 +4350,13 @@ fun NestroApp(initialPage: String = "home") {
                                     approval.request.id,
                                     app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK
                                 )
+                            }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "当前请求已授权，重新发送恢复的原请求即可继续。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "当前工作流已授权，点击“继续未完成工作流”即可恢复。"
                             }
                             refreshApprovalQueue(showNext = true)
                         }
@@ -4347,6 +4373,13 @@ fun NestroApp(initialPage: String = "home") {
                                     approval.request.id,
                                     app.nestro.agent.AgentApprovalDecision.REJECT
                                 )
+                            }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "已拒绝，重新发送恢复的原请求后将按拒绝结果处理。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "该操作已拒绝，继续工作流时将按拒绝结果处理。"
                             }
                             refreshApprovalQueue(showNext = true)
                         }

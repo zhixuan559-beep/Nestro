@@ -30,6 +30,18 @@ class ChatRequestRecoveryCoordinatorTest {
     }
 
     @Test
+    fun restoredRequestMarkerKeepsItsStableIdButDoesNotReplayPartialAnswer() {
+        val pending = parsePendingChatRequest(
+            """{"status":"restored","request_id":"r2","conversation_id":"c2","project_id":"p2","prompt":"继续","partial_answer":"旧部分","started_at":1234}"""
+        )
+
+        assertEquals("r2", pending?.requestId)
+        assertEquals("restored", pending?.status)
+        assertEquals("", pending?.partialAnswer)
+        assertEquals(1234L, pending?.startedAt)
+    }
+
+    @Test
     fun runningRequestWithoutStableIdentifiersIsIgnored() {
         assertNull(parsePendingChatRequest("""{"status":"running","request_id":"","conversation_id":"c"}"""))
         assertNull(parsePendingChatRequest("""{"status":"running","request_id":"r","conversation_id":""}"""))
