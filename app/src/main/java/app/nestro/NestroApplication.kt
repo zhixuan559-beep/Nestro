@@ -450,199 +450,165 @@ class NestroApplication : Application() {
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，插件执行已阻止")
                 val inputNames = plugin.inputs.map { it.name }.toSet()
                 val inputs = rawArguments.filterKeys { it in inputNames }
-                val taskId = "plugin-${plugin.id}-${java.util.UUID.randomUUID()}".take(120)
-                val states = RoomAgentTaskStateStore(database.dao())
-                val requestId = rawArguments["__nestro_request_id"]?.trim()?.take(120).orEmpty().ifBlank { taskId }
+                val requestId = rawArguments["__nestro_request_id"]?.trim()?.take(120).orEmpty()
+                    .ifBlank { java.util.UUID.randomUUID().toString() }
                 val inputFingerprint = java.security.MessageDigest.getInstance("SHA-256")
                     .digest(inputs.toSortedMap().entries.joinToString("|") { "${it.key}=${it.value}" }.toByteArray())
                     .joinToString("") { "%02x".format(it) }
                 val idempotencyKey = "plugin:" + java.security.MessageDigest.getInstance("SHA-256")
                     .digest("$projectId|${plugin.id}|$requestId|$inputFingerprint".toByteArray())
                     .joinToString("") { "%02x".format(it) }
-                val initialTaskState = app.nestro.agent.AgentTaskState(
-                    taskId = taskId,
-                    owner = "generated-plugin:${plugin.id}",
-                    status = app.nestro.agent.AgentTaskStatus.RUNNING,
-                    projectId = projectId,
-                    kind = "generated_plugin",
-                    capabilityId = plugin.id,
-                    title = plugin.name.take(160),
-                    input = inputs.keys.sorted().joinToString(",").take(1_000),
-                    idempotencyKey = idempotencyKey,
-                    maxRetries = 2,
-                    startedAt = System.currentTimeMillis()
-                )
-                val canonicalTask = states.putIfAbsent(initialTaskState)
-                if (canonicalTask.taskId != taskId) {
-                    return@register when (canonicalTask.status) {
-                        app.nestro.agent.AgentTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
-                            true,
-                            output = canonicalTask.resultSummary.ifBlank { "该插件请求此前已完成。" } +
-                                "\ntask_id=${canonicalTask.taskId}"
-                        )
-                        app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER -> app.nestro.agent.AgentToolResult(
+                val taskDigest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(idempotencyKey.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+                val taskId = "plugin-${plugin.id}-${taskDigest.take(32)}".take(120)
+                val states = RoomAgentTaskStateStore(database.dao())
+                val existingTask = states.getByIdempotencyKey(idempotencyKey)
+                if (existingTask != null) {
+                    if (existingTask.taskId != taskId) {
+                        return@register app.nestro.agent.AgentToolResult(
                             false,
-                            error = "该插件请求已暂停在等待用户确认的步骤。task_id=${canonicalTask.taskId}",
-                            requiresUser = true
+                            error = "该插件请求存在旧版任务记录，不能安全自动恢复。请核对执行审计后重新发起。task_id=${existingTask.taskId}"
+                        )
+                    }
+                    when (existingTask.status) {
+                        app.nestro.agent.AgentTaskStatus.COMPLETED -> return@register app.nestro.agent.AgentToolResult(
+                            true,
+                            output = existingTask.resultSummary.ifBlank { "该插件请求此前已完成。" } +
+                                "\ntask_id=${existingTask.taskId}"
                         )
                         app.nestro.agent.AgentTaskStatus.QUEUED,
                         app.nestro.agent.AgentTaskStatus.RUNNING,
-                        app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> app.nestro.agent.AgentToolResult(
+                        app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> return@register app.nestro.agent.AgentToolResult(
                             false,
-                            error = "该插件请求已在执行或等待重试，已阻止重复启动。task_id=${canonicalTask.taskId}; status=${canonicalTask.status.name}"
+                            error = "该插件请求已在执行或等待重试，已阻止重复启动。task_id=${existingTask.taskId}; status=${existingTask.status.name}"
                         )
-                        else -> app.nestro.agent.AgentToolResult(
-                            false,
-                            error = "该插件请求此前未成功完成（${canonicalTask.status.name}），已阻止重复执行。请核对任务记录后重新发起。task_id=${canonicalTask.taskId}"
-                        )
-                    }
-                }
-                suspend fun updatePluginTaskState(
-                    status: app.nestro.agent.AgentTaskStatus,
-                    error: String = "",
-                    resultSummary: String = ""
-                ) {
-                    val current = states.get(taskId) ?: initialTaskState
-                    val terminal = status in setOf(
-                        app.nestro.agent.AgentTaskStatus.COMPLETED,
                         app.nestro.agent.AgentTaskStatus.FAILED,
-                        app.nestro.agent.AgentTaskStatus.CANCELLED
-                    )
-                    states.put(current.copy(
-                        status = status,
-                        lastError = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) "" else error.take(2_000),
-                        resultSummary = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) resultSummary.take(8_000) else current.resultSummary,
-                        availableAt = if (status == app.nestro.agent.AgentTaskStatus.RETRY_WAIT) current.availableAt else 0L,
-                        finishedAt = if (terminal) System.currentTimeMillis() else 0L,
-                        updatedAt = System.currentTimeMillis()
-                    ))
-                }
-                var retryAttempt = 0
-                // Replaying a workflow is safe only while every attempted step is read-only.
-                // Once a write/device action starts, a timeout may have an unknown outcome.
-                var wholeWorkflowReplaySafe = true
-                var executionResult: app.nestro.agent.AgentToolResult? = null
-                while (executionResult == null) {
-                    try {
-                        executionResult = GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
-                        if (catalog.find(stepToolId)?.permission != app.nestro.agent.AgentToolPermission.READ_ONLY) {
-                            wholeWorkflowReplaySafe = false
-                        }
-                        val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
-                        val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
-                            CapabilityRegistryStore.registerIfAbsent(
-                                capabilityPrefs,
-                                CapabilityDescriptor(
-                                    id = tool.id,
-                                    title = tool.id,
-                                    category = tool.permission.name.lowercase(),
-                                    description = tool.description.take(500),
-                                    source = if (tool.id.startsWith("mcp_")) "mcp" else "builtin",
-                                    requiresConfirmation = tool.requiresConfirmation ||
-                                        tool.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
-                                    defaultGranted = if (tool.id.startsWith("mcp_")) {
-                                        mcpToolCenterRepository.isToolGranted(tool.id)
-                                    } else true
-                                )
-                            )
-                            if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
-                                app.nestro.agent.AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
-                            } else if (tool.id.startsWith("mcp_")) {
-                                val descriptor = mcpToolCenterRepository.findTool(tool.id)
-                                val globallyGranted = mcpToolCenterRepository.isToolGranted(tool.id)
-                                val projectGranted = descriptor?.let {
-                                    CapabilityRegistryStore.authorizeToolCall(
-                                        capabilityPrefs, task.projectId, it.serverId, it.name,
-                                        defaultGranted = globallyGranted,
-                                        globallyEnabled = globallyGranted
-                                    )
-                                } == true
-                                if (globallyGranted && projectGranted) app.nestro.agent.AgentAuthorization.Allow
-                                else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
-                            } else if (tool.permission in setOf(
-                                app.nestro.agent.AgentToolPermission.READ_ONLY,
-                                app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
-                            )) app.nestro.agent.AgentAuthorization.Allow
-                            else app.nestro.agent.AgentAuthorization.Deny("该高风险能力不能由生成插件执行")
-                        }
-                        val runtime = DefaultAgentRuntime(
-                            catalog = lease.access,
-                            permissions = permissionRouter,
-                            states = states,
-                            traces = RoomAgentTaskTraceStore(database.dao())
+                        app.nestro.agent.AgentTaskStatus.CANCELLED -> return@register app.nestro.agent.AgentToolResult(
+                            false,
+                            error = "该插件请求此前以不确定状态结束。为避免重复外部写入，未自动重放；请核对执行审计后重新发起。task_id=${existingTask.taskId}"
                         )
-                        try {
-                            runtime.execute(
-                                app.nestro.agent.AgentToolRequest(
-                                    taskId,
-                                    stepToolId,
-                                    if (stepToolId.startsWith("mcp_")) stepArguments
-                                    else stepArguments + ("__nestro_project_id" to projectId)
-                                )
-                            )
-                        } finally {
-                            AgentToolLeaseRegistry.release(lease.id)
-                        }
-                    }
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件执行已暂停")
-                        throw cancelled
-                    } catch (error: Exception) {
-                        if (!wholeWorkflowReplaySafe ||
-                            !app.nestro.agent.AgentTaskRetryPolicy.isRetryable(error) ||
-                            retryAttempt >= 2
-                        ) {
-                            updatePluginTaskState(app.nestro.agent.AgentTaskStatus.FAILED, error.message.orEmpty())
-                            return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
-                        }
-                        retryAttempt++
-                        val waitMillis = app.nestro.agent.AgentTaskRetryPolicy.backoffMillis(retryAttempt)
-                        val now = System.currentTimeMillis()
-                        val current = states.get(taskId) ?: initialTaskState
-                        states.put(current.copy(
-                            status = app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
-                            attempts = retryAttempt,
-                            maxRetries = 2,
-                            availableAt = now + waitMillis,
-                            lastError = error.message.orEmpty().take(2_000),
-                            updatedAt = now
-                        ))
-                        try {
-                            RoomAgentTaskTraceStore(database.dao()).append(
-                                app.nestro.agent.AgentTaskTrace(
-                                    taskId = taskId,
-                                    event = "retry_scheduled",
-                                    detail = "插件临时错误；第 ${retryAttempt} 次重试将在 ${waitMillis}ms 后执行"
-                                )
-                            )
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            // Retry execution must not be blocked by a non-critical trace write.
-                        }
-                        try {
-                            delay(waitMillis)
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件重试等待已暂停")
-                            throw cancelled
-                        }
-                        val waiting = states.get(taskId) ?: current
-                        states.put(waiting.copy(
-                            status = app.nestro.agent.AgentTaskStatus.RUNNING,
-                            availableAt = 0L,
-                            lastError = "",
-                            updatedAt = System.currentTimeMillis()
-                        ))
+                        else -> Unit
                     }
                 }
-                val execution = executionResult ?: error("插件执行未产生结果")
-                updatePluginTaskState(
-                    if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
-                    else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
-                    else app.nestro.agent.AgentTaskStatus.FAILED,
-                    if (execution.success) "" else execution.output,
-                    resultSummary = if (execution.success) execution.output else ""
-                )
+                val conversationId = rawArguments["__nestro_conversation_id"].orEmpty().take(120)
+                val coordinator = agentTaskCoordinator
+                val execution = try {
+                    coordinator.runInline(
+                        taskId = taskId,
+                        owner = "generated-plugin:${plugin.id}",
+                        initialCheckpoint = GeneratedPluginRunCheckpointCodec.encode(plugin, inputs, emptyList()),
+                        metadata = app.nestro.agent.AgentTaskMetadata(
+                            projectId = projectId,
+                            conversationId = conversationId,
+                            kind = "generated_plugin",
+                            capabilityId = plugin.id,
+                            title = plugin.name.take(160),
+                            input = inputs.keys.sorted().joinToString(",").take(1_000)
+                        ),
+                        idempotencyKey = idempotencyKey,
+                        // Plugin tool failures may have an unknown external-write outcome.
+                        // Retry policy is centralized separately after per-step idempotency is complete.
+                        maxRetries = 0
+                    ) { taskContext ->
+                        val savedCheckpoint = coordinator.state(taskId)?.checkpoint.orEmpty()
+                        val result = GeneratedPluginWorkflowExecutor.execute(
+                            plugin = plugin,
+                            inputs = inputs,
+                            discovery = catalog,
+                            resumeCheckpoint = savedCheckpoint,
+                            onStepCheckpoint = { currentStep, checkpoint ->
+                                taskContext.checkpoint(checkpoint, currentStep)
+                            }
+                        ) { stepToolId, stepArguments ->
+                            val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
+                            val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
+                                CapabilityRegistryStore.registerIfAbsent(
+                                    capabilityPrefs,
+                                    CapabilityDescriptor(
+                                        id = tool.id,
+                                        title = tool.id,
+                                        category = tool.permission.name.lowercase(),
+                                        description = tool.description.take(500),
+                                        source = if (tool.id.startsWith("mcp_")) "mcp" else "builtin",
+                                        requiresConfirmation = tool.requiresConfirmation ||
+                                            tool.permission != app.nestro.agent.AgentToolPermission.READ_ONLY,
+                                        defaultGranted = if (tool.id.startsWith("mcp_")) {
+                                            mcpToolCenterRepository.isToolGranted(tool.id)
+                                        } else true
+                                    )
+                                )
+                                if (!CapabilityRegistryStore.authorize(capabilityPrefs, task.projectId, tool.id)) {
+                                    app.nestro.agent.AgentAuthorization.Deny("当前项目未授权该能力，或能力授权审计无法保存")
+                                } else if (tool.id.startsWith("mcp_")) {
+                                    val descriptor = mcpToolCenterRepository.findTool(tool.id)
+                                    val globallyGranted = mcpToolCenterRepository.isToolGranted(tool.id)
+                                    val projectGranted = descriptor?.let {
+                                        CapabilityRegistryStore.authorizeToolCall(
+                                            capabilityPrefs, task.projectId, it.serverId, it.name,
+                                            defaultGranted = globallyGranted,
+                                            globallyEnabled = globallyGranted
+                                        )
+                                    } == true
+                                    if (globallyGranted && projectGranted) app.nestro.agent.AgentAuthorization.Allow
+                                    else app.nestro.agent.AgentAuthorization.Deny("MCP 工具未获当前项目授权，或服务授权已撤销")
+                                } else if (tool.permission in setOf(
+                                    app.nestro.agent.AgentToolPermission.READ_ONLY,
+                                    app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE
+                                )) app.nestro.agent.AgentAuthorization.Allow
+                                else app.nestro.agent.AgentAuthorization.Deny("该高风险能力不能由生成插件执行")
+                            }
+                            val runtime = DefaultAgentRuntime(
+                                catalog = lease.access,
+                                permissions = permissionRouter,
+                                states = states,
+                                traces = RoomAgentTaskTraceStore(database.dao())
+                            )
+                            try {
+                                runtime.execute(
+                                    app.nestro.agent.AgentToolRequest(
+                                        taskId,
+                                        stepToolId,
+                                        if (stepToolId.startsWith("mcp_")) stepArguments
+                                        else stepArguments + ("__nestro_project_id" to projectId)
+                                    )
+                                )
+                            } finally {
+                                AgentToolLeaseRegistry.release(lease.id)
+                            }
+                        }
+                        when {
+                            result.requiresUser -> taskContext.waitForUser(result.output.ifBlank { "插件步骤需要用户确认" })
+                            !result.success -> {
+                                val current = states.get(taskId)
+                                if (current != null) states.put(current.copy(
+                                    status = app.nestro.agent.AgentTaskStatus.FAILED,
+                                    lastError = result.output.take(2_000),
+                                    finishedAt = System.currentTimeMillis(),
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                            else -> {
+                                val current = states.get(taskId)
+                                if (current != null) states.put(current.copy(
+                                    status = app.nestro.agent.AgentTaskStatus.COMPLETED,
+                                    lastError = "",
+                                    resultSummary = result.output.take(8_000),
+                                    finishedAt = System.currentTimeMillis(),
+                                    updatedAt = System.currentTimeMillis()
+                                ))
+                            }
+                        }
+                        result
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    return@register app.nestro.agent.AgentToolResult(
+                        false,
+                        error = error.message?.take(2_000) ?: "插件执行失败"
+                    )
+                }
                 app.nestro.agent.AgentToolResult(
                     success = execution.success,
                     output = execution.output,
