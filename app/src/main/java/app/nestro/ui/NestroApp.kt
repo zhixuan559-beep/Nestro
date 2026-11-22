@@ -1343,7 +1343,8 @@ fun NestroApp(initialPage: String = "home") {
                             modelConfigs = requestModelConfigs,
                             projectId = requestProjectId,
                             conversationId = requestConversationId,
-                            messageId = requestHistory.lastOrNull { it.role == "user" }?.id.orEmpty()
+                            messageId = requestHistory.lastOrNull { it.role == "user" }?.id.orEmpty(),
+                            recentUserMessages = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content }
                         )
                     }
                 }
