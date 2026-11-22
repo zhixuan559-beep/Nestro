@@ -337,9 +337,9 @@ class NestroApplication : Application() {
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "缺少当前项目范围，插件执行已阻止")
                 val inputNames = plugin.inputs.map { it.name }.toSet()
                 val inputs = rawArguments.filterKeys { it in inputNames }
-                val taskId = "plugin-${java.util.UUID.randomUUID()}".take(120)
+                val taskId = "plugin-${plugin.id}-${java.util.UUID.randomUUID()}".take(120)
                 val states = RoomAgentTaskStateStore(database.dao())
-                states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin", status = app.nestro.agent.AgentTaskStatus.RUNNING))
+                states.put(app.nestro.agent.AgentTaskState(taskId = taskId, owner = "generated-plugin:${plugin.id}", status = app.nestro.agent.AgentTaskStatus.RUNNING))
                 val execution = try {
                     GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
                         val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
