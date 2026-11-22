@@ -55,6 +55,7 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import org.json.JSONObject
 
 private val calendarDateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
 private val calendarTimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
@@ -279,6 +280,35 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                                         else -> "恢复任务"
                                     }
                                 )
+                            }
+                            if (task.status in setOf(
+                                    AgentTaskStatus.WAITING_FOR_USER,
+                                    AgentTaskStatus.WAITING_FOR_TASK,
+                                    AgentTaskStatus.PAUSED
+                                )
+                            ) {
+                                OutlinedButton(onClick = {
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                requireNotNull(appRuntime) { "统一任务机暂不可用" }
+                                                    .agentTaskCoordinator.cancel(task.taskId)
+                                                val eventId = runCatching { JSONObject(task.input).optString("eventId") }.getOrDefault("")
+                                                if (eventId.isNotBlank()) {
+                                                    repository.recordAutomationResult(
+                                                        eventId,
+                                                        "CANCELLED",
+                                                        error = "用户取消日历自动任务"
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        status = result.fold(
+                                            { "日历自动任务已取消。" },
+                                            { "取消失败：${it.message ?: "未知错误"}" }
+                                        )
+                                    }
+                                }) { Text("取消自动任务") }
                             }
                         }
                     }
