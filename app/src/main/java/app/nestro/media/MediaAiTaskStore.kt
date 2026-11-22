@@ -93,7 +93,9 @@ object MediaAiTaskStore {
     @Synchronized fun update(context: Context, projectId: String, taskId: String, status: MediaAiTaskStatus?=null,
         progress: Int?=null, resultJson: String?=null, resultConsumed: Boolean?=null, errorMessage: String?=null): MediaAiTask {
         val old=read(context,projectId,taskId) ?: error("媒体 AI 任务不存在")
-        require(old.status !in setOf(MediaAiTaskStatus.COMPLETED,MediaAiTaskStatus.CANCELLED) || status==old.status) { "终态 AI 任务不可覆盖" }
+        require(status == null || old.status !in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.CANCELLED) || status == old.status) {
+            "终态 AI 任务不可重置"
+        }
         require(resultJson==null || resultJson.length<=2_000_000) { "AI 任务结果超过 2 MB" }
         val next=old.copy(status=status ?: old.status,progress=progress?.coerceIn(0,100) ?: old.progress,
             resultJson=resultJson ?: old.resultJson,resultConsumed=resultConsumed ?: old.resultConsumed,
@@ -319,6 +321,26 @@ object MediaAiTaskScheduler {
         )
     }
 
+    suspend fun read(context: Context, projectId: String, taskId: String): MediaAiTask? {
+        val task = MediaAiTaskStore.read(context, projectId, taskId) ?: return null
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication ?: return task
+        val unified = nestroApp.agentTaskCoordinator.state("media-ai:$taskId")
+        val status = when (unified?.status) {
+            app.nestro.agent.AgentTaskStatus.CREATED,
+            app.nestro.agent.AgentTaskStatus.QUEUED,
+            app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> MediaAiTaskStatus.QUEUED
+            app.nestro.agent.AgentTaskStatus.RUNNING -> MediaAiTaskStatus.RUNNING
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+            app.nestro.agent.AgentTaskStatus.PAUSED -> MediaAiTaskStatus.PAUSED
+            app.nestro.agent.AgentTaskStatus.COMPLETED -> MediaAiTaskStatus.COMPLETED
+            app.nestro.agent.AgentTaskStatus.FAILED -> MediaAiTaskStatus.FAILED
+            app.nestro.agent.AgentTaskStatus.CANCELLED -> MediaAiTaskStatus.CANCELLED
+            null -> task.status
+        }
+        return task.copy(status = status, error = unified?.lastError?.ifBlank { task.error } ?: task.error)
+    }
+
     suspend fun list(context: Context, projectId: String): List<MediaAiTask> {
         val nestroApp = context.applicationContext as? app.nestro.NestroApplication
             ?: return MediaAiTaskStore.list(context, projectId)
@@ -346,15 +368,15 @@ object MediaAiTaskScheduler {
             ?: error("媒体 AI 任务无法连接统一任务机")
         MediaAiTaskStore.list(context, projectId).forEach { task ->
             val unified = nestroApp.agentTaskCoordinator.state("media-ai:${task.id}")
-            val shouldWake = unified == null || unified.status in setOf(
+            val shouldWake = when (unified?.status) {
+                null -> task.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)
                 app.nestro.agent.AgentTaskStatus.CREATED,
                 app.nestro.agent.AgentTaskStatus.QUEUED,
                 app.nestro.agent.AgentTaskStatus.RUNNING,
-                app.nestro.agent.AgentTaskStatus.RETRY_WAIT
-            )
-            if (shouldWake && task.status !in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED, MediaAiTaskStatus.PAUSED)) {
-                enqueue(context, projectId, task.id)
+                app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> true
+                else -> false
             }
+            if (shouldWake) enqueue(context, projectId, task.id)
         }
     }
 
@@ -368,7 +390,6 @@ object MediaAiTaskScheduler {
             app.nestro.agent.AgentTaskStatus.RUNNING,
             app.nestro.agent.AgentTaskStatus.RETRY_WAIT
         )) { "当前统一媒体 AI 任务不能暂停：${state.status}" }
-        MediaAiTaskStore.update(context, projectId, taskId, status = MediaAiTaskStatus.PAUSED)
         nestroApp.agentTaskCoordinator.pause("media-ai:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(unique(projectId, taskId))
     }
@@ -385,7 +406,6 @@ object MediaAiTaskScheduler {
         )) { "只有统一任务机中的暂停/等待任务可以恢复" }
         MediaAiTaskStore.update(
             context, projectId, taskId,
-            status = MediaAiTaskStatus.QUEUED,
             progress = 0,
             errorMessage = ""
         )
@@ -405,7 +425,6 @@ object MediaAiTaskScheduler {
             app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
             app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK
         )) { "当前统一媒体 AI 任务不可取消" }
-        MediaAiTaskStore.update(context,projectId,taskId,status=MediaAiTaskStatus.CANCELLED)
         nestroApp.agentTaskCoordinator.cancel("media-ai:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(unique(projectId,taskId))
     }
