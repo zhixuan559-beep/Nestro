@@ -322,7 +322,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] WorkManager 单次提醒、到期系统通知和下一次重复提醒安排。
 - [x] 系统日历读写、导入导出、关联事件更新/删除。
 - [ ] 单次/周期/延迟/时间条件触发统一任务；当前没有延迟触发和时间条件调度模型。
-- [x] 到期 occurrence 已进入 AgentTaskCoordinator，经 calendar_automation handler 调用主模型工具链，可由主模型按需调用 Phone Agent/媒体等工具；专家 DAG/Workflow 直接调度仍需专项核对。
+- [ ] 部分已实现：到期 occurrence 已进入 AgentTaskCoordinator，主模型可调用 Phone Agent/媒体/MCP/插件；当前 calendar_automation 显式设置 expertTeamEnabled=false，工具目录也无 workflow.run，因此专家 DAG/Workflow 直接调度仍未接通。
 - [ ] 部分已实现：状态回写、审批等待、结果/错误回传、暂停/恢复/取消已接入；主模型业务失败按错误类型重试/退避尚未完整。
 - [ ] 部分已实现：nextRunAt/lastRunAt、确定性 occurrence taskId、lastIdempotencyKey 和执行状态已持久化；独立 retryCount/错误分类重试策略仍缺。
 - [x] 已有进程重启恢复、确定性 occurrence taskId/idempotencyKey 去重；设备重启与 WorkManager 竞态仍待统一验收。
@@ -401,3 +401,11 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块19：主模型已注册 media.ai.run/status，可调用 image/transcribe/scenes/audio-clean；scenes 仅是场景分段，不等于通用视频问答，音频理解目前主要为转写，视频生成单独通过 media.video.generate/status。
 
 > 以上代码状态不代表编译/测试/真机验收通过。未执行 Gradle、JVM/Android 测试、模拟器或真机测试。
+
+
+## 2026-11-22 17:15 UTC — 专家团与日历调度边界补充
+
+- 模块1：`ExpertProjectPlanExecutor` 和 `ExpertTeamExecutionCoordinator` 已实现 DAG 依赖波次、并行执行、成员 checkpoint、失败隔离与恢复；`ModelLedToolDispatcher` 已提供 `expert_team.run` 自主组队入口，NestroApp 也支持手动选择团队。仍缺可编辑 DAG、私聊/自由群聊、团队执行暂停/继续/返工 UI、结构化验收/返工协议、临时团队保存/解散入口和协作历史分页。当前团队 UI 显示最近16条，事件持久记录上限100；不应把已存在的 DAG/并行/checkpoint 误判为未实现。
+- 模块18：日历 handler 调用 `ChatRequestExecutionCoordinator` 时 `taskModeEnabled=true` 但明确 `expertTeamEnabled=false`；`ModelLedToolDispatcher` 会过滤 `expert_team.run`，且没有 `workflow.run` 工具。因此当前日历自动任务可调用 Phone Agent、媒体、MCP、插件等能力，但不能直接调用专家 DAG 或工作流。
+- 模块18重试：CalendarAutomationWorker 创建 AgentTaskCoordinator 任务时明确 `maxRetries=0`；WorkManager 的 `runAttemptCount < 3` 只覆盖统一任务机接收前的入队异常，不覆盖主模型业务执行失败。不能简单调高 maxRetries，否则可能重复执行已经发生的外部写入；需要按步骤幂等/检查点设计安全重试后再开放。
+- 模块18 UI：当前仍有独立月/周/日 Calendar 页面，与“日历仅作辅助调度能力、入口嵌入任务/工作流”的产品要求不一致，需在后续界面阶段收敛。
