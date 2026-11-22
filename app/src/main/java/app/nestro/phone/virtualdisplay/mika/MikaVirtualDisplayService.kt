@@ -16,6 +16,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
 import android.view.Display
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -24,6 +25,8 @@ import android.view.Surface
 import android.util.Log
 import com.wangzan101.mika.shell.IMikaShell
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** Runs only inside the dedicated shell-UID helper process. */
 internal class MikaVirtualDisplayService(
@@ -31,6 +34,13 @@ internal class MikaVirtualDisplayService(
 ) : IMikaShell.Stub() {
     private val context: Context = MikaShellContext.create()
     private val displays = ConcurrentHashMap<Int, VirtualDisplay>()
+    private val awakeTimer = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "nestro-display-awake").apply { isDaemon = true }
+    }
+    private val awake = DisplayAwake(::pokeDisplay) { runnable ->
+        val future = awakeTimer.scheduleWithFixedDelay(runnable, 0, DisplayAwake.PERIOD_MS, TimeUnit.MILLISECONDS)
+        { futureCancel -> futureCancel.cancel(false) }
+    }
 
     @SuppressLint("PrivateApi")
     private val displayManager: DisplayManager =
@@ -62,7 +72,9 @@ internal class MikaVirtualDisplayService(
         } ?: return -1
         displays[display.display.displayId] = display
         configureDisplay(display.display.displayId)
-        return display.display.displayId
+        val id = display.display.displayId
+        if (DisplayAwake.needed(flags, FLAG_OWN_DISPLAY_GROUP, displayGroup(id))) awake.start(id)
+        return id
     }
 
     override fun resizeDisplay(displayId: Int, surface: Surface, width: Int, height: Int, dpi: Int): Boolean {
@@ -76,8 +88,27 @@ internal class MikaVirtualDisplayService(
     }
 
     override fun releaseDisplay(displayId: Int) {
+        awake.stop(displayId)
         displays.remove(displayId)?.release()
     }
+
+    @SuppressLint("PrivateApi")
+    private fun pokeDisplay(displayId: Int): Boolean = runCatching {
+        val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java)
+            .invoke(null, "power") as android.os.IBinder
+        val power = Class.forName("android.os.IPowerManager\$Stub")
+            .getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)!!
+        val method = DisplayAwake.userActivityMethod(power.javaClass) ?: return false
+        method.invoke(power, displayId, SystemClock.uptimeMillis(), DisplayAwake.EVENT_TOUCH, 0)
+        true
+    }.getOrDefault(false)
+
+    @SuppressLint("PrivateApi")
+    private fun displayGroup(displayId: Int): Int? = runCatching {
+        val global = Class.forName("android.hardware.display.DisplayManagerGlobal").getMethod("getInstance").invoke(null)!!
+        val info = global.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType).invoke(global, displayId)!!
+        info.javaClass.getField("displayGroupId").getInt(info)
+    }.getOrNull()
 
     override fun startApp(displayId: Int, packageName: String): Int {
         if (!owns(displayId) || !validPackage(packageName)) return START_ERROR
@@ -287,6 +318,7 @@ internal class MikaVirtualDisplayService(
         private const val START_IN_USE_BY_OTHER = 7
         private const val WINDOWING_MODE_FULLSCREEN = 1
         private const val IME_POLICY_LOCAL = 0
+        private const val FLAG_OWN_DISPLAY_GROUP = 1 shl 11
         private const val FLAG_PUBLIC = 1 shl 0
         private const val FLAG_OWN_CONTENT_ONLY = 1 shl 3
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
