@@ -581,6 +581,10 @@ ${prompt.take(8_000)}
         return schema.toString()
     }
 
+    fun endApprovalScope(requestId: String) {
+        approvalCoordinator?.endScope(requestId)
+    }
+
     private companion object {
         const val MAX_TOOL_ROUNDS = 7
         const val DIRECT_UI_UPDATE_CHARS = 16
