@@ -1012,3 +1012,16 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - **并发与协作：** 已实现受限的只读工具并发；通用资源冲突键、动态依赖图、跨模块父子任务/产物引用和创作—执行交替的统一协作协议仍需继续补齐。
 - **验证：** 已新增/调整 inline 预登记、并发安全声明、日历无通知自动触发等测试源码；本轮没有运行 Gradle 编译、JVM 测试、Android instrumentation、模拟器或真机验收。不能据此宣称构建通过。
 
+
+
+## 2026-11-22 第二阶段续作：审批恢复、日历 occurrence 与受限并发
+
+本次代码提交已落入 `integration/19-modules`，当前提交：`2f2bed758100ec2c1430d302ded710d73868020d`。
+
+- **MCP 审批恢复入口：** `McpToolCenterService` 增加按原 taskId 恢复能力，从统一任务状态读取 capabilityId 与参数，再用同一 `runInline` owner 重新注册执行；MCP 页面轮询并显示 WAITING_FOR_USER/PAUSED 任务，恢复时重新走审批。显式拒绝的 FAILED 任务不提供自动重放入口。
+- **日历调度记录：** `CalendarDatabase` 从 v2 升至 v3，新增 `nextRunAt`、`lastRunAt`、`lastTaskId`、`lastIdempotencyKey`；Worker 在向统一任务机提交 occurrence 前写入调度记录，再以 `eventId + occurrenceStart` 幂等键 enqueue。系统日历导入和编辑保存会保留这些字段。
+- **日历恢复：** 自动执行目标与项目范围仍保存在 CalendarEvent；任务通过 `calendar_automation` handler 进入统一任务机，主模型执行请求带父任务 ID，子工具审批状态同步父任务。日历页展示等待审批/依赖/暂停/失败的任务，并允许显式恢复。
+- **媒体 AI / 渲染：** 两类 Worker 已通过 `AgentTaskCoordinator.runInline` 执行，Scheduler 入队前预登记稳定任务 ID，系统唤醒由 WorkManager 承担；领域 JSON 仍保存素材、参数、进度、产物及领域状态，尚需统一状态投影的一致性测试，不能视为领域状态已经删除。
+- **工具并发：** 只允许显式标记的只读工具并发；当前安全名单收敛为知识检索和项目素材列表。MCP、写入、设备操作、需审批工具仍串行。
+- **新增测试源码：** 新增日历自动触发规则测试，覆盖无提醒自动执行、重复 occurrence 和项目范围校验；现有任务协调器测试已覆盖 WorkManager inline 任务预登记、恢复和跨任务并发。
+- **未完成/未验证：** 生成插件跨进程后从原审批步骤自动续跑的统一 UI 入口；MCP/插件/工作流审批请求的持久审计记录与统一决策模型；日历任务完成结果/错误/重试次数回写；媒体领域状态与统一任务状态冲突恢复；通用资源冲突键与跨模块 DAG 交接。当前没有执行 Gradle 编译、JVM 测试、Android instrumentation 或真机验收。
