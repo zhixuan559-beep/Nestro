@@ -84,7 +84,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] 图像理解、音频转写/处理、视频场景识别等媒体 AI 能力已通过 media.ai.run/status 接入聊天主模型，复用现有 MediaAiTaskStore/Worker/Provider；仅处理当前项目已导入素材，视频场景识别不等于通用视频问答；代码已提交，测试待执行。
 - [x] 聊天页支持多选导入图片/音频/视频到当前项目素材库，并将真实 asset_id 附加到草稿供主模型调用媒体工具；代码已提交，待执行 UI/设备测试。
 - [ ] 完整工具流式取消、供应商错误、跨模块状态和真实模型端到端验证。
-- [ ] 独立工具调用的安全并发执行；当前原生工具循环顺序 await，兼容协议每轮单动作，尚未实现同轮并发调度。
+- [x] 受限安全并发已实现：原生工具循环仅并发显式声明的只读、无审批工具（最多 4 个，按原调用顺序回注）；MCP/写入/设备操作仍串行，兼容文本协议仍每轮单动作。
 
 ## 模块4：数据与备份
 
@@ -126,9 +126,9 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] 恢复用户主动授权的跨项目共享记忆：默认关闭，逐条开启/撤销；其他项目必须同时获得来源项目 READ 授权且记忆条目明确共享才可召回，来源项目 ID 随结果返回；Room 13→14 迁移与备份往返代码/测试源码已补，尚未执行测试。
 - [ ] 自动记忆提取准确性、冲突覆盖和跨项目隔离完整验证。
 - [x] 恢复自动提取的 mutationVersion/项目锁和 edit/delete/clear/backup restore 失效等待，防止旧提取并发写回已删除记忆（代码与回归测试源码已补，尚未执行测试）。
-- [ ] 统一召回 query 合并最近用户轮次与当前 prompt；当前 conversation recall 只用 requestHistory，user-memory recall 只用当前 prompt，没有统一合并。
-- [ ] 全局个人长期记忆跨聊天窗口共享；当前记忆按 projectId 存储，召回只查当前项目。
-- [ ] 用户主动跨项目检索记忆，需项目范围授权、撤销和来源标识；默认不自动串项目。
+- [x] 已合并最近用户轮次与当前 prompt：user-memory recall 使用最近 7 条用户消息 + 当前 prompt；conversation recall 使用最近 8 条历史。
+- [x] 手动全局记忆通过 global_memory_v1 跨聊天窗口/项目共享；自动结构化记忆仍按 projectId 隔离，跨项目需逐条开启共享并取得来源项目 READ 授权，尚无全局自动记忆池。
+- [x] 已支持逐条 shareAcrossProjects、来源项目标识及方向性项目 READ 授权/撤销；默认不跨项目召回。
 
 ## 模块8：Phone Agent
 
@@ -143,7 +143,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [ ] TRAVEL 分类、地图路线规划、主屏导航前展示路线并单独授权；复用已有通用屏幕交接。
 - [ ] 登录态/应用私有文件/受限下载源的边界与用户接管体验继续审计。
 - [ ] ADB/helper/虚拟屏/手势/设备兼容测试（延后统一执行）。
-- [ ] 恢复 PhoneAgentTask 的终态 SQL 保护，防止迟到的 plan/progress 写入把 CANCELLED/COMPLETED 任务重置为 PLANNED/RUNNING；补回旧分支已有的回归测试。
+- [x] 已恢复 DAO 终态 SQL 保护，禁止迟到 plan/progress 写入复活 CANCELLED/COMPLETED 任务；对应回归测试源码已回收（尚未运行）。
 
 ## 模块9：语音系统
 
@@ -273,11 +273,11 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] AgentCredentialLeaseRegistry：按任务/工具发放短时凭据租约并支持撤销。
 - [x] MCP 动态工具注册、插件目录、声明式 GeneratedPluginFactory 和工具指纹校验。
 - [x] Android `ACTION_ASSIST` 系统助手入口、`ROLE_ASSISTANT` 运行时可用性/持有状态检查和系统授权 Intent；当前是系统助手调用入口。
-- [ ] 生成式插件执行目前绕开 AgentTaskCoordinator，缺可恢复步骤 checkpoint/handler。
-- [ ] 生成式插件自定义权限路由对 EXTERNAL_WRITE 直接 Allow，未尊重 requiresConfirmation；必须接回统一审批。
-- [ ] MCP 工具中心长期授权与任务级一次/当前任务全部授权语义需明确。
+- [x] 生成式插件已通过 AgentTaskCoordinator.runInline、稳定幂等键和步骤 checkpoint 管理生命周期；插件中心提供待恢复任务入口。
+- [x] GeneratedPluginAuthorizationPolicy 已阻止 EXTERNAL_WRITE/显式确认步骤直接 Allow，并接入统一审批；恢复时重新审批。
+- [x] 已区分两层权限：MCP 全局/项目授权只控制能力可用性；本次任务外部写入仍走统一审批（授权一次/当前任务授权/拒绝）。
 - [ ] 任意代码型插件独立沙箱未实现；当前插件工厂是声明式工具组合，不得宣传为任意代码沙箱。
-- [ ] 基于当前 AgentToolCatalog/AgentTaskCoordinator 的统一能力总览 UI：项目级能力授权、来源/可用性、任务总览和审计；旧 CapabilityCenterPage/CapabilityTaskEngine 不得整套合并回来。
+- [ ] 部分已实现：CapabilityDirectoryPage 已有项目级能力授权、MCP 项目授权和调用审计；GeneratedPluginCenterPage 有插件任务状态/审计/恢复。仍需把来源/可用性与跨模块统一任务总览收敛到一个入口。
 - [ ] `VoiceInteractionService` / `VoiceInteractionSessionService`、常驻热词、锁屏语音会话和屏幕上下文理解未实现；当前系统助手入口不等于完整替换 OEM 助手。
 - [ ] 对应权限绕过、等待审批恢复、任务撤销和进程中断测试（延后统一执行）。
 
@@ -322,10 +322,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] WorkManager 单次提醒、到期系统通知和下一次重复提醒安排。
 - [x] 系统日历读写、导入导出、关联事件更新/删除。
 - [ ] 单次/周期/延迟/时间条件触发统一任务；当前没有延迟触发和时间条件调度模型。
-- [ ] 到期分发给 AgentTaskCoordinator、Phone Agent、专家项目或工作流；当前仅发通知。
-- [ ] 触发任务状态回写、审批等待、结果回传、失败重试/退避、暂停/恢复/取消。
-- [ ] nextRunAt/lastRunAt、occurrenceId、关联 AgentTaskId、retryCount 和幂等状态持久化。
-- [ ] 设备/进程重启后的未完成任务恢复和重复触发去重。
+- [x] 到期 occurrence 已进入 AgentTaskCoordinator，经 calendar_automation handler 调用主模型工具链，可由主模型按需调用 Phone Agent/媒体等工具；专家 DAG/Workflow 直接调度仍需专项核对。
+- [ ] 部分已实现：状态回写、审批等待、结果/错误回传、暂停/恢复/取消已接入；主模型业务失败按错误类型重试/退避尚未完整。
+- [ ] 部分已实现：nextRunAt/lastRunAt、确定性 occurrence taskId、lastIdempotencyKey 和执行状态已持久化；独立 retryCount/错误分类重试策略仍缺。
+- [x] 已有进程重启恢复、确定性 occurrence taskId/idempotencyKey 去重；设备重启与 WorkManager 竞态仍待统一验收。
 - [ ] 将月/周/日独立日历页收敛为任务/工作流内嵌的轻量调度配置入口；日历只作为辅助调度能力，不作为独立主导航页面。
 - [ ] 调度/Worker/Agent/Workflow 集成测试（延后统一执行）。
 
@@ -388,3 +388,16 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 四项遗留功能的代码实现已补齐；真实凭据联调、正式信任根/目录配置和统一测试验收属于外部配置或验收事项，不能虚报已通过。
 - 本轮不运行统一测试、不合并、不锁定；等十九模块代码完成后按既定流程统一验收。
 - 模块清单必须随代码提交同步更新；已落地源码不再标记为“未开发”，未验收内容不得标记为“已验收”。
+
+
+## 2026-11-22 17:06 UTC — 当前源码状态纠偏（以 b394e60 源码基线核对）
+
+以下条目依据当前整合分支源码回读，修正本清单中未随着后续提交更新的旧结论：
+- 模块3：原生工具循环已具备受限 parallelSafe 并发；模型 context-window 仍未进入 ModelDefinition，固定 16,384/2,048 预算仍是缺口。
+- 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 和 DAO 来源归属校验仍缺。
+- 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线授权仍缺。
+- 模块16：插件统一任务机/checkpoint、外部写入审批、插件恢复入口和 MCP 两层授权语义已实现；能力授权/调用审计已有 UI，但统一跨模块任务总览仍未收敛。任意代码沙箱和完整 VoiceInteractionService 仍未实现。
+- 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、日历状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟/任意时间条件模型、retryCount 与业务错误分类退避仍缺，专家 DAG/Workflow 直接调度边界待核。
+- 模块19：主模型已注册 media.ai.run/status，可调用 image/transcribe/scenes/audio-clean；scenes 仅是场景分段，不等于通用视频问答，音频理解目前主要为转写，视频生成单独通过 media.video.generate/status。
+
+> 以上代码状态不代表编译/测试/真机验收通过。未执行 Gradle、JVM/Android 测试、模拟器或真机测试。
