@@ -496,13 +496,13 @@ interface NestroDao {
 
 
 
-    @Query("UPDATE phone_agent_tasks SET status = :status, currentStep = :currentStep, updatedAt = :updatedAt WHERE id = :taskId")
+    @Query("UPDATE phone_agent_tasks SET status = :status, currentStep = :currentStep, updatedAt = :updatedAt WHERE id = :taskId AND (status NOT IN ('completed', 'cancelled') OR status = :status)")
     suspend fun updatePhoneAgentTaskProgress(taskId: String, status: String, currentStep: Int, updatedAt: Long)
 
     @Query("UPDATE phone_agent_tasks SET status = 'cancelled', updatedAt = :updatedAt WHERE id = :taskId AND status NOT IN ('completed', 'cancelled')")
     suspend fun cancelPhoneAgentTaskIfActive(taskId: String, updatedAt: Long): Int
 
-    @Query("UPDATE phone_agent_tasks SET planJson = :planJson, status = 'planned', currentStep = 0, updatedAt = :updatedAt WHERE id = :taskId")
+    @Query("UPDATE phone_agent_tasks SET planJson = :planJson, status = 'planned', currentStep = 0, updatedAt = :updatedAt WHERE id = :taskId AND status NOT IN ('completed', 'cancelled')")
     suspend fun updatePhoneAgentTaskPlan(taskId: String, planJson: String, updatedAt: Long)
 
     @Query("UPDATE phone_agent_tasks SET goal = :goal, updatedAt = :updatedAt WHERE id = :taskId")

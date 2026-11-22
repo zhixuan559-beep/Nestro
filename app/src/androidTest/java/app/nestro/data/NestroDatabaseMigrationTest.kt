@@ -22,6 +22,33 @@ class NestroDatabaseMigrationTest {
     }
 
 
+    @Test fun cancelledPhoneAgentTaskCannotBeRevivedByProgressOrPlanWrites() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val dao = db.dao()
+            val now = System.currentTimeMillis()
+            dao.putPhoneAgentTask(
+                PhoneAgentTaskEntity(
+                    id = "cancelled-phone-task", projectId = "p1", conversationId = "c1",
+                    goal = "停止后不可恢复", category = "DEVICE_TASK",
+                    status = PhoneAgentTaskStore.STATUS_CANCELLED, planJson = "[]",
+                    currentStep = 0, createdAt = now, updatedAt = now
+                )
+            )
+            dao.updatePhoneAgentTaskProgress(
+                "cancelled-phone-task", PhoneAgentTaskStore.STATUS_RUNNING, 0, now + 1
+            )
+            dao.updatePhoneAgentTaskPlan("cancelled-phone-task", "[]", now + 2)
+            assertEquals(
+                PhoneAgentTaskStore.STATUS_CANCELLED,
+                dao.phoneAgentTask("cancelled-phone-task")?.status
+            )
+        } finally {
+            db.close()
+        }
+    }
+
     @Test fun projectDeletionGuardChecksEveryProjectOwnedDataFamily() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).allowMainThreadQueries().build()
         try {
