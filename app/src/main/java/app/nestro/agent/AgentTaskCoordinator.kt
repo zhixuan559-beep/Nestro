@@ -492,6 +492,7 @@ class AgentTaskCoordinator(
                 val latest = states.get(taskId)
                 if (!requestedStops.containsKey(taskId) && latest?.status !in setOf(
                         AgentTaskStatus.PAUSED,
+                        AgentTaskStatus.FAILED,
                         AgentTaskStatus.CANCELLED,
                         AgentTaskStatus.COMPLETED,
                         AgentTaskStatus.WAITING_FOR_USER,
@@ -797,15 +798,37 @@ class AgentTaskCoordinator(
                 } else if (!currentCoroutineContext().isActive) {
                     throw cancelled
                 } else {
-                    withContext(NonCancellable) {
-                        val latest = states.get(taskId) ?: initial
-                        states.put(latest.copy(
-                            status = AgentTaskStatus.PAUSED,
-                            lastError = "任务执行被中断，可从检查点恢复",
-                            updatedAt = System.currentTimeMillis()
-                        ))
+                    val preserved = withContext(NonCancellable) {
+                        withTransitionLock {
+                            val latest = states.get(taskId) ?: initial
+                            if (latest.status in setOf(
+                                    AgentTaskStatus.WAITING_FOR_USER,
+                                    AgentTaskStatus.WAITING_FOR_TASK,
+                                    AgentTaskStatus.PAUSED,
+                                    AgentTaskStatus.FAILED,
+                                    AgentTaskStatus.CANCELLED,
+                                    AgentTaskStatus.COMPLETED
+                                )
+                            ) {
+                                latest
+                            } else {
+                                latest.copy(
+                                    status = AgentTaskStatus.PAUSED,
+                                    lastError = "任务执行被中断，可从检查点恢复",
+                                    updatedAt = System.currentTimeMillis()
+                                ).also { states.put(it) }
+                            }
+                        }
                     }
-                    trace(taskId, "paused", "任务执行被中断")
+                    when (preserved.status) {
+                        AgentTaskStatus.WAITING_FOR_USER ->
+                            trace(taskId, "waiting_for_user", preserved.lastError)
+                        AgentTaskStatus.WAITING_FOR_TASK ->
+                            trace(taskId, "waiting_for_task", preserved.lastError)
+                        AgentTaskStatus.PAUSED ->
+                            trace(taskId, "paused", preserved.lastError)
+                        else -> Unit
+                    }
                 }
             } catch (error: Exception) {
                 var retryDelayMillis = 0L

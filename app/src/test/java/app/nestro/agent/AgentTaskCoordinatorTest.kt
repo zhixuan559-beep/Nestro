@@ -144,6 +144,35 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun approvalPendingCancellationPreservesWaitingStateAndCanResume() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        registry.register("approval") { context ->
+            if (calls.incrementAndGet() == 1) {
+                context.waitForUser("需要用户审批")
+                throw AgentApprovalPendingException("等待用户审批")
+            }
+            context.checkpoint("approved-operation", 1)
+        }
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        coordinator.enqueue("approval-pending-task", "approval")
+        withTimeout(2_000) {
+            while (states.get("approval-pending-task")?.status != AgentTaskStatus.WAITING_FOR_USER) delay(10)
+        }
+        assertEquals("需要用户审批", states.get("approval-pending-task")?.lastError)
+
+        coordinator.resume("approval-pending-task")
+        withTimeout(2_000) {
+            while (states.get("approval-pending-task")?.status != AgentTaskStatus.COMPLETED) delay(10)
+        }
+        assertEquals(2, calls.get())
+        assertEquals("approved-operation", states.get("approval-pending-task")?.checkpoint)
+        coordinator.close()
+    }
+
+    @Test
     fun retryableFailureUsesBackoffAndRetriesWithinConfiguredLimit() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
