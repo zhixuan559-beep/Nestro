@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.roundToInt
 
 @Composable
@@ -44,11 +43,6 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     var pairingPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
     var virtualSession by remember { mutableStateOf(displayController.currentSession()) }
-    var previewScale by remember { mutableFloatStateOf(0.68f) }
-    var floatingPreviewCollapsed by remember { mutableStateOf(false) }
-    var floatingPreviewOffset by remember { mutableStateOf(Offset.Zero) }
-    val frameFlow = remember(virtualSession) { virtualSession?.frames ?: MutableStateFlow<android.graphics.Bitmap?>(null) }
-    val virtualFrame by frameFlow.collectAsState()
     val executionAvailable = PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
     var refresh by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf("尚未读取手机界面") }
@@ -76,7 +70,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
     Column(
         Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -387,7 +381,18 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         }
         Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。网页检索会向搜索服务发送检索词，含手机号、邮箱、卡号等敏感信息会被拦截。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
-    if (virtualSession != null) {
+    virtualSession?.let { PhoneAgentFloatingPreview(it) }
+}
+
+
+@Composable
+private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController.Session) {
+    val scope = rememberCoroutineScope()
+    val virtualFrame by session.frames.collectAsState()
+    var previewScale by remember(session) { mutableFloatStateOf(0.68f) }
+    var floatingPreviewCollapsed by remember(session) { mutableStateOf(false) }
+    var floatingPreviewOffset by remember(session) { mutableStateOf(Offset.Zero) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val previewWidthDp = 180.dp * previewScale
         val frameAspect = virtualFrame?.let { it.height.toFloat() / it.width.toFloat() } ?: (320f / 180f)
@@ -421,7 +426,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(34.dp)
-                        .pointerInput(virtualSession, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, panelWidthPx, panelHeightPx) {
+                        .pointerInput(session, floatingPreviewCollapsed, maxWidthPx, maxHeightPx, panelWidthPx, panelHeightPx) {
                             detectDragGestures { change, dragAmount ->
                                 val minX = -(maxWidthPx - panelWidthPx).coerceAtLeast(0f)
                                 val minY = -(maxHeightPx - panelHeightPx).coerceAtLeast(0f)
@@ -432,7 +437,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                 change.consume()
                             }
                         }
-                        .pointerInput(virtualSession, floatingPreviewCollapsed) {
+                        .pointerInput(session, floatingPreviewCollapsed) {
                             detectTapGestures { floatingPreviewCollapsed = !floatingPreviewCollapsed }
                         }
                         .padding(horizontal = 10.dp),
@@ -447,9 +452,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                     Text(if (floatingPreviewCollapsed) "展开" else "收起", color = Muted, style = MaterialTheme.typography.labelSmall)
                 }
                 if (!floatingPreviewCollapsed) {
-                    val session = virtualSession
                     val bitmap = virtualFrame
-                    if (session != null && bitmap != null) {
+                    if (bitmap != null) {
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "隔离虚拟屏悬浮实时画面",
@@ -463,7 +467,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                             previewScale = if (previewScale < 1f) 1.4f else 0.68f
                                         },
                                         onTap = { offset ->
-                                            launch {
+                                            scope.launch {
                                                 session.pipInput.tap(
                                                     (offset.x / size.width).coerceIn(0f, 1f),
                                                     (offset.y / size.height).coerceIn(0f, 1f)
@@ -488,7 +492,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                         onDragEnd = {
                                             if (!resizing && points.size >= 2) {
                                                 val path = points.toList()
-                                                launch { session.pipInput.swipe(path, 500L) }
+                                                scope.launch { session.pipInput.swipe(path, 500L) }
                                             }
                                         },
                                         onDrag = { change, dragAmount ->
