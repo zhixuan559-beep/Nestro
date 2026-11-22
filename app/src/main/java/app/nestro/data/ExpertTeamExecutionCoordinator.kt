@@ -143,7 +143,8 @@ class ExpertTeamExecutionCoordinator(
                 capabilityId = teamId,
                 title = teamName.take(160),
                 input = task.take(12_000)
-            )
+            ),
+            idempotencyKey = "expert-team:" + projectId + ":" + taskId
         ) { taskContext ->
         taskContext.checkpoint(initialCheckpoint, resumeMembers.size)
         var collaborativeCheckpoint = resumeCollaborative ?: emptyCollaborativeCheckpoint
