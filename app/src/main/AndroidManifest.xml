@@ -26,6 +26,11 @@
         android:label="Nestro"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <provider
+            android:name=".phone.virtualdisplay.mika.MikaHelperHandoffProvider"
+            android:authorities="${applicationId}.helper"
+            android:exported="true"
+            android:grantUriPermissions="false" />
         <receiver android:name=".phone.PhoneAgentNotificationReceiver" android:exported="false" />
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="specialUse|mediaProcessing" tools:node="merge">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-initiated accessibility automation task" />
