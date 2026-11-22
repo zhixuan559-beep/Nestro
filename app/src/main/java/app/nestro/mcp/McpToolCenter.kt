@@ -316,8 +316,8 @@ class McpToolCenterService(
    approvalCoordinator?.endScope(taskId)
    return AgentToolResult(false, error = reason)
   }
-  if (checkpoint.startsWith("mcp:v1:completed:$id\\n")) {
-   val output = checkpoint.substringAfter('\\n').take(8_000)
+  if (checkpoint.startsWith("mcp:v1:completed:$id\n")) {
+   val output = checkpoint.substringAfter('\n').take(8_000)
    coordinator.transitionTask(
     taskId,
     AgentTaskStatus.COMPLETED,
