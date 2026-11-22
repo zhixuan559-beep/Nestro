@@ -46,6 +46,19 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun approvalCoordinatorPersistsPendingAndFinalDecisionWithStableId() = runBlocking {
+        val records = mutableListOf<AgentApprovalAuditRecord>()
+        val coordinator = AgentApprovalCoordinator { record -> records += record }
+        coordinator.setHandler { AgentApprovalDecision.AUTHORIZE_TASK }
+
+        val decision = coordinator.authorize("scope-audit", "mcp.sample", "写入远程数据")
+
+        assertEquals(AgentApprovalDecision.AUTHORIZE_TASK, decision)
+        assertEquals(listOf("PENDING", "AUTHORIZED_TASK"), records.map { it.status })
+        assertEquals(records.first().id, records.last().id)
+    }
+
+    @Test
     fun approvalPendingCancellationPreservesWaitingForUserState() = runBlocking {
         val catalog = InMemoryAgentToolCatalog().apply {
             register(AgentToolSpec("approval.pending", "等待用户审批", AgentToolPermission.READ_ONLY)) {
