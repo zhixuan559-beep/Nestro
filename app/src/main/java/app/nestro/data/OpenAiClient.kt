@@ -97,7 +97,7 @@ internal object OpenAiClient {
         onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         onProviderUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
         requestId: String = UUID.randomUUID().toString(),
-        timeoutMillis: Long = 180_000,
+        timeoutMillis: Long = ChatNetworkPolicy.timeoutPolicy().callMs,
         shouldStop: () -> Boolean = { false },
         onChunk: suspend (String) -> Unit
     ): String {
@@ -125,9 +125,10 @@ internal object OpenAiClient {
                         if (shouldStop()) throw IllegalStateException("用户停止生成", error)
                         if (emitted) throw error
                         lastError = error
-                        if (attempt == 0 && ChatRequestPolicy.shouldRetry(error)) {
-                            attempt++
-                            delay(600)
+                        val retry = ChatNetworkPolicy.retryPlan(error, attempt)
+                        if (retry != null && !emitted) {
+                            attempt = retry.attempt
+                            delay(retry.delayMs)
                             continue
                         }
                         break

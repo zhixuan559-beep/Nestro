@@ -7,6 +7,13 @@ import org.junit.Test
 
 class SpeechProvidersTest {
     @Test
+    fun localTtsCapabilityClampsSafeRateAndRejectsInvalidRanges() {
+        assertTrue(TtsCapability.safeRate(0.1f) == 0.7f)
+        assertTrue(TtsCapability.safeRate(1.0f) == 1.0f)
+        assertTrue(TtsCapability.safeRate(2.0f) == 1.3f)
+    }
+
+    @Test
     fun acceptsHttpsProviderConfigurationAndRedactsApiKey() {
         val config = SpeechProviderConfig(
             providerId = "custom-provider",
