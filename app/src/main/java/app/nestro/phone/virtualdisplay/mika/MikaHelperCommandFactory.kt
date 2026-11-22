@@ -25,7 +25,7 @@ object MikaHelperCommandFactory {
         val processName = packageName + ":helper"
         val command = "read n; (echo \"\$n\" | CLASSPATH=" + quote(apkPath) +
             " setsid app_process /system/bin --nice-name=" + quote(processName) + " " +
-            helperClass + " " + quote(packageName) + " " + uid + " " + quote(certPin) +
+            helperClass + " " + quote(packageName) + " " + uid + " " + quote(certPin) + " " + quote(apkPath) +
             " >/dev/null 2>&1 &); read _"
         return MikaHelperLaunchRequest(command, (nonce + "\n").toByteArray(Charsets.UTF_8))
     }
