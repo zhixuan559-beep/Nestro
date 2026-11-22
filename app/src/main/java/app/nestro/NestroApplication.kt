@@ -237,7 +237,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.video.generate",
-                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填）；provider_id（可选，指定已配置服务商）；previous_task_id（可选，用户要求修改上一版时填写）。异步提交视频任务并等待结果；若超出等待窗口则返回任务 ID，用户可继续查询。会产生第三方 API 费用。",
+                    description = "按用户当前项目和提示词调用已配置的视频生成模型。参数：prompt（必填）；provider_id（可选，指定已配置服务商）；previous_task_id（可选，用户要求修改上一版时填写）。异步提交视频任务并立即返回 task_id，后台继续生成；主模型可穿插执行其他独立任务，再通过 media.video.status 查询结果。会产生第三方 API 费用。",
                     permission = app.nestro.agent.AgentToolPermission.EXTERNAL_WRITE,
                     requiresConfirmation = true
                 )
@@ -260,24 +260,10 @@ class NestroApplication : Application() {
                 }.getOrElse {
                     return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "视频任务提交失败")
                 }
-                var latest = task
-                for (attempt in 0 until 75) {
-                    delay(2_000)
-                    latest = MediaAiTaskStore.read(this@NestroApplication, projectId, task.id) ?: latest
-                    if (latest.status in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED)) break
-                }
-                when (latest.status) {
-                    MediaAiTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(
-                        true,
-                        output = "视频生成完成并已保存到当前项目素材库。任务 ID：${task.id}；素材 ID：${runCatching { org.json.JSONObject(latest.resultJson).optString("assetId") }.getOrDefault("")}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}。生成提示词：$prompt"
-                    )
-                    MediaAiTaskStatus.FAILED -> app.nestro.agent.AgentToolResult(false, error = latest.error.ifBlank { "视频生成失败" })
-                    MediaAiTaskStatus.CANCELLED -> app.nestro.agent.AgentToolResult(false, error = "视频生成任务已取消")
-                    else -> app.nestro.agent.AgentToolResult(
-                        true,
-                        output = "视频仍在后台生成。任务 ID：${task.id}；当前进度：${latest.progress}%。任务完成后会保存到当前项目素材库。"
-                    )
-                }
+                app.nestro.agent.AgentToolResult(
+                    true,
+                    output = "视频生成任务已提交并在后台执行，当前尚未完成。任务 ID：${task.id}；状态：${task.status}；前序版本任务 ID：${task.parentTaskId.ifBlank { "无" }}。任务完成后会保存到当前项目素材库；可继续执行其他独立任务，再调用 media.video.status 查询。生成提示词：$prompt"
+                )
             }
             register(
                 app.nestro.agent.AgentToolSpec(
@@ -367,21 +353,10 @@ class NestroApplication : Application() {
                     .getOrElse {
                         return@register app.nestro.agent.AgentToolResult(false, error = it.message ?: "媒体任务排队失败；任务 ID：${task.id}")
                     }
-                var latest = task
-                for (attempt in 0 until 45) {
-                    delay(1_000)
-                    latest = MediaAiTaskStore.read(this@NestroApplication, projectId, task.id) ?: latest
-                    if (latest.status in setOf(MediaAiTaskStatus.COMPLETED, MediaAiTaskStatus.FAILED, MediaAiTaskStatus.CANCELLED)) break
-                }
-                when (latest.status) {
-                    MediaAiTaskStatus.COMPLETED -> app.nestro.agent.AgentToolResult(true, output = formatMediaAiTask(latest))
-                    MediaAiTaskStatus.FAILED -> app.nestro.agent.AgentToolResult(false, error = latest.error.ifBlank { "媒体任务执行失败" })
-                    MediaAiTaskStatus.CANCELLED -> app.nestro.agent.AgentToolResult(false, error = "媒体任务已取消")
-                    else -> app.nestro.agent.AgentToolResult(
-                        true,
-                        output = "媒体任务已排队/正在执行，尚未完成。task_id=${task.id}; action=$action; asset_id=$assetId; progress=${latest.progress}%。可调用 media.ai.status 继续查询。"
-                    )
-                }
+                app.nestro.agent.AgentToolResult(
+                    true,
+                    output = "媒体分析任务已提交并在后台执行，当前尚未完成。task_id=${task.id}; action=$action; asset_id=$assetId; provider_id=${provider.providerId}; status=${task.status}。可继续执行其他独立任务，再调用 media.ai.status 查询真实结果。"
+                )
             }
             register(
                 app.nestro.agent.AgentToolSpec(
