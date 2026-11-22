@@ -248,11 +248,15 @@ object CapabilityRegistryStore {
     @Synchronized
     fun authorizeToolCall(
         prefs: SharedPreferences, projectId: String, serviceId: String, toolName: String,
-        parameterNames: List<String> = emptyList()
+        parameterNames: List<String> = emptyList(),
+        defaultGranted: Boolean = false
     ): Boolean {
         if (!validProject(projectId)) return false
         val key = runCatching { CapabilityToolPolicy.grantKey(serviceId, toolName) }.getOrNull() ?: return false
-        val granted = runCatching { objectAt(prefs, TOOL_GRANTS).optJSONObject(projectId)?.optBoolean(key, false) ?: false }.getOrDefault(false)
+        val granted = runCatching {
+            val project = objectAt(prefs, TOOL_GRANTS).optJSONObject(projectId)
+            if (project?.has(key) == true) project.optBoolean(key, false) else defaultGranted
+        }.getOrDefault(false)
         val persisted = runCatching {
             val rows = toolAudit(arrayAt(prefs, TOOL_AUDIT), projectId, serviceId, toolName,
                 "invoke", if (granted) "authorized" else "denied", parameterNames)
