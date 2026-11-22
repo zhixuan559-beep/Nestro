@@ -354,20 +354,32 @@ object WorkflowEngine {
                 }
             }
             if (ready.isEmpty()) continue
-            val completed = if (ready.size > 1 && groupName.isNotBlank()) {
-                coroutineScope {
+            val groupInput = previousOutput
+            val isParallelWave = ready.size > 1 && groupName.isNotBlank()
+            val outcomes: List<Result<Pair<WorkflowStepRun, String>>> = if (isParallelWave) {
+                kotlinx.coroutines.supervisorScope {
                     ready.map { (index, step) ->
-                        async { executeStep(index, step, previousOutput) }
+                        async {
+                            try {
+                                Result.success(executeStep(index, step, groupInput))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Result.failure(error)
+                            }
+                        }
                     }.map { it.await() }
                 }
             } else {
-                ready.map { (index, step) -> executeStep(index, step, previousOutput) }
+                ready.map { (index, step) -> Result.success(executeStep(index, step, groupInput)) }
             }
-            completed.forEach { (stepRun, stepOutput) ->
-                runs += stepRun
-                outputs += stepOutput
+            val completed = outcomes.mapIndexedNotNull { resultIndex, outcome ->
+                outcome.getOrNull()?.let { Triple(resultIndex, ready[resultIndex].first, it) }
             }
-            val groupInput = previousOutput
+            completed.forEach { (_, _, pair) ->
+                runs += pair.first
+                outputs += pair.second
+            }
             previousOutput = if (groupName.isNotBlank()) {
                 val originalActive = workflow.steps.filter { it.enabled }
                 val originalIndex = originalActive.indexOfFirst { it.id == group.first().second.id }
@@ -383,20 +395,43 @@ object WorkflowEngine {
                         "【并行步骤：${row.title}】\n${row.output.ifBlank { row.error }}"
                     }.take(24_000)
             } else {
-                completed.last().second
+                completed.last().third.second
             }
-            completed.forEachIndexed { resultIndex, pair ->
-                val stepRun = pair.first
-                val stepIndex = ready[resultIndex].first
+            val failures = outcomes.mapIndexedNotNull { resultIndex, outcome ->
+                outcome.exceptionOrNull()?.let { resultIndex to it }
+            }
+            if (failures.isNotEmpty()) {
+                // Persist every successful sibling before surfacing the wave failure.
+                // The failed siblings remain absent from the checkpoint and are retried
+                // on resume; successful siblings are not repeated.
+                completed.forEach { (resultIndex, stepIndex, pair) ->
+                    onStepCompleted(stepIndex + 1, pair.first, groupInput)
+                }
+                failures.forEach { (resultIndex, error) ->
+                    val step = ready[resultIndex].second
+                    val failedRun = (error as? WorkflowExecutionException)?.stepRuns?.lastOrNull()
+                        ?.takeIf { it.status == "failed" }
+                        ?: WorkflowStepRun(step.id, step.title, "failed", 0, error = error.message ?: "并行步骤执行失败")
+                    runs += failedRun
+                }
+                val firstError = failures.first().second
+                throw WorkflowExecutionException(
+                    "并行组“$groupName”中有步骤执行失败：${firstError.message ?: "未知错误"}",
+                    runs.toList(),
+                    firstError
+                )
+            }
+            completed.forEachIndexed { completedIndex, entry ->
+                val (resultIndex, stepIndex, pair) = entry
                 // Until the final sibling is checkpointed, retain the group's input.
                 // A crash mid-wave then resumes remaining siblings without feeding them
                 // a partial output that already includes their not-yet-persisted result.
-                val checkpointOutput = if (groupName.isNotBlank() && resultIndex < completed.lastIndex) {
+                val checkpointOutput = if (groupName.isNotBlank() && completedIndex < completed.lastIndex) {
                     groupInput
                 } else {
                     previousOutput
                 }
-                onStepCompleted(stepIndex + 1, stepRun, checkpointOutput)
+                onStepCompleted(stepIndex + 1, pair.first, checkpointOutput)
             }
         }
         return WorkflowRunResult(
