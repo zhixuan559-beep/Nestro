@@ -1829,11 +1829,6 @@ fun NestroApp(initialPage: String = "home") {
                                                      } else {
                                                          UUID.randomUUID().toString()
                                                      }
-                                                     prefs.edit()
-                                                         .putString("workflow_task_id_v1", workflowTaskId)
-                                                         .putString("workflow_task_workflow_id_v1", workflow.id)
-                                                         .putString("workflow_resume_input_v1", input)
-                                                         .apply()
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
                                                      val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
@@ -1848,12 +1843,22 @@ fun NestroApp(initialPage: String = "home") {
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
+                                                         val existingWorkflowTask = appRuntime.agentTaskCoordinator.state(workflowTaskId)
+                                                         val effectiveWorkflowTaskId = if (existingWorkflowTask?.status in setOf(
+                                                                 app.nestro.agent.AgentTaskStatus.COMPLETED,
+                                                                 app.nestro.agent.AgentTaskStatus.CANCELLED
+                                                             )) UUID.randomUUID().toString() else workflowTaskId
+                                                         prefs.edit()
+                                                             .putString("workflow_task_id_v1", effectiveWorkflowTaskId)
+                                                             .putString("workflow_task_workflow_id_v1", workflow.id)
+                                                             .putString("workflow_resume_input_v1", input)
+                                                             .apply()
                                                          try {
                                                          val result = runCatchingCancellable {
                                                              appRuntime.workflowExecutionCoordinator.execute(
                                                                  workflow = workflow,
                                                                  input = input,
-                                                                 taskId = workflowTaskId,
+                                                                 taskId = effectiveWorkflowTaskId,
                                                                  invokeModel = { step, stepPrompt ->
                                                                      val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
                                                                      val roleContext = when (step.kind) {
