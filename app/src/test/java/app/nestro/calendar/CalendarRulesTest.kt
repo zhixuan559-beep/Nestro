@@ -50,7 +50,7 @@ class CalendarRulesTest {
         )
         assertEquals(
             start.toInstant().toEpochMilli(),
-            CalendarRules.nextOccurrenceStart(event, System.currentTimeMillis())
+            CalendarRules.nextAutomationOccurrenceStart(event, System.currentTimeMillis())
         )
         assertNull(CalendarRules.nextOccurrenceStart(event(start, reminder = -1), System.currentTimeMillis()))
     }
