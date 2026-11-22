@@ -403,6 +403,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
             tonalElevation = 8.dp,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 12.dp)
                 .offset { IntOffset(floatingPreviewOffset.x.roundToInt(), floatingPreviewOffset.y.roundToInt()) }
                 .width(panelWidthDp)
         ) {
