@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import app.nestro.agent.AgentToolResult
 import app.nestro.model.ChatPartialStateStore
 import app.nestro.model.ChatStreamingCoordinator
 import app.nestro.model.ChatStreamingTransport
@@ -57,7 +58,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { order += "plan"; "planned" },
+            planPhoneAgent = { order += "plan"; AgentToolResult(true, output = "planned") },
             runExpertTeam = { context, _ ->
                 assertEquals("base-context", context)
                 order += "team"
@@ -80,7 +81,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(taskMode = false),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { planCalls++; "planned" },
+            planPhoneAgent = { planCalls++; AgentToolResult(true, output = "planned") },
             onPartialAnswer = { }
         )
         assertEquals(0, planCalls)
