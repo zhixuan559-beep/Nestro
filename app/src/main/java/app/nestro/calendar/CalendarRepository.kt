@@ -32,7 +32,7 @@ class CalendarRepository(context: Context) {
     suspend fun save(event: CalendarEvent): CalendarEvent {
         CalendarRules.validate(event)?.let { error(it) }
         val now = System.currentTimeMillis()
-        val old = dao.event(event.id)
+        var old = dao.event(event.id)
         val automationDefinitionChanged = old != null && (
             old.automationPrompt != event.automationPrompt ||
                 old.automationProjectId != event.automationProjectId ||
@@ -42,6 +42,7 @@ class CalendarRepository(context: Context) {
             )
         if (automationDefinitionChanged) {
             cancelActiveAutomation(old!!, "日历自动任务配置已修改，旧任务已停止")
+            old = dao.event(event.id) ?: old
         }
         val saved = event.copy(
             title = event.title.trim(),
