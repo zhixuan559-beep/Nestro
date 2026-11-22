@@ -454,7 +454,7 @@ $toolDirectory
 object GeneratedPluginRunCheckpointCodec {
     private const val PREFIX = "generated_plugin_run:"
     private const val SCHEMA_VERSION = 1
-    private const val MAX_STEP_OUTPUT = 4_000
+    private const val MAX_STEP_OUTPUT = 2_000
 
     fun encode(
         plugin: GeneratedPluginPackage,
@@ -468,7 +468,7 @@ object GeneratedPluginRunCheckpointCodec {
             .put("pluginId", plugin.id)
             .put("pluginVersion", plugin.version)
             .put("pluginFingerprint", pluginFingerprint(plugin))
-            .put("inputFingerprint", inputFingerprint(inputs))
+            .put("inputFingerprint", fingerprintInputs(inputs))
             .put("completedSteps", JSONArray().apply {
                 valid.forEachIndexed { index, result ->
                     val expected = plugin.steps[index]
@@ -524,7 +524,7 @@ object GeneratedPluginRunCheckpointCodec {
     private fun pluginFingerprint(plugin: GeneratedPluginPackage): String =
         sha256(GeneratedPluginPackageCodec.encode(listOf(plugin.copy(enabled = false))))
 
-    private fun inputFingerprint(inputs: Map<String, String>): String =
+    fun fingerprintInputs(inputs: Map<String, String>): String =
         sha256(JSONObject().apply {
             inputs.toSortedMap().forEach { (key, value) -> put(key, value) }
         }.toString())
