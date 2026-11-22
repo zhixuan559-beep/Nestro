@@ -525,3 +525,12 @@
 - 旧 PR #1 的 `CapabilityCenterPage` 依赖旧 `CapabilityRegistryStore/CapabilityTaskEngine` 和独立 capability_tasks 表；这些旧类/表当前未进入 integration。不能整套合并回来造成第二套工具目录和任务队列。
 - 后续应在现有 `AgentToolCatalog/AgentTaskCoordinator` 上设计新的能力总览页：统一展示能力可用性/权限/来源、项目授权、任务状态/最近事件和审计；任务数据直接读取统一状态源，不重新建 CapabilityTaskEngine。
 
+
+
+## 2026-11-22 用户确认的统一产品能力验收基准
+
+权威产品能力边界已写入 `IMPLEMENTATION_ROADMAP.md` 的“NESTRO 核心能力边界”章节。本审计后续所有模块以此作为跨模块核对基准：听得懂（音频识别/理解）、看得懂（图片/视频理解）、能创作（专家团和媒体生成）、能执行（Phone Agent/项目工具）、会协作（主模型按依赖混合调度）。
+
+特别要求：专家团、Phone Agent、媒体模型不得各自建立重复调度系统；应复用 AgentRuntime/AgentToolCatalog、任务队列、权限路由、项目范围、事件检查点和取消/恢复。创作与执行允许多轮交替、串并行组合；工具/模型必须回传真实状态与产物，主模型复核后交付。
+
+后续审计必须分别核验每项能力的源码、入口、端到端调用、状态/产物回传、持久化/恢复和测试覆盖。只有 UI 或 Provider 类存在，不等于功能闭环。
