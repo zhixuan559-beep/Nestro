@@ -67,11 +67,31 @@ class ConversationMessageVersionCodecTest {
     }
 
     @Test
-    fun enforcesTheSameAggregateSnapshotLimitForRoomBackedPersistence() {
+    fun enforcesPerConversationSizeLimitForRoomBackedPersistence() {
         val oversized = (0 until 18).map { index ->
             ChatMessage("large-$index", if (index % 2 == 0) "user" else "assistant", "x".repeat(200_000))
         }
         assertThrows(IllegalArgumentException::class.java) { validateChatMessages(oversized) }
+    }
+
+    @Test
+    fun RoomSnapshotsDoNotInheritTheLegacySharedPreferencesAggregateCap() {
+        val conversations = listOf(
+            ConversationRecord(
+                "c1", "第一段", 1L,
+                (0 until 10).map { ChatMessage("a-$it", "user", "a".repeat(200_000)) },
+                "default"
+            ),
+            ConversationRecord(
+                "c2", "第二段", 2L,
+                (0 until 10).map { ChatMessage("b-$it", "user", "b".repeat(200_000)) },
+                "default"
+            )
+        )
+        validateConversationRecords(conversations)
+        assertThrows(IllegalArgumentException::class.java) {
+            validateLegacyConversationSnapshot(conversations)
+        }
     }
 
 }
