@@ -433,9 +433,7 @@ class AgentApprovalCoordinator(
         return lock.withLock {
             if (scopeId in taskWideGrants) return@withLock AgentApprovalDecision.AUTHORIZE_TASK
             val now = System.currentTimeMillis()
-            val auditId = UUID.nameUUIDFromBytes(
-                "$scopeId\\n$toolId\\n$reason".toByteArray(Charsets.UTF_8)
-            ).toString()
+            val auditId = UUID.randomUUID().toString()
             val pendingAudit = AgentApprovalAuditRecord(
                 id = auditId,
                 scopeId = scopeId,
