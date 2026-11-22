@@ -548,4 +548,25 @@ class AgentTaskCoordinatorTest {
         }
     }
 
+
+    @Test
+    fun staleRunningInlineTaskCanReattachAfterWorkerRestart() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        try {
+            val taskId = "media-render:00000000-0000-0000-0000-000000000002"
+            coordinator.registerInlineTask(taskId, "media_render", "render-checkpoint")
+            coordinator.transitionTask(taskId, AgentTaskStatus.RUNNING, "旧进程正在执行")
+            assertEquals(AgentTaskStatus.RUNNING, states.get(taskId)?.status)
+
+            val result = coordinator.runInline(taskId, "media_render", "render-checkpoint") {
+                "reattached"
+            }
+            assertEquals("reattached", result)
+            assertEquals(AgentTaskStatus.COMPLETED, states.get(taskId)?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
+
 }
