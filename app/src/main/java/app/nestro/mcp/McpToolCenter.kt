@@ -310,7 +310,15 @@ class McpToolCenterService(
    result
    }
   } finally {
-   approvalCoordinator?.endScope(taskId)
+   val state = coordinator.state(taskId)
+   if (state?.status !in setOf(
+       AgentTaskStatus.WAITING_FOR_USER,
+       AgentTaskStatus.WAITING_FOR_TASK,
+       AgentTaskStatus.PAUSED
+      )
+   ) {
+    approvalCoordinator?.endScope(taskId)
+   }
   }
  }
  private fun safeTraceStore():AgentTaskTraceStore? = traces?.let { delegate ->
