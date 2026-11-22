@@ -151,6 +151,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                             taskContext.cancel("媒体 AI 任务已取消")
                         MediaAiTaskStatus.FAILED ->
                             taskContext.fail(MediaAiTaskStore.read(applicationContext, projectId, taskId)?.error ?: "媒体 AI 任务失败")
+                        null -> taskContext.fail("媒体 AI 任务记录丢失，无法继续执行")
                         else -> taskContext.pause("媒体 AI 后台执行未完成，等待 WorkManager 恢复")
                     }
                     result
