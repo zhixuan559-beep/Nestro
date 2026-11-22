@@ -132,6 +132,24 @@ class WorkflowExecutionCoordinatorTest {
         interrupted.join()
         assertEquals(AgentTaskStatus.PAUSED, tasks.state("workflow-resume-test-task")?.status)
         assertEquals(2, firstPassCalls)
+        assertTrue(runCatching {
+            workflows.execute(
+                workflow = workflow.copy(steps = workflow.steps.mapIndexed { index, step ->
+                    if (index == 1) step.copy(instruction = "被修改的 B") else step
+                }),
+                input = "完成测试任务",
+                taskId = "workflow-resume-test-task",
+                invokeModel = { _, _ -> "不应执行" }
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            workflows.execute(
+                workflow = workflow,
+                input = "不同的用户目标",
+                taskId = "workflow-resume-test-task",
+                invokeModel = { _, _ -> "不应执行" }
+            )
+        }.isFailure)
 
         var resumedCalls = 0
         val result = workflows.execute(
