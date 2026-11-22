@@ -8,6 +8,7 @@ import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 /** Owns workflow task registration and shared AgentTaskCoordinator lifecycle. */
 class WorkflowExecutionCoordinator(
@@ -25,6 +26,9 @@ class WorkflowExecutionCoordinator(
         invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolDiscovery?) -> String)? = null
     ): WorkflowRunResult {
         require(input.isNotBlank() && input.length <= 12_000) { "工作流输入为空或过长" }
+        val workflowFingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(WorkflowDefinitionCodec.encode(listOf(workflow)).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
         val savedState = taskCoordinator.state(taskId)
         val savedPayload = savedState?.checkpoint
             ?.takeIf { it.startsWith("workflow_run:") }
@@ -32,8 +36,9 @@ class WorkflowExecutionCoordinator(
             ?.let { runCatching { JSONObject(it) }.getOrNull() }
         if (savedPayload != null) {
             require(savedPayload.optInt("schemaVersion") == 1 &&
-                savedPayload.optString("workflowId") == workflow.id) {
-                "持久化工作流检查点与当前工作流不匹配，已停止恢复"
+                savedPayload.optString("workflowId") == workflow.id &&
+                savedPayload.optString("workflowFingerprint") == workflowFingerprint) {
+                "持久化工作流检查点与当前工作流定义不匹配；请恢复原工作流或新建运行"
             }
             require(savedPayload.optString("input") == input) {
                 "持久化工作流输入与当前输入不一致；请恢复原输入或新建运行"
@@ -53,10 +58,16 @@ class WorkflowExecutionCoordinator(
                 )
             }
         }.orEmpty()
-        val resumeOutput = savedPayload?.optString("previousOutput").orEmpty()
+        require(resumeRuns.map { it.stepId }.distinct().size == resumeRuns.size &&
+            resumeRuns.all { row -> workflow.steps.any { it.id == row.stepId } &&
+                row.status in setOf("success", "skipped", "failed") }) {
+            "工作流检查点包含重复或无效步骤，已停止恢复"
+        }
+        val resumeOutput = savedPayload?.optString("previousOutput").orEmpty().take(24_000)
         val initialCheckpoint = "workflow_run:" + JSONObject()
             .put("schemaVersion", 1)
             .put("workflowId", workflow.id)
+            .put("workflowFingerprint", workflowFingerprint)
             .put("input", input.take(12_000))
             .put("completedStepIndex", 0)
             .put("previousOutput", "")
@@ -95,6 +106,7 @@ class WorkflowExecutionCoordinator(
                     val checkpoint = JSONObject()
                         .put("schemaVersion", 1)
                         .put("workflowId", workflow.id)
+                        .put("workflowFingerprint", workflowFingerprint)
                         .put("input", input.take(12_000))
                         .put("completedStepIndex", index)
                         .put("previousOutput", output.take(12_000))
