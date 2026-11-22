@@ -245,16 +245,15 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
             MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.COMPLETED,progress=100,resultJson=result,errorMessage="")
             Result.success()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            if (isStopped) {
-                runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.CANCELLED) }
-            }
+            // Explicit cancellation is persisted by the scheduler; system stops remain resumable.
             throw cancelled
         } catch(t:Throwable) {
             val latest=MediaAiTaskStore.read(applicationContext,projectId,taskId)
-            if(isStopped || latest?.status==MediaAiTaskStatus.CANCELLED) {
-                runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,status=MediaAiTaskStatus.CANCELLED) }
-                Result.success()
-            } else fail(projectId,taskId,t.message ?: t.javaClass.simpleName)
+            when {
+                latest?.status == MediaAiTaskStatus.CANCELLED -> Result.success()
+                isStopped -> throw kotlinx.coroutines.CancellationException("媒体 AI Worker 被系统停止", t)
+                else -> fail(projectId,taskId,t.message ?: t.javaClass.simpleName)
+            }
         } finally {
             activeProvider=null
             activeVideoClient?.cancel()
