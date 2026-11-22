@@ -457,6 +457,7 @@ class NestroApplication : Application() {
                     title = plugin.name.take(160),
                     input = inputs.keys.sorted().joinToString(",").take(1_000),
                     idempotencyKey = idempotencyKey,
+                    maxRetries = 2,
                     startedAt = System.currentTimeMillis()
                 )
                 val canonicalTask = states.putIfAbsent(initialTaskState)
@@ -481,12 +482,16 @@ class NestroApplication : Application() {
                         status = status,
                         lastError = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) "" else error.take(2_000),
                         resultSummary = if (status == app.nestro.agent.AgentTaskStatus.COMPLETED) resultSummary.take(8_000) else current.resultSummary,
+                        availableAt = if (status == app.nestro.agent.AgentTaskStatus.RETRY_WAIT) current.availableAt else 0L,
                         finishedAt = if (terminal) System.currentTimeMillis() else 0L,
                         updatedAt = System.currentTimeMillis()
                     ))
                 }
-                val execution = try {
-                    GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
+                var retryAttempt = 0
+                var executionResult: app.nestro.agent.AgentToolResult? = null
+                while (executionResult == null) {
+                    try {
+                        executionResult = GeneratedPluginWorkflowExecutor.execute(plugin, inputs, catalog) { stepToolId, stepArguments ->
                         val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(stepToolId))
                         val permissionRouter = app.nestro.agent.AgentPermissionRouter { task, tool ->
                             CapabilityRegistryStore.registerIfAbsent(
@@ -543,13 +548,44 @@ class NestroApplication : Application() {
                             AgentToolLeaseRegistry.release(lease.id)
                         }
                     }
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件执行已暂停")
-                    throw cancelled
-                } catch (error: Exception) {
-                    updatePluginTaskState(app.nestro.agent.AgentTaskStatus.FAILED, error.message.orEmpty())
-                    return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        updatePluginTaskState(app.nestro.agent.AgentTaskStatus.PAUSED, "插件执行已暂停")
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (!app.nestro.agent.AgentTaskRetryPolicy.isRetryable(error) || retryAttempt >= 2) {
+                            updatePluginTaskState(app.nestro.agent.AgentTaskStatus.FAILED, error.message.orEmpty())
+                            return@register app.nestro.agent.AgentToolResult(false, error = error.message ?: "插件执行失败")
+                        }
+                        retryAttempt++
+                        val waitMillis = app.nestro.agent.AgentTaskRetryPolicy.backoffMillis(retryAttempt)
+                        val now = System.currentTimeMillis()
+                        val current = states.get(taskId) ?: initialTaskState
+                        states.put(current.copy(
+                            status = app.nestro.agent.AgentTaskStatus.RETRY_WAIT,
+                            attempts = retryAttempt,
+                            maxRetries = 2,
+                            availableAt = now + waitMillis,
+                            lastError = error.message.orEmpty().take(2_000),
+                            updatedAt = now
+                        ))
+                        RoomAgentTaskTraceStore(database.dao()).append(
+                            app.nestro.agent.AgentTaskTrace(
+                                taskId = taskId,
+                                event = "retry_scheduled",
+                                detail = "插件临时错误；第 ${retryAttempt} 次重试将在 ${waitMillis}ms 后执行"
+                            )
+                        )
+                        delay(waitMillis)
+                        val waiting = states.get(taskId) ?: current
+                        states.put(waiting.copy(
+                            status = app.nestro.agent.AgentTaskStatus.RUNNING,
+                            availableAt = 0L,
+                            lastError = "",
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                    }
                 }
+                val execution = executionResult ?: error("插件执行未产生结果")
                 updatePluginTaskState(
                     if (execution.success) app.nestro.agent.AgentTaskStatus.COMPLETED
                     else if (execution.requiresUser) app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER
