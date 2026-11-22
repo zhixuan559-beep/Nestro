@@ -108,15 +108,27 @@ internal class MikaVirtualDisplayService(
         return id
     }
 
-    override fun resizeDisplay(displayId: Int, surface: Surface, width: Int, height: Int, dpi: Int): Boolean {
-        val display = displays[displayId] ?: return false
-        if (!valid(surface, width, height, dpi)) return false
-        return runCatching {
-            display.resize(width, height, dpi)
-            display.surface = surface
-            true
-        }.getOrDefault(false)
-    }
+    override fun resizeDisplay(displayId: Int, surface: Surface, width: Int, height: Int, dpi: Int): Boolean =
+        synchronized(displays) {
+            val display = displays[displayId] ?: return@synchronized false
+            if (!valid(surface, width, height, dpi)) return@synchronized false
+            val oldMetrics = android.util.DisplayMetrics().also { display.display.getRealMetrics(it) }
+            val oldMode = display.display.mode
+            val oldSurface = display.surface
+            try {
+                display.resize(width, height, dpi)
+                display.surface = surface
+                oldSurface?.release()
+                true
+            } catch (error: Exception) {
+                runCatching {
+                    display.resize(oldMode.physicalWidth, oldMode.physicalHeight, oldMetrics.densityDpi)
+                    display.surface = oldSurface
+                }
+                Log.w(TAG, "resizeDisplay failed; previous display surface restored", error)
+                false
+            }
+        }
 
     override fun releaseDisplay(displayId: Int) {
         awake.stop(displayId)
