@@ -124,7 +124,8 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [ ] 自动记忆提取准确性、冲突覆盖和跨项目隔离完整验证。
 - [ ] 恢复自动提取的 mutationVersion/项目锁和 edit/delete/clear/backup restore 失效等待，防止旧提取并发写回已删除记忆。
 - [ ] 统一召回 query 合并最近用户轮次与当前 prompt；当前 conversation recall 只用 requestHistory，user-memory recall 只用当前 prompt，没有统一合并。
-- [ ] 明确是否保留用户主动授权的跨项目共享记忆；当前数据模型与检索严格按项目隔离。
+- [ ] 全局个人长期记忆跨聊天窗口共享；当前记忆按 projectId 存储，召回只查当前项目。
+- [ ] 用户主动跨项目检索记忆，需项目范围授权、撤销和来源标识；默认不自动串项目。
 
 ## 模块8：Phone Agent
 
