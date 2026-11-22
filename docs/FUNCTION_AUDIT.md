@@ -420,3 +420,11 @@
 这不是要求删除媒体任务或 Phone Agent 领域数据；媒体任务需要保留视频版本、进度、素材 ID 等领域字段，Phone Agent 需要保留动作计划和逐步结果。真正的重复/断链是通用任务生命周期分别由领域 Store 与 WorkManager 管理，未共享统一状态源。
 后续应让领域任务记录关联统一 taskId，由 AgentTaskCoordinator 管理生命周期；WorkManager 只负责唤醒/后台约束。改造前先做状态迁移与双写/回读方案，避免丢失正在运行的媒体任务或手机任务。当前未修改代码。
 
+
+## 2026-11-22 模型配置双轨结构去留判断
+
+- 当前模型配置存在新旧两层：`ModelRegistryStore/ModelRegistry` 管理服务商、模型和 Key ID；`ModelProfileCatalog` 与 `LocalVault` 保留旧版 profile/active-model/key 兼容入口。
+- 这不是可以直接删除的死代码：`ModelRegistryStore.load()/rebuildFromLegacy()`、`ModelRegistry.reconcileLegacyProfiles()`、`ModelConfigurationRepository` 仍会读取旧 profile、检查旧密钥并迁移/回写 registry；`ModelManagerPage` 仍为旧 provider/model 配置提供兼容编辑入口。
+- 清理前必须确认：旧版用户升级迁移、已有密钥解密/重写、active model 选择、故障切换、导入备份恢复和旧配置删除均不再依赖旧格式；在没有迁移回归测试与版本数据验证前，不删除旧字段/codec/vault 兼容方法。
+- 后续可把 UI 和运行时逐步收敛到新 registry，但必须先保留迁移兼容，避免升级后丢失用户 API Key 或当前活动模型。
+
