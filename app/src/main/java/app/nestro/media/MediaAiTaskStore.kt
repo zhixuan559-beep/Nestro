@@ -156,7 +156,11 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                     result
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                        taskContext.pause("媒体 AI Worker 被系统停止，可由 WorkManager 恢复")
+                        if (MediaAiTaskStore.read(applicationContext, projectId, taskId)?.status == MediaAiTaskStatus.CANCELLED) {
+                            taskContext.cancel("媒体 AI 任务已取消")
+                        } else {
+                            taskContext.pause("媒体 AI Worker 被系统停止，可由 WorkManager 恢复")
+                        }
                     }
                     throw cancelled
                 }
