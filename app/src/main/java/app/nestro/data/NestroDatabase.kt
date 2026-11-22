@@ -137,7 +137,7 @@ data class AgentTaskTraceEntity(
     val createdAt: Long
 )
 
-@Entity(tableName = "agent_task_states")
+@Entity(tableName = "agent_task_states", indices = [Index(value = ["idempotencyKey"], unique = true)])
 data class AgentTaskStateEntity(
     @PrimaryKey val taskId: String,
     val owner: String,
@@ -145,7 +145,20 @@ data class AgentTaskStateEntity(
     val currentStep: Int,
     val checkpoint: String,
     val lastError: String,
-    val updatedAt: Long
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "''") val projectId: String = "",
+    @ColumnInfo(defaultValue = "''") val conversationId: String = "",
+    @ColumnInfo(defaultValue = "''") val kind: String = "",
+    @ColumnInfo(defaultValue = "''") val capabilityId: String = "",
+    @ColumnInfo(defaultValue = "''") val title: String = "",
+    @ColumnInfo(defaultValue = "''") val input: String = "",
+    @ColumnInfo(defaultValue = "''") val resultSummary: String = "",
+    val idempotencyKey: String? = null,
+    @ColumnInfo(defaultValue = "0") val attempts: Int = 0,
+    @ColumnInfo(defaultValue = "2") val maxRetries: Int = 2,
+    @ColumnInfo(defaultValue = "0") val availableAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val startedAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val finishedAt: Long = 0L
 )
 
 @Entity(tableName = "phone_agent_tasks", indices = [Index(value = ["projectId", "updatedAt"]), Index(value = ["conversationId"])])
@@ -354,13 +367,33 @@ interface NestroDao {
     @Query("SELECT * FROM agent_task_states WHERE taskId = :taskId LIMIT 1")
     suspend fun agentTaskState(taskId: String): AgentTaskStateEntity?
 
+    @Query("SELECT * FROM agent_task_states WHERE idempotencyKey = :key LIMIT 1")
+    suspend fun agentTaskStateByIdempotencyKey(key: String): AgentTaskStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAgentTaskStateIfAbsent(state: AgentTaskStateEntity): Long
+
+    @Transaction
+    suspend fun putAgentTaskStateIfAbsent(state: AgentTaskStateEntity): AgentTaskStateEntity {
+        if (state.idempotencyKey != null) {
+            agentTaskStateByIdempotencyKey(state.idempotencyKey)?.let { return it }
+        }
+        insertAgentTaskStateIfAbsent(state)
+        return if (state.idempotencyKey != null) {
+            agentTaskStateByIdempotencyKey(state.idempotencyKey) ?: agentTaskState(state.taskId)
+                ?: error("任务状态写入后无法回读")
+        } else {
+            agentTaskState(state.taskId) ?: error("任务状态写入后无法回读")
+        }
+    }
+
     @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
     suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
 
     @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun recentGeneratedPluginTaskStates(limit: Int = 10): List<AgentTaskStateEntity>
 
-    @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'FAILED') ORDER BY updatedAt ASC")
+    @Query("SELECT * FROM agent_task_states WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'PAUSED', 'RETRY_WAIT', 'FAILED') ORDER BY updatedAt ASC")
     suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -710,7 +743,7 @@ interface NestroDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, KnowledgeChunkEmbeddingEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
@@ -727,6 +760,25 @@ abstract class NestroDatabase : RoomDatabase() {
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE user_memories ADD COLUMN shareAcrossProjects INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN projectId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN conversationId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN capabilityId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN input TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN resultSummary TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN idempotencyKey TEXT")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN maxRetries INTEGER NOT NULL DEFAULT 2")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN availableAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN startedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN finishedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_task_states_idempotencyKey ON agent_task_states(idempotencyKey)")
             }
         }
 
@@ -812,7 +864,7 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =
