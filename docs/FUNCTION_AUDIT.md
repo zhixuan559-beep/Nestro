@@ -404,3 +404,19 @@
 - 相关媒体、技能和信任根 JVM/Android 测试源码存在；但没有独立 `MediaVideoGenerationClientTest`，真实视频服务商端点、音频/视觉 API、社区签名撤销源与设备性能仍待测试。
 - 多模态分析尚未接入聊天主模型工具目录，视频生成已接入；详见多模态专项审计。
 
+
+## 2026-11-22 统一任务执行基座接入审计
+
+### 当前基座
+- `AgentTaskCoordinator` 已提供统一任务状态（QUEUED/RUNNING/WAITING_FOR_USER/PAUSED/FAILED/COMPLETED/CANCELLED）、幂等 enqueue、resume、checkpoint、trace、process-restart recovery 和外部 scheduler requeue。
+- Phone Agent 通过 `PhoneAgentWorker` 接入 `AgentTaskCoordinator`，同时保留 `PhoneAgentTaskStore` 的领域任务计划、动作结果和用户可读日志；两份状态需要验证同步一致性，但不应简单删除领域记录。
+
+### 已发现的平行任务状态实现
+- 媒体 AI：`MediaAiTaskStore` 使用每项目 JSON 文件持久化 QUEUED/RUNNING/COMPLETED/FAILED/CANCELLED、progress、resultJson、parentTaskId；`MediaAiTaskWorker` 直接由 WorkManager 排队/恢复/取消，没有接入 `AgentTaskCoordinator` 的通用生命周期状态。
+- 日历：`CalendarRepository` + `CalendarReminderScheduler/Worker` 只持久化日程和 WorkManager 提醒；到期后直接发通知，没有统一任务 ID 或 AgentTaskCoordinator dispatch。
+- 专家项目/工作流使用 `AgentTaskCoordinator`；因此目前不同领域任务的生命周期、恢复、取消、日志来源并不统一。
+
+### 当前判断
+这不是要求删除媒体任务或 Phone Agent 领域数据；媒体任务需要保留视频版本、进度、素材 ID 等领域字段，Phone Agent 需要保留动作计划和逐步结果。真正的重复/断链是通用任务生命周期分别由领域 Store 与 WorkManager 管理，未共享统一状态源。
+后续应让领域任务记录关联统一 taskId，由 AgentTaskCoordinator 管理生命周期；WorkManager 只负责唤醒/后台约束。改造前先做状态迁移与双写/回读方案，避免丢失正在运行的媒体任务或手机任务。当前未修改代码。
+
