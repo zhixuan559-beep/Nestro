@@ -1394,8 +1394,26 @@ fun NestroApp(initialPage: String = "home") {
                 activeRequestConversationId = ""
                 if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
                     scope.launch(Dispatchers.IO) {
+                        val memoryEnabled = requestAutomaticMemoryEnabled &&
+                            CapabilityRegistryStore.authorize(prefs, requestProjectId, "memory")
+                        if (memoryEnabled) {
+                            try {
+                                appRuntime.conversationPersistenceService.persistConversationMessages(
+                                    conversationId = requestConversationId,
+                                    projectId = requestProjectId,
+                                    messages = completedHistory
+                                )
+                            } catch (error: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    if (activeConversationId == requestConversationId) {
+                                        memoryStatus = "自动记忆提取已跳过：来源会话尚未安全持久化（${error.message ?: "未知错误"}）"
+                                    }
+                                }
+                                return@launch
+                            }
+                        }
                         appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
-                            enabled = requestAutomaticMemoryEnabled && CapabilityRegistryStore.authorize(prefs, requestProjectId, "memory"),
+                            enabled = memoryEnabled,
                             prompt = prompt,
                             modelConfigs = requestModelConfigs,
                             projectId = requestProjectId,
