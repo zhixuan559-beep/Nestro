@@ -126,7 +126,7 @@ object MediaRenderTaskStore {
             if (stagedOutput.exists()) stagedOutput.renameTo(output)
             if (stagedTask.exists()) stagedTask.renameTo(target)
             if (!output.exists()) {
-                runCatching { update(context, projectId, taskId, status = MediaRenderStatus.FAILED, error = "导出文件已清理，但任务记录未能删除") }
+                runCatching { update(context, projectId, taskId, status = MediaRenderStatus.FAILED, errorMessage = "导出文件已清理，但任务记录未能删除") }
             }
             error("无法完整清理导出任务与文件，已尝试回滚")
         }
