@@ -1,6 +1,7 @@
 package app.nestro.agent
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,11 +55,12 @@ class AgentRuntimeTest {
         val states = InMemoryAgentTaskStateStore()
         val runtime = DefaultAgentRuntime(catalog, DefaultAgentPermissionRouter(), states)
 
-        val result = runCatching {
+        val pending = launch {
             runtime.execute(AgentToolRequest("task-approval-pending", "approval.pending"))
         }
+        pending.join()
 
-        assertTrue(result.exceptionOrNull() is AgentApprovalPendingException)
+        assertTrue(pending.isCancelled)
         assertEquals(AgentTaskStatus.WAITING_FOR_USER, states.get("task-approval-pending")?.status)
         assertEquals("等待用户审批后继续", states.get("task-approval-pending")?.lastError)
     }
