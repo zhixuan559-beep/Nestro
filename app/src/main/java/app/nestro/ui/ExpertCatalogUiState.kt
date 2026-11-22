@@ -18,7 +18,7 @@ internal class ExpertCatalogUiState(private val preferences: SharedPreferences) 
     val experts: MutableState<List<String>> =
         mutableStateOf(listOf("文案官", "选题狐", "代码佬"))
     val expertPrompts: MutableState<Map<String, String>> =
-        mutableStateOf(loadExpertPromptMap(preferences))
+        mutableStateOf(loadExpertPrompts(preferences))
     val expertProfiles: MutableState<Map<String, ExpertProfile>> =
         mutableStateOf(ExpertProfileCodec.decode(preferences.getString("expert_profiles_v1", "{}") ?: "{}"))
     val expertRevisions: MutableState<Map<String, List<ExpertRevision>>> =
@@ -33,15 +33,3 @@ internal class ExpertCatalogUiState(private val preferences: SharedPreferences) 
         )
     )
 }
-
-private fun loadExpertPromptMap(preferences: SharedPreferences): Map<String, String> = runCatching {
-    val raw = preferences.getString("expert_prompts", "{}") ?: "{}"
-    val json = org.json.JSONObject(raw)
-    buildMap {
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            put(key, json.optString(key))
-        }
-    }
-}.getOrDefault(emptyMap())
