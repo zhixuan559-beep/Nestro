@@ -61,4 +61,27 @@ class MediaAiTaskStoreTest {
         assertTrue(MediaAiTaskStore.pendingResults(context,task.projectId).none { it.id==task.id })
         assertTrue(MediaAiTaskStore.recoverable(context,task.projectId).none { it.id==task.id })
     }
+    @Test fun transcriptionLanguageDefaultsToAutoAndCanBeSelected() {
+        val automatic = MediaAiTaskStore.create(
+            context, "ai-transcription-test", "00000000-0000-0000-0000-000000000021",
+            "provider.transcribe", "transcribe"
+        )
+        assertEquals("auto", MediaAiTaskStore.read(context, automatic.projectId, automatic.id)?.languageTag)
+
+        val english = MediaAiTaskStore.create(
+            context, "ai-transcription-test", "00000000-0000-0000-0000-000000000022",
+            "provider.transcribe", "transcribe", languageTag = "en-US"
+        )
+        assertEquals("en-US", MediaAiTaskStore.read(context, english.projectId, english.id)?.languageTag)
+    }
+
+    @Test fun rejectsInvalidTranscriptionLanguageTag() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaAiTaskStore.create(
+                context, "ai-transcription-test", "00000000-0000-0000-0000-000000000023",
+                "provider.transcribe", "transcribe", languageTag = "not a language"
+            )
+        }
+    }
+
 }
