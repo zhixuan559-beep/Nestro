@@ -321,3 +321,32 @@
 - 当前未进行完整 Kotlin 引用图/未使用符号扫描；由于无法仅凭文件名或旧分支存在与否判定死代码，本轮没有删除任何源码、资源或依赖。
 - 清理阶段的准入条件：先确认全仓引用、反射/序列化/Compose route/Manifest/WorkManager/备份迁移等隐式入口，再删除；每批清理保留可回滚提交并做差异核对。
 
+
+## 2026-11-22 模块 10–15 源码定向复核
+
+### 模块10：作品/产物库
+- `ArtifactStore` 有项目范围的产物记录、文件校验、版本和备份验证；对应 `ArtifactStoreBackupTest`、`ArtifactStoreBackupValidationTest` 等测试源码存在。
+- 需继续联测：作品文件和项目包/全局备份的恢复一致性、删除/索引缺失后的恢复与跨项目隔离；不能把文件索引存在当作文件字节一定存在。
+
+### 模块11：专家模板
+- `ExpertTemplateCatalog`、`ExpertRevisionAndTemplate` 和相关 parser/codec 覆盖内置模板、自定义模板、版本记录、导入导出与分类搜索；JVM 测试源码存在。
+- 需继续核对模板引用的专家/技能被项目范围限制或删除时，是否正确阻止破坏性操作；测试尚未执行。
+
+### 模块12：双模型对比
+- `ModelComparisonCoordinator` 负责两个不同模型的并行请求；`ModelComparisonPolicy` 校验模型不同、可用和输入非空；独立错误结果与停止路径已有代码。
+- 对应 policy 测试源码存在；并发取消、两个模型一方失败/另一方完成、模型切换和费用归属仍需统一执行测试。
+
+### 模块13：MCP 工具中心
+- 当前 `McpToolCenter` 负责远程 HTTPS Streamable HTTP MCP 服务、工具发现、参数 schema 校验、凭据保护、调用授权和审计；当前范围不启动任意本地 stdio Server。
+- `fix/module-13-audit-reliability` 分支抽查的 MCP 源码与测试 blob 与整合分支完全一致，没有待再次合并的代码修复。
+- 需验证服务端断连、超时/取消、schema 边界、凭据撤销、审计损坏恢复及主模型工具调用端到端；对应测试源码存在但未执行。
+
+### 模块14：GitHub 工作台
+- `GitWorkbench` 中的 `GitAccountStore/GitCredentialVault` 使用 AndroidKeyStore AES-GCM 保护用户 Git 访问令牌；支持 GitHub/GitLab/Gitee 用户授权和 JGit 本地仓库操作。
+- 旧模块14分支有分叉，但整合分支抽查已包含凭据保存失败安全回滚和失败显式提示；不得将旧分支版本覆盖当前实现。
+- 需继续检查 clone/pull/push/commit/branch、冲突、回滚、凭据轮换、仓库删除与本地文件系统异常；JVM/Android 测试源码存在但未执行。
+
+### 模块15：AI 共建工作台
+- `AiCoworkbenchService` 复用 `GitWorkbenchRepository`，提供变更审查、补丁应用/回滚和构建/测试工作流；相关静态分析、报告解析、上下文策略与策略测试源码存在。
+- 需确认远程 GitHub Actions 只在用户主动启动后执行、逐文件批准与事务回滚在异常/进程中断下保持一致；真实 Actions、SBOM/JUnit 产物和完整测试尚未运行。
+
