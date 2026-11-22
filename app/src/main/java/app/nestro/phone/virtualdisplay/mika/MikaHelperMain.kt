@@ -22,10 +22,11 @@ import kotlin.system.exitProcess
 object MikaHelperMain {
     @JvmStatic
     fun main(args: Array<String>) {
-        if (args.size < 3) exitProcess(2)
+        if (args.size < 4) exitProcess(2)
         val packageName = args[0]
         val appUid = args[1].toIntOrNull() ?: exitProcess(2)
         val certificatePin = args[2]
+        val helperApkPath = args[3]
         val stdin = System::class.java.getField("in").get(null) as InputStream
         val nonce = runCatching { BufferedReader(InputStreamReader(stdin)).readLine()?.trim() }.getOrNull()
         runCatching { stdin.close() }
@@ -38,7 +39,7 @@ object MikaHelperMain {
         Handler(worker.looper).post {
             var nextNonce: String? = nonce
             while (true) {
-                val attached = attach(shellContext, packageName, appUid, certificatePin, service, nextNonce)
+                val attached = attach(shellContext, packageName, appUid, certificatePin, helperApkPath, service, nextNonce)
                 if (attached == null) {
                     Thread.sleep(RETRY_MS)
                     continue
@@ -63,6 +64,7 @@ object MikaHelperMain {
         packageName: String,
         appUid: Int,
         certificatePin: String,
+        helperApkPath: String,
         service: IMikaShell,
         nonce: String?,
     ): Pair<IBinder, String>? = try {
@@ -73,7 +75,7 @@ object MikaHelperMain {
             putBinder(KEY_BINDER, service.asBinder())
             putInt(KEY_UID, identity[0])
             putInt(KEY_PID, identity[1])
-            putString(KEY_APK, System.getProperty("java.class.path"))
+            putString(KEY_APK, helperApkPath)
             putString(KEY_PACKAGE, packageName)
             putInt(KEY_APP_UID, appUid)
             putString(KEY_CERT, certificatePin)
