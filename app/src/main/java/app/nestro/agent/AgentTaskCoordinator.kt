@@ -202,9 +202,17 @@ class AgentTaskCoordinator(
     ): T {
         require(taskId.isNotBlank() && taskId.length <= 120)
         require(owner.isNotBlank() && owner.length <= 80)
-        require(states.get(taskId) == null) { "runInline 任务 ID 必须唯一" }
+        // Stable task-scoped handler identity allows the owning feature to re-register
+        // its handler and resume a durable checkpoint after process recreation.
+        val handlerId = owner.take(32) + "-" + taskId.hashCode().toUInt().toString(16)
+        val existing = states.get(taskId)
+        if (existing != null) {
+            require(existing.owner == handlerId) { "runInline 任务 ID 已被其他任务占用" }
+            require(existing.status !in setOf(AgentTaskStatus.RUNNING, AgentTaskStatus.COMPLETED, AgentTaskStatus.CANCELLED)) {
+                "任务当前状态为 ${existing.status}，不能重复启动"
+            }
+        }
         val completion = CompletableDeferred<T>()
-        val handlerId = owner.take(24) + "-" + java.util.UUID.randomUUID().toString()
         handlers.register(handlerId) { context ->
             try {
                 completion.complete(handler(context))
@@ -234,6 +242,9 @@ class AgentTaskCoordinator(
             handlers.unregister(handlerId)
         }
     }
+
+    /** Read-only durable task snapshot for feature-specific checkpoint restoration. */
+    suspend fun state(taskId: String): AgentTaskState? = states.get(taskId)
 
     suspend fun pause(taskId: String) {
         stop(taskId, AgentTaskStatus.PAUSED)
