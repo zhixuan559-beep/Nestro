@@ -510,46 +510,56 @@ class AgentApprovalCoordinator(
                 return@scopeLock decision
             }
 
-            promptMutex.withLock promptLock@{
-                val pending = loadAuditsForScope(scopeId)
-                    .firstOrNull { it.toolId == toolId && it.status == "PENDING" }
-                val now = System.currentTimeMillis()
-                val record = pending ?: AgentApprovalAuditRecord(
-                    id = UUID.randomUUID().toString(),
-                    scopeId = scopeId,
-                    toolId = toolId,
-                    reason = reason.take(2_000),
-                    status = "PENDING",
-                    createdAt = now,
-                    updatedAt = now
-                )
-                if (pending == null) persistAudit(record)
+            // Persist and register the request before waiting for the global UI slot.
+            // A second task can therefore be approved from the durable queue while the
+            // first prompt is open, without losing its continuation on process death.
+            val pending = loadAuditsForScope(scopeId)
+                .firstOrNull { it.toolId == toolId && it.status == "PENDING" }
+            val now = System.currentTimeMillis()
+            val record = pending ?: AgentApprovalAuditRecord(
+                id = UUID.randomUUID().toString(),
+                scopeId = scopeId,
+                toolId = toolId,
+                reason = reason.take(2_000),
+                status = "PENDING",
+                createdAt = now,
+                updatedAt = now
+            )
+            if (pending == null) persistAudit(record)
 
-                val approvalHandler = handler ?: return@promptLock null
-                val deferred = CompletableDeferred<AgentApprovalDecision>()
-                activeRequests[record.id] = ActiveApproval(record, deferred)
-                try {
-                    approvalHandler(record.toRequest())
-                    when (val decision = deferred.await()) {
-                        AgentApprovalDecision.AUTHORIZE_ONCE -> {
-                            persistAudit(record.copy(status = "CONSUMED_ONCE", updatedAt = System.currentTimeMillis()))
-                            AgentApprovalDecision.AUTHORIZE_ONCE
-                        }
-                        AgentApprovalDecision.AUTHORIZE_TASK -> {
-                            taskWideGrants += scopeId
-                            persistAudit(record.copy(status = "AUTHORIZED_TASK", updatedAt = System.currentTimeMillis()))
-                            AgentApprovalDecision.AUTHORIZE_TASK
-                        }
-                        AgentApprovalDecision.REJECT -> {
-                            persistAudit(record.copy(status = "CONSUMED_REJECTED", updatedAt = System.currentTimeMillis()))
-                            AgentApprovalDecision.REJECT
-                        }
+            val deferred = CompletableDeferred<AgentApprovalDecision>()
+            activeRequests[record.id] = ActiveApproval(record, deferred)
+            try {
+                promptMutex.withLock promptLock@{
+                    if (deferred.isCompleted) {
+                        consumeDecision(record, deferred.await())
+                    } else {
+                        val approvalHandler = handler ?: return@promptLock null
+                        approvalHandler(record.toRequest())
+                        consumeDecision(record, deferred.await())
                     }
-                } finally {
-                    activeRequests.remove(record.id)
                 }
+            } finally {
+                activeRequests.remove(record.id)
             }
         }
+    }
+
+    private suspend fun consumeDecision(
+        record: AgentApprovalAuditRecord,
+        decision: AgentApprovalDecision
+    ): AgentApprovalDecision {
+        when (decision) {
+            AgentApprovalDecision.AUTHORIZE_ONCE ->
+                persistAudit(record.copy(status = "CONSUMED_ONCE", updatedAt = System.currentTimeMillis()))
+            AgentApprovalDecision.AUTHORIZE_TASK -> {
+                taskWideGrants += record.scopeId
+                persistAudit(record.copy(status = "AUTHORIZED_TASK", updatedAt = System.currentTimeMillis()))
+            }
+            AgentApprovalDecision.REJECT ->
+                persistAudit(record.copy(status = "CONSUMED_REJECTED", updatedAt = System.currentTimeMillis()))
+        }
+        return decision
     }
 
     fun endScope(scopeId: String) {
