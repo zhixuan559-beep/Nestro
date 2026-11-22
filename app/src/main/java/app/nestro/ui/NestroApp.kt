@@ -1937,7 +1937,6 @@ fun NestroApp(initialPage: String = "home") {
                                                              .putString("workflow_resume_input_v1", input)
                                                              .apply()
                                                          try {
-                                                         var authorizeRemainingWorkflowStepsForTask = false
                                                          val result = runCatchingCancellable {
                                                              appRuntime.workflowExecutionCoordinator.execute(
                                                                  workflow = workflow,
@@ -2001,29 +2000,11 @@ fun NestroApp(initialPage: String = "home") {
                                                                      workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
                                                                  },
                                                                  requestApproval = { step, previousOutput ->
-                                                                     if (authorizeRemainingWorkflowStepsForTask) {
-                                                                         true
-                                                                     } else {
-                                                                         val decision = CompletableDeferred<WorkflowApprovalChoice>()
-                                                                         workflowApprovalPrompt = WorkflowApprovalPrompt(
-                                                                             stepTitle = step.title,
-                                                                             instruction = step.instruction.take(4_000),
-                                                                             context = previousOutput.take(2_000),
-                                                                             decision = decision
-                                                                         )
-                                                                         try {
-                                                                             when (decision.await()) {
-                                                                                 WorkflowApprovalChoice.AUTHORIZE_ONCE -> true
-                                                                                 WorkflowApprovalChoice.AUTHORIZE_TASK -> {
-                                                                                     authorizeRemainingWorkflowStepsForTask = true
-                                                                                     true
-                                                                                 }
-                                                                                 WorkflowApprovalChoice.REJECT -> false
-                                                                             }
-                                                                         } finally {
-                                                                             workflowApprovalPrompt = null
-                                                                         }
-                                                                     }
+                                                                     appRuntime.agentApprovalCoordinator.authorize(
+                                                                         effectiveWorkflowTaskId,
+                                                                         "workflow.${step.id}",
+                                                                         "工作流步骤需要授权：${step.title}\n执行要求：${step.instruction.take(2_000)}\n前序结果：${previousOutput.take(1_000)}"
+                                                                     )
                                                                  },
                                                                  toolCatalog = appRuntime.agentToolCatalog
                                                              )
@@ -2039,7 +2020,7 @@ fun NestroApp(initialPage: String = "home") {
                                                              }
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
-                                                         val runRecord = WorkflowRunRecord(
+                                                         appRuntime.agentApprovalCoordinator.endScope(effectiveWorkflowTaskId)\n                                                         val runRecord = WorkflowRunRecord(
                                                              workflowId = workflow.id,
                                                              workflowName = workflow.name,
                                                              input = input,
