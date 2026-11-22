@@ -138,6 +138,22 @@ class WorkflowEngineTest {
         }
         assertEquals(true, failure is IllegalArgumentException)
     }
+    @Test fun codecPreservesApprovalConditionsAndParallelGroups() {
+        val workflow = WorkflowDefinition("config", "配置", "", listOf(
+            WorkflowStep(
+                title = "并行调研",
+                instruction = "分别调研",
+                condition = "nonblank",
+                approvalRequired = true,
+                parallelGroup = "research"
+            )
+        ))
+        val decoded = WorkflowDefinitionCodec.decode(WorkflowDefinitionCodec.encode(listOf(workflow))).single()
+        assertEquals("nonblank", decoded.steps.single().condition)
+        assertTrue(decoded.steps.single().approvalRequired)
+        assertEquals("research", decoded.steps.single().parallelGroup)
+    }
+
     @Test fun workflowEditorCanInsertRemoveMoveAndUpdateSteps() {
         val first = WorkflowStep(title = "A", instruction = "a")
         val second = WorkflowStep(title = "B", instruction = "b")
