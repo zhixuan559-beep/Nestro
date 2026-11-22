@@ -400,6 +400,8 @@ data class AgentApprovalRequest(
  * Task-wide grants are process-local and scoped to one user request; they never
  * become persistent service/project permissions.
  */
+class AgentApprovalPendingException(message: String) : CancellationException(message)
+
 class AgentApprovalCoordinator {
     private val taskWideGrants = ConcurrentHashMap.newKeySet<String>()
     private val requestLocks = ConcurrentHashMap<String, Mutex>()
@@ -409,21 +411,21 @@ class AgentApprovalCoordinator {
         handler = value
     }
 
-    suspend fun authorize(scopeId: String, toolId: String, reason: String): Boolean {
+    suspend fun authorize(scopeId: String, toolId: String, reason: String): AgentApprovalDecision? {
         require(scopeId.isNotBlank() && scopeId.length <= 160)
         require(toolId.isNotBlank() && toolId.length <= 100)
-        if (scopeId in taskWideGrants) return true
+        if (scopeId in taskWideGrants) return AgentApprovalDecision.AUTHORIZE_TASK
         val lock = requestLocks.computeIfAbsent(scopeId) { Mutex() }
         return lock.withLock {
-            if (scopeId in taskWideGrants) return@withLock true
-            val approvalHandler = handler ?: return@withLock false
-            when (approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))) {
-                AgentApprovalDecision.AUTHORIZE_ONCE -> true
+            if (scopeId in taskWideGrants) return@withLock AgentApprovalDecision.AUTHORIZE_TASK
+            val approvalHandler = handler ?: return@withLock null
+            when (val decision = approvalHandler(AgentApprovalRequest(scopeId, toolId, reason.take(2_000)))) {
+                AgentApprovalDecision.AUTHORIZE_ONCE -> AgentApprovalDecision.AUTHORIZE_ONCE
                 AgentApprovalDecision.AUTHORIZE_TASK -> {
                     taskWideGrants += scopeId
-                    true
+                    AgentApprovalDecision.AUTHORIZE_TASK
                 }
-                AgentApprovalDecision.REJECT -> false
+                AgentApprovalDecision.REJECT -> AgentApprovalDecision.REJECT
             }
         }
     }
