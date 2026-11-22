@@ -1904,6 +1904,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                      val decision = CompletableDeferred<Boolean>()
                                                                      workflowApprovalPrompt = WorkflowApprovalPrompt(
                                                                          stepTitle = step.title,
+                                                                         instruction = step.instruction.take(4_000),
                                                                          context = previousOutput.take(2_000),
                                                                          decision = decision
                                                                      )
@@ -3971,6 +3972,8 @@ fun NestroApp(initialPage: String = "home") {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("即将执行：${approval.stepTitle}", color = Ink)
+                    Text("执行要求：", color = Muted)
+                    Text(approval.instruction, color = Ink)
                     Text("前序结果（供判断）：", color = Muted)
                     Text(approval.context.ifBlank { "暂无前序输出" }, color = Ink)
                     Text("批准后才会继续执行此步骤。", color = Muted)
