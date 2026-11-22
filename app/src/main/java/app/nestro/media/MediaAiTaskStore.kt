@@ -207,7 +207,7 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
                         .put("displayName",imported.displayName).toString()
                     MediaAiTaskStore.update(applicationContext,projectId,taskId,
                         progress=100,resultJson=result,errorMessage="")
-                    return Result.success()
+                    return true
                 } finally {
                     generated.delete()
                     activeVideoClient = null
