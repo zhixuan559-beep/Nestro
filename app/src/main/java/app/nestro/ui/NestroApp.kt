@@ -1957,8 +1957,8 @@ fun NestroApp(initialPage: String = "home") {
                                                          runningWorkflowId = ""
                                                          busy = false
                                                          stopRequested = false
-                                                         workflowInputDraft = ""
                                                          if (result.isSuccess) {
+                                                             workflowInputDraft = ""
                                                              prefs.edit()
                                                                  .remove("workflow_task_id_v1")
                                                                  .remove("workflow_task_workflow_id_v1")
