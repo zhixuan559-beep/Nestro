@@ -397,6 +397,14 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         val maxHeightPx = with(density) { maxHeight.toPx() }
         val panelWidthPx = with(density) { panelWidthDp.toPx() }
         val panelHeightPx = with(density) { panelHeightDp.toPx() }
+        LaunchedEffect(panelWidthPx, panelHeightPx, maxWidthPx, maxHeightPx) {
+            val minX = -(maxWidthPx - panelWidthPx).coerceAtLeast(0f)
+            val minY = -(maxHeightPx - panelHeightPx).coerceAtLeast(0f)
+            floatingPreviewOffset = Offset(
+                floatingPreviewOffset.x.coerceIn(minX, 0f),
+                floatingPreviewOffset.y.coerceIn(minY, 0f)
+            )
+        }
         Surface(
             color = Card,
             shape = RoundedCornerShape(14.dp),
