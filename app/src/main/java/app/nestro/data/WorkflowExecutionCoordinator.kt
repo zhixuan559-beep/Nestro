@@ -55,7 +55,7 @@ class WorkflowExecutionCoordinator(
                     title = row.optString("title"),
                     status = row.optString("status"),
                     attempts = row.optInt("attempts").coerceIn(0, 100),
-                    output = row.optString("output").take(8_000),
+                    output = row.optString("output").take(5_000),
                     error = row.optString("error").take(300),
                     iterations = row.optInt("iterations", 1).coerceIn(0, 3)
                 )
@@ -124,7 +124,7 @@ class WorkflowExecutionCoordinator(
                                         workflow.steps.firstOrNull { it.id == stepRun.stepId }?.parallelGroup?.isNotBlank() == true &&
                                         workflow.steps.firstOrNull { it.id == row.stepId }?.parallelGroup ==
                                             workflow.steps.firstOrNull { it.id == stepRun.stepId }?.parallelGroup
-                                    ) row.output.take(8_000) else "")
+                                    ) row.output.take(5_000) else "")
                                     .put("error", row.error.take(300))
                                     .put("iterations", row.iterations))
                             }
