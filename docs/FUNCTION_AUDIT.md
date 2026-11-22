@@ -654,3 +654,40 @@
 - 未发现 `ModelLedToolDispatcher` 端到端调度测试；未发现 `GeneratedPluginWorkflowExecutor` 的权限/确认/恢复测试；未发现 `MediaVideoGenerationClientTest` 或媒体 AI Worker 完整 HTTP/结果导入测试；未发现 Calendar Reminder → Agent/Workflow 分发测试。
 - 对应缺口补测应随最小代码修复一起补，不要先创建与现有逻辑脱节的空测试。
 
+
+
+## 2026-11-22 PR #1 历史能力回收：确认存在的功能不能因架构替换而丢失
+
+PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其中包含若干当前整合分支尚未保留的用户可见/数据能力。不能将其一概归类为旧垃圾代码。
+
+### 记忆系统：明确缺失、应纳入回收
+旧 PR #1 的 `UserMemoryStore` 与 `NestroDatabase` 包含以下实现，当前 integration 版本缺失：
+- 每项目 mutationVersion + Mutex；自动记忆提取开始时捕获版本，保存候选前重新核对版本，防止用户删除/编辑/清空记忆后，较早启动的异步提取又把旧内容写回来。
+- `invalidateAndAwaitPendingExtractions(projectId)` / 全局版本失效并等待在途写入；在会话/项目删除、自动记忆关闭和完整备份恢复前调用。
+- 记忆显式跨项目共享开关 `shareAcrossProjects`，用户主动开启/撤销；检索时只允许目标项目读取明确共享的来源项目记忆。
+- 数据库迁移为 `user_memories.shareAcrossProjects` 新增字段；记忆备份/恢复保留该授权状态；UI 展示授权开关和撤销反馈。
+- 旧版本的 `saveCandidates(expectedMutationVersion=...)`、`setShareAcrossProjects`、`edit/delete/clearProject` 均受项目级锁保护。
+
+当前 integration 的 `UserMemoryStore.kt`（8.7 KB）不包含上述 mutationVersion/锁/等待失效/跨项目分享；`UserMemoryEntity` 也无 shareAcrossProjects 字段；`AutomaticMemoryExtractionCoordinator` 调用保存回调时没有传入提取开始时的版本。当前 `ProjectAccessControlStore` 是项目资源 READ/WRITE 授权，不等于记忆条目级跨项目共享；不可拿它当成这项功能已经实现。
+
+处理方式：将旧 PR 的记忆生命周期/共享能力作为**需要回收的已实现功能**，按当前 UserMemoryRepository/AutomaticMemoryExtractionCoordinator/Room/备份结构移植；不得直接覆盖旧版 NestroApp 或整套 UserMemoryStore。迁移必须保留旧备份兼容、删除级联、共享撤销即时生效和并发提取测试。
+
+### 统一任务内核：回收语义，不复制旧引擎
+旧 PR #1 的 `CapabilityTaskEntity/CapabilityTaskStore` 还具备当前 `AgentTaskCoordinator` 未完全覆盖的任务语义：
+- 基于 `projectId + kind + callerKey` 的持久业务幂等键（当前 AgentTaskCoordinator 主要按 taskId 幂等，不能自动去重不同 taskId 的同一业务请求）。
+- `attempts/maxRetries/availableAt` 与 RETRY_WAIT 延迟重试/退避。
+- 任务记录中的 projectId、conversationId、kind、capabilityId、title、input、resultSummary、requiresConfirmation、startedAt/finishedAt 等可检索元数据。
+- 有 from/to 状态迁移、事件名称/详情和任务事件分页/裁剪。
+当前 `AgentTaskStateEntity` 只有 taskId、owner、status、currentStep、checkpoint、lastError、updatedAt；`AgentTaskCoordinator` 已覆盖共享队列、状态、trace、checkpoint、等待用户、暂停/恢复/取消和进程恢复，但没有同等的业务幂等键/统一重试计划/完整任务元数据。
+处理方式：保留 AgentTaskCoordinator 为唯一执行内核，将必要的业务幂等、重试调度、项目/会话/能力元数据和状态事件补入它或其持久化模型；不恢复 `CapabilityTaskEngine` 第二套执行器。
+
+### 统一能力中心：回收用户可见功能
+旧 PR #1 的 `CapabilityRegistryStore/CapabilityCenterPage` 提供持久能力元数据、项目级模块授权/撤销、状态搜索、全局路由守卫、授权前确认、调用审计和任务总览。当前 integration 没有同名实现，`CapabilityDirectoryPage` 只负责 Skills/社区目录，`ProjectAccessControlStore` 只负责跨项目资源授权。
+处理方式：恢复统一能力总览和项目能力授权/撤销/审计的产品功能，但以当前 AgentToolCatalog、AgentRuntime、ProjectAccessControlStore、MCP 授权、Skill/插件配置和 AgentTaskTrace 为数据源；不直接合入旧 CapabilityRegistryStore/CapabilityCenterPage，以免重复注册和旧路由覆盖。
+
+### PR #1 旧分支整体处置
+- PR #1 继续保持 Draft/未合并；其旧代码作为功能来源和差异参考。
+- 知识库文本解码等已确认与当前文件 blob 一致的功能无需再合并。
+- 仅把上面确认缺失的能力逐项移植到当前架构，并为每项保留对应迁移、备份兼容、并发/撤销/恢复测试。
+- 不得以“旧架构过时”为由把已实现的用户功能直接丢弃，也不得把整条旧分支直接 merge 进来。
+
