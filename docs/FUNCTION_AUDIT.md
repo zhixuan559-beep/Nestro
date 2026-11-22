@@ -497,3 +497,8 @@
 - 因此现有用户工作流可串联提示词、专家和 Skill，但不能在工作流内部直接调用 Phone Agent、媒体视频/多模态工具或 MCP 工具；不能把它描述为完整的工具型自动化工作流。
 - 日历未来若只调度专家/Skill 工作流，可复用当前 WorkflowExecutionCoordinator；若需要定时触发“创作+下载素材+视频生成”等混合任务，则应把该触发交给主模型工具调度器，或为工作流增加显式、权限受控的 TOOL/PHONE_AGENT/MEDIA 步骤。需先确认边界，再复用现有 ModelLedToolDispatcher，不能让工作流绕开统一权限/审批。
 
+
+### Android 系统助手入口补充核对
+- `AndroidManifest.xml` 已声明 `ACTION_ASSIST`；`AndroidAssistantRoleSupport` 在 Android Q+ 检查 `ROLE_ASSISTANT` 可用性/持有状态，并返回系统授权 Intent；`MainActivity` 处理助手入口路由到 Nestro 主聊天。
+- 当前是系统助手调用入口，不是完整 `VoiceInteractionService/VoiceInteractionSessionService`；常驻热词、锁屏语音会话和屏幕上下文理解未实现。该功能属于已实现的基础入口与明确未实现的高级助手能力，不能混为一谈。
+
