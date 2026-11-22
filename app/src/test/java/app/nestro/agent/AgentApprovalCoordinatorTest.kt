@@ -4,7 +4,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentApprovalCoordinatorTest {
@@ -18,7 +17,7 @@ class AgentApprovalCoordinatorTest {
         }
 
         assertEquals(AgentApprovalDecision.AUTHORIZE_ONCE, approvals.authorize("request-1", "mcp_tool_a", "需要确认"))
-        assertTrue(approvals.authorize("request-1", "mcp_tool_a", "需要确认"))
+        assertEquals(AgentApprovalDecision.AUTHORIZE_ONCE, approvals.authorize("request-1", "mcp_tool_a", "需要确认"))
         assertEquals(2, requests)
         approvals.endScope("request-1")
     }
