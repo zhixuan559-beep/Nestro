@@ -275,3 +275,12 @@
 - 媒体 ZIP 仍未并入通用 JSON 设备备份/项目包；这不是同一功能重复实现，而是当前数据覆盖边界分离。后续需判断是统一备份格式还是明确保留独立媒体工程包并提供完整恢复说明，不能简单删除其中任一实现。
 - 已有 `LocalBackupRoundTripTest`、`LocalBackupCompatibilityTest`、`ProjectPackageCodecTest` 和 ArtifactStore 备份验证测试源码；全量 Android 往返/升级/媒体素材恢复尚待统一执行。
 
+
+## 2026-11-22 产品边界源码抽查
+
+- 当前源码有 `LocalVault`，使用 AndroidKeyStore AES-GCM 加密本地模型 API Key；GitHub/GitLab/Gitee 账号由 `GitAccountStore/GitCredentialVault` 保存用户 PAT，未发现 Nestro 自建账号/登录流程。
+- OAuth 服务 `services/modelscope-oauth` 是用户/运营方自行部署的第三方授权桥接服务，不是 Nestro 用户账号系统；服务端 Client Secret 不应进入 APK，Android 回调 token 写入本地凭据库。
+- 当前 Git 工作台支持 GitHub/GitLab/Gitee 的远程仓库操作，因此“本地优先”没有被实现成禁止云端仓库同步。
+- 仓库 README 已说明本地优先和凭据不托管，但“免 Nestro 账号、第三方账号由用户自行登录、Nestro 私人记忆/技能与公开项目严格隔离”此前没有完整写入统一产品基线；现已补入路线图 H 节。
+- 这项仍需后续全量检查：公开仓库/构建产物/日志/备份中不得出现真实 API Key、OAuth Client Secret、PAT 或灵犀私人记忆文件；当前仅确认本地凭据存储实现，未执行秘密扫描与发布包检查。
+
