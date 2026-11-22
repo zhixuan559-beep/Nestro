@@ -118,7 +118,15 @@ class CapabilityRegistryStoreTest {
                 preferences, "project-a", "server-a", "search", defaultGranted = false
             )
         )
-        assertTrue(CapabilityRegistryStore.recentToolAudit(preferences, "project-a").size >= 5)
+        assertFalse(
+            CapabilityRegistryStore.authorizeToolCall(
+                preferences, "project-a", "server-a", "search",
+                defaultGranted = true, globallyEnabled = false
+            )
+        )
+        assertTrue(CapabilityRegistryStore.recentToolAudit(preferences, "project-a").any {
+            it.action == "invoke" && it.outcome == "denied"
+        })
     }
 
     @Test
