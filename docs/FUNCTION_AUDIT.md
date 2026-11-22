@@ -1158,3 +1158,13 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已修正 `NestroApp.kt` 持久化回调：成功写入后同步 `persistedConversationVersions`，并清理已移除会话的版本 marker，避免每次快照变动都把所有会话重复写入。
 - 提交顺序：`478c2e386ae793da2e479b72f01dbcbcc17d84e4`（新增 effect）、`7b1eadf0f62b419cb97fd48712786044f544c1ab`（回写版本 marker）、`f7b36a32653f582a582fcc0677276f8d03161737`（异常边界收窄为 Exception）。已回读两个文件并确认调用点与定义存在。
 - 该修复尚未 Gradle 编译或运行测试；不能标记编译通过。后续仍需继续静态扫描其他 unresolved references/遗漏接线。
+
+
+## 2026-11-22 17:25 UTC — 自动记忆来源归属校验修复
+
+- `UserMemoryStore.saveCandidates()` 原先只校验 projectId/conversationId/messageId 的非空/长度、mutation token、候选内容和指纹冲突；未验证项目存在、来源会话归属项目、来源消息真实存在且为 user 角色。
+- 已补充写入前校验：`dao.projectExists(projectId)`、`dao.conversationWithMessages(conversationId)`、conversation.projectId 相等、source message 存在且 role=user；不符合时不写入。
+- 为避免自动提取与 300ms debounce 快照写入竞争，新增 `ConversationPersistenceService.persistConversationMessages()`，在自动记忆提取前以 Room transaction 持久化当前会话完整消息，并拒绝跨项目覆盖；NestroApp 在该事务成功后才调用自动记忆提取。
+- 新增/更新 instrumentation 覆盖：来源会话/消息必须存在且归属同项目；不存在项目、跨项目会话、缺失消息均拒绝；合法来源成功保存；会话持久化可创建来源记录且拒绝跨项目覆盖。
+- 相关源码提交：`bfe9771a8ac5c9cfe0e08b2014eb47a6b7b1a8b5`（会话事务持久化）、`f5917446812a194b832c0b65cfb0528cd07d4347`（自动提取前先持久化）、`a9f398a65ef5917b6a112173ebc8837ba47875ce`（记忆来源归属校验）、`e465323f18977ccf6ee52fa98f7ea5f22f9c3aa3`（来源验证测试）、`91a75bdd22f5d5db70b074ad1c3c0779ec4ae63f`（会话事务测试）、`bcc3b346935e545cec50e0d8d165995e2f3f2833`（持久化版本 marker 同步）。
+- 已回读源码与测试源码，未运行 instrumentation/Gradle；此项标记为“代码已补、测试源码已补、运行验证待后续”。
