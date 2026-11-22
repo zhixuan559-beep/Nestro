@@ -18,4 +18,6 @@ interface IMikaShell {
     void finishDisplay(int displayId, in String[] keep, in String[] close) = 48;
     int injectAsciiText(int displayId, int taskId, String packageName, String text) = 50;
     boolean resizeDisplay(int displayId, in Surface surface, int width, int height, int dpi) = 62;
+    int[] identity() = 21;
+    void releaseAll() = 22;
 }
