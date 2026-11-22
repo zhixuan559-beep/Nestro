@@ -124,7 +124,8 @@ class NestroApplication : Application() {
                 app.nestro.agent.AgentToolSpec(
                     id = "knowledge.search",
                     description = "按当前项目搜索知识库资料。参数：query（必填，检索问题）；limit（可选，1 到 8）。只读，不会修改知识库。",
-                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY,
+                    parallelSafe = true
                 )
             ) { arguments ->
                 val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
@@ -194,7 +195,8 @@ class NestroApplication : Application() {
                 app.nestro.agent.AgentToolSpec(
                     id = "media.project.assets",
                     description = "列出当前项目素材库中的可用素材，供创作工作引用。可选参数：kind（VIDEO/AUDIO/IMAGE）；limit（1 到 100）。",
-                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY,
+                    parallelSafe = true
                 )
             ) { arguments ->
                 val projectId = arguments["__nestro_project_id"]?.takeIf(String::isNotBlank)
@@ -223,7 +225,8 @@ class NestroApplication : Application() {
                 app.nestro.agent.AgentToolSpec(
                     id = "media.provider.list",
                     description = "列出当前用户已配置的媒体服务商及配置字段声明的媒体能力：视觉模型、音频转写模型、视频场景接口、音频处理接口、视频生成模型。无需参数；配置存在不代表第三方接口已完成联调验证。",
-                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY,
+                    parallelSafe = true
                 )
             ) {
                 val providers = MediaProviderConfigStore(this@NestroApplication).list()
