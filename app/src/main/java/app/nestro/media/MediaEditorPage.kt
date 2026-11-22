@@ -841,7 +841,7 @@ fun MediaEditorPage(
             },
             title = { Text("恢复媒体工程") },
             text = {
-                Text("将替换当前项目的媒体时间线、素材索引和原始素材文件。当前项目的其他聊天、知识库和作品数据不会改变。请先确认没有正在运行的渲染任务。")
+                Text("将替换当前项目的媒体时间线、素材索引、原始素材和已导出的视频文件。当前项目的聊天、知识库和作品数据不会改变。请先确认没有未结束的渲染或媒体 AI 任务。")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -852,7 +852,7 @@ fun MediaEditorPage(
                         val hasActiveRender = tasks.any {
                             it.status in setOf(MediaRenderStatus.QUEUED, MediaRenderStatus.RUNNING, MediaRenderStatus.PAUSED)
                         }
-                        val hasActiveAi = mediaAiTasks.any {
+                        val hasActiveAi = mediaAiRunning || mediaAiTasks.any {
                             it.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)
                         }
                         if (hasActiveRender || hasActiveAi) {
