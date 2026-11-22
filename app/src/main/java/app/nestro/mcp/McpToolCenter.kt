@@ -266,6 +266,9 @@ class McpToolCenterService(
       is AgentAuthorization.RequireConfirmation -> {
        taskContext.waitForUser(authorization.reason)
        val decision=approvalCoordinator?.authorize(taskId,tool.id,authorization.reason)
+       if (decision == null) {
+        throw AgentApprovalPendingException("MCP 工具等待用户审批：${tool.id}")
+       }
        val approved = decision == AgentApprovalDecision.AUTHORIZE_ONCE ||
         decision == AgentApprovalDecision.AUTHORIZE_TASK
        if(approved) {
