@@ -124,7 +124,26 @@ internal class ModelLedToolDispatcher(
         if (available.isEmpty()) return null
         val taskId = "chat-tools-$requestId".take(120)
         val stateStore: AgentTaskStateStore = RoomAgentTaskStateStore(database.dao())
-        stateStore.put(AgentTaskState(taskId = taskId, owner = "chat", status = AgentTaskStatus.RUNNING))
+        val chatTask = stateStore.putIfAbsent(
+            AgentTaskState(
+                taskId = taskId,
+                owner = "chat",
+                status = AgentTaskStatus.RUNNING,
+                projectId = projectId,
+                conversationId = conversationId,
+                kind = "chat_tool_dispatch",
+                capabilityId = "model_led_tool_dispatch",
+                title = prompt.take(160),
+                input = prompt.take(12_000),
+                idempotencyKey = "chat:" + projectId + ":" + requestId
+            )
+        )
+        if (chatTask.taskId != taskId) {
+            return ModelToolDispatchResult(
+                directReply = "该聊天工具请求已存在，已阻止重复执行。",
+                streamedToUi = false
+            )
+        }
         suspend fun markTerminal(status: AgentTaskStatus, error: String = "") {
             val current = stateStore.get(taskId) ?: AgentTaskState(taskId = taskId, owner = "chat")
             stateStore.put(current.copy(status = status, lastError = error.take(2_000), updatedAt = System.currentTimeMillis()))
