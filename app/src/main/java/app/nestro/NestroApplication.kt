@@ -218,7 +218,7 @@ class NestroApplication : Application() {
             register(
                 app.nestro.agent.AgentToolSpec(
                     id = "media.provider.list",
-                    description = "列出当前用户已配置的媒体服务商及实际可用的媒体能力：图片理解、音频转写、视频场景分析、音频处理、视频生成。无需参数；仅报告配置字段实际支持的能力。",
+                    description = "列出当前用户已配置的媒体服务商及配置字段声明的媒体能力：视觉模型、音频转写模型、视频场景接口、音频处理接口、视频生成模型。无需参数；配置存在不代表第三方接口已完成联调验证。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) {
@@ -229,7 +229,7 @@ class NestroApplication : Application() {
                     app.nestro.agent.AgentToolResult(
                         true,
                         output = providers.joinToString("\n") {
-                            "provider_id=${it.providerId}; name=${it.displayName}; image_understanding=${it.model.isNotBlank()}; audio_transcription=${it.transcriptionModel.isNotBlank()}; video_scene_analysis=${it.model.isNotBlank() && it.scenePath.isNotBlank() && it.scenePath != "media/scenes"}; audio_processing=${it.model.isNotBlank() && it.audioProcessPath.isNotBlank() && it.audioProcessPath != "audio/process"}; video_generation=${it.videoGenerationModel.isNotBlank()}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
+                            "provider_id=${it.providerId}; name=${it.displayName}; image_model_configured=${it.model.isNotBlank()}; audio_transcription_model_configured=${it.transcriptionModel.isNotBlank()}; video_scene_endpoint_configured=${it.model.isNotBlank() && it.scenePath.isNotBlank() && it.scenePath != "media/scenes"}; audio_processing_endpoint_configured=${it.model.isNotBlank() && it.audioProcessPath.isNotBlank() && it.audioProcessPath != "audio/process"}; video_generation_model_configured=${it.videoGenerationModel.isNotBlank()}; video_model=${it.videoGenerationModel.ifBlank { "未配置" }}"
                         }
                     )
                 }
