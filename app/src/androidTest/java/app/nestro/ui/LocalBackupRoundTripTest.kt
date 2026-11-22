@@ -643,13 +643,7 @@ class LocalBackupRoundTripTest {
             assertTrue("恢复不得让重复记忆指纹触发 Room REPLACE 并静默覆盖", runCatching { repository.restoreBackup(prefs, duplicateMemoryFingerprint) }.isFailure)
 
             val wrongMemoryShareFlag = signedBackup { root ->
-                val memory = JSONObject().put("id", "memory-share-type")
-                    .put("projectId", "default").put("category", "preference")
-                    .put("content", "偏好使用简洁中文表达").put("fingerprint", "memory-share-type-fp")
-                    .put("sourceConversationId", "").put("sourceMessageId", "")
-                    .put("confidence", 0.9).put("createdAt", 1L).put("updatedAt", 1L)
-                    .put("shareAcrossProjects", "yes")
-                root.put("user_memories", JSONArray().put(memory))
+                root.getJSONArray("user_memories").getJSONObject(0).put("shareAcrossProjects", "yes")
             }
             assertTrue("恢复不得把类型错误的记忆共享授权静默当作关闭", runCatching { repository.restoreBackup(prefs, wrongMemoryShareFlag) }.isFailure)
 
