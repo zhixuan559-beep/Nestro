@@ -223,3 +223,12 @@
 - 当前代码树为 354 个文件；媒体模块专项检查发现有多组媒体 AI 测试，但没有独立的 `MediaVideoGenerationClientTest`。
 - 本节只完成分支结构与代表性文件核对；剩余分叉分支的逐文件语义审查仍在进行。任何清理/删除都必须等到全量引用扫描和调用链确认后再做。
 
+
+## 2026-11-22 记忆关联缓存专项核对
+
+- 当前整合分支代码树中没有独立命名的 MemoryCache/ConversationCache/ContextCache 文件。
+- `UserMemoryRepository` 内存在一个容量上限 400 的 LRU `embeddingCache`，key 为记忆 fingerprint，存放的是 BGE 向量；它是 embedding 计算缓存，不是用户要求的记忆内容/上下文缓存。
+- `clearProject()` 会清空该 embedding cache；`edit()`、`delete()`、`importOne()`、自动保存/裁剪记忆目前没有直接触发 cache 失效。由于 key 是内容 fingerprint，编辑后旧 fingerprint 不会被新记忆命中，删除后旧条目只会残留至 LRU 淘汰；这主要是缓存清理/内存占用问题，不应描述为已确认的错误记忆召回。
+- 当前未发现按全局/项目/会话作用域缓存记忆上下文并依据记忆版本自动失效的独立实现。用户提出的记忆关联本地缓存仍应列为待补/待明确验收项；不能用 embeddingCache、Prompt Cache 或 WorkManager 任务缓存顶替。
+- 后续若实现，必须先确认是否已有可复用的 repository/context assembler 缓存边界，避免另造一套缓存数据库；缓存 key 至少需覆盖项目/会话/记忆版本与上下文策略，记忆增删改、项目切换/删除、导入和恢复时必须正确失效。
+
