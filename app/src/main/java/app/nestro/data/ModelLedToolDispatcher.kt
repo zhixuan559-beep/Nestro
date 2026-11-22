@@ -646,6 +646,7 @@ ${prompt.take(8_000)}
                 markTerminal(AgentTaskStatus.FAILED, "模型选择了未注册的工具：${decision.toolId}")
                 return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
             }
+            val mcpOrdinal = if (spec.id.startsWith("mcp_")) mcpCallOrdinal.incrementAndGet() else 0
             val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
             val scopedAccess = object : AgentToolAccess {
                 override fun find(toolId: String) = lease.access.find(toolId)
@@ -658,16 +659,37 @@ ${prompt.take(8_000)}
                             if (output.isBlank()) AgentToolResult(false, error = "当前选择的专家团队不可用或没有返回结果")
                             else AgentToolResult(true, output = output)
                         }
-                        else -> lease.access.invoke(
-                            toolId,
-                            if (toolId.startsWith("mcp_")) arguments
-                            else arguments + mapOf(
+                        else -> {
+                            val invocationArguments = if (toolId.startsWith("mcp_")) arguments else arguments + mapOf(
                                 "__nestro_project_id" to projectId,
                                 "__nestro_conversation_id" to conversationId,
                                 "__nestro_task_mode" to taskModeEnabled.toString(),
-                                    "__nestro_request_id" to requestId
+                                "__nestro_request_id" to requestId
                             )
-                        )
+                            if (toolId.startsWith("mcp_")) {
+                                val savedOutput = findCompletedMcpCall(
+                                    stateStore.get(taskId)?.checkpoint.orEmpty(),
+                                    toolId,
+                                    invocationArguments,
+                                    mcpOrdinal
+                                )
+                                if (savedOutput != null) {
+                                    AgentToolResult(true, output = savedOutput)
+                                } else {
+                                    saveMcpReplayCall(stateStore, taskId, toolId, invocationArguments, mcpOrdinal, "EXECUTING")
+                                    val result = lease.access.invoke(toolId, invocationArguments)
+                                    if (result.success) {
+                                        saveMcpReplayCall(
+                                            stateStore, taskId, toolId, invocationArguments,
+                                            mcpOrdinal, "COMPLETED", result.output
+                                        )
+                                    }
+                                    result
+                                }
+                            } else {
+                                lease.access.invoke(toolId, invocationArguments)
+                            }
+                        }
                     }
             }
             val requestPermissionRouter = AgentPermissionRouter { task, tool ->
