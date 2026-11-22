@@ -744,3 +744,13 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 主要提交：`04dfa43f6fdd6f663ed2843433c4e6c03ecfef53`、`55640f9f218916ca16a582fb154847ea464fc51e`。
 - **验证状态**：代码已提交；尚未执行 Kotlin 编译、主模型原生工具调用、第三方 API 联调或设备验收；尚无专门的 ModelLedToolDispatcher 媒体工具端到端测试。
 
+
+
+### 聊天附件到媒体模型的桥接已补
+- 聊天输入区新增多选图片/音频/视频文件导入；文件通过 `MediaProjectStore.importAsset` 复制到当前项目私有素材库，不把原始文件路径直接塞进 prompt。
+- 导入成功后，草稿附加真实 `asset_id/name/kind/mime` 元数据；主模型按既有提示先查询 `media.project.assets`，再用 `media.ai.run` 调用图片理解/音频转写/视频场景分析/音频处理。
+- 导入最多 10 个文件；若导入期间切换项目或会话，不会把素材 ID 错贴到新会话；会明确提示素材留在原项目且未附加到当前草稿。
+- 这是“聊天文件导入 → 项目素材 → 主模型工具 → 专业媒体 Provider”的可用桥接；`ChatMessage` 和聊天 Provider 仍未实现原生多模态 content parts，因此不能描述为 OpenAI/Anthropic/Gemini 原生附件消息。
+- 提交：`c7e69c215e94a391a95a776b231245a706524c47`（清单）；聊天导入代码提交为当前 NestroApp 的附件导入修复提交，待回读确认。
+- **验证状态**：尚未运行 Android 编译、文件选择器 UI 测试、图片/音频/视频真实导入和主模型调用链测试。
+
