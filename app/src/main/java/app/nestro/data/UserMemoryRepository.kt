@@ -17,7 +17,7 @@ class UserMemoryRepository(
         UserMemoryStore.list(database.dao(), projectId)
 
     suspend fun recall(projectId: String, query: String): MemoryRecall {
-        val memories = list(projectId)
+        val memories = database.dao().userMemoriesForRecall(projectId, 200)
         val keywordFallback = UserMemoryStore.recall(memories, query)
         val context = appContext ?: return keywordFallback
         if (memories.isEmpty() || !KnowledgeEmbeddingModelManager.isInstalled(context)) return keywordFallback
@@ -65,6 +65,12 @@ class UserMemoryRepository(
     suspend fun importOne(projectId: String, rawJson: String): Boolean {
         val imported = UserMemoryExportCodec.decode(rawJson, projectId)
         val changed = UserMemoryStore.importOne(database.dao(), projectId, imported)
+        if (changed) synchronized(embeddingCache) { embeddingCache.clear() }
+        return changed
+    }
+
+    suspend fun setShareAcrossProjects(id: String, ownerProjectId: String, enabled: Boolean): Boolean {
+        val changed = UserMemoryStore.setShareAcrossProjects(database.dao(), id, ownerProjectId, enabled)
         if (changed) synchronized(embeddingCache) { embeddingCache.clear() }
         return changed
     }
