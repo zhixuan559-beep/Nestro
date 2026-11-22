@@ -557,7 +557,8 @@ class NestroApplication : Application() {
                                 catalog = lease.access,
                                 permissions = permissionRouter,
                                 states = states,
-                                traces = RoomAgentTaskTraceStore(database.dao())
+                                traces = RoomAgentTaskTraceStore(database.dao()),
+                                executionContext = taskContext
                             )
                             try {
                                 runtime.execute(

@@ -117,7 +117,7 @@ object PhoneAgentAgent {
             if (isCancellationRequested(context, taskId, task.status)) {
                 return Result(PhoneAgentExecutor.Outcome.CANCELLED, "任务已取消")
             }
-            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止")
+            if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止", taskContext)
 
             if (plan.summary.isNotBlank()) {
                 PhoneAgentTaskStore.recordActionResult(
@@ -151,7 +151,7 @@ object PhoneAgentAgent {
                     taskContext.checkpoint(current.planJson, count)
                     return Result(PhoneAgentExecutor.Outcome.COMPLETED, plan.summary.ifBlank { "任务已根据页面证据核验完成" })
                 }
-                return pause(dao, taskId, "当前页面没有足够证据证明目标已完成。")
+                return pause(dao, taskId, "当前页面没有足够证据证明目标已完成。", taskContext)
             }
 
             val execution = PhoneAgentExecutor.execute(
