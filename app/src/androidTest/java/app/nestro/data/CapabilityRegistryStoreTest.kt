@@ -71,6 +71,30 @@ class CapabilityRegistryStoreTest {
     }
 
     @Test
+    fun projectMcpGrantCanOverrideTheExistingGlobalGrant() {
+        preferences.edit().clear().commit()
+
+        assertTrue(
+            CapabilityRegistryStore.authorizeToolCall(
+                preferences, "project-a", "server-a", "search", defaultGranted = true
+            )
+        )
+        CapabilityRegistryStore.setToolGranted(preferences, "project-a", "server-a", "search", false)
+        assertFalse(
+            CapabilityRegistryStore.authorizeToolCall(
+                preferences, "project-a", "server-a", "search", defaultGranted = true
+            )
+        )
+        CapabilityRegistryStore.setToolGranted(preferences, "project-a", "server-a", "search", true)
+        assertTrue(
+            CapabilityRegistryStore.authorizeToolCall(
+                preferences, "project-a", "server-a", "search", defaultGranted = false
+            )
+        )
+        assertTrue(CapabilityRegistryStore.recentToolAudit(preferences, "project-a").size >= 5)
+    }
+
+    @Test
     fun toolAuditNeverStoresSecretParameterNames() {
         assertEquals(
             listOf("query", "page_size"),
