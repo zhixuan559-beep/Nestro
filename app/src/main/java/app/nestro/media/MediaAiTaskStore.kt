@@ -289,11 +289,11 @@ object MediaAiTaskScheduler {
     private fun unique(projectId:String,taskId:String)="media-ai-$projectId-$taskId"
 
     private suspend fun registerUnifiedTask(context: Context, projectId: String, taskId: String): app.nestro.NestroApplication {
-        val app = context.applicationContext as? app.nestro.NestroApplication
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
             ?: error("媒体任务无法连接统一任务机")
         val task = MediaAiTaskStore.read(context, projectId, taskId)
             ?: error("媒体 AI 任务不存在")
-        app.agentTaskCoordinator.registerInlineTask(
+        nestroApp.agentTaskCoordinator.registerInlineTask(
             taskId = "media-ai:$taskId",
             owner = "media_ai",
             checkpoint = "media_ai:$projectId:$taskId",
@@ -305,7 +305,7 @@ object MediaAiTaskScheduler {
                 input = taskId
             )
         )
-        return app
+        return nestroApp
     }
 
     suspend fun enqueue(context:Context,projectId:String,taskId:String,replace:Boolean=false) {
@@ -343,10 +343,10 @@ object MediaAiTaskScheduler {
     }
 
     suspend fun recover(context:Context,projectId:String) {
-        val app = context.applicationContext as? app.nestro.NestroApplication
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
             ?: error("媒体 AI 任务无法连接统一任务机")
         MediaAiTaskStore.list(context, projectId).forEach { task ->
-            val unified = app.agentTaskCoordinator.state("media-ai:${task.id}")
+            val unified = nestroApp.agentTaskCoordinator.state("media-ai:${task.id}")
             val shouldWake = unified == null || unified.status in setOf(
                 app.nestro.agent.AgentTaskStatus.CREATED,
                 app.nestro.agent.AgentTaskStatus.QUEUED,
@@ -362,9 +362,9 @@ object MediaAiTaskScheduler {
     suspend fun pause(context: Context, projectId: String, taskId: String) {
         val task = MediaAiTaskStore.read(context, projectId, taskId) ?: error("媒体 AI 任务不存在")
         require(task.status in setOf(MediaAiTaskStatus.QUEUED, MediaAiTaskStatus.RUNNING)) { "当前媒体 AI 任务不能暂停" }
-        val app = registerUnifiedTask(context, projectId, taskId)
+        val nestroApp = registerUnifiedTask(context, projectId, taskId)
         MediaAiTaskStore.update(context, projectId, taskId, status = MediaAiTaskStatus.PAUSED)
-        app.agentTaskCoordinator.pause("media-ai:$taskId")
+        nestroApp.agentTaskCoordinator.pause("media-ai:$taskId")
         WorkManager.getInstance(context).cancelUniqueWork(unique(projectId, taskId))
     }
 
