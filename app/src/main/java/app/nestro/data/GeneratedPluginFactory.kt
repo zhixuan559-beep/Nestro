@@ -451,12 +451,98 @@ $toolDirectory
     }
 }
 
+object GeneratedPluginRunCheckpointCodec {
+    private const val PREFIX = "generated_plugin_run:"
+    private const val SCHEMA_VERSION = 1
+    private const val MAX_STEP_OUTPUT = 4_000
+
+    fun encode(
+        plugin: GeneratedPluginPackage,
+        inputs: Map<String, String>,
+        completedSteps: List<GeneratedPluginStepResult>
+    ): String {
+        val valid = completedSteps.take(plugin.steps.size)
+        require(valid.all { it.success && !it.requiresUser })
+        val payload = JSONObject()
+            .put("schemaVersion", SCHEMA_VERSION)
+            .put("pluginId", plugin.id)
+            .put("pluginVersion", plugin.version)
+            .put("pluginFingerprint", pluginFingerprint(plugin))
+            .put("inputFingerprint", inputFingerprint(inputs))
+            .put("completedSteps", JSONArray().apply {
+                valid.forEachIndexed { index, result ->
+                    val expected = plugin.steps[index]
+                    require(result.stepId == expected.id && result.toolId == expected.toolId) {
+                        "插件检查点步骤顺序与当前定义不匹配"
+                    }
+                    put(JSONObject()
+                        .put("stepId", result.stepId)
+                        .put("toolId", result.toolId)
+                        .put("output", result.output.take(MAX_STEP_OUTPUT)))
+                }
+            })
+        return PREFIX + payload.toString().also {
+            require(it.length <= 64_000) { "插件检查点超过 64 KB" }
+        }
+    }
+
+    fun decode(
+        plugin: GeneratedPluginPackage,
+        inputs: Map<String, String>,
+        checkpoint: String
+    ): List<GeneratedPluginStepResult> {
+        if (checkpoint.isBlank()) return emptyList()
+        require(checkpoint.startsWith(PREFIX) && checkpoint.length <= 64_000) {
+            "插件检查点格式无效或超过 64 KB"
+        }
+        val payload = JSONObject(checkpoint.removePrefix(PREFIX))
+        require(payload.optInt("schemaVersion") == SCHEMA_VERSION &&
+            payload.optString("pluginId") == plugin.id &&
+            payload.optString("pluginVersion") == plugin.version &&
+            payload.optString("pluginFingerprint") == pluginFingerprint(plugin) &&
+            payload.optString("inputFingerprint") == inputFingerprint(inputs)) {
+            "插件检查点与当前插件版本或输入不匹配，已停止恢复"
+        }
+        val rows = payload.optJSONArray("completedSteps") ?: JSONArray()
+        require(rows.length() <= plugin.steps.size) { "插件检查点包含多余步骤" }
+        return (0 until rows.length()).map { index ->
+            val row = rows.optJSONObject(index) ?: error("插件检查点步骤数据损坏")
+            val expected = plugin.steps[index]
+            require(row.optString("stepId") == expected.id &&
+                row.optString("toolId") == expected.toolId) {
+                "插件检查点步骤与当前插件定义不匹配，已停止恢复"
+            }
+            GeneratedPluginStepResult(
+                stepId = expected.id,
+                toolId = expected.toolId,
+                success = true,
+                output = row.optString("output").take(MAX_STEP_OUTPUT)
+            )
+        }
+    }
+
+    private fun pluginFingerprint(plugin: GeneratedPluginPackage): String =
+        sha256(GeneratedPluginPackageCodec.encode(listOf(plugin.copy(enabled = false))))
+
+    private fun inputFingerprint(inputs: Map<String, String>): String =
+        sha256(JSONObject().apply {
+            inputs.toSortedMap().forEach { (key, value) -> put(key, value) }
+        }.toString())
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+}
+
 object GeneratedPluginWorkflowExecutor {
     suspend fun execute(
         plugin: GeneratedPluginPackage,
         inputs: Map<String, String>,
         discovery: AgentToolDiscovery,
-        invokeThroughRuntime: suspend (String, Map<String, String>) -> AgentToolResult
+        invokeThroughRuntime: suspend (String, Map<String, String>) -> AgentToolResult,
+        resumeCheckpoint: String = "",
+        onStepCheckpoint: suspend (Int, String) -> Unit = { _, _ -> }
     ): GeneratedPluginExecutionResult {
         require(plugin.enabled) { "插件尚未启用，不能执行" }
         GeneratedPluginPackageValidator.validate(plugin, discovery)
@@ -465,9 +551,14 @@ object GeneratedPluginWorkflowExecutor {
         plugin.inputs.filter { it.required }.forEach { field ->
             require(!inputs[field.name].isNullOrBlank()) { "缺少必填插件输入：${field.name}" }
         }
+        val restoredSteps = GeneratedPluginRunCheckpointCodec.decode(plugin, inputs, resumeCheckpoint)
         val results = linkedMapOf<String, String>()
-        val stepResults = mutableListOf<GeneratedPluginStepResult>()
-        for (step in plugin.steps) {
+        restoredSteps.forEachIndexed { index, result ->
+            results[plugin.steps[index].resultKey] = result.output
+        }
+        val stepResults = restoredSteps.toMutableList()
+        for ((stepIndex, step) in plugin.steps.withIndex()) {
+            if (stepIndex < restoredSteps.size) continue
             val arguments = step.arguments.mapValues { (_, template) ->
                 GeneratedPluginPackageValidator.TEMPLATE.replace(template) { match ->
                     val reference = match.groupValues[1]
@@ -497,9 +588,13 @@ object GeneratedPluginWorkflowExecutor {
                 stepResults += failure
                 break
             }
-            val output = result.output.take(8_000)
+            val output = result.output.take(4_000)
             results[step.resultKey] = output
             stepResults += GeneratedPluginStepResult(step.id, step.toolId, true, output)
+            onStepCheckpoint(
+                stepIndex + 1,
+                GeneratedPluginRunCheckpointCodec.encode(plugin, inputs, stepResults)
+            )
         }
         return GeneratedPluginExecutionResult(plugin.id, stepResults)
     }
