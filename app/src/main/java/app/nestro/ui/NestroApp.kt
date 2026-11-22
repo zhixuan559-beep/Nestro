@@ -910,6 +910,10 @@ fun NestroApp(initialPage: String = "home") {
                 knownVersions = persistedConversationVersions.toMap(),
                 snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
             )
+            val persistedIds = conversationSnapshot.mapTo(mutableSetOf()) { it.id }
+            persistedConversationVersions.keys.toList().filterNot { it in persistedIds }
+                .forEach { persistedConversationVersions.remove(it) }
+            conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.hashCode() }
         },
         onFailure = { status = "本地数据保存失败：${it.message ?: "未知错误"}" }
     )
