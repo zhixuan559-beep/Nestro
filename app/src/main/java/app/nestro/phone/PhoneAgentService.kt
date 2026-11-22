@@ -59,10 +59,11 @@ class PhoneAgentService : AccessibilityService(), PhoneAgentExecutionEnvironment
     }
 
     private fun rootForDisplay(displayId: Int): AccessibilityNodeInfo? {
-        if (Build.VERSION.SDK_INT < 30) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return runCatching {
-            windows.asSequence()
-                .filter { it.displayId == displayId }
+            // AccessibilityService.windows only returns the default display. Virtual displays
+            // must be read through getWindowsOnAllDisplays(), then selected by display ID.
+            getWindowsOnAllDisplays().get(displayId).orEmpty().asSequence()
                 .sortedByDescending { it.isFocused }
                 .mapNotNull { window -> runCatching { window.root }.getOrNull() }
                 .firstOrNull()
