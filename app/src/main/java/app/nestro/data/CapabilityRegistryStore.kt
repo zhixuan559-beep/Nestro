@@ -42,7 +42,7 @@ data class CapabilityToolAuditRecord(
 
 object CapabilityToolPolicy {
     fun grantKey(serviceId: String, toolName: String): String {
-        require(serviceId.matches(Regex("[a-zA-Z0-9_.-]{1,80}")))
+        require(serviceId.matches(Regex("[a-zA-Z0-9_.-]{1,100}")))
         require(toolName.matches(Regex("[a-zA-Z0-9_.-]{1,100}")))
         return "$serviceId::$toolName"
     }
