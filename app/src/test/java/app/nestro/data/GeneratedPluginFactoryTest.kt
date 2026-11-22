@@ -66,7 +66,7 @@ class GeneratedPluginFactoryTest {
             enabled = true,
             steps = plugin().steps + GeneratedPluginStep(
                 "verify", "media.inspect",
-                mapOf("source" to "${steps.video.output}"), "verified"
+                mapOf("source" to "\${steps.video.output}"), "verified"
             )
         )
         val checkpoints = mutableListOf<Pair<Int, String>>()
