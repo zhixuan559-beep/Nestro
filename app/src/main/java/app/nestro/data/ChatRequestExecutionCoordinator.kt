@@ -40,7 +40,7 @@ internal class ChatRequestExecutionCoordinator(
         request: ChatRequestExecutionRequest,
         onUsage: (ModelConfig, Int, Int) -> Unit,
         onProviderUsage: (ModelConfig, Int, Int) -> Unit,
-        planPhoneAgent: suspend () -> String = { "" },
+        planPhoneAgent: suspend (Map<String, String>) -> String = { "" },
         onTaskPlanningFailure: (Throwable) -> Unit = {},
         runExpertTeam: suspend (String, Map<String, String>) -> String = { _, _ -> "" },
         onPartialAnswer: suspend (String) -> Unit
@@ -68,9 +68,9 @@ internal class ChatRequestExecutionCoordinator(
             var directPersistedLength = 0
             var lastDirectPersistAt = System.currentTimeMillis()
             val coordinated = modelToolDispatcher?.let { dispatcher ->
-                runCatchingCancellable {
                     dispatcher.dispatch(
                         requestId = request.requestId,
+                        conversationId = request.conversationId,
                         projectId = request.projectId,
                         prompt = request.prompt,
                         history = request.history,
@@ -81,9 +81,9 @@ internal class ChatRequestExecutionCoordinator(
                         shouldStop = request.shouldStop,
                         taskModeEnabled = request.taskModeEnabled,
                         expertTeamEnabled = request.expertTeamEnabled,
-                        planPhoneAgent = {
+                        planPhoneAgent = { arguments ->
                             try {
-                                planPhoneAgent()
+                                planPhoneAgent(arguments)
                             } catch (error: Throwable) {
                                 taskPlanningFailure = error
                                 onTaskPlanningFailure(error)
@@ -112,7 +112,6 @@ internal class ChatRequestExecutionCoordinator(
                             onPartialAnswer(partial)
                         }
                     )
-                }.getOrNull()
             }
             if (coordinated?.directReply != null) {
                 streamingCoordinator.persistPartial(
