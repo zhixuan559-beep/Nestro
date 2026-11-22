@@ -75,6 +75,9 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 hasLocalConversationData = hasLocalConversationData,
                 hasLinkedData = hasLinkedData
             )
+            if (canRecover) {
+                UserMemoryStore.invalidateAndAwaitPendingExtractions(pendingProjectDeleteId)
+            }
             val deleted = canRecover &&
                 dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
             if (deleted) {
@@ -127,9 +130,15 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         val restored = if (storedConversationCount == 0 || hasPendingLocalSnapshot) {
             val legacyConversations = ConversationPreferencesStore.loadConversations(prefs)
             val legacyProjects = ProjectPreferencesStore.loadProjects(prefs)
+            val conversationIds = legacyConversations.map { it.id }
+            val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
+            val staleConversationProjects = staleConversationIds.mapNotNull { dao.conversationProjectId(it) }.toSet()
+            val projectIds = legacyProjects.map { it.id }
+            val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
+            (staleConversationProjects + staleProjectIds).forEach {
+                UserMemoryStore.invalidateAndAwaitPendingExtractions(it)
+            }
             database.withTransaction {
-                val conversationIds = legacyConversations.map { it.id }
-                val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
                 if (staleConversationIds.isNotEmpty()) dao.deleteConversations(staleConversationIds)
                 legacyConversations.forEach { record ->
                     dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
@@ -145,8 +154,6 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 dao.putProjects(legacyProjects.map {
                     ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt)
                 })
-                val projectIds = legacyProjects.map { it.id }
-                val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
                 staleProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
             }
             prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
@@ -220,9 +227,15 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         snapshotTimestamp: Long
     ) = withContext(Dispatchers.IO) {
         val dao = database.dao()
+        val currentIds = conversations.map { it.id }
+        val removedIds = dao.conversationIds().filterNot { it in currentIds }
+        val removedConversationProjects = removedIds.mapNotNull { dao.conversationProjectId(it) }.toSet()
+        val currentProjectIds = projects.map { it.id }
+        val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
+        (removedConversationProjects + removedProjectIds).forEach {
+            UserMemoryStore.invalidateAndAwaitPendingExtractions(it)
+        }
         database.withTransaction {
-            val currentIds = conversations.map { it.id }
-            val removedIds = dao.conversationIds().filterNot { it in currentIds }
             if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
             conversations.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
                 dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
@@ -240,8 +253,6 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             dao.putProjects(projects.map {
                 ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt)
             })
-            val currentProjectIds = projects.map { it.id }
-            val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
             removedProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
         }
         ConversationPreferencesStore.saveConversationList(prefs, conversations, markDirty = false)
