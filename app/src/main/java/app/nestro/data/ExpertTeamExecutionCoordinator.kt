@@ -5,7 +5,7 @@ import app.nestro.agent.AgentTaskMetadata
 import app.nestro.agent.AgentTaskStatus
 import kotlinx.coroutines.CancellationException
 import app.nestro.agent.AgentCapabilityRegistry
-import app.nestro.agent.AgentToolDiscovery
+import app.nestro.agent.AgentToolAccess
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
@@ -37,12 +37,13 @@ class ExpertTeamExecutionCoordinator(
         strategy: ExpertTeamSchedulingStrategy = ExpertTeamSchedulingStrategy.LEAD_HANDOFF,
         taskId: String = UUID.randomUUID().toString(),
         projectId: String = "default",
+        conversationId: String = "",
         shouldStop: () -> Boolean = { false },
         onMember: suspend (String, String) -> Unit = { _, _ -> },
         eventSink: ExpertTeamEventSink? = null,
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
-        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
+        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolAccess?) -> String)? = null
     ): ExpertTeamRunResult {
         val teamIdentity = JSONObject()
             .put("teamId", teamId)
@@ -141,6 +142,7 @@ class ExpertTeamExecutionCoordinator(
             initialCheckpoint = initialCheckpoint,
             metadata = AgentTaskMetadata(
                 projectId = projectId,
+                conversationId = conversationId,
                 kind = "expert_team",
                 capabilityId = teamId,
                 title = teamName.take(160),
