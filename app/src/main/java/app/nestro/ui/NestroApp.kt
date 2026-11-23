@@ -257,7 +257,7 @@ fun NestroApp(initialPage: String = "home") {
     var status by chatExecutionUiState.status
     val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
-            "Nestro 已成为系统默认助手入口。"
+            "Nost 已成为系统默认助手入口。"
         } else {
             "系统助手设置未更改。"
         }
@@ -1524,7 +1524,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Icon(Icons.Outlined.Menu, contentDescription = "菜单", tint = Ink)
                             }
                             Column {
-                                Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
+                                Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 Text(status, color = Muted, style = MaterialTheme.typography.labelSmall)
                                 if (busy && teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
@@ -2604,7 +2604,7 @@ fun NestroApp(initialPage: String = "home") {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
                                         Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
-                                            val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+                                            val name = "Nost-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
                                         }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                             Text("导出本地备份")
@@ -3559,7 +3559,7 @@ fun NestroApp(initialPage: String = "home") {
                                  if (skillExportStatus.isNotBlank()) Text(skillExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
+                        else -> SimplePage("Nost", "本地优先的 AI 助手")
                     }
                 }
                 }
