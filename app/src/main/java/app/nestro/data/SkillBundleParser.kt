@@ -42,15 +42,22 @@ object SkillBundleParser {
         require(description.length <= 300) { "技能描述过长" }
         require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
+        require(!json.has("permissions") || json.optJSONArray("permissions") != null) { "技能权限字段格式无效" }
+        require(!json.has("dependencies") || json.optJSONArray("dependencies") != null) { "技能依赖字段格式无效" }
         val permissionArray = json.optJSONArray("permissions") ?: JSONArray()
         require(permissionArray.length() <= 10) { "技能权限数量超出限制" }
-        val permissions = (0 until permissionArray.length()).map { permissionArray.getString(it).trim() }.distinct()
+        val permissions = (0 until permissionArray.length()).map { index ->
+            val value = permissionArray.opt(index)
+            require(value is String) { "技能权限项必须为字符串" }
+            value.trim()
+        }.distinct()
         require(permissions.all { it in allowedPermissions }) { "技能声明了不支持的权限" }
 
         val dependencyArray = json.optJSONArray("dependencies") ?: JSONArray()
         require(dependencyArray.length() <= 10) { "技能依赖数量超出限制" }
         val dependencies = (0 until dependencyArray.length()).map { index ->
-            val item = dependencyArray.getJSONObject(index)
+            val item = dependencyArray.optJSONObject(index)
+                ?: throw IllegalArgumentException("技能依赖项格式无效")
             val dependencyName = item.optString("name").trim()
             val dependencyVersion = item.optString("version", "*").trim()
             require(dependencyName.isNotBlank() && dependencyName.length <= 80 && dependencyVersion.length <= 40) { "技能依赖格式无效" }
