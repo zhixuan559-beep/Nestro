@@ -90,6 +90,47 @@ object SkillDependencyResolver {
         return dependents.sorted()
     }
 
+    fun inspectCandidate(
+        candidate: SkillBundle,
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>,
+        disabledSkills: Set<String> = emptySet()
+    ): List<String> {
+        val stagedSkills = installedSkills + (candidate.name to candidate.prompt)
+        val stagedMetadata = installedMetadata + (candidate.name to SkillBundleParser.metadataJson(candidate))
+        return inspectInstalledSkill(
+            candidate.name,
+            candidate.prompt,
+            stagedSkills,
+            stagedMetadata,
+            disabledSkills - candidate.name
+        )
+    }
+
+    fun findIncompatibleDependents(
+        skillName: String,
+        candidateVersion: String,
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>
+    ): List<String>? {
+        if (!runCatching { SkillSemVer.compare(candidateVersion, candidateVersion) }.isSuccess) return null
+        val conflicts = mutableListOf<String>()
+        installedSkills.forEach { (dependentName, prompt) ->
+            if (dependentName == skillName) return@forEach
+            val dependent = runCatching {
+                SkillBundleParser.fromStored(dependentName, prompt, installedMetadata[dependentName])
+            }.getOrNull() ?: return null
+            if (dependent.dependencies.any { dependency ->
+                    dependency.name == skillName &&
+                        !runCatching { SkillSemVer.matches(candidateVersion, dependency.version) }.getOrDefault(false)
+                }
+            ) {
+                conflicts += dependentName
+            }
+        }
+        return conflicts.sorted()
+    }
+
     fun filterSatisfiedSkills(
         installedSkills: Map<String, String>,
         installedMetadata: Map<String, String>,
