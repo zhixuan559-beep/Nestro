@@ -12,8 +12,15 @@ class MediaProjectCodecTest {
             mimeType = "video/mp4", kind = MediaAssetKind.VIDEO, byteSize = 100,
             durationMs = 12_000, sha256 = "abc", importedAt = 10
         )
-        val withClip = MediaTimelinePolicy.addClip(base, "video-main", video).copy(
+        val withAudioTrack = MediaTimelinePolicy.addTrack(base, MediaTrackKind.AUDIO)
+        val withClip = MediaTimelinePolicy.addClip(withAudioTrack, "video-main", video).copy(
             revision = 7,
+            tracks = withAudioTrack.tracks.map { track ->
+                when (track.id) {
+                    "audio-main" -> track.copy(volume = 0.75f)
+                    else -> track.copy(volume = 1.25f)
+                }
+            },
             subtitles = listOf(MediaSubtitleCue(startMs = 1_000, endMs = 2_500, text = "字幕"))
         )
         val decoded = MediaProjectCodec.decodeTimeline(MediaProjectCodec.encodeTimeline(withClip))
@@ -21,6 +28,16 @@ class MediaProjectCodecTest {
         assertEquals(7L, decoded.revision)
         assertEquals(withClip.tracks, decoded.tracks)
         assertEquals(withClip.subtitles, decoded.subtitles)
+    }
+
+    @Test fun legacyTimelineWithoutVolumeDefaultsToUnityGain() {
+        val encoded = MediaProjectCodec.encodeTimeline(MediaTimeline.empty("project-a"))
+        val tracks = encoded.getJSONArray("tracks")
+        for (index in 0 until tracks.length()) {
+            tracks.getJSONObject(index).remove("volume")
+        }
+        val decoded = MediaProjectCodec.decodeTimeline(encoded)
+        assertTrue(decoded.tracks.all { it.volume == 1f })
     }
 
     @Test fun assetCodecPreservesProjectOwnershipAndDigest() {
