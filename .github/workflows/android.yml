@@ -2,6 +2,10 @@ name: Android CI
 
 # Run the full acceptance suite only when explicitly dispatched after all modules are complete.
 on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
