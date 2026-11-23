@@ -42,6 +42,13 @@ internal object ChatMediaAttachmentResolver {
     internal fun referencedAssetIds(content: String): List<String> =
         assetIdPattern.findAll(content).map { it.groupValues[1] }.distinct().toList()
 
+    internal fun normalizeMediaMimeType(rawMime: String): String =
+        when (rawMime.trim().lowercase()) {
+            "audio/x-wav" -> "audio/wav"
+            "audio/mpga" -> "audio/mpeg"
+            else -> rawMime.trim().lowercase()
+        }
+
     suspend fun resolve(
         context: Context,
         projectId: String,
@@ -133,12 +140,7 @@ internal object ChatMediaAttachmentResolver {
         if (!file.isFile || file.length() <= 0L || file.length() != asset.byteSize ||
             file.length() > MAX_INLINE_MEDIA_BYTES
         ) return null
-        val rawMime = asset.mimeType.lowercase()
-        val mime = when (rawMime) {
-            "audio/x-wav" -> "audio/wav"
-            "audio/mpga" -> "audio/mpeg"
-            else -> rawMime
-        }
+        val mime = normalizeMediaMimeType(asset.mimeType)
         val supported = when (asset.kind) {
             MediaAssetKind.AUDIO -> mime in supportedAudioMimeTypes
             MediaAssetKind.VIDEO -> mime in supportedVideoMimeTypes
