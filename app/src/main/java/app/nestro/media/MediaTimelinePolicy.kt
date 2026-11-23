@@ -66,6 +66,13 @@ object MediaTimelinePolicy {
         return timeline.copy(tracks = timeline.tracks.map { t -> if (t.id == trackId) t.copy(clips = t.clips.filterNot { it.id == clipId }) else t })
     }
 
+    fun removeTrack(timeline: MediaTimeline, trackId: String): MediaTimeline {
+        val track = timeline.tracks.firstOrNull { it.id == trackId } ?: error("轨道不存在")
+        require(track.kind == MediaTrackKind.AUDIO) { "主视频轨不能删除" }
+        require(track.clips.isEmpty()) { "请先删除轨道内的剪辑片段" }
+        return timeline.copy(tracks = timeline.tracks.filterNot { it.id == trackId })
+    }
+
     fun validate(timeline: MediaTimeline, assets: List<MediaAsset>) {
         require(timeline.projectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))) { "项目 ID 无效" }
         require(timeline.tracks.map { it.id }.distinct().size == timeline.tracks.size) { "轨道 ID 重复" }
