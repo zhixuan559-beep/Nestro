@@ -130,6 +130,46 @@ class UserMemoryRepositoryInstrumentedTest {
     }
 
     @Test
+    fun deletingOrEditingSourceMessageRemovesOnlyItsProjectMemory() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("project-a", "项目 A", "", 1L),
+                ProjectEntity("project-b", "项目 B", "", 1L)
+            ))
+            val persistence = ConversationPersistenceService(database)
+            persistence.persistConversationMessages(
+                conversationId = "conversation-a",
+                projectId = "project-a",
+                messages = listOf(ChatMessage("message-a", "user", "原始偏好内容"))
+            )
+            val sourceMemory = memory().copy(
+                content = "原始偏好内容",
+                fingerprint = UserMemoryStore.fingerprint("preference|原始偏好内容")
+            )
+            assertTrue(dao.saveUserMemoryCandidateIfSourceValid(sourceMemory))
+            val repository = UserMemoryRepository(database)
+            assertTrue(repository.importOne("project-b", UserMemoryExportCodec.encode(sourceMemory)))
+            assertEquals(1, repository.list("project-a").size)
+            assertEquals(1, repository.list("project-b").size)
+
+            persistence.persistConversationMessages(
+                conversationId = "conversation-a",
+                projectId = "project-a",
+                messages = listOf(ChatMessage("message-b", "user", "新的消息内容"))
+            )
+            assertTrue("来源消息被删除后应清理原项目自动记忆", repository.list("project-a").isEmpty())
+            assertEquals("导入到其他项目的独立副本不应被删除", 1, repository.list("project-b").size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun automaticCandidatesRequireAnExistingUserMessageInTheSameProject() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
