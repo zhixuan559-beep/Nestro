@@ -1394,3 +1394,11 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ### 下一步
 
 继续逐项核对十九模块的 UI 操作、数据流、项目授权、任务状态、错误/恢复路径和跨模块调用；逐项修复真实缺口并补测试源码。全部代码收口后再统一构建 APK 与验收。
+
+
+## 2026-11-24 main 主线死代码清理回读
+
+- `UnifiedAgentDispatcher` 在当前 `main` 上无任何生产调用点；全仓检索只命中旧类、其自有测试和历史审计记录。其关键词计数路由由当前 `ModelLedToolDispatcher` 主模型工具调度架构替代。
+- 已删除旧类及仅验证该类的测试文件，提交分别为 `7124010867e79028159a1cf07c26fd55e95f6f4d`、`60b64468062f54dec19e77c54acf2d1645a66435`。
+- 反向核验：`ChatNetworkPolicy` 在 `ChatExecutionService`、`OpenAiClient` 中有生产调用；`TtsCapability` 在 `AndroidTextToSpeechController` 中有生产调用。两者保留，不按历史报告误删。
+- 仅完成静态引用审查与删除回读；未执行 Gradle、编译或测试。
