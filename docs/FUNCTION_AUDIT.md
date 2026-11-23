@@ -1275,3 +1275,11 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 新增/更新测试源码：`ExpertProjectPlanExecutorTest.kt` 覆盖 DAG wave 暂停检查点；`ExpertTeamPauseControllerTest.kt` 覆盖暂停等待、恢复和重复操作幂等性。
 - 相关提交：`1b2ceeede941f39734725e5e33143cd3b5188237`、`f8ba7cc1c05779837744e9e8720d9ae357237a31`、`ef6e0e5331d03f360fb3ec44ed037cd7d71a381d`、`75717b2a7605f68443a72cd20c35eca0f2a96d66`、`e0e0bb1ee458c5e799b667b6bc28ecb714c7bc3d`、`d9bd84a865417a6945fd9364ef3c2394b6b0511d`、`08f89a3be8c1ee0110df353eaf7ff4f71b65e33f`、`12c0183d7140dcae228aa5fbb54dac20ccf1d7a0`。
 - 静态回读已完成；未运行编译或测试。当前实现是进程内会话暂停/继续；应用进程退出后的暂停任务恢复入口尚未完成，不能宣称跨进程恢复验收通过。停止暂停任务的取消路径已补轮询与 CANCELLED 状态写回。
+
+
+### 暂停期间停止操作补充核验（2026-11-23）
+
+- 暂停门闩等待期间每 100ms 检查一次 stopRequested；用户点击停止后不必先点击继续。
+- 协调器捕获停止取消并将任务状态持久化为 `CANCELLED`；UI finally 释放暂停门闩，避免残留挂起。
+- 相关补丁：`31ba2a975c1e714ef763facd169ef9c670e025f4`、`01bd3c46a5d547eaad4b17b7e35aad8deb85965a`、`c5790b421cb695d62b9a0050a942b160b868096f`、`7e0d3683557fc84644701eeb5991d1e03ff477a9`、`4b26d25af3cad1c8b99d5be19151b842783241d3`。
+- 仍未执行编译或测试；跨进程恢复入口仍是独立遗留。
