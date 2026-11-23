@@ -1639,6 +1639,32 @@ fun NestroApp(initialPage: String = "home") {
                                     ),
                                     onUsage = recordModelUsage,
                                     onProviderUsage = recordProviderModelUsage,
+                                    planPhoneAgent = { toolArguments ->
+                                        if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                                            app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
+                                        } else {
+                                            val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: memberPrompt
+                                            val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
+                                            if (!PhoneAgentPlanner.shouldCreateTask(true, phonePlan)) {
+                                                app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                                            } else {
+                                                val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
+                                                val created = appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                                    requestProjectId,
+                                                    requestConversationId,
+                                                    phonePlan
+                                                )
+                                                app.nestro.agent.AgentToolResult(
+                                                    true,
+                                                    output = if (canSchedule) {
+                                                        "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。"
+                                                    } else {
+                                                        "已创建 Phone Agent 任务（${created.id}），但设备服务尚未获得有效授权，实际设备操作尚未开始。"
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    },
                                     onPartialAnswer = {}
                                 )
                                 execution.finalization.finalText.take(12_000)
@@ -2478,6 +2504,32 @@ fun NestroApp(initialPage: String = "home") {
                                                                          ),
                                                                          onUsage = recordModelUsage,
                                                                          onProviderUsage = recordProviderModelUsage,
+                                                                         planPhoneAgent = { toolArguments ->
+                                                                             if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                                                                                 app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
+                                                                             } else {
+                                                                                 val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: stepPrompt
+                                                                                 val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
+                                                                                 if (!PhoneAgentPlanner.shouldCreateTask(true, phonePlan)) {
+                                                                                     app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                                                                                 } else {
+                                                                                     val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
+                                                                                     val created = appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                                                                         projectId,
+                                                                                         requestConversationId,
+                                                                                         phonePlan
+                                                                                     )
+                                                                                     app.nestro.agent.AgentToolResult(
+                                                                                         true,
+                                                                                         output = if (canSchedule) {
+                                                                                             "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。"
+                                                                                         } else {
+                                                                                             "已创建 Phone Agent 任务（${created.id}），但设备服务尚未获得有效授权，实际设备操作尚未开始。"
+                                                                                         }
+                                                                                     )
+                                                                                 }
+                                                                             }
+                                                                         },
                                                                          onPartialAnswer = {}
                                                                      )
                                                                      execution.finalization.finalText
