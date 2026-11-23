@@ -1286,3 +1286,20 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 
 - 增加 `ExpertTeamExecutionCoordinatorTest.projectPlanPausesAtCompletedWaveAndContinuesFromCheckpoint` 集成测试源码：验证第一批工作包完成后状态进入 PAUSED，用户恢复后只执行后续依赖包，最终状态进入 COMPLETED。提交：`3a02646778fcb0135bdb866ca5ebb5f62950cfe2`。该测试仍未执行。
+
+
+## 2026-11-23 — 当前 HEAD 真实源码复核（未编译）
+
+- 审计分支：`integration/19-modules`；本轮检查 HEAD：`d1105ebd74249f2f31fb0745128e6fe76d1e1a4b`。与源码基线 `3a02646778fcb0135bdb866ca5ebb5f62950cfe2` 比较，后续 3 个提交仅修改 `CURRENT_CODE_MAP.md`、`FUNCTION_AUDIT.md`、`IMPLEMENTATION_ROADMAP.md`，业务源码没有变化；因此 3a 是正确的源码基线，不应误判为过期。
+- 修正文档状态：模块16的 `CapabilityDirectoryPage` 已有真实路由，含项目能力授权、MCP 项目授权和调用审计；`GeneratedPluginAuthorizationPolicy` 对 EXTERNAL_WRITE/需确认能力按步骤走审批，`GeneratedPluginWorkflowExecutor` 保存步骤 checkpoint。此前模块清单称这些 UI/步骤审批缺失，属于过期记录。
+- 修正文档状态：模块18已有 `CalendarReminderScheduler`、`CalendarAutomationWorker` 和统一 `AgentTaskCoordinator` 接线；自动任务按 occurrence 建立确定性任务标识，写回执行状态/结果，应用启动可恢复日历任务。此前“只有 CRUD/提醒、未接统一任务机”的描述已过期。
+- 修正文档状态：模块8已有 `PhoneAgentPlanner` 的 NAVIGATION 规划、`open_navigation` Google Maps Directions、路线核验、用户确认及 Mika 主屏交接代码；仍需设备验收。Phone Agent 浮动预览已有缩放/触控/滑动/角部缩放，但 `PhoneAgentFloatingPreview` 固定右下角，没有窗口位置拖动实现。
+- 修正文档状态：模块7并非完全没有上下文缓存。`ChatRequestContextAssembler` 已实现 64 项、60 秒的最终上下文 LRU，缓存键包含项目、会话、prompt、基础上下文和用户记忆 mutationVersion；但这不是独立全局/项目/会话三级缓存，且 ConversationContextRepository 的历史召回语料版本没有纳入缓存键，历史数据变更后最多可能沿用旧召回上下文至 TTL 到期。
+- 已确认的数据完整性缺口：`UserMemoryStore.saveCandidates` 先分别查询项目、会话和来源消息，再调用 upsert/replace 写入；校验与写入没有包在同一个 Room transaction。`UserMemoryEntity` 的 sourceConversationId/sourceMessageId 是普通字段，没有外键约束。并发删除/修改源会话或消息时，可能留下无法回溯的记忆来源；需将来源存在性校验与记忆写入收进 DAO transaction，并补并发回归测试。
+- 已确认的工具接线缺口：`NestroApp` 调用 `ExpertTeamExecutionCoordinator.executeProjectPlan` 时只提供普通 `invokeMember`（`completeWithFallback`），没有提供可选的 `invokeMemberWithTools`；协调器虽然有工具租约接口，但专家项目工作包没有完成工具感知模型调用接线。`NestroApp` 调用 `WorkflowExecutionCoordinator.execute` 时也只提供普通 `invokeModel`，没有提供可选的 `invokeModelWithTools`；工作流节点当前只有 PROMPT/EXPERT/SKILL，不能作为已接通的工具执行节点验收。
+- 已确认的任务元数据缺口：`ExpertTeamExecutionCoordinator` 的 `runInline` 未传 `AgentTaskMetadata`，项目/会话/kind/title/input 留空；`WorkflowExecutionCoordinator` 只传 kind/capability/title/input，未传项目和会话标识，且其入口没有 projectId/conversationId 参数。统一任务机能保存 checkpoint，但这两类任务的项目归属与任务目录信息不完整。
+- 已确认的日历调度缺口：当前重复规则仅 NONE/DAILY/WEEKLY/MONTHLY/YEARLY；没有延迟触发或任意时间条件规则。日历自动任务的 `runInline` 设置 `maxRetries=0`，WorkManager 的有限重试只覆盖入队/Worker 调度，不等于业务执行失败重试。日历模型调用明确设置 `expertTeamEnabled=false`，当前也没有 `workflow.run` 工具，不能验收为可直接调度专家 DAG/工作流。
+- 已确认的媒体范围边界：`MediaRenderEngine` 使用 `tracks.single { VIDEO }` 和单个 AUDIO track；当前不是多视频轨/PIP/多音轨的完整多轨剪辑器。视频生成任务已通过 `MediaVideoGenerationClient` 生成文件并导入项目素材库；不能把视频生成等同于多轨剪辑能力。
+- 已确认的多模态边界：`ChatMessage` 仍只有文本 content/versions，没有原生 image/audio/video message parts；图片、音频、视频通过项目 asset_id 交给媒体任务 Provider，属于素材导入+专业任务链路，不是聊天传输层原生多模态。通用视频问答、非语音音频理解和图像生成仍不能据此判定完成。
+- 运行验证边界：当前 HEAD 没有 GitHub commit status 或 check runs；`.github/workflows/android.yml` 只配置 workflow_dispatch 手动触发。本轮按用户要求没有运行 Gradle 编译、JVM/Android 测试、模拟器或真机测试。源码/测试文件存在不等于运行通过。
+- 本轮只修订模块清单和审计记录，没有修改业务源码；下一步应先补齐记忆来源原子事务、专家/工作流工具调用适配器与任务元数据、日历调度能力，再做设备 UI 缺口和媒体/多模态范围收口；全部完成后才进入统一编译验收。
