@@ -218,7 +218,7 @@ internal object OpenAiClient {
         val openAiMessages = JSONArray().apply {
             if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
             boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach {
-                put(ChatMessageContentSerializer.openAiMessage(it))
+                put(ChatMessageContentSerializer.openAiMessage(it, supportsAudioInput = config.model.contains("audio", ignoreCase = true)))
             }
         }
         val anthropicMessages = JSONArray().apply {
@@ -536,7 +536,7 @@ internal object OpenAiClient {
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg ->
-                        put(ChatMessageContentSerializer.openAiMessage(msg))
+                        put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = config.model.contains("audio", ignoreCase = true)))
                     }
                 })
                 put("stream", false)
@@ -578,7 +578,7 @@ internal object OpenAiClient {
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(ChatMessageContentSerializer.openAiMessage(msg)) }
+                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = config.model.contains("audio", ignoreCase = true))) }
                 })
                 if (supportsOpenAiStreamUsage(config)) put("stream_options", JSONObject().put("include_usage", true))
                 put("stream", true)
