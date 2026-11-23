@@ -1383,9 +1383,9 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 - `ToolsDirectoryPage` 的 14 个管理入口（模型、双模型比较、语音、Skills、工作流、插件、MCP、能力授权、记忆、知识库、产物、媒体、AI 共建、Git）均在 `NestroApp` 找到对应路由分支；本轮未发现目录入口断链。
 - 主进程共享 `AgentToolCatalog` 与 `AgentTaskCoordinator`；当前静态注册 11 个内置工具，MCP/生成式插件按连接与安装状态动态注册。Phone Agent 与 calendar automation 有具名 Handler；媒体 AI、媒体渲染、工作流和专家团队通过统一协调器的 `runInline` 进入统一任务生命周期。
-- **专家/工作流工具租约缺口已作最小安全接通：** 新增 `AgentCapabilityRegistry.registerReadOnlyTools`，每次专家成员调用、专家项目工作包和工作流步骤执行前，按 operation 生成独立作用域，仅注册共享目录中 `READ_ONLY && !requiresConfirmation` 的工具；随后创建工具租约并在调用结束时释放租约/注销声明。现有工具感知回调因此可实际收到只读工具发现列表。外部写入、设备操作、需确认工具不会自动暴露给子步骤，仍由主模型统一调度并经过项目授权与用户审批；没有扩大子 Agent 的副作用权限。
-- 已更新 `ExpertTeamExecutionCoordinatorTest` 与 `WorkflowExecutionCoordinatorTest`：移除测试中手工注册能力的假接线，改为验证生产协调器自动提供只读工具，并排除设备操作、外部写入和标记需确认的只读工具。生产代码提交 `af57b8bd5a6882a3c859a2175cbbd2c1d7ff8d97`；审批边界测试提交 `07373ca3bd5664cbf6186eb9c9ca49317a7688b5`。已回读代码与测试源码，尚未执行测试。
-- **仍未完成的更细粒度能力配置：** 当前按安全默认策略自动开放只读工具，没有提供每个专家/工作流步骤的持久化自定义工具 allowlist；如后续要让步骤直接调用外部写入/设备/MCP 副作用工具，必须先补显式授权配置和审批恢复测试，不能直接扩大默认权限。
+- **专家/工作流工具租约缺口已作最小安全接通：** 新增 `AgentCapabilityRegistry.registerReadOnlyTools`，每次专家成员调用、专家项目工作包和工作流步骤执行前，按 operation 生成独立作用域；专家成员与普通工作流步骤仅注册共享目录中 `READ_ONLY && !requiresConfirmation` 的工具。若工作流步骤显式开启 `approvalRequired` 且用户批准，则该步骤可发现当前目录全部工具；每次实际调用仍经过项目授权、工具权限路由及工具级审批，未绕过审批。租约在调用结束时释放并注销声明。
+- 已更新 `ExpertTeamExecutionCoordinatorTest` 与 `WorkflowExecutionCoordinatorTest`：移除测试中手工注册能力的假接线，验证生产协调器自动提供只读工具、排除设备操作/外部写入/需确认只读工具，并验证用户批准的工作流步骤可发现外部写入工具。生产只读接线提交 `af57b8bd5a6882a3c859a2175cbbd2c1d7ff8d97`；审批边界测试提交 `07373ca3bd5664cbf6186eb9c9ca49317a7688b5`；工作流显式审批开放工具提交 `f2af9fdfd3c25597d0c382097881729c997a5d97`；清理测试 import 提交 `509863d53c6a7a7347964245fd93b80815883dd5`。已回读代码与测试源码，尚未执行测试。
+- **仍未完成的更细粒度能力配置：** 专家成员当前默认只读，没有每位专家单独配置外部写入/设备/MCP 工具的持久化 allowlist；如需开放，必须增加明确的专家级授权配置和审批恢复测试，不能直接扩大默认权限。
 - `NestroApplication.kt` 的 `media.provider.list` 曾对每个 Provider 连续重复读取三次；已改为单次读取，提交 `3fb55b0bb8a6ed5e91ffc7ee930c20324505d182`，并回读确认。
 - 本轮只完成源码/路由/注册关系静态核查；尚未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验收。不得将接口存在等同于运行通过。
 
