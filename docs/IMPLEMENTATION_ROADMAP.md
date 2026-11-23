@@ -1,7 +1,7 @@
 # 2026-11-24 当前工作基线（main）
 
 - **当前唯一开发与交付主线**：`main`。
-- **本轮业务源码回读基线**：`62ce60c32261b182bbc441163f21fabd6b935ec8`（2026-11-24）；其后文档更新不改变该源码基线。
+- **本轮业务源码回读基线**：`eb2ae1ad011f42bcfa43b6216d107bb0faa6ee98`（2026-11-24）；其后文档更新不改变该源码基线。
 - **本轮已完成的代码整合**：
   - 模块16新增项目级统一任务中心：复用 AgentTaskCoordinator 状态与 trace，支持查看最近任务、执行记录、错误和暂停/恢复/取消；工具目录和 NestroApp 路由已接通。
   - 模块17支持主视频轨 + 最多 8 条音频轨；音频轨可选择添加目标、静音、独立 0–200% 音量、删除空轨；渲染按轨混音，工程 codec 兼容旧数据默认音量 100%，补充对应测试源码。
@@ -10,7 +10,7 @@
 - **明确边界/仍未完成**：
   - 日历任意时间条件触发、日历专属语义型业务错误映射仍待补；日历工作流步骤内部暂不直接调用外部工具，专家成员内部暂不开放工具调用。
   - 媒体仍只有一条视频轨；PIP/多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音仍待补。
-  - 原生图片/音频/视频 parts 已按 Provider 接通：OpenAI 图片+WAV/MP3 音频、Anthropic 图片、Gemini 图片/音频/视频；大文件继续走媒体任务桥接。模型能力声明/兼容性门禁、真实 API 验证与跨服务商一致性仍待补。
+  - 原生图片/音频/视频 parts 已按 Provider 接通：OpenAI 图片+（模型 ID 含 `audio` 时的）WAV/MP3 音频、Anthropic 图片、Gemini 图片/音频/视频；大文件继续走媒体任务桥接。模型能力声明/兼容性门禁、真实 API 验证与跨服务商一致性仍待补。
   - 专家私聊/团队会话入口已有源码；成员之间真正自由持续对话、可编辑任务图、工作包返工与完整团队生命周期仍待补。
 - **验证边界**：本轮只做 GitHub main 源码回读、调用链静态检查和提交差异检查；没有运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器/真机或 APK 构建。不得将新增测试源码写成测试通过。
 
@@ -18,7 +18,7 @@
 
 - 复用 `MediaProjectStore` 和正文中的 `asset_id` 标记；resolver 为本次请求准备 Base64 图片/音频/视频 parts，图片必要时缩放/旋转/压缩；音视频限制单项 8 MiB、总量 12 MiB。
 - `ChatMessage.mediaParts` 仅为请求期临时字段；Room、备份格式和原始媒体目录不新增第二套存储。历史消息通过原有 asset_id 在后续请求重新解析。
-- `ChatRequestPolicy` 在上下文裁剪时保留媒体 parts 并按模态/时长估算 token 成本；OpenAI Chat Completions 支持 image_url 与 WAV/MP3 input_audio，Anthropic 支持 base64 image，Gemini 使用 inlineData 图片/音频/视频并把媒体放在文本指令之前。
+- `ChatRequestPolicy` 在上下文裁剪时保留媒体 parts 并按模态/时长估算 token 成本；OpenAI Chat Completions 支持 image_url，并仅在模型 ID 含 `audio` 时发送 WAV/MP3 input_audio；Anthropic 支持 base64 image，Gemini 使用 inlineData 图片/音频/视频并把媒体放在文本指令之前。
 - 新增 serializer、asset_id 解析、时长预算、request coordinator 传递与 context budget 回归测试源码；尚未运行编译或测试。模型能力声明/兼容性门禁、真实 API 验证、大文件直传和跨 Provider 一致性仍未完成。
 - 技能库：适配历史分支 `fromStored` 安全思路，统一走 main 的严格 SkillSemVer/权限/依赖/签名指纹校验；`LocalBackupRepository` 在备份导出和恢复前验证持久化技能集合，拒绝损坏元数据。
 
@@ -716,7 +716,7 @@ NESTRO 不是单纯聊天、单独的 Phone Agent 或媒体编辑器，而是以
 
 ## 2026-11-22 — 全量功能对齐后的真实收口顺序
 
-本阶段目标不是继续堆功能，而是把十九模块已有实现、历史分支已做但未带入的能力、最近对话新要求统一到当前 `integration/19-modules`。每项先对照源码与调用链，只有确认缺口才修改；不整分支 merge、不复制 Provider/Worker/Task Engine。
+本阶段目标不是继续堆功能，而是把十九模块已有实现、历史分支已做但未带入的能力、最近对话新要求统一到当前 `main`。每项先对照源码与调用链，只有确认缺口才修改；不整分支 merge、不复制 Provider/Worker/Task Engine。
 
 ### A. 先回收被旧架构替换但不能丢失的功能
 1. **记忆生命周期保护（代码已补）**：已回收 mutationVersion、项目锁、自动提取版本校验、编辑/删除/清空/关闭自动记忆/项目清理/备份恢复前的失效等待；测试源码已补，尚未执行。
@@ -779,7 +779,7 @@ NESTRO 不是单纯聊天、单独的 Phone Agent 或媒体编辑器，而是以
 - 记忆来源删除后的完整引用完整性/级联清理；历史召回缓存版本失效。
 - 日历任意时间条件触发、日历专属语义型业务错误映射、专家 DAG/工作流分发；通用任务机瞬时网络/HTTP 重试与副作用安全保护已存在，延迟分钟触发已在当前代码修复批次接通。
 - 媒体多视频轨/PIP/多音轨及对应时间线、预览、渲染和工程包兼容。
-- 原生 image/audio/video parts 已按 Provider 接通；OpenAI audio 仅限 WAV/MP3，Anthropic 当前仅图片，Gemini 支持 inlineData 媒体；模型能力声明/兼容性门禁、通用大文件视频问答和真实 API 验证仍待补。
+- 原生 image/audio/video parts 已按 Provider 接通；OpenAI audio 仅限模型 ID 含 `audio` 的 WAV/MP3，Anthropic 当前仅图片，Gemini 支持 inlineData 媒体；模型能力声明/兼容性门禁、通用大文件视频问答和真实 API 验证仍待补。
 - 其余已设计 UI 的逐屏源码复核与实际入口接通；当前只完成 Phone Agent 浮窗拖动，不能视为界面整体完成。
 - 全量源码复核、差异/冲突检查、测试源码补齐和最终静态自检。
 
