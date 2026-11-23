@@ -1773,10 +1773,8 @@ fun NestroApp(initialPage: String = "home") {
                             }
                             Column {
                                 Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                Crossfade(targetState = status, animationSpec = tween(NestroMotion.FAST), label = "header-status-transition") { currentStatus ->
-                                    Text(currentStatus, color = Muted, style = MaterialTheme.typography.labelSmall)
-                                }
-                                if (busy && teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
+                                AnimatedStatusText(status, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                if (busy && teamRunStatus.isNotBlank()) AnimatedStatusText(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
                                     TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
                                         Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
@@ -1912,7 +1910,7 @@ fun NestroApp(initialPage: String = "home") {
                                     }
                                 }
                                 if (chatMediaStatus.isNotBlank()) {
-                                    Text(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    AnimatedStatusText(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton(
@@ -1960,7 +1958,7 @@ fun NestroApp(initialPage: String = "home") {
                                         )
                                     )
                                 }
-                                Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
                         "tools" -> ToolsDirectoryPage(onNavigate = { destination -> page = destination })
@@ -2205,7 +2203,7 @@ fun NestroApp(initialPage: String = "home") {
                                  Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                  Text("把复杂任务拆成连续步骤。每一步接收上一步结果，支持提示词、专家角色和技能指令。", color = Muted)
                                  OutlinedTextField(value = workflowInputDraft, onValueChange = { workflowInputDraft = it.take(12000) }, label = { Text("本次运行目标") }, placeholder = { Text("例如：研究一个市场，最后形成可执行分析。") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                                 if (workflowRunStatus.isNotBlank()) Text(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                 if (workflowRunStatus.isNotBlank()) AnimatedStatusText(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
                                  if (runningWorkflowId.isNotBlank()) {
                                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                          OutlinedButton(
@@ -2739,7 +2737,7 @@ fun NestroApp(initialPage: String = "home") {
                                     Text("＋ 创建专家")
                                 }
                                 Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
+                                if (teamRunStatus.isNotBlank()) AnimatedStatusText(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
                                 if (activeTeamRunHistory.isNotEmpty()) {
                                     val latestTeamRun=activeTeamRunHistory.first()

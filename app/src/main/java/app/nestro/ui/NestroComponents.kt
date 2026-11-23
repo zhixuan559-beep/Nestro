@@ -1,6 +1,8 @@
 package app.nestro.ui
 
 import app.nestro.data.ChatMessage
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +14,8 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -19,6 +23,25 @@ internal fun ChatMessage.allVersions(): List<String> = when {
     versions.isEmpty() -> listOf(content)
     activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
     else -> versions.distinct().takeLast(20)
+}
+
+@Composable
+internal fun AnimatedStatusText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    style: TextStyle = MaterialTheme.typography.bodySmall,
+    maxLines: Int = Int.MAX_VALUE
+) {
+    Crossfade(
+        targetState = text,
+        animationSpec = tween(NestroMotion.FAST),
+        label = "status-text-transition"
+    ) { currentText ->
+        if (currentText.isNotBlank()) {
+            Text(currentText, modifier = modifier, color = color, style = style, maxLines = maxLines)
+        }
+    }
 }
 
 @Composable

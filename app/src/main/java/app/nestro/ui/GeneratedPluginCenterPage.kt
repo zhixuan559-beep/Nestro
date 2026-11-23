@@ -220,7 +220,7 @@ internal fun GeneratedPluginCenterPage(
             modifier = Modifier.fillMaxWidth()
         ) { Text(if (busy) "生成中…" else "AI 生成插件草案") }
 
-        if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+        if (status.isNotBlank()) AnimatedStatusText(status, style = MaterialTheme.typography.bodySmall)
 
         draft?.let { candidate ->
             Card(Modifier.fillMaxWidth()) {

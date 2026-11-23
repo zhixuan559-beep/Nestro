@@ -219,7 +219,7 @@ fun CapabilityDirectoryPage(projectId: String) {
                 showKeyRotationConfirm=true
             } else refreshSignedCatalog(catalogUrl.trim(),candidateKey)
         },modifier=Modifier.fillMaxWidth()) { Text(if(loading) "验证中…" else "验证并刷新社区目录") }
-        if(status.isNotBlank()) Text(status,style=MaterialTheme.typography.bodySmall)
+        if(status.isNotBlank()) AnimatedStatusText(status,style=MaterialTheme.typography.bodySmall)
         if(loading) CircularProgressIndicator()
         if(releases.isNotEmpty()) {
             Text("已验签社区技能 · "+releases.size+" 个版本",style=MaterialTheme.typography.titleMedium)
@@ -259,7 +259,7 @@ fun CapabilityDirectoryPage(projectId: String) {
                 }
             }
         }
-        if(installStatus.isNotBlank()) Text(installStatus,style=MaterialTheme.typography.bodySmall)
+        if(installStatus.isNotBlank()) AnimatedStatusText(installStatus,style=MaterialTheme.typography.bodySmall)
         Text("本地能力",style=MaterialTheme.typography.titleMedium)
         OutlinedTextField(value=query,onValueChange={query=it},label={Text("筛选能力")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
