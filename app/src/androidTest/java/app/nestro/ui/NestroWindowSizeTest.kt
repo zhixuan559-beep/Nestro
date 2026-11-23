@@ -3,6 +3,7 @@ package app.nestro.ui
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -36,6 +37,7 @@ class NestroWindowSizeTest {
         }
 
         val destinations = listOf(
+            "新建对话" to "有什么可以帮忙？",
             "最近对话" to "对话历史",
             "项目空间" to "项目空间",
             "专家与专家团" to "专家与专家团",
