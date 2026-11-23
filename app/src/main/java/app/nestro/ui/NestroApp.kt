@@ -994,7 +994,7 @@ fun NestroApp(initialPage: String = "home") {
     val importTeamLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) scope.launch {
             val result=withContext(Dispatchers.IO) { runCatching {
-                val raw=context.contentResolver.openInputStream(uri)?.use { SkillBundleParser.readUtf8Bounded(it) } ?: error("无法读取团队文件")
+                val raw=context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: error("无法读取团队文件")
                 ExpertTeamBundleParser.parse(raw)
             } }
             result.fold({ pendingTeamBundle=it; teamImportStatus="" },{ teamImportStatus="导入失败：${it.message ?: "文件格式无效"}" })
@@ -1071,7 +1071,7 @@ fun NestroApp(initialPage: String = "home") {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val raw = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        val raw = context.contentResolver.openInputStream(uri)?.use { SkillBundleParser.readUtf8Bounded(it) }
                             ?: error("无法读取技能文件")
                         SkillBundleParser.parse(raw, uri.lastPathSegment ?: "本地技能")
                     }
