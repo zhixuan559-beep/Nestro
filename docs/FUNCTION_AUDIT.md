@@ -1239,3 +1239,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - UI 自动化测试源码已存在：`NestroAppSmokeTest.kt`、`ContentPageInteractionTest.kt`、`NestroWindowSizeTest.kt`、知识库/能力目录/产物库窗口尺寸测试及语音按钮语义测试。本轮未执行这些测试。
 - 发现 `NestroLayoutPolicyTest.kt` 与 `AdaptiveLayoutPolicyTest.kt` 对同一抽屉宽度算法有冲突的旧预期。已在提交 `5516a882455c0faca4757d9158a544da943b642e` 修正旧测试为当前生产算法的边界测试，并回读验证文件内容。
 - 尚未完成：用户宣传图中的双环 Logo 原图像素级还原与 Launcher 最终集成；本轮 Library 检索未找到可用的原始图片资产。编译、JVM/Android 测试、模拟器/真机验收仍按项目约定延后，不能宣称 UI 验收通过。
+
+
+## 2026-11-23 — 系统返回交互与 UI 冒烟测试修正
+
+- `NestroApp.kt` 新增统一 `BackHandler`：系统返回键优先关闭导航抽屉；位于二级页面时返回聊天主页；主页且抽屉关闭时不拦截系统默认退出行为。
+- `NestroAppSmokeTest.kt` 已按当前 UI 路由修正旧测试：品牌标题使用 Nost；最近对话从新侧栏进入；语音、知识库、工作流和模型管理经统一工具目录进入；设置使用新侧栏入口；Phone Agent 不再被错误要求作为主导航入口。
+- 新增系统返回键测试源码，覆盖“二级页面返回主页”和“抽屉返回关闭但留在主页”。
+- 相关代码提交：`6baf28e885fdedddf4fe40351b34d7f59cbfdcf9`（BackHandler）、`1943ed32e14cf4eae3ac5b0137f26e0c35bae0a2`（初始 UI 测试）、`9d0e5f29451db321320aefc81e03572d0f1667e9`（断言修正）、`5fbf043762aaa3337724f4c5521f789b9068fe45` 与 `5dcc1a1f95bc540565cd0009630a6693e13212d8`（新版路由冒烟测试修正）。
+- 已回读 `NestroApp.kt`、`NestroAppSmokeTest.kt`；静态检查未发现旧导航标签残留。所有 UI 测试仍未执行，不能声称测试通过。
