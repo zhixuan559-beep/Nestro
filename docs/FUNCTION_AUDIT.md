@@ -1,3 +1,17 @@
+# NESTRO 十九模块统一功能核对（持续更新）
+
+## 2026-11-24 main 当前源码增补
+
+- **当前核对基线**：唯一开发主线 `main`，源码回读 HEAD `1647d0f0671c61eb9762bb24565a952339638a02`。以下状态以当前 main 源码和实际调用链为准；下方 2026-11-22 首轮审计保留作历史记录，不再覆盖本节的新状态。
+- **模块16｜统一任务总览**：新增 `ui/AgentTaskCenterPage.kt`，由工具目录“任务中心”入口进入；通过 `NestroDao.recentAgentTaskStatesForProject` 读取当前项目最近 200 条统一任务，展示状态、执行记录、错误、尝试次数，并提供安全范围内的暂停/恢复/取消操作。它复用 `AgentTaskCoordinator` 与现有 trace 数据，不另建任务队列。只覆盖已接入统一任务机且带当前 projectId 的任务，不把旧领域状态表冒充统一任务。
+- **模块17｜媒体多轨音频**：时间线现在支持 1 条主视频轨 + 最多 8 条音频轨；音频轨可选择为素材添加目标、独立静音/音量调节（0–200%）、删除空轨。每条音频轨独立生成 Media3 音频序列并参与混音；轨道音量通过 `ChannelMixingAudioProcessor` 生效。工程 JSON 保存 volume，旧工程缺少 volume 时按 100% 兼容。新增多轨数量、时长边界、音量、空轨删除及旧数据默认值测试源码。**仍只有一条视频轨**；PIP/视频叠加、多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音仍未完成。
+- **模块18｜日历直调度专家 DAG / Workflow**：日历自动任务仍由 `calendar_automation` Worker 进入 `ChatRequestExecutionCoordinator`，现已按当前项目可见专家数量启用 `expert_team.run`，通过 `CalendarExpertTeamRunner` 复用专家目录、项目资源范围、`ExpertTeamExecutionCoordinator` 的 DAG/checkpoint 和协作事件记录。另增加仅对日历自动任务开放的 `workflow.list` / `workflow.run`；可运行当前项目可见的已保存 PROMPT、EXPERT、SKILL 工作流，审批步骤复用 `AgentApprovalCoordinator`，执行结果写入既有工作流历史。工作流步骤内部暂不直接调用外部工具，外部能力仍由顶层调度器执行；专家成员内部也暂不开放工具调用。任意时间条件触发、日历专属语义型业务错误映射仍待完成。
+- **模块1｜专家聊天边界纠正**：当前 main 已有 `openExpertChat` 与 `openExpertTeamChat` 私聊/团队会话入口，不能再笼统记为“没有私聊或群聊 UI”。仍需补齐的是成员之间真正自由的持续对话体验，以及可编辑任务图、工作包返工/结构化验收和完整团队生命周期；现有协作事件记录不等于完整群聊产品。
+- **模块3/19｜原生多模态仍未实现**：`ChatMessage` 和聊天 Provider 仍未形成原生 image/audio/video content parts。现有“聊天导入素材 → 项目素材库 → `media.ai.run`”是工具桥接，不等于原生多模态消息；通用视频问答与非语音音频事件理解仍有缺口。
+- **验证边界**：本次完成 GitHub main 源码回读、调用链静态核对和提交差异检查；没有运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器/真机或 APK 构建。新增测试只是测试源码，不能写成测试通过。
+
+---
+
 # NESTRO 十九模块统一功能核对（第一轮）
 
 核对分支：`integration/19-modules`  
