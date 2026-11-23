@@ -2524,10 +2524,6 @@ fun NestroApp(initialPage: String = "home") {
                          "experts" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("专家与专家团", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilterChip(selected = true, onClick = { page = "experts" }, label = { Text("专家") })
-                                    FilterChip(selected = false, onClick = { page = "experts" }, label = { Text("专家团") })
-                                }
                                 Text("单个专家可以独立聊天；专家团由多个专家组成，可以在群聊上下文中协作。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
