@@ -615,13 +615,22 @@ ${prompt.take(8_000)}
             }
             val decisionText = StringBuilder()
             val directAnswer = StringBuilder()
-            val decisionTokenBudget = maxTokens?.coerceIn(256, 4_096) ?: 1_200
+            val contextWindowTokens = ModelContextWindowPolicy.effectiveContextWindow(configs)
+            val decisionTokenBudget = ModelContextWindowPolicy.outputReserve(
+                maxTokens?.coerceIn(256, 4_096) ?: 1_200,
+                contextWindowTokens
+            ).coerceAtLeast(1)
             var headerResolved = false
             var directMode = false
             var lastDirectUiLength = 0
             chat.streamWithFallback(
                 configs = configs,
-                history = ChatRequestPolicy.boundedChatHistory(workingHistory, roundSystem, outputReserveTokens = decisionTokenBudget),
+                history = ChatRequestPolicy.boundedChatHistory(
+                    workingHistory,
+                    roundSystem,
+                    contextWindowTokens = contextWindowTokens,
+                    outputReserveTokens = decisionTokenBudget
+                ),
                 systemPrompt = roundSystem,
                 temperature = temperature ?: 0.0,
                 maxTokens = decisionTokenBudget,
