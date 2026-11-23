@@ -176,7 +176,7 @@ class NestroApplication : Application() {
                     ?: return@register app.nestro.agent.AgentToolResult(false, error = "Phone Agent 任务不存在或已删除")
                 if (task.projectId != projectId) return@register app.nestro.agent.AgentToolResult(false, error = "任务不属于当前项目，已阻止读取")
                 val timeoutSeconds = arguments["timeout_seconds"]?.toIntOrNull()?.coerceIn(1, 180) ?: 90
-                val terminal = setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_CANCELLED)
+                val terminal = setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.STATUS_CANCELLED)
                 kotlinx.coroutines.withTimeoutOrNull(timeoutSeconds * 1_000L) {
                     while (task.status !in terminal) {
                         delay(750L)
