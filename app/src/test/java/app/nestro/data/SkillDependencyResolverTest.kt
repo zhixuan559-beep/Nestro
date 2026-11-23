@@ -60,7 +60,7 @@ class SkillDependencyResolverTest {
         val packages = mapOf(
             key("root") to bundle(
                 "root",
-                dependencies = arrayOf(SkillDependency("engine", "*"), SkillDependency("runtime", "^1.0.0"))
+                dependencies = listOf(SkillDependency("engine", "*"), SkillDependency("runtime", "^1.0.0"))
             ),
             key("engine", "2.0.0") to bundle("engine", "2.0.0", listOf(SkillDependency("runtime", "^2.0.0"))),
             key("engine", "1.0.0") to bundle("engine", "1.0.0", listOf(SkillDependency("runtime", "^1.0.0"))),
@@ -77,7 +77,7 @@ class SkillDependencyResolverTest {
         val root = release("root")
         val base = bundle("base", "1.2.0")
         val packages = mapOf(
-            key("root") to bundle("root", dependencies = arrayOf(SkillDependency("base", "^1.0.0")))
+            key("root") to bundle("root", dependencies = listOf(SkillDependency("base", "^1.0.0")))
         )
         val installedSkills = mapOf("base" to "base prompt")
         val installedMetadata = mapOf("base" to SkillBundleParser.metadataJson(base))
@@ -102,7 +102,7 @@ class SkillDependencyResolverTest {
         val root = release("root")
         val dependency = release("base", "2.0.0")
         val packages = mapOf(
-            key("root") to bundle("root", dependencies = arrayOf(SkillDependency("base", "^2.0.0"))),
+            key("root") to bundle("root", dependencies = listOf(SkillDependency("base", "^2.0.0"))),
             key("base", "2.0.0") to bundle("base", "2.0.0")
         )
         val local = SkillBundle("base", "1.0.0", "", "local prompt", "本地文件", emptyList(), emptyList())
@@ -128,9 +128,9 @@ class SkillDependencyResolverTest {
         val shared1 = release("shared", "1.5.0")
         val shared2 = release("shared", "2.1.0")
         val packages = mapOf(
-            key("root") to bundle("root", dependencies = arrayOf(SkillDependency("left", "*"), SkillDependency("right", "*"))),
-            key("left") to bundle("left", dependencies = arrayOf(SkillDependency("shared", "^1.0.0"))),
-            key("right") to bundle("right", dependencies = arrayOf(SkillDependency("shared", "^2.0.0"))),
+            key("root") to bundle("root", dependencies = listOf(SkillDependency("left", "*"), SkillDependency("right", "*"))),
+            key("left") to bundle("left", dependencies = listOf(SkillDependency("shared", "^1.0.0"))),
+            key("right") to bundle("right", dependencies = listOf(SkillDependency("shared", "^2.0.0"))),
             key("shared", "1.5.0") to bundle("shared", "1.5.0"),
             key("shared", "2.1.0") to bundle("shared", "2.1.0")
         )
@@ -146,7 +146,7 @@ class SkillDependencyResolverTest {
     fun reusesInstalledEnabledDependencyWhenItsCompleteClosureIsValid() {
         val root = release("root")
         val packages = mapOf(
-            key("root") to bundle("root", dependencies = arrayOf(SkillDependency("base", "^1.0.0")))
+            key("root") to bundle("root", dependencies = listOf(SkillDependency("base", "^1.0.0")))
         )
         val base = SkillBundle("base", "1.2.0", "", "base prompt", "本地文件", emptyList(), emptyList())
         val plan = resolve(
