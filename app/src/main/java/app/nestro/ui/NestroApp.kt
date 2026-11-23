@@ -279,6 +279,56 @@ fun NestroApp(initialPage: String = "home") {
         if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
         return allowed
     }
+
+    fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
+        if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
+        val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
+        expertTeams = expertTeams.filterNot { it.id == teamId }
+        val nextScopes = ProjectResourceScopeStore.removeResourceScope(
+            projectResourceScopes, ProjectResourceKind.TEAM, teamId
+        )
+        if (selectedTeamId == teamId) selectedTeamId = ""
+        if (deleteChats) {
+            val remaining = conversations.filterNot { it.id in teamChatIds }
+            val activeWasDeleted = activeConversationId in teamChatIds
+            conversations = remaining
+            ConversationPreferencesStore.saveConversationList(prefs, conversations)
+            if (activeWasDeleted) {
+                scope.launch {
+                    val next = remaining.firstOrNull { it.projectId == activeProjectId }
+                        ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
+                    if (remaining.none { it.id == next.id }) {
+                        conversations = listOf(next) + conversations
+                        ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                    }
+                    val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                        withContext(Dispatchers.IO) {
+                            appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
+                        }
+                    } else next.messages
+                    activeConversationId = next.id
+                    messages = nextMessages
+                    selectedTeamId = expertTeams.firstOrNull {
+                        expertTeamConversationId(it.id, next.projectId) == next.id
+                    }?.id.orEmpty()
+                    prefs.edit().putString("active_conversation_id", next.id)
+                        .putString("active_project_id", next.projectId)
+                        .putString("selected_team_id", selectedTeamId).apply()
+                }
+            }
+        }
+        val persisted = prefs.edit()
+            .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
+            .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(nextScopes))
+            .putString("selected_team_id", selectedTeamId)
+            .commit()
+        if (persisted) {
+            projectResourceScopes = nextScopes
+            status = if (deleteChats) "专家团及其群聊已删除。" else "专家团已解散，原群聊记录已保留。"
+        } else {
+            status = "专家团变更未能确认写入。"
+        }
+    }
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Boolean = { kind, resourceId, makeGlobal ->
         if (!canWriteProjectResource(kind, resourceId)) {
             false
@@ -2620,17 +2670,11 @@ fun NestroApp(initialPage: String = "home") {
                                                     showTeamDialog = true
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
-                                                    if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
-                                                    expertTeams = expertTeams.filterNot { it.id == team.id }
-                                                    if (selectedTeamId == team.id) selectedTeamId = ""
-                                                    val remainingTeamScopes = ProjectResourceScopeStore.removeResourceScope(
-                                                        projectResourceScopes, ProjectResourceKind.TEAM, team.id
-                                                    )
-                                                    prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
-                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingTeamScopes))
-                                                        .putString("selected_team_id", selectedTeamId).commit()
-                                                    projectResourceScopes = remainingTeamScopes
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                    removeExpertTeam(team.id, deleteChats = false)
+                                                }) { Text("解散", color = Muted) }
+                                                TextButton(onClick = {
+                                                    removeExpertTeam(team.id, deleteChats = true)
+                                                }) { Text("删除群", color = androidx.compose.ui.graphics.Color(0xFFB42318)) }
                                             }
                                         }
                                     }
