@@ -727,7 +727,8 @@ class NestroApplication : Application() {
                 }
             },
             memoryVersion = { projectId ->
-                readableProjectsFor(projectId).joinToString("|") { sourceId ->
+                val memoryAuthorized = CapabilityRegistryStore.authorize(preferences, projectId, "memory")
+                "authorized=$memoryAuthorized|" + readableProjectsFor(projectId).joinToString("|") { sourceId ->
                     val token = UserMemoryStore.mutationVersion(sourceId)
                     "$sourceId:${token.projectVersion}:${token.globalVersion}"
                 }
