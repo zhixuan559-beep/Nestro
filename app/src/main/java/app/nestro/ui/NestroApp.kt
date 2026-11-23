@@ -1696,7 +1696,7 @@ fun NestroApp(initialPage: String = "home") {
             surfaceVariant = androidx.compose.ui.graphics.Color(0xFF1A1A1A),
             onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFAAAAAA),
             outline = androidx.compose.ui.graphics.Color(0xFF303030),
-            error = androidx.compose.ui.graphics.Color(0xFFFF6B6B)
+            error = androidx.compose.ui.graphics.Color.White
         ) else lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFF111111),
             onPrimary = androidx.compose.ui.graphics.Color.White,
@@ -1707,7 +1707,7 @@ fun NestroApp(initialPage: String = "home") {
             surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF5F5F5),
             onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF6B6B6B),
             outline = androidx.compose.ui.graphics.Color(0xFFE5E5E7),
-            error = androidx.compose.ui.graphics.Color(0xFFB42318)
+            error = androidx.compose.ui.graphics.Color(0xFF111111)
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
@@ -2475,7 +2475,7 @@ fun NestroApp(initialPage: String = "home") {
                                                          .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingWorkflowScopes))
                                                          .commit()) { "工作流及项目范围删除失败" }
                                                      projectResourceScopes = remainingWorkflowScopes
-                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                              }
                                          }
                                      }
@@ -2660,7 +2660,7 @@ fun NestroApp(initialPage: String = "home") {
                                                     }
                                                     expertRevisions = expertRevisions - name
                                                     prefs.edit().putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
                                     }
@@ -2816,7 +2816,7 @@ fun NestroApp(initialPage: String = "home") {
                                         OutlinedButton(onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
                                             Text("从备份恢复")
                                         }
-                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) MaterialTheme.colorScheme.error else Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2941,7 +2941,7 @@ fun NestroApp(initialPage: String = "home") {
                                                         conversationPageItems = conversationPageItems.filterNot { it.id == record.id }
                                                         conversationPageRefreshKey++
                                                     }
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
                                     }
@@ -3293,7 +3293,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                 memoryStatus = "删除失败：${result.exceptionOrNull()?.message ?: "记忆可能已被删除"}"
                                                             }
                                                         }
-                                                    }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                                 }
                                             }
                                         }
@@ -3746,7 +3746,7 @@ fun NestroApp(initialPage: String = "home") {
                                                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).commit()
                                                     projectResourceScopes = remainingSkillScopes
                                                     if(selectedSkill==name) selectedSkill=""
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
                                     }
@@ -3789,7 +3789,7 @@ fun NestroApp(initialPage: String = "home") {
                     showBackupRestoreConfirm = false
                     pendingBackupUri = null
                     if (uri != null) performBackupRestore(uri)
-                }) { Text("覆盖并恢复", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                }) { Text("覆盖并恢复", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false; pendingBackupUri = null }) { Text("取消") } }
         )
@@ -3968,7 +3968,7 @@ fun NestroApp(initialPage: String = "home") {
                     Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                     Text("版本：${bundle.version} · 来源：${bundle.source}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     if (bundle.description.isNotBlank()) Text(bundle.description, color = Muted)
-                    Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else androidx.compose.ui.graphics.Color(0xFFFBBF24))
+                    Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
                     Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -4134,7 +4134,7 @@ fun NestroApp(initialPage: String = "home") {
                     OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it.take(40) }, label = { Text("技能名称") }, singleLine = true, enabled = editingSkillName !in DEFAULT_SKILLS.keys)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it.take(8000) }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
-                    if(skillDialogError.isNotBlank()) Text(skillDialogError,color=androidx.compose.ui.graphics.Color(0xFFF87171),style=MaterialTheme.typography.bodySmall)
+                    if(skillDialogError.isNotBlank()) Text(skillDialogError,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -4261,7 +4261,7 @@ fun NestroApp(initialPage: String = "home") {
                 Text("状态：${if (bundle.enabled) "启用" else "停用"} · Temperature：${bundle.temperature ?: "模型默认"} · Max tokens：${bundle.maxTokens ?: "模型默认"}", color = Muted)
                 Text("角色指令", color = Mint)
                 Text(bundle.prompt, color = Ink)
-                if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
+                if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } },
             confirmButton = { TextButton(onClick = {
                 if (projectResourceScopesReadOnly) {
@@ -4393,7 +4393,7 @@ fun NestroApp(initialPage: String = "home") {
                                     onClick = {
                                         workflowDraftSteps = workflowDraftSteps.filterIndexed { stepIndex, _ -> stepIndex != index }
                                     }
-                                ) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
                             }
                             OutlinedTextField(
                                 value = step.title,
@@ -4690,7 +4690,7 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     OutlinedTextField(value = expertTemperatureDraft, onValueChange = { expertTemperatureDraft = it.take(8) }, label = { Text("Temperature（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                     OutlinedTextField(value = expertMaxTokensDraft, onValueChange = { expertMaxTokensDraft = it.filter(Char::isDigit).take(5) }, label = { Text("最大输出 Token（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    if (expertDialogError.isNotBlank()) Text(expertDialogError, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
+                    if (expertDialogError.isNotBlank()) Text(expertDialogError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
