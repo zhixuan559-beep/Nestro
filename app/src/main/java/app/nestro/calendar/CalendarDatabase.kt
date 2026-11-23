@@ -37,6 +37,7 @@ data class CalendarEvent(
     val sourceSystemImported: Boolean = false,
     @ColumnInfo(defaultValue = "''") val automationPrompt: String = "",
     @ColumnInfo(defaultValue = "''") val automationProjectId: String = "",
+    @ColumnInfo(defaultValue = "0") val automationDelayMinutes: Int = 0,
     @ColumnInfo(defaultValue = "0") val nextRunAt: Long = 0L,
     @ColumnInfo(defaultValue = "0") val lastRunAt: Long = 0L,
     @ColumnInfo(defaultValue = "''") val lastTaskId: String = "",
@@ -93,7 +94,7 @@ interface CalendarDao {
     suspend fun delete(id: String): Int
 }
 
-@Database(entities = [CalendarEvent::class], version = 4, exportSchema = false)
+@Database(entities = [CalendarEvent::class], version = 5, exportSchema = false)
 abstract class CalendarDatabase : RoomDatabase() {
     abstract fun calendarDao(): CalendarDao
 
@@ -123,6 +124,12 @@ abstract class CalendarDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN automationDelayMinutes INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile private var instance: CalendarDatabase? = null
 
         fun get(context: Context): CalendarDatabase =
@@ -131,7 +138,7 @@ abstract class CalendarDatabase : RoomDatabase() {
                     context.applicationContext,
                     CalendarDatabase::class.java,
                     "nestro_calendar.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
     }
 }
