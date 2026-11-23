@@ -10,6 +10,8 @@ import app.nestro.data.ExpertTeamCollaborationEvent
 import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.ExpertTeamRunResult
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicReference
 
 internal class ExpertTeamPauseController {
@@ -26,10 +28,11 @@ internal class ExpertTeamPauseController {
         return true
     }
 
-    suspend fun awaitResume() {
+    suspend fun awaitResume(shouldStop: () -> Boolean = { false }) {
         while (true) {
+            if (shouldStop()) throw CancellationException("用户停止专家项目")
             val gate = resumeSignal.get() ?: return
-            gate.await()
+            withTimeoutOrNull(100) { gate.await() }
         }
     }
 }
