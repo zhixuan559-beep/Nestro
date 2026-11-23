@@ -95,40 +95,45 @@ object MediaRenderTaskStore {
         return next
     }
 
-    @Synchronized
-    fun delete(context: Context, projectId: String, taskId: String) {
+    suspend fun delete(context: Context, projectId: String, taskId: String) {
         val target = file(context, projectId, taskId)
         if (!target.exists()) return
         val current = read(context, projectId, taskId)
-        if (current != null) {
-            val nestroApp = context.applicationContext as? app.nestro.NestroApplication
-            val unifiedStatus = nestroApp?.agentTaskCoordinator?.state("media-render:$taskId")?.status
-            val canDelete = when (unifiedStatus) {
-                app.nestro.agent.AgentTaskStatus.COMPLETED,
-                app.nestro.agent.AgentTaskStatus.FAILED,
-                app.nestro.agent.AgentTaskStatus.CANCELLED -> true
-                null -> current.status in setOf(MediaRenderStatus.COMPLETED, MediaRenderStatus.FAILED, MediaRenderStatus.CANCELLED)
-                else -> false
+        val nestroApp = context.applicationContext as? app.nestro.NestroApplication
+        val unifiedStatus = if (current != null) {
+            nestroApp?.agentTaskCoordinator?.state("media-render:$taskId")?.status
+        } else null
+        synchronized(this) {
+            if (!target.exists()) return
+            val latest = read(context, projectId, taskId)
+            if (latest != null) {
+                val canDelete = when (unifiedStatus) {
+                    app.nestro.agent.AgentTaskStatus.COMPLETED,
+                    app.nestro.agent.AgentTaskStatus.FAILED,
+                    app.nestro.agent.AgentTaskStatus.CANCELLED -> true
+                    null -> latest.status in setOf(MediaRenderStatus.COMPLETED, MediaRenderStatus.FAILED, MediaRenderStatus.CANCELLED)
+                    else -> false
+                }
+                require(canDelete) { "运行中的导出任务不能直接删除" }
             }
-            require(canDelete) { "运行中的导出任务不能直接删除" }
-        }
-        val stagedTask = File(target.parentFile, "." + target.name + ".deleting")
-        val output = MediaProjectStore.exportFile(context, projectId, taskId)
-        val stagedOutput = File(output.parentFile, "." + output.name + ".deleting")
-        require(target.renameTo(stagedTask)) { "无法暂存导出任务" }
-        if (output.exists() && !output.renameTo(stagedOutput)) {
-            stagedTask.renameTo(target)
-            error("无法暂存导出文件")
-        }
-        val outputDeleted = !stagedOutput.exists() || stagedOutput.delete()
-        val taskDeleted = outputDeleted && stagedTask.delete()
-        if (!taskDeleted) {
-            if (stagedOutput.exists()) stagedOutput.renameTo(output)
-            if (stagedTask.exists()) stagedTask.renameTo(target)
-            if (!output.exists()) {
-                runCatching { update(context, projectId, taskId, status = MediaRenderStatus.FAILED, errorMessage = "导出文件已清理，但任务记录未能删除") }
+            val stagedTask = File(target.parentFile, "." + target.name + ".deleting")
+            val output = MediaProjectStore.exportFile(context, projectId, taskId)
+            val stagedOutput = File(output.parentFile, "." + output.name + ".deleting")
+            require(target.renameTo(stagedTask)) { "无法暂存导出任务" }
+            if (output.exists() && !output.renameTo(stagedOutput)) {
+                stagedTask.renameTo(target)
+                error("无法暂存导出文件")
             }
-            error("无法完整清理导出任务与文件，已尝试回滚")
+            val outputDeleted = !stagedOutput.exists() || stagedOutput.delete()
+            val taskDeleted = outputDeleted && stagedTask.delete()
+            if (!taskDeleted) {
+                if (stagedOutput.exists()) stagedOutput.renameTo(output)
+                if (stagedTask.exists()) stagedTask.renameTo(target)
+                if (!output.exists()) {
+                    runCatching { update(context, projectId, taskId, status = MediaRenderStatus.FAILED, errorMessage = "导出文件已清理，但任务记录未能删除") }
+                }
+                error("无法完整清理导出任务与文件，已尝试回滚")
+            }
         }
     }
 
