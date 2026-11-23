@@ -380,6 +380,43 @@ interface NestroDao {
         ) > 0
     }
 
+    /**
+     * Validates the project, source conversation and user message in the same Room
+     * transaction that inserts or replaces the automatic memory. This prevents a
+     * source deletion/edit from slipping between an external preflight query and write.
+     */
+    @Transaction
+    suspend fun saveUserMemoryCandidateIfSourceValid(
+        memory: UserMemoryEntity,
+        supersedesId: String? = null
+    ): Boolean {
+        if (!projectExists(memory.projectId)) return false
+        val source = conversationWithMessages(memory.sourceConversationId) ?: return false
+        if (source.conversation.projectId != memory.projectId) return false
+        if (source.messages.none { it.id == memory.sourceMessageId && it.role == "user" }) return false
+
+        val replacementId = supersedesId?.trim().orEmpty()
+        if (replacementId.isNotBlank()) {
+            val current = userMemoryById(replacementId, memory.projectId) ?: return false
+            if (current.category != memory.category) return false
+            if (userMemoryFingerprintExists(memory.projectId, memory.fingerprint, replacementId)) return false
+            return replaceUserMemoryContent(
+                replacementId,
+                memory.projectId,
+                memory.category,
+                memory.content,
+                memory.fingerprint,
+                memory.sourceConversationId,
+                memory.sourceMessageId,
+                memory.confidence,
+                memory.updatedAt
+            ) > 0
+        }
+
+        upsertUserMemoryByFingerprint(memory)
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
