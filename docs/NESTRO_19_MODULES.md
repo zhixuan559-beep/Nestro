@@ -51,6 +51,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] DAG 依赖、拓扑波次、独立工作包并行执行、前序成果交接、失败/阻塞状态和主模型最终汇总。
 - [x] 主模型可按依赖先启动 Phone Agent/Media AI/视频生成后台任务，再穿插专家团并行创作；依赖素材的下游步骤必须等待任务完成并确认素材导入；代码已接通，联合联测待执行。
 - [x] 专家任务纳入 AgentTaskCoordinator，具备任务级工具租约、checkpoint、恢复和取消。
+- [x] 专家成员工具感知回调已接通：每位成员执行时获得独立 operation 租约，默认仅发现无需确认的只读工具；外部写入/设备工具仍由主模型统一调度。
 - [x] 团队协作事件持久化，专家团队页显示最近协作时间线。
 - [ ] 双向自由群聊/成员私聊、可编辑 DAG、用户可控暂停/恢复/返工、完整历史分页和结构化验收/返工协议。
 - [ ] 临时团队保存为长期团队、解散/保留等完整团队生命周期。
@@ -270,6 +271,8 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] AgentRuntime：统一工具参数校验、权限路由、执行、结果结构化和 trace。
 - [x] AgentTaskCoordinator：任务 ID 幂等、排队/运行/等待用户/暂停/失败/完成/取消、checkpoint、重启恢复和重新入队。
 - [x] AgentCapabilityRegistry / AgentToolLeaseRegistry：按任务/操作授权工具集合，防止跨任务复用临时工具租约。
+- [x] WorkflowExecutionCoordinator 为每个步骤创建独立工具租约：普通步骤默认只读；显式开启 `approvalRequired` 并通过步骤审批后，可发现当前工具目录全部能力，实际调用仍执行项目授权与工具级审批。
+- [x] ExpertTeamExecutionCoordinator 为专家成员/项目工作包创建独立只读工具租约，调用结束释放租约并注销声明；未默认开放副作用工具。
 - [x] AgentCredentialLeaseRegistry：按任务/工具发放短时凭据租约并支持撤销。
 - [x] MCP 动态工具注册、插件目录、声明式 GeneratedPluginFactory 和工具指纹校验。
 - [x] Android `ACTION_ASSIST` 系统助手入口、`ROLE_ASSISTANT` 运行时可用性/持有状态检查和系统授权 Intent；当前是系统助手调用入口。
