@@ -391,6 +391,7 @@ ${prompt.take(8_000)}
 """.trimIndent()
 
         val nativeToolCallsExecuted = java.util.concurrent.atomic.AtomicInteger(0)
+        val sideEffectToolCallsStarted = java.util.concurrent.atomic.AtomicInteger(0)
         val mcpCallOrdinal = java.util.concurrent.atomic.AtomicInteger(0)
         try {
             val nativeResult = chat.completeWithNativeTools(
@@ -410,6 +411,9 @@ ${prompt.take(8_000)}
                 val spec = available.firstOrNull { it.id == toolId }
                     ?: return@completeWithNativeTools NativeToolCallResult("工具未注册，已阻止执行：$toolId")
                 nativeToolCallsExecuted.incrementAndGet()
+                if (spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY || spec.requiresConfirmation) {
+                    sideEffectToolCallsStarted.incrementAndGet()
+                }
                 val mcpOrdinal = if (spec.id.startsWith("mcp_")) mcpCallOrdinal.incrementAndGet() else 0
                 val lease = if (taskToolAccess == null) {
                     AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
@@ -752,7 +756,9 @@ ${prompt.take(8_000)}
                 states = stateStore,
                 traces = RoomAgentTaskTraceStore(database.dao())
             )
-            nativeToolCallsExecuted.incrementAndGet()
+            if (spec.permission != app.nestro.agent.AgentToolPermission.READ_ONLY || spec.requiresConfirmation) {
+                sideEffectToolCallsStarted.incrementAndGet()
+            }
             val result = try {
                 runtime.execute(AgentToolRequest(taskId, spec.id, decision.arguments))
             } finally {
@@ -786,7 +792,7 @@ ${prompt.take(8_000)}
             markTerminal(AgentTaskStatus.PAUSED, "工具调度已取消，可重新发起")
             throw cancelled
         } catch (error: Exception) {
-            val terminalError = guardRetryAfterToolExecution(error, nativeToolCallsExecuted.get())
+            val terminalError = guardRetryAfterToolExecution(error, sideEffectToolCallsStarted.get())
             markTerminal(AgentTaskStatus.FAILED, terminalError.message ?: "模型工具调度失败")
             throw terminalError
         }
