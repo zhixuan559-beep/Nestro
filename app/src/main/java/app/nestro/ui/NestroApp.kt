@@ -37,6 +37,7 @@ import app.nestro.phone.PhoneAgentExecutor
 import app.nestro.phone.PhoneAgentNotifications
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
+import app.nestro.data.DEFAULT_SKILLS
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
@@ -4253,7 +4254,7 @@ fun NestroApp(initialPage: String = "home") {
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
         val importReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
-            prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }
+            prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
         ) else emptySet()
         val importVisibleSkills = skills.filterKeys { skillName ->
             !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
@@ -4305,7 +4306,7 @@ fun NestroApp(initialPage: String = "home") {
                         return@TextButton
                     }
                     val liveReadableProjectIds = ProjectAccessControlStore.readableSourceProjects(
-                        prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }
+                        prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
                     )
                     val liveVisibleSkills = skills.filterKeys { skillName ->
                         ProjectResourceScopeStore.isVisibleFromProjects(
