@@ -162,6 +162,7 @@ fun NestroApp(initialPage: String = "home") {
     var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
+    var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
         ModelManagementUiState(prefs, modelRepository)
@@ -1490,11 +1491,31 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
 
+    val darkAppearance = appearanceMode == "dark" ||
+        (appearanceMode == "system" && androidx.compose.foundation.isSystemInDarkTheme())
     MaterialTheme(
-        colorScheme = lightColorScheme(
-            background = Bg, surface = Card, primary = Mint, onPrimary = Bg,
-            onBackground = Ink, onSurface = Ink, secondary = Muted,
-            surfaceVariant = Card2, outline = Line
+        colorScheme = if (darkAppearance) darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color.White,
+            onPrimary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color.Black,
+            onBackground = androidx.compose.ui.graphics.Color.White,
+            surface = androidx.compose.ui.graphics.Color(0xFF111111),
+            onSurface = androidx.compose.ui.graphics.Color.White,
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF1A1A1A),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFAAAAAA),
+            outline = androidx.compose.ui.graphics.Color(0xFF303030),
+            error = androidx.compose.ui.graphics.Color(0xFFFF6B6B)
+        ) else lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF111111),
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF111111),
+            surface = androidx.compose.ui.graphics.Color.White,
+            onSurface = androidx.compose.ui.graphics.Color(0xFF111111),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF5F5F5),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF6B6B6B),
+            outline = androidx.compose.ui.graphics.Color(0xFFE5E5E7),
+            error = androidx.compose.ui.graphics.Color(0xFFB42318)
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
@@ -1535,10 +1556,13 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                         }
-                        TextButton(onClick = { page = "comparison" }) { Text("双模型", color = Mint, style = MaterialTheme.typography.labelMedium) }
-                        TextButton(onClick = { page = "coworkbench" }) { Text("AI共建", color = Mint, style = MaterialTheme.typography.labelMedium) }
-                        IconButton(onClick = { page = "models" }) {
-                            Icon(Icons.Outlined.Tune, contentDescription = "模型设置", tint = Mint)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { page = "tools" }) {
+                                Icon(Icons.Outlined.Extension, contentDescription = "工具与扩展", tint = Ink)
+                            }
+                            IconButton(onClick = { page = "settings" }) {
+                                Icon(Icons.Outlined.Settings, contentDescription = "设置", tint = Ink)
+                            }
                         }
                     }
 
@@ -1550,24 +1574,10 @@ fun NestroApp(initialPage: String = "home") {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Box(
-                                        Modifier.size(76.dp).background(Mint, RoundedCornerShape(24.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) { Text("✦", color = Bg, style = MaterialTheme.typography.headlineLarge) }
                                     Spacer(Modifier.height(20.dp))
-                                    Text("今天想创造点什么？", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                    Text("有什么可以帮忙？", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                     Spacer(Modifier.height(8.dp))
-                                    Text("连接自己的模型，组合专家、技能与知识", color = Muted)
-                                    Spacer(Modifier.height(24.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Suggestion("写作创作") { draft = "帮我完成一项写作任务" }
-                                        Suggestion("分析资料") { draft = "帮我分析这份资料" }
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Suggestion("开发代码") { draft = "帮我规划并编写代码" }
-                                        Suggestion("创建专家") { showExpertDialog = true }
-                                    }
+                                    Text("直接描述目标，Nost 会判断并调度所需能力。", color = Muted)
                                 }
                             } else {
                                 LazyColumn(
@@ -1708,6 +1718,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
+                        "tools" -> ToolsDirectoryPage(onNavigate = { destination -> page = destination })
                         "comparison" -> ModelComparisonPage(
                             registry = modelRegistry,
                             repository = modelRepository,
@@ -2319,8 +2330,12 @@ fun NestroApp(initialPage: String = "home") {
                          }
                          "experts" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("我的专家", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
+                                Text("专家与专家团", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = true, onClick = { page = "experts" }, label = { Text("专家") })
+                                    FilterChip(selected = false, onClick = { page = "teams" }, label = { Text("专家团") })
+                                }
+                                Text("单个专家可以独立聊天；专家团由多个专家组成，可以在群聊上下文中协作。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
                                      OutlinedButton(onClick = {
@@ -2488,7 +2503,11 @@ fun NestroApp(initialPage: String = "home") {
                         }
                         "teams" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("专家与专家团", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = false, onClick = { page = "experts" }, label = { Text("专家") })
+                                    FilterChip(selected = true, onClick = { page = "teams" }, label = { Text("专家团") })
+                                }
                                 Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
                                 if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
@@ -2598,7 +2617,28 @@ fun NestroApp(initialPage: String = "home") {
                         }
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Text("数据与设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nost 账号。", color = Muted)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = appearanceMode == "system",
+                                            onClick = { appearanceMode = "system"; prefs.edit().putString("appearance_mode_v1", "system").apply() },
+                                            label = { Text("跟随系统") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "light",
+                                            onClick = { appearanceMode = "light"; prefs.edit().putString("appearance_mode_v1", "light").apply() },
+                                            label = { Text("纯白") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "dark",
+                                            onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
+                                            label = { Text("纯黑") }
+                                        )
+                                    }
+                                }
                                 Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2623,7 +2663,7 @@ fun NestroApp(initialPage: String = "home") {
                                         val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
                                         Text(
                                             when {
-                                                assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
                                                 assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
                                                 else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
                                             },
@@ -2634,7 +2674,7 @@ fun NestroApp(initialPage: String = "home") {
                                             onClick = {
                                                 val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
                                                 if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
-                                                else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
+                                                else status = "当前设备不支持申请系统助手角色，或 Nost 已经是默认助手。"
                                             },
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
@@ -3440,8 +3480,6 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                         }
-                        "calendar" -> CalendarPage(appRuntime.calendarRepository, activeProjectId)
-                        "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
                             draft = prompt
@@ -3869,7 +3907,7 @@ fun NestroApp(initialPage: String = "home") {
                             showRecallDialog = false
                         }.padding(vertical = 9.dp)) {
                             Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
-                            Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Text("${if (source.role == "user") "用户" else "Nost"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                             Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                         }
                         HorizontalDivider(color = Line)
@@ -4516,7 +4554,7 @@ fun NestroApp(initialPage: String = "home") {
                         maxTokens = maxTokens,
                         description = expertDescriptionDraft.trim(),
                         version = expertProfiles[oldName]?.version ?: "1.0.0",
-                        source = expertProfiles[oldName]?.source ?: "Nestro 本地专家"
+                        source = expertProfiles[oldName]?.source ?: "Nost 本地专家"
                     )
                     val profileError = ExpertProfileCodec.validate(profile, skills.keys)
                     if (profileError != null) {

@@ -29,7 +29,7 @@ internal fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = NavigationDrawerItemDefaults.colors(
-            unselectedContainerColor = Card2,
+            unselectedContainerColor = Bg,
             unselectedTextColor = Ink,
             selectedContainerColor = Card2,
             selectedTextColor = Ink
@@ -54,7 +54,7 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
             Surface(
-                color = if (user) androidx.compose.ui.graphics.Color(0xFF173B30) else Card,
+                color = if (user) Card2 else Bg,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
@@ -127,17 +127,17 @@ internal fun NavigationDrawerContent(
     onClose: (() -> Unit)? = null
 ) {
     Column(
-        modifier.background(Card).verticalScroll(rememberScrollState()).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier.background(Bg).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Nestro",
-                style = MaterialTheme.typography.headlineSmall,
-                color = Mint,
+                "Nost",
+                style = MaterialTheme.typography.titleLarge,
+                color = Ink,
                 modifier = Modifier.weight(1f)
             )
             if (onClose != null) {
@@ -146,30 +146,16 @@ internal fun NavigationDrawerContent(
                 }
             }
         }
-        Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(12.dp))
-        DrawerItem("⌂", "工作台") { onNavigate("home") }
-        DrawerItem("☷", "对话历史") { onNavigate("conversations") }
-        DrawerItem("✧", "全局记忆") { onNavigate("memory") }
-        DrawerItem("▧", "本地知识库") { onNavigate("knowledge") }
-        DrawerItem("⇢", "工作流") { onNavigate("workflows") }
-        DrawerItem("▦", "项目空间") { onNavigate("spaces") }
-        DrawerItem("⌁", "手机自动化") { onNavigate("phone") }
-        DrawerItem("麦", "语音输入") { onNavigate("voice") }
-        DrawerItem("▣", "产物库") { onNavigate("artifacts") }
-        DrawerItem("✂", "智能剪辑") { onNavigate("media-editor") }
-        DrawerItem("▦", "日历") { onNavigate("calendar") }
-        DrawerItem("⌘", "能力目录") { onNavigate("capabilities") }
-        DrawerItem("⛓", "MCP 工具中心") { onNavigate("mcp") }
-        DrawerItem("🧩", "插件工坊") { onNavigate("plugins") }
-        DrawerItem("⑂", "Git 工作台") { onNavigate("git") }
-        DrawerItem("✦", "我的专家") { onNavigate("experts") }
-        DrawerItem("♧", "专家团队") { onNavigate("teams") }
-        DrawerItem("◇", "能力中心") { onNavigate("skills") }
-        DrawerItem("⚙", "模型管理") { onNavigate("models") }
-        DrawerItem("▤", "数据与设置") { onNavigate("settings") }
+        DrawerItem("＋", "新建对话") { onNavigate("home") }
+        DrawerItem("◷", "最近对话") { onNavigate("conversations") }
+        DrawerItem("▣", "项目空间") { onNavigate("spaces") }
+        HorizontalDivider(color = Line)
+        DrawerItem("✧", "专家与专家团") { onNavigate("experts") }
+        DrawerItem("⌘", "工具与扩展") { onNavigate("tools") }
+        DrawerItem("⚙", "设置") { onNavigate("settings") }
         Spacer(Modifier.height(12.dp))
-        Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
+        Text("本地优先 · 免注册", color = Muted, style = MaterialTheme.typography.labelSmall)
     }
 }
 
