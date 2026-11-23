@@ -24,6 +24,14 @@ class ChatMediaAttachmentResolverTest {
         assertEquals(emptyList<String>(), ChatMediaAttachmentResolver.referencedAssetIds("普通聊天文本"))
     }
     @Test
+    fun normalizesCommonAudioMimeAliasesBeforeProviderSerialization() {
+        assertEquals("audio/wav", ChatMediaAttachmentResolver.normalizeMediaMimeType("audio/x-wav"))
+        assertEquals("audio/mpeg", ChatMediaAttachmentResolver.normalizeMediaMimeType("audio/mpga"))
+        assertEquals("audio/mpeg", ChatMediaAttachmentResolver.normalizeMediaMimeType(" AUDIO/MPEG "))
+        assertEquals("audio/mp3", ChatMediaAttachmentResolver.normalizeMediaMimeType("audio/mp3"))
+    }
+
+    @Test
     fun estimatesAudioAndVideoTokenCostsFromDuration() {
         assertEquals(2_048, ChatMediaAttachmentResolver.estimateAudioTokens(0L))
         assertEquals(6_000, ChatMediaAttachmentResolver.estimateAudioTokens(60_000L))
