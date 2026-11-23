@@ -43,4 +43,13 @@ class SkillTrustStoreTest {
             .put("signature",Base64.getEncoder().encodeToString(expiredSignature)).toString()
         assertFalse(runCatching { store.applySignedRevocationEnvelope(expiredEnvelope) }.isSuccess)
     }
+
+    @Test fun refusesWeakAuthorityKeys() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("skill-trust-weak-key-test", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val weakPair = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }.generateKeyPair()
+        val weakKey = Base64.getEncoder().encodeToString(weakPair.public.encoded)
+        assertFalse(runCatching { SkillTrustStore(prefs).pinAuthorityKey(weakKey) }.isSuccess)
+    }
 }
