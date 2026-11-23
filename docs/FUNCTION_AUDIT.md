@@ -1409,3 +1409,10 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 当前 `main` 回读发现 `MikaVirtualDisplayService.injectAsciiText` 的 `events.forEach` 含未闭合的 `try`，属于明确 Kotlin 语法阻塞；同时生成的 `KeyEvent` 未释放。
 - 已改为外层 `try/finally`，无论注入正常返回或中途异常，都会回收本次 `getEvents()` 生成的全部 `KeyEvent`。底层 `inject()` 本身通过 `runCatching` 将反射注入失败转换为 `false`，因此仍会逐个尝试并保留原有返回码语义。
 - 源码提交：`3c6ecfde27f49cfe2975e4577d55be08a7183066`；已回读确认 try/finally 结构完整。未运行编译或测试，不能宣称编译通过。
+
+
+## 2026-11-24 媒体工程归档边界与界面说明修正
+
+- 回读 `MediaProjectStore.exportProjectArchive/importProjectArchive`：工程 ZIP 包含 `project.json`、时间线及经大小/SHA-256 校验的原始素材；明确不包含渲染后的 MP4、导出任务和临时文件。通用 `LocalBackupRepository` 备份也不收集 `media-editor` 二进制目录。
+- 发现 `MediaEditorPage` 恢复确认文案曾错误声称工程 ZIP 会替换“已导出的视频文件”。已修正为仅替换时间线、素材索引和原始素材，并提示 MP4 成品需单独保存；在备份/恢复入口增加 ZIP 与通用设备备份的范围说明。
+- 源码提交：`a29e53684a87432dc3504320c1ba633b7de22859`；页面文案已回读验证。未运行 UI 测试或编译。
