@@ -192,7 +192,7 @@ fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjec
     }
    }
   }
-  if(documents.isEmpty()) Text("这里还没有文档。导入资料后，Nost 会在当前项目内检索，不会混入其他项目。",color=KnowledgeMuted)
+  if(documents.isEmpty()) Text("这里还没有文档。导入资料后，Nestro 会在当前项目内检索，不会混入其他项目。",color=KnowledgeMuted)
   else Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
    documents.forEach { doc ->
     Surface(color=KnowledgeCard,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()) {
