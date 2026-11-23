@@ -278,7 +278,7 @@ class NestroApplication : Application() {
             ) { arguments ->
                 val requestId = arguments["__nestro_request_id"].orEmpty()
                 val parent = requestId.takeIf { it.isNotBlank() }?.let { agentTaskCoordinator.state(it) }
-                if (parent?.owner != "calendar_automation") {
+                if (parent?.kind != "calendar_automation") {
                     app.nestro.agent.AgentToolResult(false, error = "工作流列表仅对日历自动任务开放")
                 } else {
                     try {
@@ -315,7 +315,7 @@ class NestroApplication : Application() {
             ) { arguments ->
                 val requestId = arguments["__nestro_request_id"].orEmpty()
                 val parent = requestId.takeIf { it.isNotBlank() }?.let { agentTaskCoordinator.state(it) }
-                if (parent?.owner != "calendar_automation") {
+                if (parent?.kind != "calendar_automation") {
                     app.nestro.agent.AgentToolResult(false, error = "工作流执行仅对日历自动任务开放")
                 } else {
                     try {
