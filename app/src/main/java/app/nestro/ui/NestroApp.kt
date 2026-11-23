@@ -280,67 +280,7 @@ fun NestroApp(initialPage: String = "home") {
         return allowed
     }
 
-    fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
-        if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
-        val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
-        val nextTeams = expertTeams.filterNot { it.id == teamId }
-        val nextScopes = ProjectResourceScopeStore.removeResourceScope(
-            projectResourceScopes, ProjectResourceKind.TEAM, teamId
-        )
-        val nextSelectedTeamId = if (selectedTeamId == teamId) "" else selectedTeamId
-        val persisted = prefs.edit()
-            .putString("expert_teams_v1", expertTeamsToJson(nextTeams))
-            .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(nextScopes))
-            .putString("selected_team_id", nextSelectedTeamId)
-            .commit()
-        if (!persisted) {
-            status = "专家团变更未能确认写入。"
-            return
-        }
-        expertTeams = nextTeams
-        selectedTeamId = nextSelectedTeamId
-        projectResourceScopes = nextScopes
-        if (deleteChats) {
-            val remaining = conversations.filterNot { it.id in teamChatIds }
-            val activeWasDeleted = activeConversationId in teamChatIds
-            conversations = remaining
-            scope.launch {
-                if (activeWasDeleted) {
-                    val next = remaining.firstOrNull { it.projectId == activeProjectId }
-                        ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
-                    if (remaining.none { it.id == next.id }) {
-                        conversations = listOf(next) + conversations
-                    }
-                    val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
-                        withContext(Dispatchers.IO) {
-                            appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
-                        }
-                    } else next.messages
-                    activeConversationId = next.id
-                    messages = nextMessages
-                    prefs.edit().putString("active_conversation_id", next.id)
-                        .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
-                }
-                val conversationSnapshot = conversations.toList()
-                val projectSnapshot = projects.toList()
-                val versionSnapshot = persistedConversationVersions.toMap()
-                if (databaseReady) {
-                    withContext(Dispatchers.IO) {
-                        appRuntime.conversationPersistenceService.persist(
-                            prefs = prefs,
-                            conversations = conversationSnapshot,
-                            projects = projectSnapshot,
-                            knownVersions = versionSnapshot,
-                            snapshotTimestamp = System.currentTimeMillis()
-                        )
-                    }
-                } else {
-                    ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot)
-                }
-            }
-        }
-        status = if (deleteChats) "专家团及其群聊已删除。" else "专家团已解散，原群聊记录已保留。"
-    }
+
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Boolean = { kind, resourceId, makeGlobal ->
         if (!canWriteProjectResource(kind, resourceId)) {
             false
@@ -462,6 +402,68 @@ fun NestroApp(initialPage: String = "home") {
         )
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+
+    fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
+        if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
+        val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
+        val nextTeams = expertTeams.filterNot { it.id == teamId }
+        val nextScopes = ProjectResourceScopeStore.removeResourceScope(
+            projectResourceScopes, ProjectResourceKind.TEAM, teamId
+        )
+        val nextSelectedTeamId = if (selectedTeamId == teamId) "" else selectedTeamId
+        val persisted = prefs.edit()
+            .putString("expert_teams_v1", expertTeamsToJson(nextTeams))
+            .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(nextScopes))
+            .putString("selected_team_id", nextSelectedTeamId)
+            .commit()
+        if (!persisted) {
+            status = "专家团变更未能确认写入。"
+            return
+        }
+        expertTeams = nextTeams
+        selectedTeamId = nextSelectedTeamId
+        projectResourceScopes = nextScopes
+        if (deleteChats) {
+            val remaining = conversations.filterNot { it.id in teamChatIds }
+            val activeWasDeleted = activeConversationId in teamChatIds
+            conversations = remaining
+            scope.launch {
+                if (activeWasDeleted) {
+                    val next = remaining.firstOrNull { it.projectId == activeProjectId }
+                        ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
+                    if (remaining.none { it.id == next.id }) {
+                        conversations = listOf(next) + conversations
+                    }
+                    val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                        withContext(Dispatchers.IO) {
+                            appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
+                        }
+                    } else next.messages
+                    activeConversationId = next.id
+                    messages = nextMessages
+                    prefs.edit().putString("active_conversation_id", next.id)
+                        .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
+                }
+                val conversationSnapshot = conversations.toList()
+                val projectSnapshot = projects.toList()
+                val versionSnapshot = persistedConversationVersions.toMap()
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persist(
+                            prefs = prefs,
+                            conversations = conversationSnapshot,
+                            projects = projectSnapshot,
+                            knownVersions = versionSnapshot,
+                            snapshotTimestamp = System.currentTimeMillis()
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot)
+                }
+            }
+        }
+        status = if (deleteChats) "专家团及其群聊已删除。" else "专家团已解散，原群聊记录已保留。"
+    }
 
     fun openExpertTeamChat(teamId: String, teamName: String) {
         val conversationId = expertTeamConversationId(teamId, activeProjectId)
