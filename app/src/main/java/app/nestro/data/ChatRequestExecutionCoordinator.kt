@@ -73,8 +73,8 @@ internal class ChatRequestExecutionCoordinator(
             recallSources = assembled.recallSources
 
             val finalSystemContext = assembled.systemContext.take(24_000)
+            if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             val modelHistory = resolveMediaAttachments(request.projectId, request.history)
-
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             var directPersistedLength = 0
             var lastDirectPersistAt = System.currentTimeMillis()
