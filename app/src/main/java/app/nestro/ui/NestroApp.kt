@@ -1441,14 +1441,14 @@ fun NestroApp(initialPage: String = "home") {
                     "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.filter { it in requestExperts }.joinToString("、")
                 } else "",
                 if (requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2) {
-                    "当前项目可用专家目录（主模型可按任务需要自动组队）：\\n" + requestExperts
+                    "当前项目可用专家目录（主模型可按任务需要自动组队）：\n" + requestExperts
                         .filter { requestExpertProfiles[it]?.enabled != false }
                         .sorted()
                         .take(24)
-                        .joinToString("\\n") { name ->
+                        .joinToString("\n") { name ->
                             val role = requestExpertPrompts[name].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(name) }
                             val skillContext = ExpertProfileCodec.skillContext(requestExpertProfiles[name], requestSkills, requestDisabledSkills, skillMetadata)
-                            "- 专家：$name\\n  角色：${role.take(900)}\\n  专属技能：${skillContext.take(700)}"
+                            "- 专家：$name\n  角色：${role.take(900)}\n  专属技能：${skillContext.take(700)}"
                         }.take(8_000)
                 } else "",
                 requestSkills[requestSelectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && requestSelectedSkill !in requestDisabledSkills }.orEmpty()
@@ -4278,7 +4278,7 @@ fun NestroApp(initialPage: String = "home") {
                     Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     if (dependencyIssues.isNotEmpty()) Text(
-                        "依赖未满足，暂不能安装：\\n" + dependencyIssues.joinToString("；"),
+                        "依赖未满足，暂不能安装：\n" + dependencyIssues.joinToString("；"),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -4287,7 +4287,7 @@ fun NestroApp(initialPage: String = "home") {
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     ) else if (incompatibleDependents.isNotEmpty()) Text(
-                        "更新会破坏以下技能的版本约束，暂不能安装：\\n" + incompatibleDependents.joinToString("、"),
+                        "更新会破坏以下技能的版本约束，暂不能安装：\n" + incompatibleDependents.joinToString("、"),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -4298,7 +4298,7 @@ fun NestroApp(initialPage: String = "home") {
             },
             confirmButton = {
                 TextButton(
-                    enabled = dependencyIssues.isEmpty() && dependentCompatibilityPassed,
+                    enabled = !projectResourceScopesReadOnly && dependencyIssues.isEmpty() && dependentCompatibilityPassed,
                     onClick = {
                     if (projectResourceScopesReadOnly) {
                         skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
