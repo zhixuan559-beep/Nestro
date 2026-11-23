@@ -321,7 +321,7 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 if (existing != null && existing.conversation.projectId != record.projectId) {
                     dao.deleteUserMemoriesForConversations(listOf(record.id), existing.conversation.projectId)
                 }
-                if (record.messagesLoaded && existing != null) {
+                if (record.messagesLoaded && existing != null && existing.conversation.projectId == record.projectId) {
                     invalidateRemovedMemorySources(
                         dao, record.projectId, record.id, existing.messages, record.messages
                     )
