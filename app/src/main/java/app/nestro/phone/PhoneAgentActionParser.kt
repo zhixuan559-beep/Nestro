@@ -47,6 +47,25 @@ object PhoneAgentActionParser {
                         PhoneAgentExecutor.Action.OpenUrl(searchBase + encoded)
                     }
                 }
+                "open_navigation" -> {
+                    val destination = item.getString("destination").trim()
+                    val origin = item.optString("origin").trim()
+                    val mode = item.optString("mode", "driving").trim().lowercase()
+                    require(destination.isNotBlank() && destination.length <= 160) { "导航目的地无效" }
+                    require(origin.length <= 160) { "导航出发地过长" }
+                    require(mode in setOf("driving", "walking", "bicycling", "transit")) { "导航出行方式无效" }
+                    require(!PhoneAgentRiskPolicy.containsSensitiveValue(destination) && !PhoneAgentRiskPolicy.containsSensitiveValue(origin)) { "导航地址包含敏感信息，请由用户本人确认" }
+                    val query = buildString {
+                        append("https://www.google.com/maps/dir/?api=1&destination=")
+                        append(java.net.URLEncoder.encode(destination, Charsets.UTF_8.name()))
+                        if (origin.isNotBlank()) {
+                            append("&origin=")
+                            append(java.net.URLEncoder.encode(origin, Charsets.UTF_8.name()))
+                        }
+                        append("&travelmode=").append(mode)
+                    }
+                    PhoneAgentExecutor.Action.OpenUrl(query)
+                }
                 "open_url" -> {
                     val url = item.getString("url").trim()
                     require(url.length <= 2048 && PhoneAgentUrlPolicy.isSafePublicWebUrl(url)) { "模型生成了不安全、过长或非公开的网址" }
