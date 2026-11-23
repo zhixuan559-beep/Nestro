@@ -73,7 +73,7 @@ object PhoneAgentAgent {
             if (resumed.outcome != PhoneAgentExecutor.Outcome.COMPLETED) {
                 return Result(resumed.outcome, resumed.handoffReason)
             }
-        } else if (task.status == PhoneAgentTaskStore.STATUS_RUNNING && !allowRetryCurrentAction) {
+        } else if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_INTERRUPTED) && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             taskContext.pause("任务曾在规划期间中断，请核对当前页面后重新启动。")
             return Result(PhoneAgentExecutor.Outcome.PAUSED, "任务曾在规划期间中断，请核对当前页面后重新启动。")
@@ -206,7 +206,8 @@ object PhoneAgentAgent {
                 PhoneAgentTaskStore.STATUS_COMPLETED,
                 PhoneAgentTaskStore.STATUS_CANCELLED,
                 PhoneAgentTaskStore.STATUS_WAITING_USER,
-                PhoneAgentTaskStore.STATUS_FAILED
+                PhoneAgentTaskStore.STATUS_FAILED,
+                PhoneAgentTaskStore.STATUS_INTERRUPTED
             )
         ) {
             if (task.status == PhoneAgentTaskStore.STATUS_RUNNING) {
