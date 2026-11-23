@@ -30,6 +30,7 @@ internal fun ToolsDirectoryPage(onNavigate: (String) -> Unit) {
         "技能与自动化" to listOf(
             ToolDirectoryEntry("Skills", "管理可复用技能与技能包", "skills"),
             ToolDirectoryEntry("工作流", "创建和管理可复用工作流", "workflows"),
+            ToolDirectoryEntry("任务中心", "查看跨模块任务状态、执行记录及暂停恢复", "tasks"),
             ToolDirectoryEntry("插件", "管理扩展插件及其权限", "plugins"),
             ToolDirectoryEntry("MCP", "连接外部工具服务", "mcp"),
             ToolDirectoryEntry("能力与授权", "查看工具能力、项目授权和调用审计", "capabilities")
