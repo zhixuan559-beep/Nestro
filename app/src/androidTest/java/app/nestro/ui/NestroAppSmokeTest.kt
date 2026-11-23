@@ -32,6 +32,34 @@ class NestroAppSmokeTest {
     }
 
     @Test
+    fun systemBackReturnsFromToolPageToChat() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = false).assertIsDisplayed()
+        composeRule.onNodeWithText("模型管理").performClick()
+        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
+    }
+
+    @Test
+    fun systemBackClosesNavigationDrawerWithoutLeavingChat() {
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
+
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
+        composeRule.onNodeWithText("对话历史", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun opensProjectSpacesFromNavigationDrawer() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
