@@ -288,7 +288,7 @@ internal class MikaVirtualDisplayService(
     }
 
     override fun topTaskId(displayId: Int): Int = runCatching {
-        tasks(displayId).firstOrNull()?.let { taskId(it) } ?: -1
+        tasks(displayId).firstOrNull()?.let { taskInfoClass.getField("taskId").getInt(it) } ?: -1
     }.getOrDefault(-1)
 
     override fun displayOfTask(taskId: Int): Int = runCatching {
@@ -331,8 +331,6 @@ internal class MikaVirtualDisplayService(
             val upSent = inject(up, displayId)
             downSent && upSent
         } finally {
-            down.recycle()
-            up.recycle()
         }
     }
 
@@ -341,7 +339,7 @@ internal class MikaVirtualDisplayService(
 
     override fun injectStroke(displayId: Int, xs: IntArray, ys: IntArray, times: LongArray): Boolean {
         if (!owns(displayId) || xs.size < 2 || xs.size != ys.size || xs.size != times.size || xs.size > 1024) return false
-        if (times.first() != 0L || times.last() > 10_000L || times.zipWithNext().any { it.first > it.second }) return false
+        if (times.first() != 0L || times.last() > 10_000L || times.asList().zipWithNext().any { (previous, next) -> previous > next }) return false
         val downTime = android.os.SystemClock.uptimeMillis()
         var ok = true
         var lastX = xs.first()
@@ -382,8 +380,6 @@ internal class MikaVirtualDisplayService(
         events.forEach { event ->
             try {
                 sent = inject(event, displayId) && sent
-            } finally {
-                event.recycle()
             }
         }
         return if (sent) 1 else 2
