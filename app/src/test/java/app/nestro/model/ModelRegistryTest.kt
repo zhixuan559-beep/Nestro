@@ -1,6 +1,7 @@
 package app.nestro.model
 
 import app.nestro.data.ModelProfileMetadata
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -323,21 +324,12 @@ class ModelRegistryTest {
         val encoded = ModelRegistryCodec.encode(registry)
         val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
         assertTrue(decoded.models.single().supportsReasoningEffort)
-        val oldPayload = encoded.replace(",\"supportsReasoningEffort\":true", "")
-        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
-        assertFalse(oldDecoded.models.single().supportsReasoningEffort)
-    }
-    @Test
-    fun inputModalitiesAndNativeToolCallingRoundTripWithSafeLegacyDefaults() {
-        val registry = ModelRegistry(
-            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
-            apiKeys = listOf(ModelApiKey("k", "p", "Key")),
-            models = listOf(ModelDefinition(
-                "m", "p", "Model", "model", listOf("k"),
-                inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.AUDIO),
-                supportsNativeToolCalling = false
-            ))
-        )
+        val oldJson = JSONObject(encoded)
+        oldJson.getJSONArray("models").getJSONObject(0).apply {
+            remove("inputModalities")
+            remove("supportsNativeToolCalling")
+        }
+        val oldPayload = oldJson.toString()
         val encoded = ModelRegistryCodec.encode(registry)
         val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
         assertEquals(setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.AUDIO), decoded.models.single().inputModalities)
