@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -26,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -80,9 +80,9 @@ fun VoiceInputButton(
     val scale by animateFloatAsState(if (phase == VoicePhase.LISTENING) 1.12f else 1f, label = "voice-button-scale")
     val buttonColor by animateColorAsState(
         when (phase) {
-            VoicePhase.LISTENING -> Color(0xFFB45353)
-            VoicePhase.PROCESSING -> Color(0xFF66522B)
-            VoicePhase.IDLE -> Color(0xFF202A27)
+            VoicePhase.LISTENING -> MaterialTheme.colorScheme.error
+            VoicePhase.PROCESSING -> MaterialTheme.colorScheme.surfaceVariant
+            VoicePhase.IDLE -> MaterialTheme.colorScheme.primary
         },
         label = "voice-button-color"
     )
@@ -129,7 +129,11 @@ fun VoiceInputButton(
         Icon(
             if (phase == VoicePhase.LISTENING) Icons.Outlined.MicOff else Icons.Outlined.Mic,
             contentDescription = null,
-            tint = if (phase == VoicePhase.IDLE) Color(0xFF73E2B4) else Color.White
+            tint = when (phase) {
+                VoicePhase.IDLE -> MaterialTheme.colorScheme.onPrimary
+                VoicePhase.LISTENING -> MaterialTheme.colorScheme.onError
+                VoicePhase.PROCESSING -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
     }
 }

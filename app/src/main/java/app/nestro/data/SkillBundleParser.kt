@@ -84,7 +84,7 @@ object SkillBundleParser {
             .put("version", metadata.optString("version", "1.0.0"))
             .put("description", metadata.optString("description", ""))
             .put("prompt", prompt)
-            .put("source", metadata.optString("source", "Nestro 本地技能"))
+            .put("source", metadata.optString("source", "Nost 本地技能"))
             .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
             .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
             .toString(2)

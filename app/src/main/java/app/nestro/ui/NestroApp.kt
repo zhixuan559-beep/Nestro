@@ -147,6 +147,12 @@ internal fun adaptiveContentPaddingDp(screenWidthDp: Int): Int = when {
     else -> 32
 }
 
+private fun expertTeamConversationId(teamId: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-team-chat:$teamId:$projectId".toByteArray(Charsets.UTF_8)).toString()
+ 
+private fun expertConversationId(expertName: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-expert-chat:$expertName:$projectId".toByteArray(Charsets.UTF_8)).toString()
+
 @Composable
 fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
@@ -276,6 +282,8 @@ fun NestroApp(initialPage: String = "home") {
         if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
         return allowed
     }
+
+
     val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Boolean = { kind, resourceId, makeGlobal ->
         if (!canWriteProjectResource(kind, resourceId)) {
             false
@@ -397,6 +405,189 @@ fun NestroApp(initialPage: String = "home") {
         )
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+
+    fun applyConversationContext(conversationId: String, projectId: String) {
+        val team = expertTeams.firstOrNull {
+            expertTeamConversationId(it.id, projectId) == conversationId
+        }
+        val expert = experts.firstOrNull {
+            expertConversationId(it, projectId) == conversationId
+        }
+        selectedTeamId = team?.id.orEmpty()
+        when {
+            team != null -> {
+                selectedExpert = "通用助手"
+                taskModeEnabled = true
+            }
+            expert != null -> {
+                selectedExpert = expert
+                taskModeEnabled = true
+            }
+            else -> {
+                selectedExpert = "通用助手"
+            }
+        }
+        prefs.edit()
+            .putString("selected_team_id", selectedTeamId)
+            .putString("selected_expert", selectedExpert)
+            .putBoolean("chat_task_mode_enabled", taskModeEnabled)
+            .apply()
+    }
+
+    fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
+        if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
+        val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
+        val nextTeams = expertTeams.filterNot { it.id == teamId }
+        val nextScopes = ProjectResourceScopeStore.removeResourceScope(
+            projectResourceScopes, ProjectResourceKind.TEAM, teamId
+        )
+        val nextSelectedTeamId = if (selectedTeamId == teamId) "" else selectedTeamId
+        val persisted = prefs.edit()
+            .putString("expert_teams_v1", expertTeamsToJson(nextTeams))
+            .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(nextScopes))
+            .putString("selected_team_id", nextSelectedTeamId)
+            .commit()
+        if (!persisted) {
+            status = "专家团变更未能确认写入。"
+            return
+        }
+        expertTeams = nextTeams
+        selectedTeamId = nextSelectedTeamId
+        projectResourceScopes = nextScopes
+        if (!deleteChats && activeConversationId in teamChatIds) {
+            applyConversationContext(activeConversationId, activeProjectId)
+        }
+        if (deleteChats) {
+            val remaining = conversations.filterNot { it.id in teamChatIds }
+            prefs.edit().also { editor -> teamChatIds.forEach { editor.remove("draft_$it") } }.apply()
+            conversationPageItems = conversationPageItems.filterNot { it.id in teamChatIds }
+            conversationPageRefreshKey++
+            val activeWasDeleted = activeConversationId in teamChatIds
+            conversations = remaining
+            scope.launch {
+                if (activeWasDeleted) {
+                    val next = remaining.firstOrNull { it.projectId == activeProjectId }
+                        ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
+                    if (remaining.none { it.id == next.id }) {
+                        conversations = listOf(next) + conversations
+                    }
+                    val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                        withContext(Dispatchers.IO) {
+                            appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
+                        }
+                    } else next.messages
+                    activeConversationId = next.id
+                    applyConversationContext(next.id, next.projectId)
+                    messages = nextMessages
+                    prefs.edit().putString("active_conversation_id", next.id)
+                        .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
+                }
+                val conversationSnapshot = conversations.toList()
+                val projectSnapshot = projects.toList()
+                val versionSnapshot = persistedConversationVersions.toMap()
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persist(
+                            prefs = prefs,
+                            conversations = conversationSnapshot,
+                            projects = projectSnapshot,
+                            knownVersions = versionSnapshot,
+                            snapshotTimestamp = System.currentTimeMillis()
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot)
+                }
+            }
+        }
+        status = if (deleteChats) "专家团及其群聊已删除。" else "专家团已解散，原群聊记录已保留。"
+    }
+
+    fun openExpertTeamChat(teamId: String, teamName: String) {
+        val conversationId = expertTeamConversationId(teamId, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, teamName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = teamName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            applyConversationContext(conversationId, activeProjectId)
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_team_id", teamId)
+                .apply()
+            page = "home"
+        }
+    }
+
+    fun openExpertChat(expertName: String) {
+        val conversationId = expertConversationId(expertName, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, expertName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = expertName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            applyConversationContext(conversationId, activeProjectId)
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_expert", expertName)
+                .remove("selected_team_id")
+                .putBoolean("chat_task_mode_enabled", true)
+                .apply()
+            page = "home"
+        }
+    }
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
 
     DisposableEffect(appRuntime, workflowUiState) {
@@ -620,7 +811,7 @@ fun NestroApp(initialPage: String = "home") {
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 prefs.edit().putString("selected_expert", selectedExpert).apply()
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                applyConversationContext(activeConversationId, activeProjectId)
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -673,7 +864,7 @@ fun NestroApp(initialPage: String = "home") {
                 expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                applyConversationContext(activeConversationId, activeProjectId)
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -891,6 +1082,7 @@ fun NestroApp(initialPage: String = "home") {
         activeProjectId = startup.activeProjectId
         automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
         activeConversationId = startup.activeConversationId
+        applyConversationContext(activeConversationId, activeProjectId)
         messages = startup.messages
         persistedConversationVersions.clear()
         persistedConversationVersions.putAll(startup.persistedConversationVersions)
@@ -899,6 +1091,7 @@ fun NestroApp(initialPage: String = "home") {
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
+        applyConversationContext(activeConversationId, activeProjectId)
         expertPrompts = loadExpertPrompts(prefs)
         val recoveredChat = withContext(Dispatchers.IO) {
             appRuntime.chatRequestRecoveryCoordinator.recover(
@@ -2375,9 +2568,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 }
                                             )
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
-                                                selectedExpert = name
-                                                prefs.edit().putString("selected_expert", name).apply()
-                                                page = "home"
+                                                openExpertChat(name)
                                             }) {
                                                 Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
@@ -2571,11 +2762,10 @@ fun NestroApp(initialPage: String = "home") {
                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
                                             }) { Text("导出团队", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(onClick = {
-                                                    selectedTeamId = team.id
-                                                    prefs.edit().putString("selected_team_id", team.id).apply()
-                                                    page = "home"
-                                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (selectedTeamId == team.id) "当前团队" else "使用团队") }
+                                                Button(
+                                                    onClick = { openExpertTeamChat(team.id, team.name) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                                ) { Text("进入群聊") }
                                                 TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     editingTeamId = team.id
@@ -2585,17 +2775,11 @@ fun NestroApp(initialPage: String = "home") {
                                                     showTeamDialog = true
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
-                                                    if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
-                                                    expertTeams = expertTeams.filterNot { it.id == team.id }
-                                                    if (selectedTeamId == team.id) selectedTeamId = ""
-                                                    val remainingTeamScopes = ProjectResourceScopeStore.removeResourceScope(
-                                                        projectResourceScopes, ProjectResourceKind.TEAM, team.id
-                                                    )
-                                                    prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
-                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingTeamScopes))
-                                                        .putString("selected_team_id", selectedTeamId).commit()
-                                                    projectResourceScopes = remainingTeamScopes
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                    removeExpertTeam(team.id, deleteChats = false)
+                                                }) { Text("解散", color = Muted) }
+                                                TextButton(onClick = {
+                                                    removeExpertTeam(team.id, deleteChats = true)
+                                                }) { Text("删除群", color = androidx.compose.ui.graphics.Color(0xFFB42318)) }
                                             }
                                         }
                                     }
@@ -2665,7 +2849,7 @@ fun NestroApp(initialPage: String = "home") {
                                             when {
                                                 assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
                                                 assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
-                                                else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
+                                                else -> "当前系统未开放系统助手角色，仍可通过 Nost 应用内聊天入口使用。"
                                             },
                                             color = Muted, style = MaterialTheme.typography.bodySmall
                                         )
@@ -2684,7 +2868,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("隐私与安全", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nestro 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nost 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
@@ -2702,8 +2886,9 @@ fun NestroApp(initialPage: String = "home") {
                                     val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
                                     conversations = listOf(record) + conversations
                                     activeConversationId = id
+                                    applyConversationContext(id, activeProjectId)
                                     messages = emptyList()
-                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).apply()
+                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).remove("selected_team_id").apply()
                                     ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                     page = "home"
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
@@ -2722,12 +2907,14 @@ fun NestroApp(initialPage: String = "home") {
                                                             ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
                                                         activeConversationId = record.id
                                                         activeProjectId = record.projectId
+                                                        applyConversationContext(record.id, record.projectId)
                                                         messages = loadedMessages
                                                         conversations = conversations.map { item ->
                                                             if (item.id == record.id) item.copy(messages = loadedMessages, messagesLoaded = true) else item
                                                         }
                                                         conversations.firstOrNull { it.id == record.id }?.let { persistedConversationVersions[record.id] = it.hashCode() }
-                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
+                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId)
+                                                            .putString("selected_team_id", selectedTeamId).apply()
                                                         page = "home"
                                                     }
                                                 }) {
@@ -2753,6 +2940,7 @@ fun NestroApp(initialPage: String = "home") {
                                                             conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
                                                             activeConversationId = next.id
                                                             activeProjectId = record.projectId
+                                                            applyConversationContext(next.id, record.projectId)
                                                             val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
                                                                 withContext(Dispatchers.IO) {
                                                                     appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
@@ -2765,7 +2953,8 @@ fun NestroApp(initialPage: String = "home") {
                                                             if (remaining.any { it.id == next.id }) {
                                                                 conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
                                                             }
-                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
+                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                         } else {
                                                             conversations = remaining
                                                         }
@@ -3213,16 +3402,19 @@ fun NestroApp(initialPage: String = "home") {
                                                                 selectedSkill = ""
                                                             }
                                                             prefs.edit().putString("active_project_id", project.id)
-                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
+                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis())
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                             val target = conversations.firstOrNull { it.projectId == project.id }
                                                             if (target == null) {
                                                                 val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                                                                 conversations = listOf(created) + conversations
                                                                 ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                 activeConversationId = created.id
+                                                                applyConversationContext(created.id, project.id)
                                                                 messages = emptyList()
                                                             } else {
                                                                 activeConversationId = target.id
+                                                                applyConversationContext(target.id, project.id)
                                                                 val targetMessages = if (databaseReady) {
                                                                     withContext(Dispatchers.IO) {
                                                                         appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
@@ -3234,7 +3426,8 @@ fun NestroApp(initialPage: String = "home") {
                                                                 }
                                                                 conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
                                                             }
-                                                            prefs.edit().putString("active_conversation_id", activeConversationId).apply()
+                                                            prefs.edit().putString("active_conversation_id", activeConversationId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                             page = "home"
                                                         }
                                                     }) {
@@ -3861,8 +4054,9 @@ fun NestroApp(initialPage: String = "home") {
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
                             activeConversationId = conversation.id
+                            applyConversationContext(conversation.id, project.id)
                             messages = emptyList()
-                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).apply()
+                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).remove("selected_team_id").apply()
                             ConversationPreferencesStore.saveConversationList(prefs, conversations)
                             page = "home"
                         } else {
@@ -3895,12 +4089,14 @@ fun NestroApp(initialPage: String = "home") {
                                     } else target.messages
                                     activeConversationId = target.id
                                     activeProjectId = target.projectId
+                                    applyConversationContext(target.id, target.projectId)
                                     messages = targetMessages
                                     conversations = conversations.map { record ->
                                         if (record.id == target.id) record.copy(messages = targetMessages, messagesLoaded = true) else record
                                     }
                                     conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
-                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
+                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId)
+                                        .putString("selected_team_id", selectedTeamId).apply()
                                     page = "home"
                                 }
                             }
