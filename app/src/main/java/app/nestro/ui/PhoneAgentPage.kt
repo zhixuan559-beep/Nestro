@@ -209,7 +209,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                     refresh++
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("关闭隔离屏", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                            ) { Text("关闭隔离屏", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }
@@ -255,7 +255,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                             refresh++
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                    ) { Text("撤销全部授权", color = MaterialTheme.colorScheme.error) }
                 }
             }
         }
@@ -321,7 +321,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                         taskLogs[task.id].orEmpty().takeLast(12).forEach { log ->
                             Text(
                                 "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
-                                color = if (log.success) Muted else androidx.compose.ui.graphics.Color(0xFFF87171),
+                                color = if (log.success) Muted else MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -368,7 +368,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
                                         }
                                         refresh++
                                     }
-                                }) { Text("取消任务", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                }) { Text("取消任务", color = MaterialTheme.colorScheme.error) }
                             }
                         }
                     }
