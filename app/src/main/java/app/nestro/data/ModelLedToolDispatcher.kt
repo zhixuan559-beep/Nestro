@@ -396,9 +396,11 @@ ${prompt.take(8_000)}
         val nativeToolCallsExecuted = java.util.concurrent.atomic.AtomicInteger(0)
         val sideEffectToolCallsStarted = java.util.concurrent.atomic.AtomicInteger(0)
         val mcpCallOrdinal = java.util.concurrent.atomic.AtomicInteger(0)
-        try {
+        val nativeConfigs = configs.filter { it.supportsNativeToolCalling }
+        if (nativeConfigs.isNotEmpty()) {
+            try {
             val nativeResult = chat.completeWithNativeTools(
-                configs = configs,
+                configs = nativeConfigs,
                 history = requestHistory,
                 systemPrompt = decisionSystem,
                 tools = visibleRows.map { (spec, definition) ->
@@ -597,13 +599,14 @@ ${prompt.take(8_000)}
                 requiresUser = nativeResult.requiresUser,
                 streamedToUi = true
             )
-        } catch (nativeError: Throwable) {
-            if (nativeError is kotlinx.coroutines.CancellationException) throw nativeError
-            if (nativeToolCallsExecuted.get() > 0 || nativeError !is NativeToolCallingUnsupportedException) {
-                markTerminal(AgentTaskStatus.FAILED, nativeError.message ?: "原生工具执行中断")
-                throw nativeError
+            } catch (nativeError: Throwable) {
+                if (nativeError is kotlinx.coroutines.CancellationException) throw nativeError
+                if (nativeToolCallsExecuted.get() > 0 || nativeError !is NativeToolCallingUnsupportedException) {
+                    markTerminal(AgentTaskStatus.FAILED, nativeError.message ?: "原生工具执行中断")
+                    throw nativeError
+                }
+                // Compatibility fallback is reserved for providers that explicitly reject native function calling.
             }
-            // Compatibility fallback is reserved for providers that explicitly reject native function calling.
         }
 
         try {
