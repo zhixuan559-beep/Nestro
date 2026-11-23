@@ -99,8 +99,11 @@ object CalendarRules {
         while (guard++ < 20_000) {
             val triggerAt = automationTriggerAtUnchecked(event, candidate) ?: return null
             val alreadyDispatched = event.lastTaskId == automationTaskId(event, candidate)
-            val lastDispatchIsCurrentGeneration =
+            val lastDispatchIsCurrentGeneration = if (event.automationGeneration == 0L) {
+                event.lastTaskId.startsWith("calendar-${event.id}-")
+            } else {
                 event.lastTaskId.endsWith("-g${event.automationGeneration}")
+            }
             val triggerPredatesLastDispatch =
                 lastDispatchIsCurrentGeneration && event.lastRunAt > 0L && event.lastRunAt >= triggerAt
             if (!alreadyDispatched && !triggerPredatesLastDispatch &&
