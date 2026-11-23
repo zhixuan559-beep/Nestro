@@ -1078,6 +1078,7 @@ fun NestroApp(initialPage: String = "home") {
         activeProjectId = startup.activeProjectId
         automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
         activeConversationId = startup.activeConversationId
+        applyConversationContext(activeConversationId, activeProjectId)
         messages = startup.messages
         persistedConversationVersions.clear()
         persistedConversationVersions.putAll(startup.persistedConversationVersions)
@@ -2901,7 +2902,7 @@ fun NestroApp(initialPage: String = "home") {
                                                             ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
                                                         activeConversationId = record.id
                                                         activeProjectId = record.projectId
-                                                        selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, record.projectId) == record.id }?.id.orEmpty()
+                                                        applyConversationContext(record.id, record.projectId)
                                                         messages = loadedMessages
                                                         conversations = conversations.map { item ->
                                                             if (item.id == record.id) item.copy(messages = loadedMessages, messagesLoaded = true) else item
@@ -2934,7 +2935,7 @@ fun NestroApp(initialPage: String = "home") {
                                                             conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
                                                             activeConversationId = next.id
                                                             activeProjectId = record.projectId
-                                                            selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, record.projectId) == next.id }?.id.orEmpty()
+                                                            applyConversationContext(next.id, record.projectId)
                                                             val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
                                                                 withContext(Dispatchers.IO) {
                                                                     appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
@@ -3404,11 +3405,11 @@ fun NestroApp(initialPage: String = "home") {
                                                                 conversations = listOf(created) + conversations
                                                                 ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                 activeConversationId = created.id
-                                                                selectedTeamId = ""
+                                                                applyConversationContext(created.id, project.id)
                                                                 messages = emptyList()
                                                             } else {
                                                                 activeConversationId = target.id
-                                                                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, project.id) == target.id }?.id.orEmpty()
+                                                                applyConversationContext(target.id, project.id)
                                                                 val targetMessages = if (databaseReady) {
                                                                     withContext(Dispatchers.IO) {
                                                                         appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
@@ -4083,7 +4084,7 @@ fun NestroApp(initialPage: String = "home") {
                                     } else target.messages
                                     activeConversationId = target.id
                                     activeProjectId = target.projectId
-                                    selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, target.projectId) == target.id }?.id.orEmpty()
+                                    applyConversationContext(target.id, target.projectId)
                                     messages = targetMessages
                                     conversations = conversations.map { record ->
                                         if (record.id == target.id) record.copy(messages = targetMessages, messagesLoaded = true) else record
