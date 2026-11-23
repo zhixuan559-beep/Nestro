@@ -2777,7 +2777,6 @@ fun NestroApp(initialPage: String = "home") {
 
                             }
                         }
-                        "teams" -> { page = "experts" }
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
