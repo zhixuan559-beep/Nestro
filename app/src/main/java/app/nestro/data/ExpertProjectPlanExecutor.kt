@@ -23,7 +23,8 @@ data class ExpertWorkPackage(
 data class ExpertProjectPlan(
     val projectGoal: String,
     val packages: List<ExpertWorkPackage>,
-    val finalAcceptanceCriteria: String
+    val finalAcceptanceCriteria: String,
+    val reworkRound: Int = 0
 )
 
 data class ExpertWorkPackageResult(
@@ -59,7 +60,12 @@ object ExpertProjectPlanExecutor {
         require(plan.finalAcceptanceCriteria.isNotBlank() && plan.finalAcceptanceCriteria.length <= 4_000) {
             "项目最终验收标准为空或过长"
         }
-        require(plan.packages.size in 2..12) { "自主专家项目必须包含 2 到 12 个工作包" }
+        require(plan.reworkRound in 0..2) { "专家项目最多允许两轮返工" }
+        val minimumPackages = if (plan.reworkRound == 0) 2 else 1
+        require(plan.packages.size in minimumPackages..12) {
+            if (plan.reworkRound == 0) "自主专家项目必须包含 2 到 12 个工作包"
+            else "返工项目必须包含 1 到 12 个需要返工的工作包"
+        }
         require(plan.packages.map { it.id }.distinct().size == plan.packages.size) {
             "工作包 ID 不能重复"
         }
