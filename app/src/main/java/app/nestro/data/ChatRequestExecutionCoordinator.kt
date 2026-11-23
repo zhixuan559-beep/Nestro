@@ -77,7 +77,7 @@ internal class ChatRequestExecutionCoordinator(
             val modelHistory = resolveMediaAttachments(request.projectId, request.history)
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             val requiredModalities = ModelCapabilityPolicy.requiredInputModalities(modelHistory)
-            val modelConfigs = ModelCapabilityPolicy.compatibleConfigs(request.modelConfigs, requiredModalities)
+            val modelConfigs = ModelCapabilityPolicy.compatibleConfigs(request.modelConfigs, modelHistory)
             if (requiredModalities.isNotEmpty() && modelConfigs.isEmpty()) {
                 error("当前选中模型及故障切换候选均未声明支持本次输入：${ModelCapabilityPolicy.describe(requiredModalities)}。请在模型管理中核对并声明模型能力。")
             }
