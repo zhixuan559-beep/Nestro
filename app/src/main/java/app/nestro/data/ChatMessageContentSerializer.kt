@@ -31,12 +31,12 @@ internal object ChatMessageContentSerializer {
             }
         }
 
-    fun openAiMessage(message: ChatMessage): JSONObject =
-        JSONObject().put("role", message.role).put("content", openAiContent(message))
+    fun openAiMessage(message: ChatMessage, supportsAudioInput: Boolean = false): JSONObject =
+        JSONObject().put("role", message.role).put("content", openAiContent(message, supportsAudioInput))
 
-    fun openAiContent(message: ChatMessage): Any {
+    fun openAiContent(message: ChatMessage, supportsAudioInput: Boolean = false): Any {
         val images = images(message)
-        val audio = openAiAudio(message)
+        val audio = if (supportsAudioInput) openAiAudio(message) else emptyList()
         if (images.isEmpty() && audio.isEmpty()) return message.content
         return JSONArray().apply {
             put(JSONObject().put("type", "text").put("text", message.content))
