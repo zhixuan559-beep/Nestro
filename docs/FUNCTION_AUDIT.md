@@ -1334,3 +1334,30 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ## 编译闸门
 
 当前仍处于“源码补齐与静态复核”阶段。用户要求的编译条件尚未达到；本轮没有触发 Gradle 编译或测试。
+
+## 2026-11-24 日历延迟触发闭环修复（源码回读记录）
+
+本轮重新读取 integration/19-modules 的当前源码后，确认旧字段 automationDelayMinutes 只进入了 Room schema，未接入编辑 UI、Repository、WorkManager、Worker 和备份；同时发现延迟跨重启补排程与自动任务定义变更后的幂等身份复用风险。以下是实际修复，不把旧审计文字当作当前状态。
+
+### 已修改的现有实现
+
+- CalendarPage.kt：编辑器增加非负整数分钟延迟配置，保存到现有 CalendarEvent；日程卡片展示配置延迟。
+- CalendarRules.kt：新增执行时点计算与“下一个尚未到执行时点的 occurrence”查找。若日程已开始但延迟尚未到期，应用重启后仍会重新找到本次 occurrence，不会跳到下一周期。
+- CalendarReminderScheduler.kt：WorkManager initial delay 使用 occurrenceStart + automationDelayMinutes；请求输入带 automation_generation，Worker 在执行前核对当前定义版本，旧配置的迟到 Worker 不会提前执行新配置。
+- CalendarDatabase.kt：数据库版本 6，增加 5→6 automationGeneration migration；既有版本 5 日程默认 generation=0。
+- CalendarRepository.kt：系统日历导入保留 delay/generation；自动执行定义（目标、项目、延迟、时间、重复、完成状态）变更时递增 generation，并清理旧结果状态。
+- 任务 ID、幂等键和 WorkManager unique name 按 generation 隔离。generation=0 保留升级前的 taskId、idempotencyKey 和 WorkManager name，兼容已有持久任务/待执行请求；新定义版本使用独立身份，避免 Coordinator 把旧 CANCELLED 任务当作新任务复用。
+- LocalBackupRepository.kt：备份导出/恢复新增 delay 与 generation；旧备份缺少字段时按 0 兼容。
+
+### 新增测试源码
+
+- CalendarRulesAutomationTest.kt：延迟触发时点、重复 occurrence、事件开始后尚未到延迟时点的恢复、定义版本身份隔离和旧身份兼容。
+- CalendarDatabaseMigrationTest.kt：Room v5→v6 迁移保留旧日程、generation 默认值、Repository 修改定义后版本递增及旧结果清理。
+- LocalBackupRoundTripTest.kt：延迟分钟与 generation 的备份/恢复往返。
+
+### 当前判定与验证边界
+
+- 延迟分钟触发：生产代码已贯通，测试源码已补；尚未运行编译/测试，不能写成验收通过。
+- 任意时间条件触发、独立 retryCount/业务错误分类退避仍是真实缺口。
+- 日历自动任务当前仍未直接分派专家 DAG/Workflow；expertTeamEnabled=false 与无 workflow.run 工具的边界保持不变。
+- 本轮未运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器或真机；遵守十九模块代码收口后统一验收的门禁。
