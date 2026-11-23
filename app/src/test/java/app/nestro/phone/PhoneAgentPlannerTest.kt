@@ -110,7 +110,32 @@ class PhoneAgentPlannerTest {
             it.kind == PhoneAgentPlanner.StepKind.HANDOFF_TO_USER &&
                 it.requiresUserConfirmation
         })
-        assertTrue(PhoneAgentPlanner.contextFor("导航到成都东站").contains("不得在未确认时自动开始导航"))
+        assertTrue(PhoneAgentPlanner.contextFor("导航到成都东站").contains("用户确认前不得启动导航"))
+    }
+
+    @Test
+    fun travelGoalUsesDedicatedMultiDayPlanningAndRouteApproval() {
+        val prompt = "帮我规划一次成都到重庆的三天旅行"
+        val plan = PhoneAgentPlanner.plan(prompt)
+        assertEquals(PhoneAgentPlanner.Category.TRAVEL, plan.category)
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.DISCOVER_OPTIONS })
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.SELECT_CANDIDATE })
+        assertTrue(plan.steps.any { it.kind == PhoneAgentPlanner.StepKind.VERIFY_PAGE })
+        assertTrue(plan.steps.any {
+            it.kind == PhoneAgentPlanner.StepKind.REQUEST_USER_CONFIRMATION &&
+                it.risk == PhoneAgentPlanner.Risk.HIGH &&
+                it.requiresUserConfirmation
+        })
+        assertTrue(plan.steps.any {
+            it.kind == PhoneAgentPlanner.StepKind.HANDOFF_TO_USER && it.requiresUserConfirmation
+        })
+        assertTrue(PhoneAgentPlanner.contextFor(prompt).contains("多日行程"))
+    }
+
+    @Test
+    fun explicitHotelBookingRemainsBookingRatherThanGeneralTravel() {
+        assertEquals(PhoneAgentPlanner.Category.BOOKING, PhoneAgentPlanner.plan("帮我预订重庆酒店").category)
+        assertEquals(PhoneAgentPlanner.Category.SHOPPING, PhoneAgentPlanner.plan("帮我订一杯咖啡").category)
     }
 
 }
