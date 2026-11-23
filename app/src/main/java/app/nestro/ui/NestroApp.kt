@@ -2397,13 +2397,110 @@ fun NestroApp(initialPage: String = "home") {
                                                              .apply()
                                                          try {
                                                          val result = runCatchingCancellable {
+                                                         suspend fun invokeWorkflowStep(
+                                                             step: WorkflowStep,
+                                                             stepPrompt: String,
+                                                             discovery: app.nestro.agent.AgentToolDiscovery? = null
+                                                         ): String {
+                                                             val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
+                                                             val roleContext = when (step.kind) {
+                                                                 WorkflowStepKind.EXPERT -> {
+                                                                     val expertName = step.targetId.ifBlank { step.title }
+                                                                     check(!projectResourceScopesReadOnly &&
+                                                                         ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId, workflowReadableProjectIds)) {
+                                                                         "工作流引用的专家「$expertName」不属于当前项目，已阻止跨项目调用"
+                                                                     }
+                                                                     val profile = expertProfiles[expertName]
+                                                                     check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
+                                                                     val workflowSkills = skills.filterKeys { skillName ->
+                                                                         !projectResourceScopesReadOnly &&
+                                                                             ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
+                                                                     }
+                                                                     listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills, skillMetadata)).filter { it.isNotBlank() }.joinToString("\n\n")
+                                                                 }
+                                                                 WorkflowStepKind.SKILL -> {
+                                                                     val skillName = step.targetId.ifBlank { step.title }
+                                                                     check(!projectResourceScopesReadOnly &&
+                                                                         ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)) {
+                                                                         "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
+                                                                     }
+                                                                     val workflowSkills = skills.filterKeys { candidate ->
+                                                                         !projectResourceScopesReadOnly &&
+                                                                             ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, candidate, projectId, workflowReadableProjectIds)
+                                                                     }
+                                                                     val prompt = workflowSkills[skillName]?.takeIf { it.isNotBlank() }
+                                                                         ?: error("工作流引用的技能「$skillName」不存在")
+                                                                     val dependencyIssues = SkillDependencyResolver.inspectInstalledSkill(
+                                                                         skillName, workflowSkills, skillMetadata, disabledSkills
+                                                                     )
+                                                                     check(dependencyIssues.isEmpty()) {
+                                                                         "工作流技能依赖未满足，已阻止执行：${dependencyIssues.joinToString("；")}"
+                                                                     }
+                                                                     prompt
+                                                                 }
+                                                                 WorkflowStepKind.PROMPT -> ""
+                                                             }
+                                                             val systemContext = listOf(
+                                                                 roleContext,
+                                                                 projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()
+                                                             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12_000)
+                                                             return withContext(Dispatchers.IO) {
+                                                                 if (discovery == null) {
+                                                                     appRuntime.chatExecutionService.completeWithFallback(
+                                                                         requestModelConfigs,
+                                                                         listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                         systemContext,
+                                                                         temperature = expertOptions?.temperature,
+                                                                         maxTokens = expertOptions?.maxTokens,
+                                                                         onUsage = recordModelUsage,
+                                                                         onProviderUsage = recordProviderModelUsage
+                                                                     )
+                                                                 } else {
+                                                                     val scopedRequestId = UUID.nameUUIDFromBytes(
+                                                                         "workflow-step-tools:$effectiveWorkflowTaskId:${step.id}:$stepPrompt".toByteArray(Charsets.UTF_8)
+                                                                     ).toString()
+                                                                     val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                                                                         request = ChatRequestExecutionRequest(
+                                                                             requestId = scopedRequestId,
+                                                                             conversationId = requestConversationId,
+                                                                             projectId = projectId,
+                                                                             prompt = stepPrompt,
+                                                                             startedAt = startedAt,
+                                                                             history = listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                             modelConfigs = requestModelConfigs,
+                                                                             baseSystemContext = systemContext,
+                                                                             taskModeEnabled = true,
+                                                                             expertTeamEnabled = false,
+                                                                             parentTaskId = effectiveWorkflowTaskId,
+                                                                             temperature = expertOptions?.temperature,
+                                                                             maxTokens = expertOptions?.maxTokens,
+                                                                             previousAssistant = null,
+                                                                             shouldStop = { stopRequested },
+                                                                             allowedToolIds = discovery.list().map { it.id }.toSet()
+                                                                         ),
+                                                                         onUsage = recordModelUsage,
+                                                                         onProviderUsage = recordProviderModelUsage,
+                                                                         onPartialAnswer = {}
+                                                                     )
+                                                                     execution.finalization.finalText
+                                                                 }
+                                                             }
+                                                         }
+
+                                                         try {
+                                                         val result = runCatchingCancellable {
                                                              appRuntime.workflowExecutionCoordinator.execute(
                                                                  workflow = workflow,
                                                                  input = input,
                                                                  taskId = effectiveWorkflowTaskId,
+                                                                 projectId = projectId,
+                                                                 conversationId = requestConversationId,
                                                                  invokeModel = { step, stepPrompt ->
-                                                                     val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
-                                                                     val roleContext = when (step.kind) {
+                                                                     invokeWorkflowStep(step, stepPrompt)
+                                                                 },
+                                                                 invokeModelWithTools = { step, stepPrompt, discovery ->
+                                                                     invokeWorkflowStep(step, stepPrompt, discovery)
+                                                                 },
                                                                          WorkflowStepKind.EXPERT -> {
                                                                              val expertName = step.targetId.ifBlank { step.title }
                                                                              check(!projectResourceScopesReadOnly &&
