@@ -31,7 +31,7 @@ internal object ChatMediaAttachmentResolver {
     private val passThroughImageMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
     private val supportedAudioMimeTypes = setOf(
         "audio/aac", "audio/flac", "audio/mp3", "audio/mpeg", "audio/m4a",
-        "audio/mp4", "audio/ogg", "audio/opus", "audio/pcm", "audio/wav",
+        "audio/mp4", "audio/ogg", "audio/opus", "audio/wav",
         "audio/webm", "audio/mpga", "audio/x-wav"
     )
     private val supportedVideoMimeTypes = setOf(
@@ -133,7 +133,8 @@ internal object ChatMediaAttachmentResolver {
         if (!file.isFile || file.length() <= 0L || file.length() != asset.byteSize ||
             file.length() > MAX_INLINE_MEDIA_BYTES
         ) return null
-        val mime = asset.mimeType.lowercase()
+        val rawMime = asset.mimeType.lowercase()
+        val mime = if (rawMime == "audio/x-wav") "audio/wav" else rawMime
         val supported = when (asset.kind) {
             MediaAssetKind.AUDIO -> mime in supportedAudioMimeTypes
             MediaAssetKind.VIDEO -> mime in supportedVideoMimeTypes
