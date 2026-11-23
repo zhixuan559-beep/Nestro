@@ -40,6 +40,8 @@ fun MediaProviderSettingsCard() {
     var transcriptionPath by remember { mutableStateOf("audio/transcriptions") }
     var scenePath by remember { mutableStateOf("") }
     var audioPath by remember { mutableStateOf("") }
+    var imageModel by remember { mutableStateOf("") }
+    var imagePath by remember { mutableStateOf("images/generations") }
     var videoModel by remember { mutableStateOf("") }
     var videoSubmitPath by remember { mutableStateOf("video/generations") }
     var videoStatusPath by remember { mutableStateOf("video/generations/{job_id}") }
@@ -67,6 +69,8 @@ fun MediaProviderSettingsCard() {
             transcriptionPath = existing.transcriptionPath
             scenePath = existing.scenePath
             audioPath = existing.audioProcessPath
+            imageModel = existing.imageGenerationModel
+            imagePath = existing.imageGenerationPath
             videoModel = existing.videoGenerationModel
             videoSubmitPath = existing.videoSubmitPath
             videoStatusPath = existing.videoStatusPath
@@ -89,7 +93,7 @@ fun MediaProviderSettingsCard() {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("媒体 AI 服务商", style = MaterialTheme.typography.titleMedium)
             Text("媒体服务商可只配置视频模型，不必同时填写聊天模型。聊天/视觉连接测试只验证对应聊天接口；视频生成协议会在首次真实任务时验证，可能产生费用。", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoAuthHeader="Authorization"; videoAuthPrefix="Bearer "; videoExtraRequestJson="{}"; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
+            OutlinedButton(onClick={ providerId="openai"; displayName="OpenAI 官方 API"; baseUrl="https://api.openai.com/v1"; transcriptionPath="audio/transcriptions"; transcriptionModel="gpt-transcribe"; scenePath=""; audioPath=""; imageModel=""; imagePath="images/generations"; videoModel=""; videoSubmitPath="video/generations"; videoStatusPath="video/generations/{job_id}"; videoModelField="model"; videoPromptField="prompt"; videoAuthHeader="Authorization"; videoAuthPrefix="Bearer "; videoExtraRequestJson="{}"; videoJobIdField="id"; videoStatusField="status"; videoResultUrlField="video_url"; status="已填入 OpenAI 官方接口地址。请填写 API Key 和支持图像输入的聊天模型 ID 后测试。" },modifier=Modifier.fillMaxWidth()) { Text("填入 OpenAI 官方接口预设") }
             OutlinedTextField(providerId, { providerId = it }, label = { Text("服务商 ID（唯一）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(displayName, { displayName = it }, label = { Text("服务商名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("HTTPS 服务地址") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -100,6 +104,9 @@ fun MediaProviderSettingsCard() {
             OutlinedTextField(transcriptionPath, { transcriptionPath = it }, label = { Text("转写接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(scenePath, { scenePath = it }, label = { Text("场景识别接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(audioPath, { audioPath = it }, label = { Text("音频处理接口路径（可选，需按服务商文档填写）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("图像生成（可选）：独立配置生图模型；接口按 OpenAI Images API 兼容格式提交，结果会保存为当前项目图片素材。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(imageModel, { imageModel = it }, label = { Text("图像生成模型 ID（留空表示不支持）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(imagePath, { imagePath = it }, label = { Text("图像生成接口路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Text("异步视频生成（可选）：提交任务后轮询状态，再下载成品。不同服务商的任务协议和字段名可能不同，请按服务商文档填写。", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(videoModel, { videoModel = it }, label = { Text("视频生成模型 ID（留空表示不支持）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(videoSubmitPath, { videoSubmitPath = it }, label = { Text("视频任务提交路径") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -130,6 +137,8 @@ fun MediaProviderSettingsCard() {
                                         transcriptionPath = transcriptionPath,
                                         scenePath = scenePath,
                                         audioProcessPath = audioPath,
+                                        imageGenerationModel = imageModel,
+                                        imageGenerationPath = imagePath,
                                         videoGenerationModel = videoModel,
                                         videoSubmitPath = videoSubmitPath,
                                         videoStatusPath = videoStatusPath,
@@ -152,7 +161,7 @@ fun MediaProviderSettingsCard() {
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (busy) "测试中…" else "测试聊天/视觉模型连接") }
             Button(
-                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || transcriptionModel.isNotBlank() || videoModel.isNotBlank()),
+                enabled = !busy && apiKey.isNotBlank() && baseUrl.isNotBlank() && (model.isNotBlank() || transcriptionModel.isNotBlank() || imageModel.isNotBlank() || videoModel.isNotBlank()),
                 onClick = {
                     busy = true
                     scope.launch {
@@ -168,6 +177,8 @@ fun MediaProviderSettingsCard() {
                                     transcriptionPath = transcriptionPath,
                                     scenePath = scenePath,
                                     audioProcessPath = audioPath,
+                                        imageGenerationModel = imageModel,
+                                        imageGenerationPath = imagePath,
                                         videoGenerationModel = videoModel,
                                         videoSubmitPath = videoSubmitPath,
                                         videoStatusPath = videoStatusPath,
@@ -208,7 +219,8 @@ fun MediaProviderSettingsCard() {
                             Text(summary.displayName, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 summary.providerId + " · 聊天：" + summary.model.ifBlank { "未配置" } +
-                                    (summary.videoGenerationModel.takeIf { it.isNotBlank() }?.let { " · 视频：$it" } ?: " · 未配置视频模型"),
+                                    (summary.imageGenerationModel.takeIf { it.isNotBlank() }?.let { " · 生图：$it" } ?: "") +
+                                    (summary.videoGenerationModel.takeIf { it.isNotBlank() }?.let { " · 视频：$it" } ?: " · 未配置视频模型"), 
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -232,6 +244,8 @@ fun MediaProviderSettingsCard() {
                                     transcriptionPath = config.transcriptionPath
                                     scenePath = config.scenePath
                                     audioPath = config.audioProcessPath
+                                    imageModel = config.imageGenerationModel
+                                    imagePath = config.imageGenerationPath
                                     videoModel = config.videoGenerationModel
                                     videoSubmitPath = config.videoSubmitPath
                                     videoStatusPath = config.videoStatusPath
