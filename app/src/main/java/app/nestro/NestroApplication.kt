@@ -703,7 +703,7 @@ class NestroApplication : Application() {
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
         val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
-        suspend fun readableProjectsFor(targetProjectId: String): List<String> {
+        fun readableProjectsFor(targetProjectId: String): List<String> {
             val candidates = runCatching {
                 ProjectPreferencesStore.loadProjects(preferences)
                     .filter { it.archivedAt == 0L }
@@ -723,6 +723,12 @@ class NestroApplication : Application() {
                 } else {
                     val readableSources = readableProjectsFor(projectId).filterNot { it == projectId }.toSet()
                     userMemoryRepository.recall(projectId, prompt, readableSources).context
+                }
+            },
+            memoryVersion = { projectId ->
+                readableProjectsFor(projectId).joinToString("|") { sourceId ->
+                    val token = UserMemoryStore.mutationVersion(sourceId)
+                    "$sourceId:${token.projectVersion}:${token.globalVersion}"
                 }
             }
         )
