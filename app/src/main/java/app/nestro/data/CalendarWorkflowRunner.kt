@@ -174,7 +174,7 @@ internal class CalendarWorkflowRunner(
         }.getOrDefault(emptySet())
         val expertPrompts = readStringMap("expert_prompts", 8_000)
         val expertProfiles = ExpertProfileCodec.decode(preferences.getString("expert_profiles_v1", "{}") ?: "{}")
-        val skills = readStringMap("skills", 8_000).filterKeys {
+        val skills = (DEFAULT_SKILLS + readStringMap("skills", 8_000)).filterKeys {
             ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.SKILL, it, projectId)
         }
         val disabledSkills = runCatching {
