@@ -171,3 +171,17 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - 4 个文件已全部分类；未发现产品源码、测试源码或模块8独有实现。
 - **核销结论：该分支 11 个 ahead 提交没有留下需要回收的独有产品代码；其 3 个非 workflow 文件与 main 完全相同，workflow 由 main 更新版本取代。**
 - 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
+## 2026-11-24 main 分叉分支逐条核销 — 03/20
+
+### `feature/module-13-mcp-tool-center`
+
+- 核对基线：`main` HEAD `2960620925e669acabe0eb9b55b90fcb857ea3bd`。
+- 分支关系：merge base `f20510e192606ee5ad1d846d276522bfc73cebf9`；branch ahead 70、behind 1811。compare 共 10 个文件差异。
+- `McpStreamableHttpClient.kt`：main 是更完整版本，增加并发初始化锁、生命周期关闭/取消处理、响应读取边界及现代/旧版初始化兼容保护；分支客户端较旧，没有可单独回收的独有方法。
+- `McpToolCenter.kt`：main 在原有服务/工具发现、Keystore 凭据、授权和审计基础上增加损坏数据保留/隔离、审计写入可靠性、撤销/禁用/删除失败恢复、活动调用取消、任务恢复/取消与统一任务机接线。分支版本不含这些后续安全修复，不能覆盖 main。
+- `McpToolCenterPage.kt`：main 页面已接入审批协调器、任务状态和当前统一授权路径；分支页面是早期独立调用 UI，不复制。
+- `McpToolCenterTest.kt`：main 有 12 个测试，分支有 9 个；main 额外覆盖损坏审计隔离、合法审计不触发隔离、隔离写入失败不能静默忽略。保留 main 测试。
+- `NestroApplication.kt`、`NestroApp.kt`、`NestroComponents.kt`：分支为早期 MCP 入口和旧根页面快照；main 已扩展统一 AgentRuntime/AgentTaskCoordinator、能力目录、审批、其他模块调度和当前 UI，分支没有可替换的独有生产代码。
+- `IMPLEMENTATION_ROADMAP.md`、`NESTRO_19_MODULES.md`、`PHASE2_CODE_MAP.md`：分支进度和代码地图落后于当前 main；仅作历史线索，不复制其状态描述。
+- **核销结论：10 个文件均已分类；该分支没有需要回收的独有生产实现或测试。其 MCP 主体、UI、任务接线和测试均由 main 更完整版本取代。**
+- 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
