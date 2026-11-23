@@ -196,7 +196,7 @@ class CalendarAutomationWorker(
                         input = input
                     ),
                     idempotencyKey = idempotencyKey,
-                    maxRetries = 0
+                    maxRetries = 2
                 )
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
