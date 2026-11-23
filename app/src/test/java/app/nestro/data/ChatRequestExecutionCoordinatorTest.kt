@@ -31,14 +31,18 @@ class ChatRequestExecutionCoordinatorTest {
         return ChatRequestExecutionCoordinator(assembler, streaming, resolveMediaAttachments = resolveMediaAttachments)
     }
 
-    private fun request(taskMode: Boolean = false, shouldStop: () -> Boolean = { false }) = ChatRequestExecutionRequest(
+    private fun request(
+        taskMode: Boolean = false,
+        shouldStop: () -> Boolean = { false },
+        modelConfigs: List<ModelConfig> = emptyList()
+    ) = ChatRequestExecutionRequest(
         requestId = "request-1",
         conversationId = "conversation-1",
         projectId = "project-1",
         prompt = "这是一个需要回答的问题",
         startedAt = 100L,
         history = listOf(ChatMessage("user-1", "user", "这是一个需要回答的问题")),
-        modelConfigs = emptyList(),
+        modelConfigs = modelConfigs,
         baseSystemContext = "base-context",
         taskModeEnabled = taskMode,
         temperature = null,
@@ -187,7 +191,14 @@ class ChatRequestExecutionCoordinatorTest {
         )
         val original = request()
         val result = coordinator.execute(
-            request = original,
+            request = original.copy(modelConfigs = listOf(
+                ModelConfig(
+                    "https://api.example.com",
+                    "vision-model",
+                    "test-key",
+                    inputModalities = setOf(app.nestro.model.ModelModality.TEXT, app.nestro.model.ModelModality.IMAGE)
+                )
+            )),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
             onPartialAnswer = { }
