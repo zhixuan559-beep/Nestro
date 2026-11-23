@@ -992,6 +992,7 @@ class NestroApplication : Application() {
                     onUsage = recordUsage,
                     onProviderUsage = recordProviderUsage
                 )
+                val availableExpertNames = expertRunner.availableMemberNames()
                 var latestPartialAnswer = ""
                 val execution = chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
@@ -1002,9 +1003,9 @@ class NestroApplication : Application() {
                         startedAt = System.currentTimeMillis(),
                         history = emptyList(),
                         modelConfigs = configs,
-                        baseSystemContext = "这是用户在日历中明确设置的定时自动任务。请按目标完成工作；普通回答直接回答，需要外部能力时由主模型按权限和审批规则调用已接入工具。当前项目为：${state.projectId}。事件 ID：$eventId。",
+                        baseSystemContext = "这是用户在日历中明确设置的定时自动任务。请按目标完成工作；普通回答直接回答，需要外部能力时由主模型按权限和审批规则调用已接入工具。当前项目为：${state.projectId}。事件 ID：$eventId。当前项目可用专家：${availableExpertNames.joinToString("、")}。如需保存工作流，先调用 workflow.list 查询当前项目可见项。",
                         taskModeEnabled = true,
-                        expertTeamEnabled = expertRunner.hasAvailableTeam(),
+                        expertTeamEnabled = availableExpertNames.size >= 2,
                         workflowEnabled = true,
                         parentTaskId = taskContext.taskId,
                         temperature = 0.0,
