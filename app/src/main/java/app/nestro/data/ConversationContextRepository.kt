@@ -13,4 +13,8 @@ class ConversationContextRepository(private val database: NestroDatabase, privat
 
     suspend fun retrieveKnowledge(projectId: String, query: String): String =
         KnowledgeStore.retrieve(database.dao(), projectId, query, context)
+
+    /** Changes whenever the other conversations in this project are added, edited, or removed. */
+    suspend fun recallVersion(projectId: String, currentConversationId: String): String =
+        database.dao().conversationRecallCorpusVersion(projectId, currentConversationId)
 }
