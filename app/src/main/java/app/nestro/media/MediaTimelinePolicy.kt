@@ -91,6 +91,7 @@ object MediaTimelinePolicy {
         require(allClips.map { it.id }.distinct().size == allClips.size) { "剪辑片段 ID 重复" }
         require(timeline.subtitles.map { it.id }.distinct().size == timeline.subtitles.size) { "字幕 ID 重复" }
         timeline.tracks.forEach { track ->
+            require(track.volume.isFinite() && track.volume in 0f..2f) { "轨道音量必须在 0 到 200% 之间" }
             require(track.clips.size <= MAX_CLIPS_PER_TRACK) { "单轨剪辑数量超限" }
             val ordered = track.clips.sortedBy { it.timelineStartMs }
             ordered.forEachIndexed { index, clip ->
