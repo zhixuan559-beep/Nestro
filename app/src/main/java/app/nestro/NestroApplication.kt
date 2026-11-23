@@ -24,7 +24,7 @@ import app.nestro.media.MediaAiTaskStatus
 import app.nestro.media.MediaAiTaskScheduler
 import app.nestro.media.MediaProviderConfigStore
 import app.nestro.media.MediaProjectStore
-import app.nestro.media.MediaRenderWorker
+import app.nestro.media.MediaRenderScheduler
 import app.nestro.media.MediaVideoGeneration
 import kotlinx.coroutines.delay
 import org.json.JSONObject
@@ -1152,7 +1152,7 @@ class NestroApplication : Application() {
                                 runCatching { mcpToolCenterService.resume(scopeId) }
                             }
                             "media_ai" -> MediaAiTaskScheduler.resume(this@NestroApplication, state.projectId, state.input)
-                            "media_render" -> MediaRenderWorker.resume(this@NestroApplication, state.projectId, state.input)
+                            "media_render" -> MediaRenderScheduler.resume(this@NestroApplication, state.projectId, state.input)
                             "calendar_automation" -> agentTaskCoordinator.resume(scopeId)
                             "phone_agent" -> phoneAgentTaskService.enqueue(scopeId)
                             // Workflow, expert-team and chat/plugin runInline handlers are
