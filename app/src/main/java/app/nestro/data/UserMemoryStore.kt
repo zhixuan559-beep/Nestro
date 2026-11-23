@@ -172,11 +172,6 @@ object UserMemoryStore {
         val tokenAtStart = expectedMutationVersion ?: mutationVersion(projectId)
         return mutationLock(projectId).withLock {
             if (!isCurrentMutationVersion(projectId, tokenAtStart)) return@withLock 0
-            if (!dao.projectExists(projectId)) return@withLock 0
-            val source = dao.conversationWithMessages(conversationId) ?: return@withLock 0
-            if (source.conversation.projectId != projectId) return@withLock 0
-            val sourceMessage = source.messages.firstOrNull { it.id == messageId } ?: return@withLock 0
-            if (sourceMessage.role != "user") return@withLock 0
             var saved = 0
             candidates.take(5).forEach { candidate ->
                 val category = candidate.category.trim().lowercase()
@@ -186,37 +181,23 @@ object UserMemoryStore {
                 val fingerprint = fingerprint(category + "|" + content.lowercase())
                 val now = System.currentTimeMillis()
                 val supersedesId = candidate.supersedesId?.trim().orEmpty()
-                if (supersedesId.isNotBlank()) {
-                    val replaced = dao.replaceUserMemoryIfUnconflicted(
-                        id = supersedesId,
-                        projectId = projectId,
-                        category = category,
-                        content = content,
-                        fingerprint = fingerprint,
-                        conversationId = conversationId,
-                        messageId = messageId,
-                        confidence = candidate.confidence,
-                        updatedAt = now
-                    )
-                    // A failed explicit correction must not silently become a new memory.
-                    if (replaced) saved++
-                    return@forEach
-                }
-                dao.upsertUserMemoryByFingerprint(
-                    UserMemoryEntity(
-                        id = UUID.randomUUID().toString(),
-                        projectId = projectId,
-                        category = category,
-                        content = content,
-                        fingerprint = fingerprint,
-                        sourceConversationId = conversationId,
-                        sourceMessageId = messageId,
-                        confidence = candidate.confidence,
-                        createdAt = now,
-                        updatedAt = now
-                    )
+                val memory = UserMemoryEntity(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    category = category,
+                    content = content,
+                    fingerprint = fingerprint,
+                    sourceConversationId = conversationId,
+                    sourceMessageId = messageId,
+                    confidence = candidate.confidence,
+                    createdAt = now,
+                    updatedAt = now
                 )
-                saved++
+                // Source ownership/existence and the corresponding write share one DAO transaction.
+                if (dao.saveUserMemoryCandidateIfSourceValid(
+                    memory = memory,
+                    supersedesId = supersedesId.takeIf { it.isNotBlank() }
+                )) saved++
             }
             if (saved > 0) {
                 dao.trimUserMemories(projectId, 200)
