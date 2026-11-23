@@ -1,16 +1,16 @@
 # NESTRO 当前代码地图
 
-> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `d833ce6ddbdb68298a59dd169f64ba7c62f6cc3a`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
+> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `12c0183d7140dcae228aa5fbb54dac20ccf1d7a0`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。本地图正在按新基线重新核对；不得将旧代码地图当作当前完整审计结果。
 >
-> 当前树：444 个 Git tree 条目，其中 Kotlin 源码/测试文件 332 个（主源码 205 个、JVM 测试 94 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
+> 当前树：445 个 Git tree 条目，其中 Kotlin 源码/测试文件 333 个（主源码 205 个、JVM 测试 95 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
 > 功能是否完整以 `FUNCTION_AUDIT.md` 为准；十九模块需求范围以 `NESTRO_19_MODULES.md` 为准；未完成事项以 `IMPLEMENTATION_ROADMAP.md` 为准。
 
 ## 十九模块源码落点
 
 | 模块 | 当前主要实现 | 主要测试/验证源码 |
 |---|---|---|
-| 1 专家系统 | `data/ExpertTeamEngine.kt`、`data/ExpertTeamExecutionCoordinator.kt`、`data/ExpertProjectPlanExecutor.kt`、`data/ExpertTemplateCatalog.kt`、`data/ModelLedToolDispatcher.kt`、`ui/ExpertWorkspaceUiState.kt` | `test/.../ExpertTeamEngineTest.kt`、`ExpertTeamExecutionCoordinatorTest.kt`、`ExpertProjectPlanExecutorTest.kt`、`ui/ExpertTeamEventPaginationTest.kt` |
+| 1 专家系统 | `data/ExpertTeamEngine.kt`、`data/ExpertTeamExecutionCoordinator.kt`、`data/ExpertProjectPlanExecutor.kt`、`data/ExpertTemplateCatalog.kt`、`data/ModelLedToolDispatcher.kt`、`ui/ExpertWorkspaceUiState.kt`（协作历史分页/暂停控制） | `test/.../ExpertTeamEngineTest.kt`、`ExpertTeamExecutionCoordinatorTest.kt`、`ExpertProjectPlanExecutorTest.kt`、`ui/ExpertTeamEventPaginationTest.kt`、`ui/ExpertTeamPauseControllerTest.kt` |
 | 2 模型管理 | `model/ModelRegistry.kt`、`model/ModelRegistryStore.kt`、`model/ModelConfigurationRepository.kt`、`model/ModelConnectionService.kt`、`model/ModelDiscoveryService.kt`、`ui/ModelManagerPage.kt`、`ui/ModelManagementUiState.kt` | `test/.../ModelProfileCatalogTest.kt`、`ModelToolDecisionParserTest.kt` |
 | 3 聊天系统 | `data/ChatMessage.kt`、`data/ChatRequestContextAssembler.kt`、`data/ChatRequestExecutionCoordinator.kt`、`data/ChatRequestRecoveryCoordinator.kt`、`data/ModelLedToolDispatcher.kt`、`data/OpenAiClient.kt`、`model/ChatExecutionService.kt`、`ui/NestroApp.kt` | `test/.../ChatRequestContextAssemblerTest.kt`、`ChatRequestExecutionCoordinatorTest.kt`、`ChatRequestRecoveryCoordinatorTest.kt`、`model/ChatStreamingCoordinatorTest.kt` |
 | 4 数据与备份 | `data/NestroDatabase.kt`、`data/ConversationPersistenceService.kt`、`data/LocalBackupRepository.kt`、`data/LocalBackupCompatibility.kt`、`data/ProjectPackageCodec.kt` | `androidTest/.../NestroDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt`、`test/.../ProjectPackageCodecTest.kt` |
