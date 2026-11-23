@@ -60,7 +60,46 @@ object SkillBundleParser {
         }
         require(dependencies.map { it.name }.distinct().size == dependencies.size) { "技能依赖不能重复" }
         require(dependencies.none { it.name == name }) { "技能不能依赖自身" }
-        return SkillBundle(name, version, description, prompt, source, permissions, dependencies)
+        val signerFingerprint = json.optString("signerFingerprint", "").trim().lowercase()
+        require(signerFingerprint.isBlank() || signerFingerprint.matches(Regex("[a-f0-9]{64}"))) {
+            "技能签名者指纹无效"
+        }
+        return SkillBundle(name, version, description, prompt, source, permissions, dependencies, signerFingerprint)
+    }
+
+    /** Reconstructs persisted skill metadata through the same strict parser used for imports. */
+    fun fromStored(name: String, prompt: String, metadataRaw: String?): SkillBundle {
+        require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
+        require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
+        val metadata = try {
+            JSONObject(metadataRaw?.takeIf { it.isNotBlank() } ?: "{}")
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能元数据损坏，拒绝导出", error)
+        }
+        require(!metadata.has("permissions") || metadata.optJSONArray("permissions") != null) {
+            "技能权限元数据格式无效"
+        }
+        require(!metadata.has("dependencies") || metadata.optJSONArray("dependencies") != null) {
+            "技能依赖元数据格式无效"
+        }
+        val signerFingerprint = metadata.optString("signerFingerprint", "").trim().lowercase()
+        require(signerFingerprint.isBlank() || signerFingerprint.matches(Regex("[a-f0-9]{64}"))) {
+            "技能签名者指纹无效"
+        }
+        val storedBundle = JSONObject()
+            .put("name", name)
+            .put("version", metadata.optString("version", "1.0.0").ifBlank { "1.0.0" })
+            .put("description", metadata.optString("description", ""))
+            .put("prompt", prompt)
+            .put("source", metadata.optString("source", "Nestro 本地技能"))
+            .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
+            .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
+            .put("signerFingerprint", signerFingerprint)
+        return try {
+            parse(storedBundle.toString(), "$name.nestro-skill.json")
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能元数据无效，拒绝导出", error)
+        }
     }
 
     fun metadataJson(bundle: SkillBundle): String =
@@ -76,17 +115,18 @@ object SkillBundleParser {
             .toString()
 
     fun exportJson(name: String, prompt: String, metadataRaw: String?): String {
-        require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
-        require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
-        val metadata = runCatching { JSONObject(metadataRaw ?: "{}") }.getOrDefault(JSONObject())
+        val bundle = fromStored(name, prompt, metadataRaw)
         return JSONObject()
-            .put("name", name)
-            .put("version", metadata.optString("version", "1.0.0"))
-            .put("description", metadata.optString("description", ""))
-            .put("prompt", prompt)
-            .put("source", metadata.optString("source", "Nost 本地技能"))
-            .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
-            .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
+            .put("name", bundle.name)
+            .put("version", bundle.version)
+            .put("description", bundle.description)
+            .put("prompt", bundle.prompt)
+            .put("source", bundle.source)
+            .put("signerFingerprint", bundle.signerFingerprint)
+            .put("permissions", JSONArray(bundle.permissions))
+            .put("dependencies", JSONArray().apply {
+                bundle.dependencies.forEach { put(JSONObject().put("name", it.name).put("version", it.version)) }
+            })
             .toString(2)
     }
 }
