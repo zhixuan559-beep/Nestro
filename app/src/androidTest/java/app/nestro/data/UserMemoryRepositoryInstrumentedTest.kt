@@ -130,7 +130,7 @@ class UserMemoryRepositoryInstrumentedTest {
     }
 
     @Test
-    fun deletingSourceMessageRemovesOnlyItsProjectMemory() = runBlocking {
+    fun removingOrChangingSourceMessageRemovesOnlyItsProjectMemory() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
             .allowMainThreadQueries()
@@ -164,6 +164,24 @@ class UserMemoryRepositoryInstrumentedTest {
             )
             assertTrue("来源消息被删除后应清理原项目自动记忆", repository.list("project-a").isEmpty())
             assertEquals("导入到其他项目的独立副本不应被删除", 1, repository.list("project-b").size)
+
+            persistence.persistConversationMessages(
+                conversationId = "conversation-a",
+                projectId = "project-a",
+                messages = listOf(ChatMessage("message-a", "user", "恢复的原始内容"))
+            )
+            val changedSourceMemory = sourceMemory.copy(
+                content = "恢复的原始内容",
+                fingerprint = UserMemoryStore.fingerprint("preference|恢复的原始内容")
+            )
+            assertTrue(dao.saveUserMemoryCandidateIfSourceValid(changedSourceMemory))
+            persistence.persistConversationMessages(
+                conversationId = "conversation-a",
+                projectId = "project-a",
+                messages = listOf(ChatMessage("message-a", "user", "被编辑后的内容"))
+            )
+            assertTrue("来源消息正文被改写后应清理原项目自动记忆", repository.list("project-a").isEmpty())
+            assertEquals("其他项目中的导入副本仍独立保留", 1, repository.list("project-b").size)
         } finally {
             database.close()
         }
