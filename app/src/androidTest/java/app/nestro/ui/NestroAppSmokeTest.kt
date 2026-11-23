@@ -61,6 +61,32 @@ class NestroAppSmokeTest {
     }
 
     @Test
+    fun toolsDirectoryListsEveryManagementDestination() {
+        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+
+        listOf(
+            "模型管理",
+            "双模型比较",
+            "语音",
+            "Skills",
+            "工作流",
+            "插件",
+            "MCP",
+            "能力与授权",
+            "记忆管理",
+            "知识库",
+            "产物库",
+            "媒体工作区",
+            "代码工作区",
+            "Git 工作区"
+        ).forEach { destination ->
+            composeRule.onNodeWithText(destination, substring = false)
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun opensProjectSpacesFromNavigationDrawer() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
