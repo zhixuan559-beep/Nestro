@@ -96,6 +96,56 @@ class WorkflowExecutionCoordinatorTest {
     }
 
     @Test
+    fun approvedWorkflowStepCanDiscoverSideEffectTools() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val coordinator = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = WorkflowExecutionCoordinator(coordinator)
+        val catalog = InMemoryAgentToolCatalog().apply {
+            register(AgentToolSpec("knowledge.search", "搜索知识库", AgentToolPermission.READ_ONLY)) {
+                app.nestro.agent.AgentToolResult(true, "结果")
+            }
+            register(AgentToolSpec("message.send", "发送消息", AgentToolPermission.EXTERNAL_WRITE)) {
+                app.nestro.agent.AgentToolResult(true, "已发送")
+            }
+        }
+        var captured: AgentToolDiscovery? = null
+        var approvalRequested = false
+        try {
+            val workflow = WorkflowDefinition(
+                id = "workflow-approved-tools",
+                name = "审批后调用工具",
+                description = "显式审批后开放步骤工具",
+                steps = listOf(
+                    WorkflowStep(
+                        id = "step-approved",
+                        title = "执行外部动作",
+                        instruction = "按要求执行",
+                        approvalRequired = true
+                    )
+                )
+            )
+            val result = service.execute(
+                workflow = workflow,
+                input = "执行测试",
+                taskId = "workflow-approved-tool-scope",
+                invokeModel = { _, _ -> error("应使用工具感知调用") },
+                requestApproval = { _, _ -> approvalRequested = true; true },
+                toolCatalog = catalog,
+                invokeModelWithTools = { _, _, access ->
+                    captured = access
+                    assertEquals(listOf("knowledge.search", "message.send"), access?.list()?.map { it.id })
+                    "已执行"
+                }
+            )
+            assertEquals(1, result.completedSteps)
+            assertTrue(approvalRequested)
+            assertEquals(null, captured?.find("message.send"))
+        } finally {
+            coordinator.close()
+        }
+    }
+
+    @Test
     fun resumesFromPersistedStepWithoutRepeatingCompletedWork() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)

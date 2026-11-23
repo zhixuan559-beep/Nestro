@@ -105,7 +105,15 @@ class WorkflowExecutionCoordinator(
                     val operation = "step-" + UUID.nameUUIDFromBytes(
                         "$taskId:${step.id}".toByteArray(Charsets.UTF_8)
                     ).toString()
-                    AgentCapabilityRegistry.registerReadOnlyTools("workflow", operation, toolCatalog)
+                    if (step.approvalRequired) {
+                        AgentCapabilityRegistry.register(
+                            "workflow",
+                            operation,
+                            toolCatalog?.list()?.map { it.id }?.toSet().orEmpty()
+                        )
+                    } else {
+                        AgentCapabilityRegistry.registerReadOnlyTools("workflow", operation, toolCatalog)
+                    }
                     val lease = AgentCapabilityRegistry.openLease(
                         taskId = taskId,
                         owner = "workflow",
