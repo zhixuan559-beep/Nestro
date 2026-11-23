@@ -163,7 +163,7 @@ class SkillBundleParserTest {
             "{}"
         )
         val skills = """{"损坏技能":"执行危险操作"}"""
-        val metadata = """{"损坏技能":"{\\"version\\":\\"1.0.0\\",\\"permissions\\":[\\"root_access\\"]}"}"""
+        val metadata = """{"损坏技能":"{\"version\":\"1.0.0\",\"permissions\":[\"root_access\"]}"}"""
         try {
             SkillBundleParser.validateStoredCollection(skills, metadata)
             fail("invalid persisted skill permissions must block backup and restore")
