@@ -1303,3 +1303,34 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已确认的多模态边界：`ChatMessage` 仍只有文本 content/versions，没有原生 image/audio/video message parts；图片、音频、视频通过项目 asset_id 交给媒体任务 Provider，属于素材导入+专业任务链路，不是聊天传输层原生多模态。通用视频问答、非语音音频理解和图像生成仍不能据此判定完成。
 - 运行验证边界：当前 HEAD 没有 GitHub commit status 或 check runs；`.github/workflows/android.yml` 只配置 workflow_dispatch 手动触发。本轮按用户要求没有运行 Gradle 编译、JVM/Android 测试、模拟器或真机测试。源码/测试文件存在不等于运行通过。
 - 本轮只修订模块清单和审计记录，没有修改业务源码；下一步应先补齐记忆来源原子事务、专家/工作流工具调用适配器与任务元数据、日历调度能力，再做设备 UI 缺口和媒体/多模态范围收口；全部完成后才进入统一编译验收。
+
+
+---
+
+# 2026-11-24 修复回读：记忆事务、专家/工作流工具适配、Phone Agent 浮窗
+
+本节为当前分支修复后的状态，覆盖并更新 2026-11-23 审计段中对应的“待修复”结论；旧段保留为历史记录。
+
+## 已写入源码
+
+- **记忆来源原子事务**：新增 NestroDao.saveUserMemoryCandidateIfSourceValid，将项目存在性、来源会话归属、来源 user message 校验与候选记忆 upsert/replace 放在同一个 Room @Transaction。UserMemoryStore.saveCandidates 不再在事务外单独预查来源后写入。新增 Android instrumentation 回归测试源码，覆盖错误消息角色、跨项目来源和有效来源写入。
+- **专家团工具适配**：NestroApp 为专家项目工作包提供 invokeMemberWithTools。工具调用回到统一 ChatRequestExecutionCoordinator / ModelLedToolDispatcher，通过操作级 allow-list 限定工具，并传递原始 AgentToolAccess 租约。
+- **工作流工具适配**：NestroApp 为工作流步骤提供 invokeModelWithTools，同样通过统一聊天执行协调器、工具 allow-list 和原始租约执行。
+- **租约一致性**：ModelLedToolDispatcher 的原生工具调用与兼容文本协议两条路径都复用传入的 AgentToolAccess；当存在操作级租约时，不再重新从全局 catalog 按 ID 开新租约，避免同 ID 工具在执行期间被替换后发生处理器漂移。
+- **任务元数据**：专家项目与工作流任务写入 projectId、conversationId、kind、capabilityId、title、input 等 AgentTaskMetadata。
+- **工具范围回归测试源码**：新增 allow-list 测试，覆盖 null 保持普通聊天发现、只暴露任务声明工具、空集合不暴露工具。
+- **Phone Agent 浮窗**：新增独立拖动区域，按可见屏幕范围钳制窗口偏移；原有画面点击、滑动、角部缩放交互保留。新增偏移边界单元测试源码。
+
+## 仍未完成或未验证
+
+- 上述新增/修改的 Kotlin 代码和测试源码尚未运行 Gradle 编译、JVM/Android 测试、模拟器或真机；不能据此判定编译通过。
+- UserMemoryEntity.sourceConversationId/sourceMessageId 仍不是外键；事务能阻止“来源已先删除、写入后发生”的竞态，但源数据在记忆保存成功后再被删除时，级联清理策略仍需单独处理。
+- ChatRequestContextAssembler 的最终上下文缓存仍未纳入 ConversationContextRepository 历史召回语料版本；历史编辑/删除后可能在 60 秒 TTL 内复用旧召回结果。
+- 日历仍缺延迟/任意时间条件触发、业务执行失败重试/错误分类退避，以及专家 DAG/工作流分发。
+- 媒体渲染仍是单视频轨/单音轨；多视频轨/PIP/多音轨尚未实现。
+- 聊天传输层仍无原生 image/audio/video content parts；通用视频问答和非语音音频事件理解尚未实现。
+- UI 目前只补了 Phone Agent 浮窗拖动；此前设计的主界面、专家、工作流、媒体等界面仍需按真实源码逐屏复核，不能把局部浮窗修复视为界面整体收尾。
+
+## 编译闸门
+
+当前仍处于“源码补齐与静态复核”阶段。用户要求的编译条件尚未达到；本轮没有触发 Gradle 编译或测试。
