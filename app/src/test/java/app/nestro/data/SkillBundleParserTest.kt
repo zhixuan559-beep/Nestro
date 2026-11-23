@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.io.ByteArrayInputStream
 
 class SkillBundleParserTest {
     private val prompt = "请先理解用户目标，再核对事实来源，区分事实与推断，输出可执行步骤，并在涉及敏感操作时交还用户确认。对于无法访问或无法核验的信息必须明确说明，不得猜测价格、库存、时间或完成状态，并记录关键依据。"
@@ -172,4 +173,15 @@ class SkillBundleParserTest {
     }
 
 
+
+    @Test
+    fun boundedSkillFileReaderEnforcesUtf8ByteLimitBeforeFullRead() {
+        val exactLimit = "汉".repeat(10_000)
+        assertEquals(exactLimit, SkillBundleParser.readUtf8Bounded(ByteArrayInputStream(exactLimit.toByteArray(Charsets.UTF_8))))
+        try {
+            SkillBundleParser.readUtf8Bounded(ByteArrayInputStream("汉".repeat(10_001).toByteArray(Charsets.UTF_8)))
+            fail("skill file larger than 30 KB must be rejected while reading")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 }
