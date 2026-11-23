@@ -79,7 +79,7 @@ class PhoneAgentService : AccessibilityService() {
         }
     }
 
-    fun hasValidGrant() { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
+    fun hasValidGrant(): Boolean { val p = getSharedPreferences("nestro_local", MODE_PRIVATE); return p.getLong("phone_task_grant_until", 0L) > System.currentTimeMillis() || p.getBoolean("phone_single_grant", false) }
     fun isTaskStopped(taskId: String): Boolean =
         getSharedPreferences("nestro_local", MODE_PRIVATE).getBoolean(PhoneAgentWorkScheduler.stopKey(taskId), false)
     fun clearTaskStop(taskId: String) {

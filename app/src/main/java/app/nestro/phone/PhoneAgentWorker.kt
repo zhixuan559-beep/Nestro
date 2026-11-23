@@ -69,7 +69,8 @@ class PhoneAgentWorker(
             AgentTaskStatus.QUEUED -> coordinator.dispatchExternallyScheduled(taskId, "phone_agent")
             AgentTaskStatus.PAUSED,
             AgentTaskStatus.FAILED,
-            AgentTaskStatus.WAITING_FOR_USER -> coordinator.resume(taskId)
+            AgentTaskStatus.WAITING_FOR_USER,
+            AgentTaskStatus.WAITING_FOR_TASK -> coordinator.resume(taskId)
             AgentTaskStatus.RETRY_WAIT -> coordinator.dispatchExternallyScheduled(taskId, "phone_agent")
             // After process recreation, the durable Room state can still say RUNNING
             // while the in-memory coordinator has no active handler. Reattach only when idle;

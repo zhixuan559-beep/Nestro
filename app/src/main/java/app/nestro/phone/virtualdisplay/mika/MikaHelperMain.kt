@@ -75,7 +75,8 @@ object MikaHelperMain {
         helperApkPath: String,
         service: IMikaShell,
         nonce: String?,
-    ): Pair<IBinder, String>? = try {
+    ): Pair<IBinder, String>? {
+        return try {
         val identity = service.identity()
         if (identity.size < 2 || identity[0] != Process.myUid() || identity[1] != Process.myPid()) return null
         val extras = Bundle().apply {
@@ -98,6 +99,7 @@ object MikaHelperMain {
     } catch (t: Throwable) {
         Log.w(TAG, "helper handoff retry: " + t.javaClass.simpleName)
         null
+    }
     }
 
     private fun shouldExitForStoppedOrMissingApp(context: android.content.Context, packageName: String): Boolean = try {
