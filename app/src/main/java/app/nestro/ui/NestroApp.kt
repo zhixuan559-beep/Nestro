@@ -2850,7 +2850,7 @@ fun NestroApp(initialPage: String = "home") {
                                             when {
                                                 assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
                                                 assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
-                                                else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
+                                                else -> "当前系统未开放系统助手角色，仍可通过 Nost 应用内聊天入口使用。"
                                             },
                                             color = Muted, style = MaterialTheme.typography.bodySmall
                                         )
@@ -2869,7 +2869,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("隐私与安全", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nestro 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nost 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
