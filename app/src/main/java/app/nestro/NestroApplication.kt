@@ -1005,6 +1005,7 @@ class NestroApplication : Application() {
                         baseSystemContext = "这是用户在日历中明确设置的定时自动任务。请按目标完成工作；普通回答直接回答，需要外部能力时由主模型按权限和审批规则调用已接入工具。当前项目为：${state.projectId}。事件 ID：$eventId。",
                         taskModeEnabled = true,
                         expertTeamEnabled = expertRunner.hasAvailableTeam(),
+                        workflowEnabled = true,
                         parentTaskId = taskContext.taskId,
                         temperature = 0.0,
                         maxTokens = null,
