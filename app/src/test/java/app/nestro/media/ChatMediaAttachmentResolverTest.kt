@@ -1,5 +1,6 @@
 package app.nestro.media
 
+import app.nestro.data.ChatMessage
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
