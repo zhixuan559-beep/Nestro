@@ -120,6 +120,20 @@ class ExpertProjectPlanExecutorTest {
     }
 
     @Test
+    fun checksPauseGateBeforeAndAfterEachDependencyWave() = runBlocking {
+        var pauseChecks = 0
+        val result = ExpertProjectPlanExecutor.execute(
+            plan = plan(),
+            availableMembers = setOf("研究员", "策略师", "文案官", "审校官"),
+            awaitIfPaused = { pauseChecks++ },
+            invoke = { member, _ -> "$member 已完成" }
+        )
+
+        assertTrue(result.isSuccessful)
+        assertEquals(6, pauseChecks)
+    }
+
+    @Test
     fun resumeRejectsDuplicateOrMismatchedMemberCheckpointRows() = runBlocking {
         val valid = ExpertWorkPackageResult("research", "研究员", "success", output = "saved")
         val duplicate = runCatching {
