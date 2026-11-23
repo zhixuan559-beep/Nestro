@@ -17,6 +17,36 @@ object PhoneAgentTaskStore {
     const val STATUS_FAILED = "failed"
     const val STATUS_CANCELLED = "cancelled"
 
+    const val STATUS_INTERRUPTED = "interrupted"
+
+    fun statusLabel(status: String): String = when (status) {
+        STATUS_PLANNED -> "待执行"
+        STATUS_RUNNING -> "执行中"
+        STATUS_WAITING_USER -> "等待你处理"
+        STATUS_PAUSED -> "已暂停"
+        STATUS_INTERRUPTED -> "中断待核对"
+        STATUS_COMPLETED -> "已完成"
+        STATUS_FAILED -> "执行异常"
+        STATUS_CANCELLED -> "已取消"
+        else -> "未知状态"
+    }
+
+    fun interruptedStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_INTERRUPTED)) return currentStatus
+        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
+    }
+
+    fun stopStatusAfterAction(actionSucceeded: Boolean): String =
+        if (actionSucceeded) STATUS_PAUSED else STATUS_INTERRUPTED
+
+    fun stopStepAfterAction(currentStep: Int, actionSucceeded: Boolean): Int =
+        if (actionSucceeded) currentStep + 1 else currentStep
+
+    fun userPauseStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
+        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_WAITING_USER)) return currentStatus
+        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
+    }
+
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
         require(plan.goal.isNotBlank() && plan.goal.length <= 2_000) { "任务目标为空或超出长度限制" }
         val now = System.currentTimeMillis()
@@ -237,7 +267,7 @@ object PhoneAgentTaskStore {
         dao.cancelPhoneAgentTaskIfActive(taskId, System.currentTimeMillis()) > 0
 
     suspend fun updateProgress(dao: NestroDao, taskId: String, status: String, currentStep: Int) {
-        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
+        require(status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED)) { "未知任务状态" }
         val task = dao.phoneAgentTask(taskId) ?: error("任务不存在")
         val actionCount = runCatching { JSONObject(task.planJson).getJSONArray("actions").length() }.getOrNull()
         val planCount = actionCount ?: runCatching { JSONArray(task.planJson).length() }.getOrDefault(0)
@@ -248,17 +278,18 @@ object PhoneAgentTaskStore {
     suspend fun markInterrupted(dao: NestroDao, taskId: String) {
         val task = dao.phoneAgentTask(taskId) ?: return
         val actionCount = runCatching { decodeActions(task.planJson).size }.getOrDefault(0)
-        val ambiguousActionPending = task.status == STATUS_RUNNING && task.currentStep < actionCount
+        val ambiguousActionPending = task.status in setOf(STATUS_RUNNING, STATUS_INTERRUPTED) &&
+            task.currentStep < actionCount
         updateProgress(
             dao,
             taskId,
-            if (ambiguousActionPending) STATUS_RUNNING else STATUS_PAUSED,
+            interruptedStatus(task.status, ambiguousActionPending),
             task.currentStep
         )
     }
 
     suspend fun resumeCandidates(dao: NestroDao, projectId: String): List<PhoneAgentTaskEntity> =
-        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED) }
+        dao.phoneAgentTasks(projectId, 50).filter { it.status in setOf(STATUS_PLANNED, STATUS_RUNNING, STATUS_WAITING_USER, STATUS_PAUSED, STATUS_INTERRUPTED) }
 
     private fun containsSensitiveClarification(value: String): Boolean =
         PhoneAgentRiskPolicy.containsSensitiveValue(value) ||
