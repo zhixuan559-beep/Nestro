@@ -290,12 +290,12 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
         } else {
             tasks.forEach { task ->
                 val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_FAILED)
+                val canStartAgent = !canResume && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_INTERRUPTED)
                 Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "状态：${task.status} · 进度：${task.currentStep} · ${task.category}",
+                            "状态：${PhoneAgentTaskStore.statusLabel(task.status)} · 进度：${task.currentStep} · ${task.category}",
                             color = Muted,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -335,7 +335,8 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
                                     PhoneAgentTaskStore.STATUS_PAUSED,
                                     PhoneAgentTaskStore.STATUS_RUNNING,
                                     PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                    PhoneAgentTaskStore.STATUS_FAILED
+                                    PhoneAgentTaskStore.STATUS_FAILED,
+                                    PhoneAgentTaskStore.STATUS_INTERRUPTED
                                 )) || canStartAgent
                             ) {
                                 Button(
@@ -346,7 +347,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
                                                     taskService.enqueue(
                                                         task.id,
                                                         afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                                        allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
+                                                        allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_INTERRUPTED)
                                                     )
                                                 }
                                             }.onSuccess {
@@ -359,7 +360,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
                                     },
                                     enabled = serviceEnabled && executionAvailable && (hasTaskGrant || hasSingleGrant),
                                     colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when { task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
+                                ) { Text(when { task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; canStartAgent -> "启动 Phone Agent"; task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_INTERRUPTED) -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
                             }
                             if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
                                 TextButton(onClick = {
@@ -367,7 +368,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
                                         withContext(Dispatchers.IO) {
                                             taskService.cancel(
                                                 task.id,
-                                                stopCurrent = task.status == PhoneAgentTaskStore.STATUS_RUNNING
+                                                stopCurrent = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_INTERRUPTED)
                                             )
                                         }
                                         refresh++
