@@ -321,8 +321,11 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
     root.put("expert_templates_v1", prefs.getString("expert_templates_v1", "[]") ?: "[]")
     root.put("expert_teams_v1", prefs.getString("expert_teams_v1", "[]") ?: "[]")
     root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
-    root.put("skills", prefs.getString("skills", "{}") ?: "{}")
-    root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
+    val skillsRaw = prefs.getString("skills", "{}") ?: "{}"
+    val skillMetadataRaw = prefs.getString("skill_metadata_v1", "{}") ?: "{}"
+    SkillBundleParser.validateStoredCollection(skillsRaw, skillMetadataRaw)
+    root.put("skills", skillsRaw)
+    root.put("skill_metadata_v1", skillMetadataRaw)
     root.put("disabled_skills_v1", prefs.getString("disabled_skills_v1", "[]") ?: "[]")
     root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
     root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
@@ -1130,6 +1133,7 @@ private suspend fun applyLocalBackup(
         require(name.length <= 40 && prompt.length <= 8000) { "技能内容超出限制" }
         cleanSkills.put(name, prompt)
     }
+    SkillBundleParser.validateStoredCollection(cleanSkills.toString(), cleanSkillMetadata.toString())
     require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
     val availableSkillNames = buildSet { val names = cleanSkills.keys(); while (names.hasNext()) add(names.next()) }
     val restoredSelectedExpert = ExpertCatalogRules.resolveSelection(restoredSelectedExpertRaw, expertNames.toList(), restoredExpertProfiles)
