@@ -54,7 +54,7 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
             Surface(
-                color = if (user) androidx.compose.ui.graphics.Color(0xFFF1F1F1) else Bg,
+                color = if (user) Card2 else Bg,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
