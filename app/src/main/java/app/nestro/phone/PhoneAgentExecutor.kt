@@ -124,8 +124,17 @@ object PhoneAgentExecutor {
                 val message = "即将启动地图导航，请本人核对路线后再启动。"
                 val handedOff = service.handoffToUser(taskId, message)
                 val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请检查执行窗口。"
-                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户确认启动导航", false, userMessage)
-                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                val resumeAt = if (handedOff) index + 1 else index
+                PhoneAgentTaskStore.recordActionResult(
+                    dao,
+                    taskId,
+                    index,
+                    "等待用户确认启动导航",
+                    handedOff,
+                    if (handedOff) "已交由用户本人核对路线并启动导航" else userMessage
+                )
+                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, resumeAt)
+                taskContext.checkpoint(task.planJson, resumeAt)
                 taskContext.waitForUser(userMessage)
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
