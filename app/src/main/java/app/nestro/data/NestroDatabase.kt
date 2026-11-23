@@ -642,6 +642,13 @@ interface NestroDao {
     @Query("DELETE FROM user_memories WHERE projectId = :projectId AND sourceConversationId IN (:ids)")
     suspend fun deleteUserMemoriesForConversations(ids: List<String>, projectId: String)
 
+    @Query("DELETE FROM user_memories WHERE projectId = :projectId AND sourceConversationId = :conversationId AND sourceMessageId IN (:messageIds)")
+    suspend fun deleteUserMemoriesForSourceMessages(
+        projectId: String,
+        conversationId: String,
+        messageIds: List<String>
+    )
+
     @Transaction
     suspend fun deleteConversations(ids: List<String>) {
         if (ids.isEmpty()) return
