@@ -66,7 +66,7 @@ internal fun AgentTaskCenterPage(
         }
     }
 
-    LaunchedEffect(application, projectId) {
+    LaunchedEffect(application, projectId, expandedTaskId) {
         reloadTasks()
         while (isActive) {
             delay(5_000)
@@ -85,6 +85,7 @@ internal fun AgentTaskCenterPage(
                         "pause" -> application.agentTaskCoordinator.pause(task.taskId)
                         "resume" -> application.agentTaskCoordinator.resume(task.taskId)
                         "cancel" -> application.agentTaskCoordinator.cancel(task.taskId)
+                        else -> error("未知任务操作")
                     }
                 }
             }
