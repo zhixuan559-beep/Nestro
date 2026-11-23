@@ -162,6 +162,7 @@ fun NestroApp(initialPage: String = "home") {
     var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
+    var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
         ModelManagementUiState(prefs, modelRepository)
@@ -1490,11 +1491,31 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
 
+    val darkAppearance = appearanceMode == "dark" ||
+        (appearanceMode == "system" && androidx.compose.foundation.isSystemInDarkTheme())
     MaterialTheme(
-        colorScheme = lightColorScheme(
-            background = Bg, surface = Card, primary = Mint, onPrimary = Bg,
-            onBackground = Ink, onSurface = Ink, secondary = Muted,
-            surfaceVariant = Card2, outline = Line
+        colorScheme = if (darkAppearance) darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color.White,
+            onPrimary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color.Black,
+            onBackground = androidx.compose.ui.graphics.Color.White,
+            surface = androidx.compose.ui.graphics.Color(0xFF111111),
+            onSurface = androidx.compose.ui.graphics.Color.White,
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF1A1A1A),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFAAAAAA),
+            outline = androidx.compose.ui.graphics.Color(0xFF303030),
+            error = androidx.compose.ui.graphics.Color(0xFFFF6B6B)
+        ) else lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF111111),
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF111111),
+            surface = androidx.compose.ui.graphics.Color.White,
+            onSurface = androidx.compose.ui.graphics.Color(0xFF111111),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF5F5F5),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF6B6B6B),
+            outline = androidx.compose.ui.graphics.Color(0xFFE5E5E7),
+            error = androidx.compose.ui.graphics.Color(0xFFB42318)
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
@@ -2596,7 +2617,28 @@ fun NestroApp(initialPage: String = "home") {
                         }
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Text("数据与设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nost 账号。", color = Muted)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = appearanceMode == "system",
+                                            onClick = { appearanceMode = "system"; prefs.edit().putString("appearance_mode_v1", "system").apply() },
+                                            label = { Text("跟随系统") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "light",
+                                            onClick = { appearanceMode = "light"; prefs.edit().putString("appearance_mode_v1", "light").apply() },
+                                            label = { Text("纯白") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "dark",
+                                            onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
+                                            label = { Text("纯黑") }
+                                        )
+                                    }
+                                }
                                 Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3438,8 +3480,6 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                         }
-                        "calendar" -> CalendarPage(appRuntime.calendarRepository, activeProjectId)
-                        "phone" -> PhoneAgentPage(context, activeProjectId)
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
                             draft = prompt
