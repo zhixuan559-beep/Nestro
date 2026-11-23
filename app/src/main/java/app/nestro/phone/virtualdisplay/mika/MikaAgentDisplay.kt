@@ -21,9 +21,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 /** Dedicated virtual-screen frame receiver. Frames are capped at 10fps. */
 class MikaAgentDisplay(
@@ -87,9 +87,10 @@ class MikaAgentDisplay(
     }
 
     /** Replace the frame surface without changing display ID or the app task on that display. */
-    suspend fun resize(newWidth: Int, newHeight: Int, newDpi: Int): Boolean = suspendCoroutine { continuation ->
+    suspend fun resize(newWidth: Int, newHeight: Int, newDpi: Int): Boolean = suspendCancellableCoroutine { continuation ->
         if (released) { continuation.resume(false); return@suspendCoroutine }
         val posted = handler.post {
+            if (!continuation.isActive) return@post
             if (released) { continuation.resume(false); return@post }
             val target = geometry.resized(newWidth, newHeight)
             if (bufferWidth == target.bufferWidth && bufferHeight == target.bufferHeight && dpi == newDpi) {
@@ -122,7 +123,7 @@ class MikaAgentDisplay(
             finally { next?.close() }
             if (continuation.isActive) continuation.resume(resized)
         }
-        if (!posted) continuation.resume(false)
+        if (!posted && continuation.isActive) continuation.resume(false)
     }
 
     private fun schedule() {
