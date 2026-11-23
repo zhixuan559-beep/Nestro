@@ -214,9 +214,20 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         val dao = database.dao()
         database.withTransaction {
             require(dao.projectExists(projectId)) { "会话所属项目不存在，拒绝持久化" }
-            val current = dao.conversationWithMessages(conversationId)?.conversation
+            val existing = dao.conversationWithMessages(conversationId)
+            val current = existing?.conversation
             require(current == null || current.projectId == projectId) {
                 "会话项目归属已变化，拒绝跨项目覆盖"
+            }
+            val retainedUserMessageIds = messages.asSequence()
+                .filter { it.role == "user" }
+                .map { it.id }
+                .toSet()
+            val removedSourceMessageIds = existing?.messages.orEmpty()
+                .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                .map { it.id }
+            if (removedSourceMessageIds.isNotEmpty()) {
+                dao.deleteUserMemoriesForSourceMessages(projectId, conversationId, removedSourceMessageIds)
             }
             val now = System.currentTimeMillis()
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
@@ -248,9 +259,20 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         validateChatMessages(messages)
         val dao = database.dao()
         database.withTransaction {
-            val current = dao.conversationWithMessages(conversationId)?.conversation
+            val existing = dao.conversationWithMessages(conversationId)
                 ?: return@withTransaction
+            val current = existing.conversation
             require(dao.projectExists(current.projectId)) { "会话所属项目不存在，拒绝恢复消息" }
+            val retainedUserMessageIds = messages.asSequence()
+                .filter { it.role == "user" }
+                .map { it.id }
+                .toSet()
+            val removedSourceMessageIds = existing.messages
+                .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                .map { it.id }
+            if (removedSourceMessageIds.isNotEmpty()) {
+                dao.deleteUserMemoriesForSourceMessages(current.projectId, conversationId, removedSourceMessageIds)
+            }
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
                 ?.ifBlank { "新对话" } ?: current.title
             val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
@@ -289,6 +311,22 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         database.withTransaction {
             if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
             conversations.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
+                val existing = dao.conversationWithMessages(record.id)
+                if (existing != null && existing.conversation.projectId != record.projectId) {
+                    dao.deleteUserMemoriesForConversations(listOf(record.id), existing.conversation.projectId)
+                }
+                if (record.messagesLoaded && existing != null) {
+                    val retainedUserMessageIds = record.messages.asSequence()
+                        .filter { it.role == "user" }
+                        .map { it.id }
+                        .toSet()
+                    val removedSourceMessageIds = existing.messages
+                        .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                        .map { it.id }
+                    if (removedSourceMessageIds.isNotEmpty()) {
+                        dao.deleteUserMemoriesForSourceMessages(record.projectId, record.id, removedSourceMessageIds)
+                    }
+                }
                 dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
                 if (record.messagesLoaded) {
                     dao.clearMessages(record.id)
