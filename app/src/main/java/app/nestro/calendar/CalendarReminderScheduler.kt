@@ -149,7 +149,10 @@ class CalendarReminderWorker(
             return Result.success()
         }
         CalendarReminderScheduler.notify(applicationContext, event, occurrenceStart)
-        CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
+        val latestEvent = repository.event(eventId)
+        if (latestEvent != null) {
+            CalendarReminderScheduler.schedule(applicationContext, latestEvent, replaceAutomation = false)
+        }
         return Result.success()
     }
 }
