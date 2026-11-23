@@ -328,6 +328,31 @@ class ModelRegistryTest {
         assertFalse(oldDecoded.models.single().supportsReasoningEffort)
     }
     @Test
+    fun inputModalitiesAndNativeToolCallingRoundTripWithSafeLegacyDefaults() {
+        val registry = ModelRegistry(
+            providers = listOf(ModelProvider("p", "Provider", "https://api.example.com")),
+            apiKeys = listOf(ModelApiKey("k", "p", "Key")),
+            models = listOf(ModelDefinition(
+                "m", "p", "Model", "model", listOf("k"),
+                inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.AUDIO),
+                supportsNativeToolCalling = false
+            ))
+        )
+        val encoded = ModelRegistryCodec.encode(registry)
+        val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
+        assertEquals(setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.AUDIO), decoded.models.single().inputModalities)
+        assertFalse(decoded.models.single().supportsNativeToolCalling)
+
+        val oldPayload = encoded.replace(
+            ",\\"inputModalities\\":[\\"TEXT\\",\\"IMAGE\\",\\"AUDIO\\"],\\"supportsNativeToolCalling\\":false",
+            ""
+        )
+        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
+        assertEquals(setOf(ModelModality.TEXT), oldDecoded.models.single().inputModalities)
+        assertTrue(oldDecoded.models.single().supportsNativeToolCalling)
+    }
+
+    @Test
     fun providerPresetProtocolAndIdentityRoundTripWithLegacyDefaults() {
         val provider = ModelProvider(
             id = "preset-provider-anthropic",
