@@ -12,8 +12,8 @@ class SkillDependencyResolverTest {
         name, version, "", "https://example.org/$name-$version.json", "a".repeat(64), signer
     )
 
-    private fun bundle(name: String, version: String = "1.0.0", vararg dependencies: SkillDependency) = SkillBundle(
-        name, version, "", "prompt for $name", "已验证签名社区目录", emptyList(), dependencies.toList(), signer
+    private fun bundle(name: String, version: String = "1.0.0", dependencies: List<SkillDependency> = emptyList()) = SkillBundle(
+        name, version, "", "prompt for $name", "已验证签名社区目录", emptyList(), dependencies, signer
     )
 
     private fun resolve(
@@ -42,8 +42,8 @@ class SkillDependencyResolverTest {
         val middle = release("middle", "2.0.0")
         val leaf = release("leaf", "1.5.0")
         val packages = mapOf(
-            key("root") to bundle("root", dependencies = arrayOf(SkillDependency("middle", "^2.0.0"))),
-            key("middle", "2.0.0") to bundle("middle", "2.0.0", SkillDependency("leaf", ">=1.0.0")),
+            key("root") to bundle("root", dependencies = listOf(SkillDependency("middle", "^2.0.0"))),
+            key("middle", "2.0.0") to bundle("middle", "2.0.0", listOf(SkillDependency("leaf", ">=1.0.0"))),
             key("leaf", "1.5.0") to bundle("leaf", "1.5.0")
         )
         val plan = resolve(root, listOf(root, middle, leaf), packages)
@@ -62,8 +62,8 @@ class SkillDependencyResolverTest {
                 "root",
                 dependencies = arrayOf(SkillDependency("engine", "*"), SkillDependency("runtime", "^1.0.0"))
             ),
-            key("engine", "2.0.0") to bundle("engine", "2.0.0", SkillDependency("runtime", "^2.0.0")),
-            key("engine", "1.0.0") to bundle("engine", "1.0.0", SkillDependency("runtime", "^1.0.0")),
+            key("engine", "2.0.0") to bundle("engine", "2.0.0", listOf(SkillDependency("runtime", "^2.0.0"))),
+            key("engine", "1.0.0") to bundle("engine", "1.0.0", listOf(SkillDependency("runtime", "^1.0.0"))),
             key("runtime", "2.0.0") to bundle("runtime", "2.0.0"),
             key("runtime", "1.0.0") to bundle("runtime", "1.0.0")
         )
