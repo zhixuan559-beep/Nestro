@@ -21,6 +21,8 @@ data class ModelApiKey(
     val enabled: Boolean = true
 )
 
+enum class ModelModality { TEXT, IMAGE, AUDIO, VIDEO }
+
 data class ModelDefinition(
     val id: String,
     val providerId: String,
@@ -32,7 +34,11 @@ data class ModelDefinition(
     val outputPricePerMillion: Double? = null,
     val currency: String = "USD",
     val supportsReasoningEffort: Boolean = false,
-    val contextWindowTokens: Int? = null
+    val contextWindowTokens: Int? = null,
+    /** Only declared input modalities may receive media parts from the project library. */
+    val inputModalities: Set<ModelModality> = setOf(ModelModality.TEXT),
+    /** Native function calling can be disabled; the bounded text-protocol fallback remains available. */
+    val supportsNativeToolCalling: Boolean = true
 )
 
 data class ModelRegistry(
@@ -140,7 +146,9 @@ data class ModelRegistry(
             outputPricePerMillion = previousModel?.outputPricePerMillion,
             currency = previousModel?.currency ?: "USD",
             supportsReasoningEffort = previousModel?.supportsReasoningEffort ?: false,
-            contextWindowTokens = previousModel?.contextWindowTokens
+            contextWindowTokens = previousModel?.contextWindowTokens,
+            inputModalities = previousModel?.inputModalities ?: setOf(ModelModality.TEXT),
+            supportsNativeToolCalling = previousModel?.supportsNativeToolCalling ?: true
         )
         val usedProviderIds = (nextKeys.map { it.providerId } + nextModels.map { it.providerId }).toSet()
         return copy(
@@ -187,7 +195,9 @@ data class ModelRegistry(
                 outputPricePerMillion = old?.outputPricePerMillion,
                 currency = old?.currency ?: model.currency,
                 supportsReasoningEffort = old?.supportsReasoningEffort ?: model.supportsReasoningEffort,
-                contextWindowTokens = old?.contextWindowTokens ?: model.contextWindowTokens
+                contextWindowTokens = old?.contextWindowTokens ?: model.contextWindowTokens,
+                inputModalities = old?.inputModalities ?: model.inputModalities,
+                supportsNativeToolCalling = old?.supportsNativeToolCalling ?: model.supportsNativeToolCalling
             )
         }
         return ModelRegistry(
@@ -222,6 +232,7 @@ data class ModelRegistry(
         if (models.any { model ->
                 model.contextWindowTokens != null && model.contextWindowTokens !in 1_024..2_000_000
             }) return "模型上下文窗口需为 1024 到 2000000 tokens，或留空使用保守默认值"
+        if (models.any { ModelModality.TEXT !in it.inputModalities }) return "聊天模型必须声明支持文本输入"
         if (models.any { model ->
                 listOfNotNull(model.inputPricePerMillion, model.outputPricePerMillion)
                     .any { !it.isFinite() || it < 0.0 }
@@ -259,7 +270,9 @@ object ModelRegistryCodec {
                         .put("outputPricePerMillion", item.outputPricePerMillion ?: JSONObject.NULL)
                         .put("currency", item.currency)
                         .put("supportsReasoningEffort", item.supportsReasoningEffort)
-                        .put("contextWindowTokens", item.contextWindowTokens ?: JSONObject.NULL))
+                        .put("contextWindowTokens", item.contextWindowTokens ?: JSONObject.NULL)
+                        .put("inputModalities", JSONArray(item.inputModalities.map { it.name }))
+                        .put("supportsNativeToolCalling", item.supportsNativeToolCalling))
                 }
             })
         }.toString()
@@ -302,7 +315,11 @@ object ModelRegistryCodec {
                     outputPricePerMillion = if (item.isNull("outputPricePerMillion")) null else item.optDouble("outputPricePerMillion"),
                     currency = item.optString("currency", "USD"),
                     supportsReasoningEffort = item.optBoolean("supportsReasoningEffort", false),
-                    contextWindowTokens = if (item.isNull("contextWindowTokens")) null else item.optInt("contextWindowTokens")
+                    contextWindowTokens = if (item.isNull("contextWindowTokens")) null else item.optInt("contextWindowTokens"),
+                    inputModalities = item.optJSONArray("inputModalities")?.let { modalities ->
+                        (0 until modalities.length()).map { index -> ModelModality.valueOf(modalities.getString(index)) }.toSet()
+                    } ?: setOf(ModelModality.TEXT),
+                    supportsNativeToolCalling = item.optBoolean("supportsNativeToolCalling", true)
                 )
             }
         }
