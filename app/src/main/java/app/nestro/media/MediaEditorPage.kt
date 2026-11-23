@@ -523,6 +523,7 @@ fun MediaEditorPage(
             OutlinedButton(onClick = { mediaArchiveImportLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("恢复工程") }
             OutlinedButton(onClick = { scope.launch { runCatching { reload() }.onFailure { status = it.message ?: "刷新失败" } } }) { Text("刷新") }
         }
+        Text("工程 ZIP 只包含时间线和原始素材；不包含渲染后的 MP4、导出任务或临时文件。通用设备备份也不包含媒体原文件，视频成品请单独保存。", style = MaterialTheme.typography.bodySmall)
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("预览", style = MaterialTheme.typography.titleMedium)
@@ -905,7 +906,7 @@ fun MediaEditorPage(
             },
             title = { Text("恢复媒体工程") },
             text = {
-                Text("将替换当前项目的媒体时间线、素材索引、原始素材和已导出的视频文件。当前项目的聊天、知识库和作品数据不会改变。请先确认没有未结束的渲染或媒体 AI 任务。")
+                Text("将替换当前项目的媒体时间线、素材索引和原始素材。此工程 ZIP 不包含渲染后的 MP4 成品、导出任务或临时文件；请提前单独保存需要保留的视频。当前项目的聊天、知识库和作品数据不会改变。请先确认没有未结束的渲染或媒体 AI 任务。")
             },
             confirmButton = {
                 TextButton(onClick = {
