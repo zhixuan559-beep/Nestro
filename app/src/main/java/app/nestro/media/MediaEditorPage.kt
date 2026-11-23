@@ -419,10 +419,11 @@ fun MediaEditorPage(
             track = next.tracks.last()
         }
         val targetTrackId = track.id
+        val targetTrackVolume = track.volume
         runCatching { MediaTimelinePolicy.addClip(next, targetTrackId, asset) }
             .onSuccess { saved -> persist(saved) {
                 if (kind == MediaTrackKind.AUDIO) selectedAudioTrackId = targetTrackId
-                audioTrackVolumeDrafts = audioTrackVolumeDrafts + (targetTrackId to 1f)
+                audioTrackVolumeDrafts = audioTrackVolumeDrafts + (targetTrackId to targetTrackVolume)
             } }
             .onFailure { status = "添加剪辑失败：" + (it.message ?: "时间线不允许该操作") }
     }
