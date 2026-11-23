@@ -551,7 +551,13 @@ ${prompt.take(8_000)}
                                 AgentToolResult(false, error = authorization.reason)
                         }
                     } else {
-                        runtime.execute(AgentToolRequest(taskId, spec.id, arguments))
+                        val invocationArguments = if (spec.id.startsWith("mcp_")) arguments else arguments + mapOf(
+                            "__nestro_project_id" to projectId,
+                            "__nestro_conversation_id" to conversationId,
+                            "__nestro_task_mode" to taskModeEnabled.toString(),
+                            "__nestro_request_id" to requestId
+                        )
+                        runtime.execute(AgentToolRequest(taskId, spec.id, invocationArguments))
                     }
                 } finally {
                     lease?.let { AgentToolLeaseRegistry.release(it.id) }
