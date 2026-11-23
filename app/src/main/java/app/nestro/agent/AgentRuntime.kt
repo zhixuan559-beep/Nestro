@@ -564,7 +564,6 @@ class AgentApprovalCoordinator(
 
             when (registration) {
                 is ApprovalRegistration.Resolved -> registration.decision
-                ApprovalRegistration.Unavailable -> null
                 is ApprovalRegistration.Pending -> {
                     val record = registration.record
                     val deferred = registration.deferred

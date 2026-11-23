@@ -166,7 +166,7 @@ class MediaProviderConfigStore(context: Context) {
                 id, row.optString("displayName"), row.optString("baseUrl"),
                 row.optString("model"), row.optString("videoGenerationModel"), row.optString("imageGenerationModel")
             )
-        }.sortedBy { it.displayName }
+        }.sortedBy { it.displayName }.toList()
     }
 
     fun activeProviderId(): String = readRoot().optString(ACTIVE_ID)

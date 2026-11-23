@@ -17,6 +17,7 @@ import androidx.work.workDataOf
 import app.nestro.MainActivity
 import app.nestro.NestroApplication
 import app.nestro.agent.AgentTaskMetadata
+import app.nestro.agent.AgentTaskStatus
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
@@ -224,16 +225,16 @@ class CalendarAutomationWorker(
             }
         }
         val persistedStatus = when (dispatched.status) {
-            app.nestro.agent.AgentTaskStatus.CREATED,
-            app.nestro.agent.AgentTaskStatus.QUEUED,
-            app.nestro.agent.AgentTaskStatus.RETRY_WAIT -> "QUEUED"
-            app.nestro.agent.AgentTaskStatus.RUNNING -> "RUNNING"
-            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER -> "WAITING_FOR_USER"
-            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK -> "WAITING_FOR_TASK"
-            app.nestro.agent.AgentTaskStatus.PAUSED -> "PAUSED"
-            app.nestro.agent.AgentTaskStatus.COMPLETED -> "COMPLETED"
-            app.nestro.agent.AgentTaskStatus.FAILED -> "FAILED"
-            app.nestro.agent.AgentTaskStatus.CANCELLED -> "CANCELLED"
+            AgentTaskStatus.CREATED,
+            AgentTaskStatus.QUEUED,
+            AgentTaskStatus.RETRY_WAIT -> "QUEUED"
+            AgentTaskStatus.RUNNING -> "RUNNING"
+            AgentTaskStatus.WAITING_FOR_USER -> "WAITING_FOR_USER"
+            AgentTaskStatus.WAITING_FOR_TASK -> "WAITING_FOR_TASK"
+            AgentTaskStatus.PAUSED -> "PAUSED"
+            AgentTaskStatus.COMPLETED -> "COMPLETED"
+            AgentTaskStatus.FAILED -> "FAILED"
+            AgentTaskStatus.CANCELLED -> "CANCELLED"
         }
         if (persistedStatus != "QUEUED") {
             repository.recordAutomationResult(

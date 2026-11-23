@@ -16,13 +16,18 @@ import app.nestro.data.GeneratedPluginStore
 import app.nestro.data.GeneratedPluginWorkflowExecutor
 import app.nestro.data.GeneratedPluginRunCheckpointCodec
 import app.nestro.data.GeneratedPluginPackageCodec
+import app.nestro.data.GeneratedPluginAuthorizationPolicy
+import app.nestro.data.ModelLedToolDispatcher
 import app.nestro.media.MediaAiTask
 import app.nestro.media.MediaAiTaskStore
 import app.nestro.media.MediaAiTaskStatus
 import app.nestro.media.MediaAiTaskScheduler
 import app.nestro.media.MediaProviderConfigStore
+import app.nestro.media.MediaProjectStore
 import app.nestro.media.MediaVideoGeneration
 import kotlinx.coroutines.delay
+import org.json.JSONObject
+import kotlin.coroutines.resume
 import app.nestro.agent.AgentTaskHandlerRegistry
 import app.nestro.agent.RoomAgentTaskStateStore
 import app.nestro.agent.RoomAgentTaskTraceStore
@@ -270,7 +275,8 @@ class NestroApplication : Application() {
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
                 )
             ) {
-                val providers = MediaProviderConfigStore(this@NestroApplication).list()
+                val providerStore = MediaProviderConfigStore(this@NestroApplication)
+                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }
                 if (providers.isEmpty()) {
                     app.nestro.agent.AgentToolResult(true, output = "当前尚未配置媒体服务商。")
                 } else {
