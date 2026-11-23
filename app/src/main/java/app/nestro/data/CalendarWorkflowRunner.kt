@@ -113,7 +113,7 @@ internal class CalendarWorkflowRunner(
                 requestApproval = { step, previousOutput ->
                     when (approvalCoordinator.authorize(
                         requestId,
-                        "workflow.step.${step.id}".take(100),
+                        "workflow.step.${workflow.id}.${step.id}.${taskId}".take(100),
                         "日历自动工作流“${workflow.name}”的步骤“${step.title}”需要确认。前序结果：${previousOutput.take(800)}"
                     )) {
                         AgentApprovalDecision.AUTHORIZE_ONCE,
