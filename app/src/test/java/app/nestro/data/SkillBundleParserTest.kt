@@ -115,4 +115,22 @@ class SkillBundleParserTest {
     }
 
 
+    @Test
+    fun rejectsMalformedPermissionAndDependencyTypesDuringDirectParse() {
+        val invalid = listOf(
+            """{"name":"坏权限","version":"1.0.0","prompt":"执行","permissions":"root_access"}""",
+            """{"name":"坏依赖","version":"1.0.0","prompt":"执行","dependencies":{"name":"search"}}""",
+            """{"name":"坏权限项","version":"1.0.0","prompt":"执行","permissions":[1]}""",
+            """{"name":"坏依赖项","version":"1.0.0","prompt":"执行","dependencies":[1]}"""
+        )
+        invalid.forEach { raw ->
+            try {
+                SkillBundleParser.parse(raw, "invalid.json")
+                fail("malformed metadata types must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+
 }
