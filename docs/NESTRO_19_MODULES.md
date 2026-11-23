@@ -38,7 +38,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已接通；CapabilityDirectoryPage 具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤有逐步骤审批与 checkpoint；专家成员默认获得只读工具租约，工作流步骤默认只读、显式开启并通过步骤审批后可发现完整工具目录，实际调用仍走工具级授权/审批。专家与工作流任务均传递项目/会话元数据。任务中心页面已接入，但仅覆盖已登记统一任务且带 projectId 的任务；仍需补专家级副作用工具 allowlist、完整业务幂等语义和跨进程恢复验收。 |
 | 17 | 智能剪辑 | 模块17代码已整合到 main（历史来源 feature/module-17-smart-editing）；尚未编译、测试及设备验收，未锁定 |
 | 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口已按当前项目可见专家启用 expertTeamEnabled，并开放仅日历自动任务可用的 workflow.list/workflow.run；专家 DAG/保存工作流复用既有执行器与审批。仍缺任意时间条件触发和日历专属语义型业务错误映射，工作流步骤内部暂不开放外部工具。 |
-| 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页图片/音频/视频已新增按 Provider 能力序列化的原生 media parts；OpenAI 支持图片及 WAV/MP3 输入音频，Anthropic 支持图片，Gemini 支持图片/音频/视频；大文件仍由主模型按 asset_id 调度专业媒体任务；模型能力门禁、真实 API 验证与跨服务商一致性仍缺；真实 API/信任根配置与统一验收待完成 |
+| 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页图片/音频/视频已新增按 Provider 能力序列化的原生 media parts；OpenAI 支持图片；仅模型 ID 含 `audio` 时发送 WAV/MP3 输入音频，Anthropic 支持图片，Gemini 支持图片/音频/视频；大文件仍由主模型按 asset_id 调度专业媒体任务；模型能力门禁、真实 API 验证与跨服务商一致性仍缺；真实 API/信任根配置与统一验收待完成 |
 
 
 ## 模块1：专家系统
