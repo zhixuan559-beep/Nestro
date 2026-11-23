@@ -386,7 +386,7 @@ fun CapabilityDirectoryPage(projectId: String) {
                             val disabledJson = JSONArray(rawDisabled)
                             val disabledSkills = (0 until disabledJson.length()).map { disabledJson.optString(it) }.toSet()
                             val installedVersions = installedSkills.keys.associateWith { name ->
-                                installedMetadata[name]?.let { raw ->
+                                installedMetadata[name]?.takeIf { it.isNotBlank() }?.let { raw ->
                                     JSONObject(raw).optString("version", "1.0.0").ifBlank { "1.0.0" }
                                 } ?: "1.0.0"
                             }
