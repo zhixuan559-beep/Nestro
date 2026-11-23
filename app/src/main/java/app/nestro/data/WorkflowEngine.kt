@@ -206,7 +206,8 @@ object WorkflowDefinitionCodec {
             require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
             if(it.enabled && it.parallelGroup.isNotBlank()) {
                 val enabledGroups = workflow.steps.filter { step -> step.enabled }.map { step -> step.parallelGroup }
-                val positions = enabledGroups.mapIndexedNotNull { index, group -> index.takeIf { group == it.parallelGroup } }
+                val currentParallelGroup = it.parallelGroup
+                val positions = enabledGroups.mapIndexedNotNull { index, group -> index.takeIf { group == currentParallelGroup } }
                 require(positions.size in 2..4 && positions.last() - positions.first() + 1 == positions.size) {
                     "并行组“${it.parallelGroup}”必须由连续的 2 到 4 个启用步骤组成"
                 }
@@ -381,7 +382,7 @@ object WorkflowEngine {
             }
             previousOutput = if (groupName.isNotBlank()) {
                 val originalActive = workflow.steps.filter { it.enabled }
-                val originalIndex = originalActive.indexOfFirst { it.id == group.first().second.id }
+                val originalIndex = originalActive.indexOfFirst { it.id == group.first().id }
                 require(originalIndex >= 0) { "并行组恢复位置无效" }
                 var fullStart = originalIndex
                 while (fullStart > 0 && originalActive[fullStart - 1].parallelGroup == groupName) fullStart--

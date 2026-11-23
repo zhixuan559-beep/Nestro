@@ -36,7 +36,7 @@ import app.nestro.data.GeneratedPluginPackageValidator
 import app.nestro.data.GeneratedPluginStore
 import app.nestro.data.AgentTaskStateEntity
 import app.nestro.data.AgentTaskTraceEntity
-import app.nestro.model.ModelConfig
+import app.nestro.data.ModelConfig
 import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
 import java.io.OutputStreamWriter
