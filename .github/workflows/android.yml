@@ -1,6 +1,6 @@
 name: Android CI
 
-# Run the full acceptance suite only when explicitly dispatched after all modules are complete.
+# Verify the current main baseline and every pull request; manual dispatch remains available.
 on:
   push:
     branches: [ "main" ]
@@ -11,8 +11,9 @@ on:
 permissions:
   contents: read
 
-# Do not cancel an in-progress verification run when a newer commit arrives.
-# Every commit must finish its own verification; cancellations are not acceptance evidence.
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -136,6 +137,15 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: bash .github/scripts/run-android-instrumentation.sh
+
+      - name: Upload installable debug APK
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nestro-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload coworkbench dependency evidence
         if: always()
