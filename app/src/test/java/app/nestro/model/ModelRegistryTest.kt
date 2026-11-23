@@ -324,8 +324,9 @@ class ModelRegistryTest {
         val encoded = ModelRegistryCodec.encode(registry)
         val decoded = ModelRegistryCodec.decodeOrNull(encoded)!!
         assertTrue(decoded.models.single().supportsReasoningEffort)
-        val oldPayload = encoded.replace(",\\"supportsReasoningEffort\\":true", "")
-        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
+        val oldJson = JSONObject(encoded)
+        oldJson.getJSONArray("models").getJSONObject(0).remove("supportsReasoningEffort")
+        val oldDecoded = ModelRegistryCodec.decodeOrNull(oldJson.toString())!!
         assertFalse(oldDecoded.models.single().supportsReasoningEffort)
     }
 
