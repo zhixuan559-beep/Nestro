@@ -425,6 +425,8 @@ fun NestroApp(initialPage: String = "home") {
     var teamExportStatus by expertWorkspaceUiState.teamExportStatus
     var teamExportJson by expertWorkspaceUiState.teamExportJson
     var teamRunStatus by expertWorkspaceUiState.teamRunStatus
+    val expertTeamPauseController = remember { ExpertTeamPauseController() }
+    var teamExecutionPaused by remember { mutableStateOf(false) }
     var expertTeamRunHistory by expertWorkspaceUiState.expertTeamRunHistory
     var expertTeamEvents by remember(prefs, activeProjectId) {
         mutableStateOf(
@@ -437,6 +439,20 @@ fun NestroApp(initialPage: String = "home") {
         mutableStateOf(EXPERT_TEAM_EVENT_PAGE_SIZE)
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+
+    fun toggleExpertTeamPause() {
+        if (expertTeamPauseController.isPaused()) {
+            expertTeamPauseController.resume()
+            teamExecutionPaused = false
+            teamRunStatus = "专家团已恢复执行"
+        } else {
+            expertTeamPauseController.pause()
+            teamExecutionPaused = expertTeamPauseController.isPaused()
+            if (teamExecutionPaused) {
+                teamRunStatus = "暂停请求已提交，将在当前工作包完成后暂停"
+            }
+        }
+    }
 
     fun applyConversationContext(conversationId: String, projectId: String) {
         val team = expertTeams.firstOrNull {
@@ -1536,7 +1552,10 @@ fun NestroApp(initialPage: String = "home") {
                     teamRunStatus = "专家团“$teamName”正在拆解并执行项目…"
                     teamMemberStatuses = plan.packages.associate { it.id to "waiting" }
                     val eventPrefsKey = "expert_team_events_v1"
-                    val projectPlanResult = appRuntime.expertTeamExecutionCoordinator.executeProjectPlan(
+                    expertTeamPauseController.resume()
+                    teamExecutionPaused = false
+                    val projectPlanResult = try {
+                        appRuntime.expertTeamExecutionCoordinator.executeProjectPlan(
                         teamId = teamId,
                         teamName = teamName,
                         teamDescription = teamDescription,
@@ -1590,8 +1609,14 @@ fun NestroApp(initialPage: String = "home") {
                                 ).take(12_000)
                             }
                         },
-                        toolCatalog = appRuntime.agentToolCatalog
-                    )
+                            shouldPause = { expertTeamPauseController.isPaused() },
+                            awaitResume = { expertTeamPauseController.awaitResume() },
+                            toolCatalog = appRuntime.agentToolCatalog
+                        )
+                    } finally {
+                        expertTeamPauseController.resume()
+                        withContext(Dispatchers.Main) { teamExecutionPaused = false }
+                    }
                     val projectResultContext = buildString {
                         append("专家项目：").append(plan.projectGoal).append("\n")
                         append("最终验收标准：").append(plan.finalAcceptanceCriteria).append("\n\n")
@@ -1785,7 +1810,12 @@ fun NestroApp(initialPage: String = "home") {
                             Column {
                                 Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 AnimatedStatusText(status, color = Muted, style = MaterialTheme.typography.labelSmall)
-                                if (busy && teamRunStatus.isNotBlank()) AnimatedStatusText(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
+                                if (busy && teamRunStatus.isNotBlank()) {
+                                    AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                        Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
                                     TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
                                         Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
@@ -2748,7 +2778,14 @@ fun NestroApp(initialPage: String = "home") {
                                     Text("＋ 创建专家")
                                 }
                                 Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                if (teamRunStatus.isNotBlank()) AnimatedStatusText(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
+                                if (teamRunStatus.isNotBlank()) {
+                                    AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                    if (busy) {
+                                        TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                            Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint)
+                                        }
+                                    }
+                                }
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
                                 if (activeTeamRunHistory.isNotEmpty()) {
                                     val latestTeamRun=activeTeamRunHistory.first()
