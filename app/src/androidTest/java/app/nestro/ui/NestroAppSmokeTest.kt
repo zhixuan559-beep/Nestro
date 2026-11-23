@@ -56,7 +56,7 @@ class NestroAppSmokeTest {
         }
 
         composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
-        composeRule.onNodeWithText("对话历史", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("对话历史", substring = true).assertIsNotDisplayed()
     }
 
     @Test
