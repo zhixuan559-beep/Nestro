@@ -22,7 +22,7 @@ object SkillBundleParser {
     )
 
     fun parse(raw: String, sourceLabel: String): SkillBundle {
-        require(raw.isNotBlank() && raw.length <= 30_000) { "技能文件为空或超过 30 KB" }
+        require(raw.isNotBlank() && raw.toByteArray(Charsets.UTF_8).size <= 30_000) { "技能文件为空或超过 30 KB" }
         val safeSource = sourceLabel.substringAfterLast('/').take(120).ifBlank { "本地文件" }
         if (!raw.trimStart().startsWith("{")) {
             val name = safeSource.substringBeforeLast('.').replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().take(40)
