@@ -15,7 +15,11 @@ internal class ChatRequestContextAssembler(
     private val retrieveMemory: suspend (String, String, String) -> ConversationRecallResult,
     private val retrieveUserMemory: suspend (String, String) -> String,
     private val cacheTtlMillis: Long = 60_000L,
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val memoryVersion: (String) -> String = { projectId ->
+        val token = UserMemoryStore.mutationVersion(projectId)
+        "${token.projectVersion}:${token.globalVersion}"
+    }
 ) {
     private data class CachedAssembly(val storedAt: Long, val value: ChatRequestContextAssembly)
     private val assemblyCache = object : LinkedHashMap<String, CachedAssembly>(32, 0.75f, true) {
@@ -46,7 +50,8 @@ internal class ChatRequestContextAssembler(
         val cacheKey = UserMemoryStore.fingerprint(buildString {
             append(projectId).append('|').append(conversationId).append('|')
             append(prompt).append('|').append(recallEnabled).append('|').append(userMemoryEnabled).append('|')
-            append(baseSystemContext).append('|').append(recallQuery).append('|').append(userMemoryQuery)
+            append(baseSystemContext).append('|').append(recallQuery).append('|').append(userMemoryQuery).append('|')
+            append(memoryVersion(projectId))
         })
         synchronized(assemblyCache) {
             val cached = assemblyCache[cacheKey]
