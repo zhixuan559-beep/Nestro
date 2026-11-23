@@ -112,6 +112,32 @@ object SkillBundleParser {
         }
     }
 
+    /** Validates the persisted skill map before it crosses backup or restore boundaries. */
+    fun validateStoredCollection(skillsRaw: String, metadataRaw: String) {
+        val skills = try {
+            JSONObject(skillsRaw)
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能列表格式无效", error)
+        }
+        val metadata = try {
+            JSONObject(metadataRaw)
+        } catch (error: Exception) {
+            throw IllegalArgumentException("技能元数据列表格式无效", error)
+        }
+        require(skills.length() <= 100 && metadata.length() <= 100) { "技能数量超过限制" }
+        val keys = skills.keys()
+        while (keys.hasNext()) {
+            val name = keys.next()
+            val prompt = skills.opt(name) as? String
+                ?: throw IllegalArgumentException("技能内容字段无效：$name")
+            val storedMetadata = if (metadata.has(name)) {
+                metadata.opt(name) as? String
+                    ?: throw IllegalArgumentException("技能元数据字段无效：$name")
+            } else null
+            fromStored(name, prompt, storedMetadata)
+        }
+    }
+
     fun metadataJson(bundle: SkillBundle): String =
         JSONObject()
             .put("version", bundle.version)
