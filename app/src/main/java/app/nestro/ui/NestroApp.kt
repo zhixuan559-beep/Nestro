@@ -455,8 +455,13 @@ fun NestroApp(initialPage: String = "home") {
         expertTeams = nextTeams
         selectedTeamId = nextSelectedTeamId
         projectResourceScopes = nextScopes
+        if (!deleteChats && activeConversationId in teamChatIds) {
+            applyConversationContext(activeConversationId, activeProjectId)
+        }
         if (deleteChats) {
             val remaining = conversations.filterNot { it.id in teamChatIds }
+            conversationPageItems = conversationPageItems.filterNot { it.id in teamChatIds }
+            conversationPageRefreshKey++
             val activeWasDeleted = activeConversationId in teamChatIds
             conversations = remaining
             scope.launch {
