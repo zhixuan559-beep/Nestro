@@ -8,6 +8,8 @@ import android.util.Base64
 import app.nestro.data.ChatMessage
 import app.nestro.data.ChatMessageMediaPart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
@@ -63,6 +65,7 @@ internal object ChatMediaAttachmentResolver {
         var videoCount = 0
         val prepared = linkedMapOf<String, ChatMessageMediaPart>()
         for (assetId in requestedIds) {
+            currentCoroutineContext().ensureActive()
             if (remainingBytes <= 0) break
             val asset = assets[assetId] ?: continue
             val part = when (asset.kind) {
