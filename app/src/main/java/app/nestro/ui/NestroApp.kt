@@ -2395,8 +2395,6 @@ fun NestroApp(initialPage: String = "home") {
                                                              .putString("workflow_resume_input_v1", input)
                                                              .putString("workflow_resume_definition_v1", currentWorkflowDefinition)
                                                              .apply()
-                                                         try {
-                                                         val result = runCatchingCancellable {
                                                          suspend fun invokeWorkflowStep(
                                                              step: WorkflowStep,
                                                              stepPrompt: String,
