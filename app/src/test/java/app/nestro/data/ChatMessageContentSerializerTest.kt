@@ -75,21 +75,13 @@ class ChatMessageContentSerializerTest {
         assertEquals("请理解这些素材", ChatMessageContentSerializer.openAiContent(audio, supportsAudioInput = true))
     }
     @Test
-    fun openAiSkipsAudioUnlessModelDeclaresAudioInItsId() {
+    fun openAiSkipsAudioUnlessExplicitlyEnabled() {
         val audio = message().copy(mediaParts = listOf(
             ChatMessageMediaPart("AUDIO", "audio/mpeg", "bXAz", 2_048)
         ))
         assertEquals("请理解这些素材", ChatMessageContentSerializer.openAiContent(audio))
         val enabled = ChatMessageContentSerializer.openAiContent(audio, supportsAudioInput = true) as JSONArray
         assertEquals("input_audio", enabled.getJSONObject(1).getString("type"))
-    }
-
-
-    @Test
-    fun modelIdAudioHintEnablesOpenAiAudioInput() {
-        assertTrue(ChatMessageContentSerializer.modelIdHintsAudioInputSupport("gpt-4o-audio-preview"))
-        assertTrue(ChatMessageContentSerializer.modelIdHintsAudioInputSupport("Qwen-Audio"))
-        assertTrue(!ChatMessageContentSerializer.modelIdHintsAudioInputSupport("gpt-4o-mini"))
     }
 
 
