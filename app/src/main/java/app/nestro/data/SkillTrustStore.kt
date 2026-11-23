@@ -8,6 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.security.KeyFactory
+import java.security.interfaces.RSAPublicKey
 import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
@@ -84,7 +85,9 @@ class SkillTrustStore(private val preferences: SharedPreferences) {
     private fun decodeKey(value: String): ByteArray {
         val bytes=Base64.getDecoder().decode(value.filterNot(Char::isWhitespace))
         require(bytes.isNotEmpty() && bytes.size<=8192) { "RSA X.509 公钥格式无效" }
-        KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(bytes))
+        val publicKey = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(bytes)) as? RSAPublicKey
+            ?: throw IllegalArgumentException("受信任公钥必须为 RSA")
+        require(publicKey.modulus.bitLength() in 2048..8192) { "RSA 公钥长度必须为 2048 到 8192 位" }
         return bytes
     }
     private fun fingerprint(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
