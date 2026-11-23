@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 object CalendarRules {
+    const val MAX_AUTOMATION_ADVANCE_MINUTES = 10_080
     const val MAX_AUTOMATION_DELAY_MINUTES = Int.MAX_VALUE
     const val NONE = "NONE"
     const val DAILY = "DAILY"
@@ -21,7 +22,7 @@ object CalendarRules {
         if (event.description.length > 4000) return "备注不能超过 4000 个字符"
         if (event.location.length > 300) return "地点不能超过 300 个字符"
         if (event.automationPrompt.length > 12_000) return "自动执行目标不能超过 12000 个字符"
-        if (event.automationDelayMinutes !in 0..MAX_AUTOMATION_DELAY_MINUTES) return "自动任务延迟必须为非负整数分钟"
+        if (event.automationDelayMinutes !in -MAX_AUTOMATION_ADVANCE_MINUTES..MAX_AUTOMATION_DELAY_MINUTES) return "自动任务偏移范围无效（最多提前 7 天）"
         if (event.automationGeneration < 0L) return "自动任务版本无效"
         if (event.automationPrompt.isNotBlank() &&
             !event.automationProjectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))
@@ -75,8 +76,12 @@ object CalendarRules {
 
     private fun automationTriggerAtUnchecked(event: CalendarEvent, occurrenceStart: Long): Long? {
         if (event.automationPrompt.isBlank() || occurrenceStart < event.startAt) return null
-        val delayMillis = event.automationDelayMinutes.coerceIn(0, MAX_AUTOMATION_DELAY_MINUTES) * 60_000L
-        return if (Long.MAX_VALUE - occurrenceStart < delayMillis) Long.MAX_VALUE else occurrenceStart + delayMillis
+        val offsetMillis = event.automationDelayMinutes.toLong() * 60_000L
+        return when {
+            offsetMillis > 0L && Long.MAX_VALUE - occurrenceStart < offsetMillis -> Long.MAX_VALUE
+            offsetMillis < 0L && occurrenceStart < Long.MIN_VALUE - offsetMillis -> Long.MIN_VALUE
+            else -> occurrenceStart + offsetMillis
+        }
     }
 
     /** Returns the scheduled execution instant for a valid occurrence of this event. */
@@ -85,7 +90,7 @@ object CalendarRules {
         return automationTriggerAtUnchecked(event, occurrenceStart)
     }
 
-    /** Finds the next occurrence whose delayed execution instant has not passed yet. */
+    /** Finds the next occurrence whose trigger instant is pending; a missed pre-event trigger runs immediately while the event is still upcoming. */
     fun nextAutomationScheduledOccurrenceStart(event: CalendarEvent, now: Long): Long? {
         if (event.completed || event.automationPrompt.isBlank()) return null
         var candidate = event.startAt
@@ -93,7 +98,7 @@ object CalendarRules {
         var guard = 0
         while (guard++ < 20_000) {
             val triggerAt = automationTriggerAtUnchecked(event, candidate) ?: return null
-            if (triggerAt > now) return candidate
+            if (triggerAt > now || (event.automationDelayMinutes < 0 && candidate > now)) return candidate
             if (event.recurrence == NONE) return null
             candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
             if (candidate == Long.MAX_VALUE) return null
@@ -104,7 +109,8 @@ object CalendarRules {
     /** Returns the next automation execution instant, including its configured post-event delay. */
     fun nextAutomationRunAt(event: CalendarEvent, now: Long): Long? {
         val occurrence = nextAutomationScheduledOccurrenceStart(event, now) ?: return null
-        return automationTriggerAt(event, occurrence)
+        val triggerAt = automationTriggerAt(event, occurrence) ?: return null
+        return triggerAt.coerceAtLeast(now)
     }
 
     /** Stable per-definition task identity; edits advance automationGeneration before rescheduling. */
