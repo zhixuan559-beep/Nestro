@@ -4252,6 +4252,21 @@ fun NestroApp(initialPage: String = "home") {
 
     if (showSkillImportDialog && pendingSkillBundle != null) {
         val bundle = pendingSkillBundle!!
+        val importReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+            prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }
+        ) else emptySet()
+        val importVisibleSkills = skills.filterKeys { skillName ->
+            !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, importReadableProjectIds
+            )
+        }
+        val dependencyIssues = remember(bundle, importVisibleSkills, skillMetadata, disabledSkills) {
+            SkillDependencyResolver.inspectCandidate(bundle, importVisibleSkills, skillMetadata, disabledSkills)
+        }
+        val incompatibleDependents = remember(bundle, skills, skillMetadata) {
+            SkillDependencyResolver.findIncompatibleDependents(bundle.name, bundle.version, skills, skillMetadata)
+        }
+        val dependentCompatibilityPassed = incompatibleDependents?.isEmpty() == true
         AlertDialog(
             onDismissRequest = { showSkillImportDialog = false; pendingSkillBundle = null },
             title = { Text("审核技能导入") },
@@ -4262,15 +4277,57 @@ fun NestroApp(initialPage: String = "home") {
                     if (bundle.description.isNotBlank()) Text(bundle.description, color = Muted)
                     Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    if (dependencyIssues.isNotEmpty()) Text(
+                        "依赖未满足，暂不能安装：\\n" + dependencyIssues.joinToString("；"),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (incompatibleDependents == null) Text(
+                        "无法核验现有技能的依赖元数据，已阻止覆盖。",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    ) else if (incompatibleDependents.isNotEmpty()) Text(
+                        "更新会破坏以下技能的版本约束，暂不能安装：\\n" + incompatibleDependents.joinToString("、"),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                     Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
                     Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
                     Text("安装只保存提示词和元数据。权限声明不会自动开启无障碍、文件访问或 MCP，也不会执行第三方代码。", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(
+                    enabled = dependencyIssues.isEmpty() && dependentCompatibilityPassed,
+                    onClick = {
                     if (projectResourceScopesReadOnly) {
                         skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                        return@TextButton
+                    }
+                    val liveReadableProjectIds = ProjectAccessControlStore.readableSourceProjects(
+                        prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }
+                    )
+                    val liveVisibleSkills = skills.filterKeys { skillName ->
+                        ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, liveReadableProjectIds
+                        )
+                    }
+                    val liveDependencyIssues = SkillDependencyResolver.inspectCandidate(
+                        bundle, liveVisibleSkills, skillMetadata, disabledSkills
+                    )
+                    if (liveDependencyIssues.isNotEmpty()) {
+                        skillImportStatus = "技能依赖在当前项目中不可用，已阻止安装：" + liveDependencyIssues.joinToString("；")
+                        return@TextButton
+                    }
+                    val liveIncompatibleDependents = SkillDependencyResolver.findIncompatibleDependents(
+                        bundle.name, bundle.version, skills, skillMetadata
+                    )
+                    if (liveIncompatibleDependents == null) {
+                        skillImportStatus = "无法核验现有技能依赖元数据，已阻止覆盖。"
+                        return@TextButton
+                    }
+                    if (liveIncompatibleDependents.isNotEmpty()) {
+                        skillImportStatus = "更新会破坏已有技能依赖，已阻止安装：" + liveIncompatibleDependents.joinToString("、")
                         return@TextButton
                     }
                     val replacing = bundle.name in skills
