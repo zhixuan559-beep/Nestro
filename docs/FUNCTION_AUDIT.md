@@ -1224,3 +1224,18 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 媒体 AI/渲染、日历、插件、MCP、工作流与专家协作的领域状态映射、取消竞态、进程恢复和结果消费仍需统一回归测试。
 - Logo 原图双环像素级还原、Android launcher icon 资源集成尚未完成。
 - 未运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器、真机或 GitHub Actions；按用户要求留到所有代码收口后的最后阶段。
+
+
+## 2026-11-23 — UI 与交互源码复核（以实际代码为准）
+
+核验基线：`integration/19-modules`，代码复核时 HEAD：`5516a882455c0faca4757d9158a544da943b642e`。本节优先记录源码和路由证据，不把旧审计摘要当作实现事实。
+
+- PR #23–#27 已合并到整合分支：黑白极简聊天主界面、统一侧栏/工具目录、专家私聊与专家团群聊生命周期、主模型自动调度入口、黑白语义状态色。
+- `ToolsDirectoryPage.kt` 的 14 个 destination 均能在 `NestroApp.kt` 的页面路由中找到对应分支；未发现目录入口断链。
+- 已回读主聊天、工具目录、模型管理、知识库、语音、能力目录、插件中心、Git 工作台、AI 共建、媒体编辑、日历、产物库、MCP、Phone Agent 等页面；本轮扫描未发现硬编码彩色值。主聊天中的颜色字面量仅用于 light/dark MaterialTheme 黑白灰配色。
+- 动效代码已存在：`NestroApp.kt` 页面 Crossfade、手机/宽屏抽屉过渡、消息 `animateItem`（稳定 message ID）、思考状态展开、输入区 `animateContentSize`、发送/停止 Crossfade；`NestroComponents.kt` 状态文字 Crossfade；`VoiceInputButton.kt` 录音缩放/颜色/触觉反馈。对应规范见 `docs/design/NESTRO_INTERACTION_MOTION.md`。
+- 审批交互已满足用户 2026-11-22 确认的“授权一次 / 当前任务全部授权 / 拒绝”；另有“稍后处理”、弹窗关闭后保留待审批提示。关闭弹窗不会自动拒绝；多项审批可轮转队列。源码位于 `NestroApp.kt` 与 `WorkflowUiState.kt`。
+- Phone Agent 浮动预览当前无标题栏/把手；单击切换大小，双击/长按触控，拖动屏幕滑动，拖动任一角调整大小。对应实现位于 `PhoneAgentPage.kt` 的 `PhoneAgentFloatingPreview`。此前“标题栏/角标仍存在、点击窗口不缩放”的旧审计结论已被当前源码覆盖，不再作为现存缺口。
+- UI 自动化测试源码已存在：`NestroAppSmokeTest.kt`、`ContentPageInteractionTest.kt`、`NestroWindowSizeTest.kt`、知识库/能力目录/产物库窗口尺寸测试及语音按钮语义测试。本轮未执行这些测试。
+- 发现 `NestroLayoutPolicyTest.kt` 与 `AdaptiveLayoutPolicyTest.kt` 对同一抽屉宽度算法有冲突的旧预期。已在提交 `5516a882455c0faca4757d9158a544da943b642e` 修正旧测试为当前生产算法的边界测试，并回读验证文件内容。
+- 尚未完成：用户宣传图中的双环 Logo 原图像素级还原与 Launcher 最终集成；本轮 Library 检索未找到可用的原始图片资产。编译、JVM/Android 测试、模拟器/真机验收仍按项目约定延后，不能宣称 UI 验收通过。
