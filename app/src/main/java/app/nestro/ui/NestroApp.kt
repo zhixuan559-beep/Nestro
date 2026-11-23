@@ -147,6 +147,9 @@ internal fun adaptiveContentPaddingDp(screenWidthDp: Int): Int = when {
     else -> 32
 }
 
+private fun expertTeamConversationId(teamId: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-team-chat:$teamId:$projectId".toByteArray(Charsets.UTF_8)).toString()
+
 @Composable
 fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
@@ -397,6 +400,37 @@ fun NestroApp(initialPage: String = "home") {
         )
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+
+    fun openExpertTeamChat(teamId: String, teamName: String) {
+        val conversationId = expertTeamConversationId(teamId, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, teamName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                ConversationPreferencesStore.saveConversationList(prefs, conversations)
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            selectedTeamId = teamId
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_team_id", teamId)
+                .apply()
+            page = "home"
+        }
+    }
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
 
     DisposableEffect(appRuntime, workflowUiState) {
@@ -2571,11 +2605,10 @@ fun NestroApp(initialPage: String = "home") {
                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
                                             }) { Text("导出团队", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(onClick = {
-                                                    selectedTeamId = team.id
-                                                    prefs.edit().putString("selected_team_id", team.id).apply()
-                                                    page = "home"
-                                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (selectedTeamId == team.id) "当前团队" else "使用团队") }
+                                                Button(
+                                                    onClick = { openExpertTeamChat(team.id, team.name) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                                ) { Text("进入群聊") }
                                                 TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     editingTeamId = team.id
