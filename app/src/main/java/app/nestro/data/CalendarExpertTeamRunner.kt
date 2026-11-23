@@ -145,8 +145,9 @@ internal class CalendarExpertTeamRunner(
         val teamName = arguments["team_name"]?.trim()?.take(40)?.ifBlank { null } ?: "日历自动专家团"
         val teamDescription = arguments["team_description"]?.trim()?.take(300)?.ifBlank { null }
             ?: systemContext.take(300)
-        val teamId = UUID.nameUUIDFromBytes("$projectId:$parentTaskId:$teamName".toByteArray()).toString()
-        val childTaskId = UUID.nameUUIDFromBytes("$parentTaskId:expert-project".toByteArray()).toString()
+        val planFingerprint = JSONObject(arguments["plan"] ?: "").toString()
+        val teamId = UUID.nameUUIDFromBytes("$projectId:$parentTaskId:$teamName:$planFingerprint".toByteArray()).toString()
+        val childTaskId = UUID.nameUUIDFromBytes("$parentTaskId:expert-project:$planFingerprint".toByteArray()).toString()
         val result = coordinator.executeProjectPlan(
             teamId = teamId,
             teamName = teamName,
