@@ -178,7 +178,8 @@ class CalendarRulesAutomationTest {
             lastRunAt = start - 6 * 24 * 60 * 60 * 1000L
         )
         val now = start - 6 * 24 * 60 * 60 * 1000L
-        assertEquals(start + 7 * 24 * 60 * 60 * 1000L, CalendarRules.nextAutomationScheduledOccurrenceStart(dispatched, now))
+        assertEquals(start + 2 * 24 * 60 * 60 * 1000L, CalendarRules.nextAutomationScheduledOccurrenceStart(dispatched, now))
+        assertEquals(start - 5 * 24 * 60 * 60 * 1000L, CalendarRules.nextAutomationRunAt(dispatched, now))
     }
 
 
