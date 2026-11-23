@@ -144,7 +144,9 @@ class ExpertTeamExecutionCoordinator(
                 title = teamName.take(160),
                 input = task.take(12_000)
             ),
-            idempotencyKey = "expert-team:" + projectId + ":" + taskId
+            idempotencyKey = "expert-team:" + projectId + ":" + taskId,
+            // Member calls may hold external tool leases; recovery must resume checkpoints, not replay the whole team.
+            maxRetries = 0
         ) { taskContext ->
         taskContext.checkpoint(initialCheckpoint, resumeMembers.size)
         var collaborativeCheckpoint = resumeCollaborative ?: emptyCollaborativeCheckpoint
@@ -348,7 +350,9 @@ class ExpertTeamExecutionCoordinator(
         return taskCoordinator.runInline(
             taskId = taskId,
             owner = "expert_team_project",
-            initialCheckpoint = initialCheckpoint
+            initialCheckpoint = initialCheckpoint,
+            // Project packages may call tools; resume only from persisted package checkpoints.
+            maxRetries = 0
         ) { taskContext ->
             var sequence = 0L
             suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
