@@ -78,6 +78,9 @@ object SkillBundleParser {
     fun fromStored(name: String, prompt: String, metadataRaw: String?): SkillBundle {
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
         require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
+        require(metadataRaw == null || metadataRaw.toByteArray(Charsets.UTF_8).size <= 30_000) {
+            "技能元数据超过 30 KB"
+        }
         val metadata = try {
             JSONObject(metadataRaw?.takeIf { it.isNotBlank() } ?: "{}")
         } catch (error: Exception) {
