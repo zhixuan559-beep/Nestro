@@ -79,7 +79,7 @@ internal fun AgentTaskCenterPage(
                 withContext(Dispatchers.IO) {
                     when (action) {
                         "pause" -> application.agentTaskCoordinator.pause(task.taskId)
-                        "resume" -> application.agentTaskCoordinator.resume(task.taskId)
+                        "resume" -> checkNotNull(application.agentTaskCoordinator.resume(task.taskId)) { "任务不存在" }
                         "cancel" -> application.agentTaskCoordinator.cancel(task.taskId)
                         else -> error("未知任务操作")
                     }
