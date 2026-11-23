@@ -149,16 +149,24 @@ class ChatRequestExecutionCoordinatorTest {
     @Test
     fun stopRequestedBeforeStreamingPreventsTransportCall() = runBlocking {
         var streamCalls = 0
-        val coordinator = coordinator { _, _ ->
-            streamCalls++
-            "should not run"
-        }
+        var resolverCalls = 0
+        val coordinator = coordinator(
+            stream = { _, _ ->
+                streamCalls++
+                "should not run"
+            },
+            resolveMediaAttachments = { _, history ->
+                resolverCalls++
+                history
+            }
+        )
         val result = coordinator.execute(
             request = request(shouldStop = { true }),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
             onPartialAnswer = { }
         )
+        assertEquals(0, resolverCalls)
         assertEquals(0, streamCalls)
         assertEquals(ChatResponseStatus.STOPPED, result.finalization.status)
         assertEquals("已停止生成。", result.finalization.finalText)
