@@ -739,7 +739,8 @@ class NestroApplication : Application() {
                     val token = UserMemoryStore.mutationVersion(sourceId)
                     "$sourceId:${token.projectVersion}:${token.globalVersion}"
                 }
-            }
+            },
+            conversationRecallVersion = conversationContextRepository::recallVersion
         )
     }
     internal val chatRequestExecutionCoordinator: ChatRequestExecutionCoordinator by lazy {
