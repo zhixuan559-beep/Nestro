@@ -29,6 +29,10 @@ class SkillCommunityLifecycleStoreTest {
         dependencies = emptyList()
     )
 
+    private fun community(name: String, version: String, prompt: String, dependencies: List<SkillDependency> = emptyList()) = SkillBundle(
+        name, version, "test", prompt, "已验证签名社区目录", emptyList(), dependencies
+    )
+
     @Test fun installUpdateAndRollbackRestoresPreviousVersion() {
         store.install(bundle("1.0.0", "old prompt"))
         assertTrue((0 until org.json.JSONArray(preferences.getString("disabled_skills_v1", "[]")!!).length())
@@ -127,5 +131,63 @@ class SkillCommunityLifecycleStoreTest {
         )
         assertFalse(runCatching { store.install(dependent) }.isSuccess)
         assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
+    }
+
+    @Test fun refusesDisabledInstalledDependencyAndBrokenTransitiveClosure() {
+        val base = community("BaseSkill", "1.2.0", "base prompt")
+        preferences.edit()
+            .putString("skills", org.json.JSONObject().put("BaseSkill", base.prompt).toString())
+            .putString("skill_metadata_v1", org.json.JSONObject().put("BaseSkill", SkillBundleParser.metadataJson(base)).toString())
+            .putString("disabled_skills_v1", org.json.JSONArray().put("BaseSkill").toString())
+            .commit()
+        val dependent = community("DependentSkill", "1.0.0", "dependent prompt", listOf(SkillDependency("BaseSkill", "^1.0.0")))
+        assertFalse(runCatching { store.install(dependent) }.isSuccess)
+        assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("DependentSkill"))
+
+        val broken = community(
+            "BaseSkill", "1.2.0", "base prompt",
+            listOf(SkillDependency("MissingLeaf", "*"))
+        )
+        preferences.edit()
+            .putString("skill_metadata_v1", org.json.JSONObject().put("BaseSkill", SkillBundleParser.metadataJson(broken)).toString())
+            .putString("disabled_skills_v1", "[]")
+            .commit()
+        assertFalse(runCatching { store.install(dependent) }.isSuccess)
+        assertFalse(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("DependentSkill"))
+    }
+
+    @Test fun acceptsLegacyInstalledDependencyWithoutMetadataUsingDefaultVersion() {
+        preferences.edit()
+            .putString("skills", org.json.JSONObject().put("LegacyBase", "legacy prompt").toString())
+            .putString("skill_metadata_v1", "{}")
+            .commit()
+        val dependent = community("DependentSkill", "1.0.0", "dependent prompt", listOf(SkillDependency("LegacyBase", "^1.0.0")))
+        store.install(dependent)
+        assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("DependentSkill"))
+    }
+
+    @Test fun allowsCoordinatedUpgradeWhenDependentIsUpdatedInSamePlan() {
+        val baseV1 = community("BaseSkill", "1.0.0", "base v1")
+        val parentV1 = community("ParentSkill", "1.0.0", "parent v1", listOf(SkillDependency("BaseSkill", "^1.0.0")))
+        store.installAll(listOf(baseV1, parentV1))
+        preferences.edit().putString("disabled_skills_v1", "[]").commit()
+
+        val baseV2 = community("BaseSkill", "2.0.0", "base v2")
+        val parentV2 = community("ParentSkill", "2.0.0", "parent v2", listOf(SkillDependency("BaseSkill", "^2.0.0")))
+        store.installAll(listOf(baseV2, parentV2))
+        val metadata = org.json.JSONObject(preferences.getString("skill_metadata_v1", "{}")!!)
+        assertEquals("2.0.0", org.json.JSONObject(metadata.getString("BaseSkill")).getString("version"))
+        assertEquals("2.0.0", org.json.JSONObject(metadata.getString("ParentSkill")).getString("version"))
+    }
+
+    @Test fun refusesUninstallWhenAnyInstalledSkillMetadataIsCorrupt() {
+        store.install(bundle("1.0.0", "base prompt"))
+        val skills = org.json.JSONObject(preferences.getString("skills", "{}")!!)
+            .put("BrokenDependent", "broken prompt")
+        val metadata = org.json.JSONObject(preferences.getString("skill_metadata_v1", "{}")!!)
+            .put("BrokenDependent", "{not-json")
+        preferences.edit().putString("skills", skills.toString()).putString("skill_metadata_v1", metadata.toString()).commit()
+        assertFalse(runCatching { store.uninstall("CommunitySkill") }.isSuccess)
+        assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
     }
 }
