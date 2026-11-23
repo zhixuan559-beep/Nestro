@@ -1,7 +1,6 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
-import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolPermission
 import app.nestro.agent.AgentToolSpec
 import app.nestro.agent.InMemoryAgentToolCatalog
