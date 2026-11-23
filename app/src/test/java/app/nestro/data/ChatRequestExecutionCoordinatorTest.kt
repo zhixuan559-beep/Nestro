@@ -12,7 +12,9 @@ import org.junit.Test
 
 class ChatRequestExecutionCoordinatorTest {
     private fun coordinator(
-        stream: suspend (String, suspend (String) -> Unit) -> String
+        stream: suspend (String, suspend (String) -> Unit) -> String,
+        resolveMediaAttachments: suspend (String, List<ChatMessage>) -> List<ChatMessage> = { _, history -> history },
+        onTransportHistory: (List<ChatMessage>) -> Unit = {}
     ): ChatRequestExecutionCoordinator {
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
@@ -20,12 +22,13 @@ class ChatRequestExecutionCoordinatorTest {
             retrieveUserMemory = { _, _ -> "" }
         )
         val streaming = ChatStreamingCoordinator(
-            transport = ChatStreamingTransport { _, _, systemPrompt, _, _, _, _, _, _, onChunk ->
+            transport = ChatStreamingTransport { _, history, systemPrompt, _, _, _, _, _, _, onChunk ->
+                onTransportHistory(history)
                 stream(systemPrompt, onChunk)
             },
             partialStateStore = ChatPartialStateStore { _, _, _, _, _, _ -> }
         )
-        return ChatRequestExecutionCoordinator(assembler, streaming)
+        return ChatRequestExecutionCoordinator(assembler, streaming, resolveMediaAttachments = resolveMediaAttachments)
     }
 
     private fun request(taskMode: Boolean = false, shouldStop: () -> Boolean = { false }) = ChatRequestExecutionRequest(
@@ -160,5 +163,31 @@ class ChatRequestExecutionCoordinatorTest {
         assertEquals(ChatResponseStatus.STOPPED, result.finalization.status)
         assertEquals("已停止生成。", result.finalization.finalText)
     }
+
+    @Test
+    fun resolvedImagePartsReachProviderButAreNotPersistedIntoConversationHistory() = runBlocking {
+        val image = ChatMessageMediaPart("IMAGE", "image/jpeg", "aGVsbG8=", estimatedTokens = 1_024)
+        var observedProjectId = ""
+        var providerHistory: List<ChatMessage> = emptyList()
+        val coordinator = coordinator(
+            stream = { _, _ -> "看到了图片" },
+            resolveMediaAttachments = { projectId, history ->
+                observedProjectId = projectId
+                history.map { it.copy(mediaParts = listOf(image)) }
+            },
+            onTransportHistory = { providerHistory = it }
+        )
+        val original = request()
+        val result = coordinator.execute(
+            request = original,
+            onUsage = { _, _, _ -> },
+            onProviderUsage = { _, _, _ -> },
+            onPartialAnswer = { }
+        )
+        assertEquals("project-1", observedProjectId)
+        assertEquals(listOf(image), providerHistory.single().mediaParts)
+        assertTrue(result.finalization.completedHistory.first().mediaParts.isEmpty())
+    }
+
 
 }
