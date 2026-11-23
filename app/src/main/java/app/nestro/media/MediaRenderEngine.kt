@@ -34,27 +34,28 @@ object MediaRenderEngine {
         val sequences = mutableListOf(videoBuilder.build())
 
         val videoDurationMs = videoClips.maxOf { it.timelineEndMs }
-        val audioTrack = timeline.tracks.singleOrNull { it.kind == MediaTrackKind.AUDIO }
-        val boundedAudioClips = audioTrack?.clips.orEmpty()
-            .filter { it.timelineStartMs < videoDurationMs }
-            .map { clip ->
-                val boundedEnd = minOf(clip.timelineEndMs, videoDurationMs)
-                clip.copy(sourceEndMs = clip.sourceStartMs + (boundedEnd - clip.timelineStartMs))
-            }
-        if (audioTrack != null && !audioTrack.muted && boundedAudioClips.any { !it.muted }) {
-            val audioBuilder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
-            var audioCursor = 0L
-            boundedAudioClips.forEach { clip ->
-                if (clip.timelineStartMs > audioCursor) audioBuilder.addGap((clip.timelineStartMs - audioCursor) * 1_000L)
-                if (clip.muted) {
-                    audioBuilder.addGap(clip.durationMs * 1_000L)
-                } else {
-                    val asset = assets[clip.assetId] ?: error("音频轨道引用了不存在的素材")
-                    audioBuilder.addItem(editedItem(context, asset, clip))
+        timeline.tracks.filter { it.kind == MediaTrackKind.AUDIO }.forEach { audioTrack ->
+            val boundedAudioClips = audioTrack.clips
+                .filter { it.timelineStartMs < videoDurationMs }
+                .map { clip ->
+                    val boundedEnd = minOf(clip.timelineEndMs, videoDurationMs)
+                    clip.copy(sourceEndMs = clip.sourceStartMs + (boundedEnd - clip.timelineStartMs))
                 }
-                audioCursor = clip.timelineEndMs
+            if (!audioTrack.muted && boundedAudioClips.any { !it.muted }) {
+                val audioBuilder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
+                var audioCursor = 0L
+                boundedAudioClips.forEach { clip ->
+                    if (clip.timelineStartMs > audioCursor) audioBuilder.addGap((clip.timelineStartMs - audioCursor) * 1_000L)
+                    if (clip.muted) {
+                        audioBuilder.addGap(clip.durationMs * 1_000L)
+                    } else {
+                        val asset = assets[clip.assetId] ?: error("音频轨道引用了不存在的素材")
+                        audioBuilder.addItem(editedItem(context, asset, clip))
+                    }
+                    audioCursor = clip.timelineEndMs
+                }
+                sequences += audioBuilder.build()
             }
-            sequences += audioBuilder.build()
         }
 
         val builder = Composition.Builder(sequences)
