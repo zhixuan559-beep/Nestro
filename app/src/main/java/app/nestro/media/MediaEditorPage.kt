@@ -590,7 +590,9 @@ fun MediaEditorPage(
                 scope.launch { runCatching { timeline = withContext(Dispatchers.IO) { MediaProjectStore.redo(context, projectId) } }
                     .onFailure { status = it.message ?: "重做失败" } }
             }) { Text("重做") }
-            Text("主视频轨 + 多条音频混音轨", style = MaterialTheme.typography.bodySmall)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("主视频轨 + 多条音频混音轨", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = {
                 runCatching {
                     val next = MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
