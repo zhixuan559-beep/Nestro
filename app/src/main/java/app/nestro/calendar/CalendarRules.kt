@@ -98,7 +98,8 @@ object CalendarRules {
         var guard = 0
         while (guard++ < 20_000) {
             val triggerAt = automationTriggerAtUnchecked(event, candidate) ?: return null
-            if (triggerAt > now || (event.automationDelayMinutes < 0 && candidate > now)) return candidate
+            val alreadyDispatched = event.lastTaskId == automationTaskId(event, candidate)
+            if (!alreadyDispatched && (triggerAt > now || (event.automationDelayMinutes < 0 && candidate > now))) return candidate
             if (event.recurrence == NONE) return null
             candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
             if (candidate == Long.MAX_VALUE) return null
@@ -106,7 +107,7 @@ object CalendarRules {
         return null
     }
 
-    /** Returns the next automation execution instant, including its configured post-event delay. */
+    /** Returns the next automation execution instant, including its signed event-relative offset. */
     fun nextAutomationRunAt(event: CalendarEvent, now: Long): Long? {
         val occurrence = nextAutomationScheduledOccurrenceStart(event, now) ?: return null
         val triggerAt = automationTriggerAt(event, occurrence) ?: return null
