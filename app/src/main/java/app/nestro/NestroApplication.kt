@@ -908,6 +908,14 @@ class NestroApplication : Application() {
                     }
                     )
                 val finalText = execution.finalization.finalText.take(8_000)
+                val executionFailure = execution.failure
+                if (execution.finalization.status.name == "FAILURE" &&
+                    executionFailure != null &&
+                    app.nestro.agent.AgentTaskRetryPolicy.isRetryable(executionFailure) &&
+                    state.attempts < state.maxRetries
+                ) {
+                    throw executionFailure
+                }
                 taskContext.checkpoint("calendar_output:" + finalText.ifBlank { latestPartialAnswer }.take(24_000))
                 val child = agentTaskCoordinator.state("chat-tools-$requestId".take(120))
                 when {
