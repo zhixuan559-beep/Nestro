@@ -284,6 +284,7 @@ class ExpertTeamExecutionCoordinator(
         plan: ExpertProjectPlan,
         members: Map<String, ExpertTeamMemberTask>,
         projectId: String,
+        conversationId: String = "",
         taskId: String = UUID.randomUUID().toString(),
         shouldStop: () -> Boolean = { false },
         shouldPause: () -> Boolean = { false },
@@ -355,6 +356,14 @@ class ExpertTeamExecutionCoordinator(
             taskId = taskId,
             owner = "expert_team_project",
             initialCheckpoint = initialCheckpoint,
+            metadata = AgentTaskMetadata(
+                projectId = projectId,
+                conversationId = conversationId,
+                kind = "expert_team_project",
+                capabilityId = teamId,
+                title = teamName.take(160),
+                input = plan.projectGoal.take(12_000)
+            ),
             // Project packages may call tools; resume only from persisted package checkpoints.
             maxRetries = 0
         ) { taskContext ->
