@@ -406,6 +406,35 @@ fun NestroApp(initialPage: String = "home") {
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
 
+    fun applyConversationContext(conversationId: String, projectId: String) {
+        val team = expertTeams.firstOrNull {
+            expertTeamConversationId(it.id, projectId) == conversationId
+        }
+        val expert = experts.firstOrNull {
+            expertConversationId(it, projectId) == conversationId
+        }
+        selectedTeamId = team?.id.orEmpty()
+        when {
+            team != null -> {
+                selectedExpert = "通用助手"
+                taskModeEnabled = true
+            }
+            expert != null -> {
+                selectedExpert = expert
+                taskModeEnabled = true
+            }
+            else -> {
+                selectedExpert = "通用助手"
+                taskModeEnabled = false
+            }
+        }
+        prefs.edit()
+            .putString("selected_team_id", selectedTeamId)
+            .putString("selected_expert", selectedExpert)
+            .putBoolean("chat_task_mode_enabled", taskModeEnabled)
+            .apply()
+    }
+
     fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
         if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
         val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
@@ -496,7 +525,7 @@ fun NestroApp(initialPage: String = "home") {
                 }
             } else existing?.messages.orEmpty()
             activeConversationId = conversationId
-            selectedTeamId = teamId
+            applyConversationContext(conversationId, activeProjectId)
             messages = loadedMessages
             conversations = conversations.map { item ->
                 if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
@@ -538,9 +567,7 @@ fun NestroApp(initialPage: String = "home") {
                 }
             } else existing?.messages.orEmpty()
             activeConversationId = conversationId
-            selectedExpert = expertName
-            selectedTeamId = ""
-            taskModeEnabled = true
+            applyConversationContext(conversationId, activeProjectId)
             messages = loadedMessages
             conversations = conversations.map { item ->
                 if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
