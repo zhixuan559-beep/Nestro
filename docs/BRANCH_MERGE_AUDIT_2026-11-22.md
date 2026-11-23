@@ -113,3 +113,11 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - `TtsCapability.kt` 与 main blob 一致，当前 `AndroidTextToSpeechController` 已调用 `TtsCapability.chineseVoices/isLocaleAvailable`；不能再标为未接线。
 - `UnifiedAgentDispatcher.kt` 当前 integration 不存在；顶层调度由 `ModelLedToolDispatcher` 承担，不能把 main 的旧 dispatcher 复制回来。
 - 这进一步说明分支审计必须以当前 integration 源码调用链为准，旧审计文档也必须随源码复核修订。
+
+
+## 2026-11-24 main 主线冗余代码复核补记
+
+- 以当前 `main` 源码全仓搜索 `UnifiedAgentDispatcher`，生产代码没有调用点；仅命中该类自身、对应单元测试及历史审计文档。其关键词计数路由已被 `ModelLedToolDispatcher` 主模型决策与工具目录取代，且没有可复用的独有执行能力。
+- 已从 `main` 删除 `app/src/main/java/app/nestro/agent/UnifiedAgentDispatcher.kt` 与仅覆盖该死代码的 `app/src/test/java/app/nestro/agent/UnifiedAgentDispatcherTest.kt`。删除提交：`7124010867e79028159a1cf07c26fd55e95f6f4d`、`60b64468062f54dec19e77c54acf2d1645a66435`。
+- 同轮复核确认 `ChatNetworkPolicy` 被 `ChatExecutionService` / `OpenAiClient` 使用，`TtsCapability` 被 `AndroidTextToSpeechController` 使用；两者不是死代码，保留。
+- 本次只清理已证明无生产引用的旧路由，不涉及历史分支删除，不运行编译或测试。
