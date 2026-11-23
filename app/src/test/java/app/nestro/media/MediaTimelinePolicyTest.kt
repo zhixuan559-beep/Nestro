@@ -137,6 +137,26 @@ class MediaTimelinePolicyTest {
     }
 
     @Test
+    fun trackVolumeMustBeFiniteAndWithinSupportedRange() {
+        val tooLoud = MediaTimeline.empty(project).copy(
+            tracks = MediaTimeline.empty(project).tracks.map { track ->
+                if (track.id == "audio-main") track.copy(volume = 2.1f) else track
+            }
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.validate(tooLoud, emptyList())
+        }
+        val invalid = MediaTimeline.empty(project).copy(
+            tracks = MediaTimeline.empty(project).tracks.map { track ->
+                if (track.id == "audio-main") track.copy(volume = Float.NaN) else track
+            }
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.validate(invalid, emptyList())
+        }
+    }
+
+    @Test
     fun onlyEmptyAudioTracksCanBeRemoved() {
         val initial = MediaTimeline.empty(project)
         val withSecondTrack = MediaTimelinePolicy.addTrack(initial, MediaTrackKind.AUDIO)
