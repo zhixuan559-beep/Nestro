@@ -149,6 +149,8 @@ internal class CalendarWorkflowRunner(
                 )
             )
             throw pending
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             persistHistory(
                 WorkflowRunRecord(
