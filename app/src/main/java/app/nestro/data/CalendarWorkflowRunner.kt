@@ -60,7 +60,7 @@ internal class CalendarWorkflowRunner(
                         ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.EXPERT, step.targetId, projectId)
                 ) { "工作流步骤“${step.title}”引用了当前项目不可用的专家：${step.targetId}" }
                 WorkflowStepKind.SKILL -> require(
-                    step.targetId in resources.skills &&
+                    resources.skills[step.targetId]?.isNotBlank() == true &&
                         step.targetId !in resources.disabledSkills &&
                         ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.SKILL, step.targetId, projectId)
                 ) { "工作流步骤“${step.title}”引用了当前项目不可用或已停用的技能：${step.targetId}" }
