@@ -37,7 +37,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 15 | AI 共建工作台 | 功能源码与主要回归测试已进入 main；已补齐导航/聊天回流、SBOM 脚本及缺失测试源码；统一编译、测试与真实 Actions 验证待执行 |
 | 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已接通；CapabilityDirectoryPage 具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤有逐步骤审批与 checkpoint；专家成员默认获得只读工具租约，工作流步骤默认只读、显式开启并通过步骤审批后可发现完整工具目录，实际调用仍走工具级授权/审批。专家与工作流任务均传递项目/会话元数据。任务中心页面已接入，但仅覆盖已登记统一任务且带 projectId 的任务；仍需补专家级副作用工具 allowlist、完整业务幂等语义和跨进程恢复验收。 |
 | 17 | 智能剪辑 | 模块17代码已整合到 main（历史来源 feature/module-17-smart-editing）；尚未编译、测试及设备验收，未锁定 |
-| 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口已按当前项目可见专家启用 expertTeamEnabled，并开放仅日历自动任务可用的 workflow.list/workflow.run；专家 DAG/保存工作流复用既有执行器与审批。仍缺任意时间条件触发和日历专属语义型业务错误映射，工作流步骤内部暂不开放外部工具。 |
+| 18 | 日历（自动时间调度引擎） | 已补齐有符号事件相对偏移触发：复用 automationDelayMinutes 现有整数列，负数表示事件开始前提前（最多 7 天）、0 表示开始时、正数表示开始后延迟；UI、Repository、WorkManager、Worker 和备份/恢复贯通，无新增 schema。定义版本递增、旧 Worker 防误触发、错过提前触发点但事件仍未开始时立即执行、lastTaskId 防同一 occurrence 重复派发均已接入；备份/恢复保留偏移与 generation，系统日历导入保留配置。新增规则与幂等测试源码，未运行。复杂 cron/条件表达式触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口已按当前项目可见专家启用 expertTeamEnabled，并开放仅日历自动任务可用的 workflow.list/workflow.run；专家 DAG/保存工作流复用既有执行器与审批。仍缺 cron/条件表达式触发和日历专属语义型业务错误映射，工作流步骤内部暂不开放外部工具。 |
 | 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页图片/音频/视频已新增按 Provider 能力序列化的原生 media parts；OpenAI 支持图片；仅模型 ID 含 `audio` 时发送 WAV/MP3 输入音频，Anthropic 支持图片，Gemini 支持图片/音频/视频；大文件仍由主模型按 asset_id 调度专业媒体任务；模型能力门禁、真实 API 验证与跨服务商一致性仍缺；真实 API/信任根配置与统一验收待完成 |
 
 
@@ -325,7 +325,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] WorkManager 单次提醒、到期系统通知和下一次重复提醒安排。
 - [x] 系统日历读写、导入导出、关联事件更新/删除。
 - [x] 单次/周期/延迟触发统一任务；延迟分钟配置已贯通 UI、Room、WorkManager、Worker、备份/恢复，并保留事件开始后尚未到期的延迟任务以支持进程重启恢复（源码与测试已补，未运行）。
-- [ ] 任意时间条件触发模型；当前仍只有 NONE/DAILY/WEEKLY/MONTHLY/YEARLY occurrence 规则。
+- [ ] cron/条件表达式/外部事件等任意时间条件触发模型；当前重复规则仍只有 NONE/DAILY/WEEKLY/MONTHLY/YEARLY，但事件相对提前/准点/延后偏移已接通。
 - [ ] 部分已实现：到期 occurrence 已进入 AgentTaskCoordinator，主模型可调用 Phone Agent/媒体/MCP/插件；当前 calendar_automation 显式设置 expertTeamEnabled=false，工具目录也无 workflow.run，因此专家 DAG/Workflow 直接调度仍未接通。
 - [ ] 部分已实现：状态回写、审批等待、结果/错误回传、暂停/恢复/取消已接入；主模型业务失败按错误类型重试/退避尚未完整。
 - [ ] 部分已实现：nextRunAt/lastRunAt、确定性 occurrence taskId、lastIdempotencyKey 和执行状态已持久化；独立 retryCount/错误分类重试策略仍缺。
@@ -401,7 +401,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 仍缺；DAO 项目/会话/消息来源归属校验已补并有 instrumentation 测试源码，未运行。
 - 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线确认指令已补；硬状态门禁和真机验收仍待完成。
 - 模块16：插件统一任务机/checkpoint、外部写入审批、插件恢复入口和 MCP 两层授权语义已实现；能力授权/调用审计已有 UI，但统一跨模块任务总览仍未收敛。任意代码沙箱和完整 VoiceInteractionService 仍未实现。
-- 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟分钟触发已补齐并按 automationGeneration 隔离任务定义，待执行延迟 occurrence 可跨重启恢复。统一任务机已有 attempts/maxRetries、RetryableAgentTaskException/网络异常分类和指数退避；ModelLedToolDispatcher 在副作用开始后阻止自动重放。本轮补齐 HTTP 408/425/429/5xx 可重试映射。仍缺任意时间条件模型与日历专属语义型业务错误映射，专家 DAG/Workflow 直接调度边界待核。
+- 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟分钟触发已补齐并按 automationGeneration 隔离任务定义，待执行延迟 occurrence 可跨重启恢复。统一任务机已有 attempts/maxRetries、RetryableAgentTaskException/网络异常分类和指数退避；ModelLedToolDispatcher 在副作用开始后阻止自动重放。本轮补齐 HTTP 408/425/429/5xx 可重试映射。事件相对提前/准点/延后偏移已接通；仍缺 cron/条件表达式模型与日历专属语义型业务错误映射，专家 DAG/Workflow 直接调度边界待核。
 - 模块19：主模型已注册 media.ai.run/status，可调用 image/transcribe/scenes/audio-clean；scenes 仅是场景分段，不等于通用视频问答，音频理解目前主要为转写，视频生成单独通过 media.video.generate/status。
 
 > 以上代码状态不代表编译/测试/真机验收通过。未执行 Gradle、JVM/Android 测试、模拟器或真机测试。
@@ -478,3 +478,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 37 条非 main 分支已逐条对照 main 的提交关系：17 条 ahead_by=0，20 条仍有独有提交。ahead 分支名称与数量以 `docs/FUNCTION_AUDIT.md` 顶部全量清单为准。
 - 代表性源码抽查显示大多数旧实现已被 main 的更新版本替代；技能库 `fromStored` 数据校验是已确认的有效缺口，现已按 main 架构适配并接入备份/恢复。
 - 不整分支合并、不删除历史分支；20 条 ahead 分支仍需按具体文件/调用链逐项核销，不把提交领先直接等同于功能缺失。
+
+
+## 2026-11-24 日历相对时间偏移补充
+
+- `automationDelayMinutes` 继续使用原有 Room 整数列，不新增迁移：负数表示事件开始前提前最多 7 天，0 表示开始时，正数表示开始后延迟。
+- 若负偏移触发点已过去但事件仍在未来，则当前 occurrence 立即执行；`lastTaskId` 与 generation 联合防止同一 occurrence 重复派发，修改自动执行定义后可使用新 generation 重新排程。
+- 新增规则、错过触发点、重复派发防护和定义版本变更测试源码；未运行编译或测试。
