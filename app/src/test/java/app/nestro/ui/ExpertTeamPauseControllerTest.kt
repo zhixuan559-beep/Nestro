@@ -1,5 +1,7 @@
 package app.nestro.ui
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -30,6 +32,28 @@ class ExpertTeamPauseControllerTest {
 
         assertTrue(resumed)
         assertFalse(controller.isPaused())
+    }
+
+    @Test
+    fun stopRequestInterruptsPausedExecution() = runBlocking {
+        val controller = ExpertTeamPauseController()
+        controller.pause()
+        var stopRequested = false
+        val stopped = CompletableDeferred<Boolean>()
+        val waiting = launch {
+            try {
+                controller.awaitResume { stopRequested }
+                stopped.complete(false)
+            } catch (_: CancellationException) {
+                stopped.complete(true)
+            }
+        }
+
+        yield()
+        stopRequested = true
+        assertTrue(withTimeout(1_000) { stopped.await() })
+        waiting.join()
+        assertTrue(controller.resume())
     }
 
     @Test
