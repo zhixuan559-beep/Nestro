@@ -2663,7 +2663,7 @@ fun NestroApp(initialPage: String = "home") {
                                         val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
                                         Text(
                                             when {
-                                                assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
                                                 assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
                                                 else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
                                             },
@@ -2674,7 +2674,7 @@ fun NestroApp(initialPage: String = "home") {
                                             onClick = {
                                                 val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
                                                 if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
-                                                else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
+                                                else status = "当前设备不支持申请系统助手角色，或 Nost 已经是默认助手。"
                                             },
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
@@ -3907,7 +3907,7 @@ fun NestroApp(initialPage: String = "home") {
                             showRecallDialog = false
                         }.padding(vertical = 9.dp)) {
                             Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
-                            Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Text("${if (source.role == "user") "用户" else "Nost"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                             Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                         }
                         HorizontalDivider(color = Line)
@@ -4554,7 +4554,7 @@ fun NestroApp(initialPage: String = "home") {
                         maxTokens = maxTokens,
                         description = expertDescriptionDraft.trim(),
                         version = expertProfiles[oldName]?.version ?: "1.0.0",
-                        source = expertProfiles[oldName]?.source ?: "Nestro 本地专家"
+                        source = expertProfiles[oldName]?.source ?: "Nost 本地专家"
                     )
                     val profileError = ExpertProfileCodec.validate(profile, skills.keys)
                     if (profileError != null) {
