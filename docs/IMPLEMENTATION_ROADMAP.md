@@ -1,7 +1,7 @@
 # 2026-11-24 当前工作基线（main）
 
 - **当前唯一开发与交付主线**：`main`。
-- **本轮业务源码回读基线**：`1647d0f0671c61eb9762bb24565a952339638a02`；之后的 `FUNCTION_AUDIT.md` / `CURRENT_CODE_MAP.md` / 本路线图提交只更新审计记录。
+- **本轮业务源码回读基线**：`d20de9ba85a7025d2772405f19983064ef3b9af2`（2026-11-23 20:00 UTC）；下方新增的日历工作流执行元数据修复也纳入该基线。
 - **本轮已完成的代码整合**：
   - 模块16新增项目级统一任务中心：复用 AgentTaskCoordinator 状态与 trace，支持查看最近任务、执行记录、错误和暂停/恢复/取消；工具目录和 NestroApp 路由已接通。
   - 模块17支持主视频轨 + 最多 8 条音频轨；音频轨可选择添加目标、静音、独立 0–200% 音量、删除空轨；渲染按轨混音，工程 codec 兼容旧数据默认音量 100%，补充对应测试源码。
@@ -13,6 +13,16 @@
   - ChatMessage 原生多模态 content parts、通用视频问答、非语音音频事件理解仍待补。
   - 专家私聊/团队会话入口已有源码；成员之间真正自由持续对话、可编辑任务图、工作包返工与完整团队生命周期仍待补。
 - **验证边界**：本轮只做 GitHub main 源码回读、调用链静态检查和提交差异检查；没有运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器/真机或 APK 构建。不得将新增测试源码写成测试通过。
+
+## 2026-11-23 20:00 UTC — 本轮静态复核补充
+
+- 日历专家 DAG：从 `CalendarReminderScheduler` 的 `AgentTaskMetadata(kind = "calendar_automation")` 追到 `NestroApplication` handler；专家可用名单按当前项目资源 scope 与专家启用状态筛选；`expert_team.run` 进入 `CalendarExpertTeamRunner`，由既有 `ExpertTeamExecutionCoordinator.executeProjectPlan` 执行并写入协作事件。成员调用目前使用文本模型，不开放成员内部工具。
+- 日历工作流：`workflow.list/workflow.run` 仅在日历请求开启 `workflowEnabled` 时进入模型工具候选；父任务 `kind` 再做一次限制；串行 AgentRuntime 路径也已补齐隐藏 request/project/conversation 元数据传递。工作流只执行已保存且当前项目可见的 PROMPT/EXPERT/SKILL 步骤，检查专家启用、技能依赖和禁用状态；审批复用 `AgentApprovalCoordinator`，等待时保留审批状态，运行结果写入现有 `WorkflowRunHistoryCodec`。
+- 项目任务中心：工具目录入口、`NestroApp` 页面路由、项目级 DAO 查询已接通；展示最近 200 条统一任务及单任务最近 50 条 trace，支持暂停/恢复/取消。它只展示已接入统一任务机且写入 projectId 的任务，不代表所有旧领域任务都已统一。
+- 媒体时间线：已静态核对主视频轨 + 最多 8 条音频轨、音频轨目标选择、静音、0–200% 音量、空轨删除、工程 codec 旧数据默认音量兼容，以及 Media3 多序列混音路径。仍只有一条视频轨；PIP/多视频轨、转场、速度曲线、关键帧和字幕烧录未实现。
+- 本轮发现并修正：非并发工具经 `AgentRuntime.execute` 的串行路径此前没有注入日历父请求元数据，导致新工作流工具无法识别所属日历任务；现已补齐并提交 `d20de9b`。
+- 额外边界：日历任意时间条件与日历专属业务错误映射仍缺；原生聊天多模态 parts、通用视频问答、非语音音频事件理解仍缺；专家团自由持续群聊/私聊、可编辑任务图与工作包返工生命周期仍未收口。
+- 验证口径：以上均为 main 源码、调用链和提交差异静态复核；没有运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器/真机或 APK 构建。新增测试源码不等于测试通过。
 
 ---
 
