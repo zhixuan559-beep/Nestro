@@ -2,7 +2,7 @@
 
 ## 2026-11-24 main 当前源码增补
 
-- **当前核对基线**：唯一开发主线 `main`，业务源码与测试源码回读基线 `e148f6579fbb18b081349716589cdc5c3ea66b5e`。以下状态以当前 main 源码和实际调用链为准；下方 2026-11-22 首轮审计保留作历史记录，不再覆盖本节的新状态。
+- **当前核对基线**：唯一开发主线 `main`，业务源码与测试源码回读基线 `a256fef031b6d60c5e966ac71066ef9a79c87c0f`。以下状态以当前 main 源码和实际调用链为准；下方 2026-11-22 首轮审计保留作历史记录，不再覆盖本节的新状态。
 - **模块16｜统一任务总览**：新增 `ui/AgentTaskCenterPage.kt`，由工具目录“任务中心”入口进入；通过 `NestroDao.recentAgentTaskStatesForProject` 读取当前项目最近 200 条统一任务，展示状态、执行记录、错误、尝试次数，并提供安全范围内的暂停/恢复/取消操作。它复用 `AgentTaskCoordinator` 与现有 trace 数据，不另建任务队列。只覆盖已接入统一任务机且带当前 projectId 的任务，不把旧领域状态表冒充统一任务。
 - **模块17｜媒体多轨音频**：时间线现在支持 1 条主视频轨 + 最多 8 条音频轨；音频轨可选择为素材添加目标、独立静音/音量调节（0–200%）、删除空轨。每条音频轨独立生成 Media3 音频序列并参与混音；轨道音量通过 `ChannelMixingAudioProcessor` 生效。工程 JSON 保存 volume，旧工程缺少 volume 时按 100% 兼容。新增多轨数量、时长边界、音量、空轨删除及旧数据默认值测试源码。**仍只有一条视频轨**；PIP/视频叠加、多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音仍未完成。
 - **模块18｜日历直调度专家 DAG / Workflow**：日历自动任务仍由 `calendar_automation` Worker 进入 `ChatRequestExecutionCoordinator`，现已按当前项目可见专家数量启用 `expert_team.run`，通过 `CalendarExpertTeamRunner` 复用专家目录、项目资源范围、`ExpertTeamExecutionCoordinator` 的 DAG/checkpoint 和协作事件记录。另增加仅对日历自动任务开放的 `workflow.list` / `workflow.run`；可运行当前项目可见的已保存 PROMPT、EXPERT、SKILL 工作流，审批步骤复用 `AgentApprovalCoordinator`，执行结果写入既有工作流历史。工作流步骤内部暂不直接调用外部工具，外部能力仍由顶层调度器执行；专家成员内部也暂不开放工具调用。任意时间条件触发、日历专属语义型业务错误映射仍待完成。
