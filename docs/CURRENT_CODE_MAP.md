@@ -1,7 +1,7 @@
 # NESTRO 当前代码地图
 
-> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `62ce60c32261b182bbc441163f21fabd6b935ec8`（2026-11-24）。
-> 本文的目录统计与部分模块落点最初来自 `integration/19-modules` 历史审计，尚未在当前 main 重新统计；不得把旧统计数字或历史分支状态当作 main 的现状。具体功能状态必须按 main 当前源码、调用点和数据流核验。
+> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `eb2ae1ad011f42bcfa43b6216d107bb0faa6ee98`（2026-11-24）。
+> 本轮已重新统计 `main` recursive tree：459 entries、392 files、48 directories，其中 211 个 main Kotlin 源文件、135 个 JVM/AndroidTest Kotlin 文件、16 个 docs 文件。功能状态按当前 main 源码、调用点和数据流核验；历史分支提交数不等于有效功能缺口。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。
 >
 > 本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
@@ -55,7 +55,7 @@
 
 ### 聊天附件与多模态
 
-聊天输入区多选图片/音频/视频 → `MediaProjectStore.importAsset` → 当前项目素材库 → 草稿附加真实 asset_id。`ChatMediaAttachmentResolver` 在请求期解析图片/音频/视频：图片必要时缩放/旋转/压缩；音视频仅读取小文件。`ChatMessageContentSerializer` 分别输出 OpenAI image_url/WAV-MP3 input_audio、Anthropic base64 image、Gemini inlineData image/audio/video；Gemini 媒体块先于文本指令。`ChatRequestPolicy` 保留 parts 并按估算 token 成本计入预算。
+聊天输入区多选图片/音频/视频 → `MediaProjectStore.importAsset` → 当前项目素材库 → 草稿附加真实 asset_id。`ChatMediaAttachmentResolver` 在请求期解析图片/音频/视频：图片必要时缩放/旋转/压缩；音视频仅读取小文件。`ChatMessageContentSerializer` 分别输出 OpenAI image_url（模型 ID 含 `audio` 时附加 WAV/MP3 input_audio）、Anthropic base64 image、Gemini inlineData image/audio/video；Gemini 媒体块先于文本指令。`ChatRequestPolicy` 保留 parts 并按估算 token 成本计入预算。
 
 不新增 Room 附件字段、独立文件目录或第二套媒体仓库。大文件继续走 `media.ai.run/status` 专业 Provider；模型能力声明/兼容性门禁、真实 API 联调、长视频/大文件直传及跨 Provider 行为一致性仍未完成。
 
@@ -76,7 +76,7 @@
 - 模块17现支持 1 条主视频轨 + 最多 8 条音频混音轨，音频轨可独立静音和设置 0–200% 音量；仍只有单视频轨，PIP/多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音未完成。
 - 模块18已接统一任务机与主模型工具链；延迟触发已贯通 UI/持久化/WorkManager/Worker/备份，并具备定义版本隔离与重启补排程。日历自动任务现可调用项目可见专家 DAG 与已保存 PROMPT/EXPERT/SKILL 工作流，工作流审批复用 AgentApprovalCoordinator；工作流步骤内部暂不开放外部工具调用。仍缺任意时间条件触发及日历专属语义型业务错误映射。
 - 模块3主聊天历史与工具决策轮已按候选模型最小 `contextWindowTokens` 动态裁剪，并按 `maxTokens`/默认值计算输出 reserve；系统提示词自身超窗压缩/截断保护仍待补。原生工具并发只覆盖显式声明的安全只读工具。
-- 原生 image/audio/video parts 已按 Provider 接通：OpenAI 图片+WAV/MP3 音频、Anthropic 图片、Gemini 图片/音频/视频；大文件仍走媒体任务。模型能力声明/兼容性门禁、真实 API 联调、长视频/大文件直传和跨 Provider 一致性仍未完成。
+- 原生 image/audio/video parts 已按 Provider 接通：OpenAI 图片+（模型 ID 含 `audio` 时的）WAV/MP3 音频、Anthropic 图片、Gemini 图片/音频/视频；大文件仍走媒体任务。模型能力声明/兼容性门禁、真实 API 联调、长视频/大文件直传和跨 Provider 一致性仍未完成。
 - 模块1专家项目与模块3工作流的工具感知调用入口现已接通：`NestroApp` 分别提供 `invokeMemberWithTools` / `invokeModelWithTools`，将操作级 `AgentToolAccess` 原始租约和精确工具 allow-list 交给 `ChatRequestExecutionCoordinator`；`ModelLedToolDispatcher` 在原生工具调用及兼容文本协议两条路径都复用同一租约处理器，并继续执行项目能力授权、AgentRuntime 权限判断、审批和 MCP 重放检查点。专家项目 `runInline` 与工作流 `runInline` 现在写入 projectId/conversationId 等 `AgentTaskMetadata`。新增 allow-list 单元测试源码，尚未运行编译或测试。模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
 - 模块17多视频轨/PIP/转场/速度曲线/关键帧/字幕烧录等高级视频编辑仍未完成；模块19原生多模态 parts 已按 Provider 接通，但模型能力门禁、真实 API 联调、大文件视频问答和跨 Provider 一致性仍待完成。
 - 全部新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
