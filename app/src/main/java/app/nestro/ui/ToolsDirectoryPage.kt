@@ -35,6 +35,7 @@ internal fun ToolsDirectoryPage(onNavigate: (String) -> Unit) {
             ToolDirectoryEntry("能力与授权", "查看工具能力、项目授权和调用审计", "capabilities")
         ),
         "资料与创作" to listOf(
+            ToolDirectoryEntry("记忆管理", "查看和管理全局及项目记忆", "memory"),
             ToolDirectoryEntry("知识库", "导入资料并在对话中检索", "knowledge"),
             ToolDirectoryEntry("产物库", "查看对话生成的文件与成果", "artifacts"),
             ToolDirectoryEntry("媒体工作区", "按需进入媒体编辑工作区", "media-editor"),
