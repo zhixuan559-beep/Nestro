@@ -4,7 +4,7 @@ import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskMetadata
 import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentCapabilityRegistry
-import app.nestro.agent.AgentToolDiscovery
+import app.nestro.agent.AgentToolAccess
 import app.nestro.agent.AgentToolCatalog
 import app.nestro.agent.AgentToolLeaseRegistry
 import java.util.UUID
@@ -27,7 +27,7 @@ class WorkflowExecutionCoordinator(
         onStepCompleted: suspend (Int, WorkflowStepRun, String) -> Unit = { _, _, _ -> },
         requestApproval: suspend (WorkflowStep, String) -> Boolean = { _, _ -> false },
         toolCatalog: AgentToolCatalog? = null,
-        invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolDiscovery?) -> String)? = null
+        invokeModelWithTools: (suspend (WorkflowStep, String, AgentToolAccess?) -> String)? = null
     ): WorkflowRunResult {
         require(input.isNotBlank() && input.length <= 12_000) { "工作流输入为空或过长" }
         val workflowFingerprint = MessageDigest.getInstance("SHA-256")
