@@ -81,11 +81,12 @@ internal object ChatMessageContentSerializer {
             .put("parts", geminiParts(message))
 
     fun geminiParts(message: ChatMessage): JSONArray = JSONArray().apply {
-        put(JSONObject().put("text", message.content))
+        // Gemini's video guidance recommends placing the media before the text instruction.
         geminiMedia(message).forEach { part ->
             put(JSONObject().put("inlineData", JSONObject()
                 .put("mimeType", part.mimeType)
                 .put("data", part.dataBase64)))
         }
+        put(JSONObject().put("text", message.content))
     }
 }
