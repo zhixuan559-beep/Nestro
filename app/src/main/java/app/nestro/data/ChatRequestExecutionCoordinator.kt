@@ -145,12 +145,20 @@ internal class ChatRequestExecutionCoordinator(
                 coordinated.directReply
             } else {
             partialAnswer.setLength(0)
+            val contextWindowTokens = ModelContextWindowPolicy.effectiveContextWindow(request.modelConfigs)
+            val outputReserveTokens = ModelContextWindowPolicy.outputReserve(request.maxTokens, contextWindowTokens)
+            val maxOutputTokens = request.maxTokens?.coerceIn(1, contextWindowTokens)
             val streamed = streamingCoordinator.execute(
                 configs = request.modelConfigs,
-                history = ChatRequestPolicy.boundedChatHistory(request.history, finalSystemContext),
+                history = ChatRequestPolicy.boundedChatHistory(
+                    request.history,
+                    finalSystemContext,
+                    contextWindowTokens = contextWindowTokens,
+                    outputReserveTokens = outputReserveTokens
+                ),
                 systemPrompt = finalSystemContext,
                 temperature = request.temperature,
-                maxTokens = request.maxTokens,
+                maxTokens = maxOutputTokens,
                 onUsage = onUsage,
                 onProviderUsage = onProviderUsage,
                 requestId = request.requestId,
