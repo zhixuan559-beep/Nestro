@@ -206,4 +206,22 @@ class ChatRequestContextAssemblerCacheTest {
         assembler.assemble("p1", "c1", prompt, emptyList(), "different base")
         assertEquals(8, retrievalCalls)
     }
+    @Test
+    fun memoryMutationVersionInvalidatesPreviouslyAssembledContext() = kotlinx.coroutines.runBlocking {
+        var version = "project:1"
+        var retrievalCalls = 0
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> retrievalCalls++; ConversationRecallResult("", emptyList()) },
+            retrieveUserMemory = { _, _ -> retrievalCalls++; "memory" },
+            memoryVersion = { version }
+        )
+        val prompt = "根据知识库和我的偏好回忆历史"
+        assembler.assemble("p", "c", prompt, emptyList(), "base")
+        assembler.assemble("p", "c", prompt, emptyList(), "base")
+        assertEquals(2, retrievalCalls)
+        version = "project:2"
+        assembler.assemble("p", "c", prompt, emptyList(), "base")
+        assertEquals(4, retrievalCalls)
+    }
+
 }
