@@ -32,7 +32,7 @@ class ChatMessageContentSerializerTest {
             ChatMessageMediaPart("AUDIO", "audio/wav", "d2F2", 2_048),
             ChatMessageMediaPart("AUDIO", "audio/mpeg", "bXAz", 2_048)
         ))
-        val content = ChatMessageContentSerializer.openAiContent(audio) as JSONArray
+        val content = ChatMessageContentSerializer.openAiContent(audio, supportsAudioInput = true) as JSONArray
         assertEquals("input_audio", content.getJSONObject(1).getString("type"))
         assertEquals("wav", content.getJSONObject(1).getJSONObject("input_audio").getString("format"))
         assertEquals("mp3", content.getJSONObject(2).getJSONObject("input_audio").getString("format"))
@@ -72,6 +72,17 @@ class ChatMessageContentSerializerTest {
         val audio = message().copy(mediaParts = listOf(
             ChatMessageMediaPart("AUDIO", "audio/mp4", "bXA0", 2_048)
         ))
-        assertEquals("请理解这些素材", ChatMessageContentSerializer.openAiContent(audio))
+        assertEquals("请理解这些素材", ChatMessageContentSerializer.openAiContent(audio, supportsAudioInput = true))
     }
+    @Test
+    fun openAiSkipsAudioUnlessModelDeclaresAudioInItsId() {
+        val audio = message().copy(mediaParts = listOf(
+            ChatMessageMediaPart("AUDIO", "audio/mpeg", "bXAz", 2_048)
+        ))
+        assertEquals("请理解这些素材", ChatMessageContentSerializer.openAiContent(audio))
+        val enabled = ChatMessageContentSerializer.openAiContent(audio, supportsAudioInput = true) as JSONArray
+        assertEquals("input_audio", enabled.getJSONObject(1).getString("type"))
+    }
+
+
 }
