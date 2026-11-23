@@ -187,14 +187,18 @@ class CalendarAutomationWorker(
             .put("prompt", event.automationPrompt.take(12_000))
             .toString()
         val idempotencyKey = CalendarRules.automationIdempotencyKey(event, occurrenceStart)
-        val nextRunAt = CalendarRules.nextAutomationRunAt(event, automationTriggerAt) ?: 0L
+        val dispatchAt = System.currentTimeMillis()
+        val nextRunAt = CalendarRules.nextAutomationRunAt(
+            event.copy(lastTaskId = taskId, lastRunAt = dispatchAt),
+            dispatchAt
+        ) ?: 0L
         val repository = CalendarRepository(applicationContext)
         val existing = app.agentTaskCoordinator.state(taskId)
         val dispatched = if (existing != null) {
             existing
         } else {
             val dispatchRecorded = repository.recordAutomationDispatch(
-                eventId = eventId, nextRunAt = nextRunAt, lastRunAt = System.currentTimeMillis(),
+                eventId = eventId, nextRunAt = nextRunAt, lastRunAt = dispatchAt,
                 taskId = taskId, idempotencyKey = idempotencyKey,
                 expectedGeneration = scheduledGeneration
             )
