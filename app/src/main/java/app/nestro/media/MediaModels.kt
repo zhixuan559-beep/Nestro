@@ -47,6 +47,7 @@ data class MediaTrack(
     val name: String,
     val kind: MediaTrackKind,
     val muted: Boolean = false,
+    val volume: Float = 1f,
     val clips: List<MediaClip> = emptyList()
 )
 
