@@ -1743,7 +1743,7 @@ fun NestroApp(initialPage: String = "home") {
                             append("【").append(item.memberName).append(" / ").append(item.packageId).append(" / ").append(item.status).append("】\n")
                             append(item.output.ifBlank { item.error }.take(5_000)).append("\n\n")
                         }
-                        append("项目执行状态：").append(if (projectPlanResult.isSuccessful) "全部工作包成功" else "存在失败或阻塞工作包")
+                        append("项目执行状态：").append(if (projectPlanResult.isSuccessful) "全部工作包执行成功，尚待主模型验收" else "存在失败或阻塞工作包")
                     }.take(18_000)
                     teamRunStatus = if (projectPlanResult.isSuccessful) "专家项目已完成，等待主模型审核" else "专家项目部分工作包未完成，交由主模型检查"
                     projectResultContext
