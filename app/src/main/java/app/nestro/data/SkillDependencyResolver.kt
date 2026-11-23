@@ -102,7 +102,6 @@ object SkillDependencyResolver {
         val stagedMetadata = installedMetadata + (candidate.name to SkillBundleParser.metadataJson(candidate))
         return inspectInstalledSkill(
             candidate.name,
-            candidate.prompt,
             stagedSkills,
             stagedMetadata,
             disabledSkills - candidate.name
