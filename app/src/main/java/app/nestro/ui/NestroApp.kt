@@ -1491,9 +1491,10 @@ fun NestroApp(initialPage: String = "home") {
     }
 
     MaterialTheme(
-        colorScheme = darkColorScheme(
+        colorScheme = lightColorScheme(
             background = Bg, surface = Card, primary = Mint, onPrimary = Bg,
-            onBackground = Ink, onSurface = Ink, secondary = Muted
+            onBackground = Ink, onSurface = Ink, secondary = Muted,
+            surfaceVariant = Card2, outline = Line
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
