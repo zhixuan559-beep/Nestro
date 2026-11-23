@@ -20,6 +20,8 @@ class WorkflowExecutionCoordinator(
         workflow: WorkflowDefinition,
         input: String,
         taskId: String = UUID.randomUUID().toString(),
+        projectId: String = "",
+        conversationId: String = "",
         invokeModel: suspend (WorkflowStep, String) -> String,
         onStep: suspend (Int, WorkflowStep) -> Unit = { _, _ -> },
         onStepCompleted: suspend (Int, WorkflowStepRun, String) -> Unit = { _, _, _ -> },
@@ -84,6 +86,8 @@ class WorkflowExecutionCoordinator(
             owner = "workflow",
             initialCheckpoint = initialCheckpoint,
             metadata = AgentTaskMetadata(
+                projectId = projectId,
+                conversationId = conversationId,
                 kind = "workflow",
                 capabilityId = workflow.id,
                 title = workflow.id.take(160),
