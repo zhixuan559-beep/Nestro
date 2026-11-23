@@ -1857,8 +1857,10 @@ fun NestroApp(initialPage: String = "home") {
                                             }
                                         }
                                     }
-                                    AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
-                                    AssistChip(onClick = { page = "experts" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
+                                    AssistChip(
+                                        onClick = { page = "experts" },
+                                        label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: selectedExpert.ifBlank { "专家与专家团" }) }
+                                    )
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 if (chatMediaStatus.isNotBlank()) {
@@ -2686,9 +2688,7 @@ fun NestroApp(initialPage: String = "home") {
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
                                 }
-
-
-                                Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
+                                Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
                                 if (activeTeamRunHistory.isNotEmpty()) {
@@ -2751,10 +2751,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
                                             }) { Text("导出团队", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(
-                                                    onClick = { openExpertTeamChat(team.id, team.name) },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                                ) { Text("进入群聊") }
+                                                Button(onClick = { openExpertTeamChat(team.id, team.name) }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("进入群聊") }
                                                 TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     editingTeamId = team.id
@@ -2763,12 +2760,10 @@ fun NestroApp(initialPage: String = "home") {
                                                     teamDraftMembers = team.members.toSet()
                                                     showTeamDialog = true
                                                 }) { Text("编辑", color = Mint) }
-                                                TextButton(onClick = {
-                                                    removeExpertTeam(team.id, deleteChats = false)
-                                                }) { Text("解散", color = Muted) }
-                                                TextButton(onClick = {
-                                                    removeExpertTeam(team.id, deleteChats = true)
-                                                }) { Text("删除群", color = androidx.compose.ui.graphics.Color(0xFFB42318)) }
+                                                TextButton(onClick = { removeExpertTeam(team.id, deleteChats = false) }) { Text("解散", color = Muted) }
+                                                TextButton(onClick = { removeExpertTeam(team.id, deleteChats = true) }) {
+                                                    Text("删除群", color = MaterialTheme.colorScheme.error)
+                                                }
                                             }
                                         }
                                     }
@@ -2786,8 +2781,10 @@ fun NestroApp(initialPage: String = "home") {
                                         prefs.edit().remove("selected_team_id").apply()
                                     }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用团队") }
                                 }
+
                             }
                         }
+                        "teams" -> { page = "experts" }
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
