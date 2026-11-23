@@ -118,6 +118,17 @@ object PhoneAgentExecutor {
                 return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
             }
             action = actions[index]
+            if (action is Action.ClickText &&
+                PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(screenBeforeAction, action.exactText)
+            ) {
+                val message = "即将启动地图导航，请本人核对路线后再启动。"
+                val handedOff = service.handoffToUser(taskId, message)
+                val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请检查执行窗口。"
+                PhoneAgentTaskStore.recordActionResult(dao, taskId, index, "等待用户确认启动导航", false, userMessage)
+                PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_WAITING_USER, index)
+                taskContext.waitForUser(userMessage)
+                return ExecutionResult(Outcome.WAITING_USER, results.size, results, userMessage)
+            }
             if (action is Action.ConfirmSensitive) {
                 val handedOff = service.handoffToUser(taskId, action.description)
                 val userMessage = if (handedOff) action.description else "${action.description} 隔离屏自动交接未成功，请检查执行窗口。"
