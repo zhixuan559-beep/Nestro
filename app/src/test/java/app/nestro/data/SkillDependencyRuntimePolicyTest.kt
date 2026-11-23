@@ -33,4 +33,22 @@ class SkillDependencyRuntimePolicyTest {
         )
         assertTrue(SkillDependencyResolver.inspectInstalledSkill("a", skills, metadata).any { it.contains("循环") })
     }
+
+    @Test fun findsDirectDependentsAndFailsClosedOnCorruptStoredMetadata() {
+        val skills = mapOf(
+            "base" to "base prompt",
+            "consumer" to "consumer prompt",
+            "unrelated" to "unrelated prompt"
+        )
+        val metadata = mapOf(
+            "base" to """{"version":"1.0.0"}""",
+            "consumer" to """{"version":"1.0.0","dependencies":[{"name":"base","version":"^1.0.0"}]}"""
+        )
+        assertEquals(listOf("consumer"), SkillDependencyResolver.findDependents("base", skills, metadata))
+        assertEquals(emptyList<String>(), SkillDependencyResolver.findDependents("unrelated", skills, metadata))
+        assertEquals(
+            null,
+            SkillDependencyResolver.findDependents("base", skills, metadata + ("broken" to "{not-json"))
+        )
+    }
 }
