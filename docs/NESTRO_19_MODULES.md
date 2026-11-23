@@ -493,3 +493,9 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - Worker 在结束后回读最新持久化事件，再安排下一次 occurrence；若 generation 已变化，取消旧任务并按新定义排程。
 - 负偏移错过触发点时只立即执行当前最近 occurrence；已错过的后续触发点不批量回填，只排下一个仍在未来的触发点。`lastTaskId`/`lastRunAt` 与 generation 联合判重，generation=0 保留旧 taskId 兼容。
 - 新增 stale generation、条件写入、重复回填防护测试源码；未运行。
+
+
+## 2026-11-24 音频 MIME 归一化补充
+
+- 将 `audio/x-wav` 统一归一为 `audio/wav`，`audio/mpga` 归一为 `audio/mpeg`；保留原生 `audio/mp3`，避免不同 Android 文件提供方返回 MIME 别名时导致 OpenAI WAV/MP3 解析漏接。
+- 抽出纯函数并新增 MIME 别名单元测试源码；未运行测试。
