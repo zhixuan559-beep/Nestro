@@ -219,12 +219,13 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             require(current == null || current.projectId == projectId) {
                 "会话项目归属已变化，拒绝跨项目覆盖"
             }
-            val retainedUserMessageIds = messages.asSequence()
-                .filter { it.role == "user" }
-                .map { it.id }
-                .toSet()
+            val nextMessagesById = messages.associateBy { it.id }
             val removedSourceMessageIds = existing?.messages.orEmpty()
-                .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                .filter { old ->
+                    old.role == "user" && nextMessagesById[old.id]?.let {
+                        it.role == "user" && it.content == old.content
+                    } != true
+                }
                 .map { it.id }
             if (removedSourceMessageIds.isNotEmpty()) {
                 dao.deleteUserMemoriesForSourceMessages(projectId, conversationId, removedSourceMessageIds)
@@ -263,12 +264,13 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 ?: return@withTransaction
             val current = existing.conversation
             require(dao.projectExists(current.projectId)) { "会话所属项目不存在，拒绝恢复消息" }
-            val retainedUserMessageIds = messages.asSequence()
-                .filter { it.role == "user" }
-                .map { it.id }
-                .toSet()
+            val nextMessagesById = messages.associateBy { it.id }
             val removedSourceMessageIds = existing.messages
-                .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                .filter { old ->
+                    old.role == "user" && nextMessagesById[old.id]?.let {
+                        it.role == "user" && it.content == old.content
+                    } != true
+                }
                 .map { it.id }
             if (removedSourceMessageIds.isNotEmpty()) {
                 dao.deleteUserMemoriesForSourceMessages(current.projectId, conversationId, removedSourceMessageIds)
@@ -316,12 +318,13 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                     dao.deleteUserMemoriesForConversations(listOf(record.id), existing.conversation.projectId)
                 }
                 if (record.messagesLoaded && existing != null) {
-                    val retainedUserMessageIds = record.messages.asSequence()
-                        .filter { it.role == "user" }
-                        .map { it.id }
-                        .toSet()
+                    val nextMessagesById = record.messages.associateBy { it.id }
                     val removedSourceMessageIds = existing.messages
-                        .filter { it.role == "user" && it.id !in retainedUserMessageIds }
+                        .filter { old ->
+                            old.role == "user" && nextMessagesById[old.id]?.let {
+                                it.role == "user" && it.content == old.content
+                            } != true
+                        }
                         .map { it.id }
                     if (removedSourceMessageIds.isNotEmpty()) {
                         dao.deleteUserMemoriesForSourceMessages(record.projectId, record.id, removedSourceMessageIds)
