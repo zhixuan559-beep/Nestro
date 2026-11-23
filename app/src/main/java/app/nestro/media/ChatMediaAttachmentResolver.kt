@@ -14,16 +14,28 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Resolves the asset IDs already stored in the user's message into ephemeral native image parts.
- * The project media store remains the only owner of source files; message history keeps only the
- * existing asset_id text marker, so no second attachment store or database migration is needed.
+ * Resolves existing project asset_id markers into ephemeral provider-native media parts.
+ * The project media store remains the only owner of source files; Room stores only the marker.
  */
 internal object ChatMediaAttachmentResolver {
     private const val MAX_IMAGE_EDGE = 1_600
     private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
-    private const val MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024
+    private const val MAX_INLINE_MEDIA_BYTES = 8 * 1024 * 1024
+    private const val MAX_TOTAL_MEDIA_BYTES = 12 * 1024 * 1024
+    private const val MAX_IMAGES_PER_REQUEST = 10
+    private const val MAX_AUDIO_FILES_PER_REQUEST = 1
+    private const val MAX_VIDEO_FILES_PER_REQUEST = 10
     private val assetIdPattern = Regex("""asset_id=([A-Fa-f0-9-]{36})""")
-    private val passThroughMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
+    private val passThroughImageMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
+    private val supportedAudioMimeTypes = setOf(
+        "audio/aac", "audio/flac", "audio/mp3", "audio/mpeg", "audio/m4a",
+        "audio/mp4", "audio/ogg", "audio/opus", "audio/pcm", "audio/wav",
+        "audio/webm", "audio/mpga", "audio/x-wav"
+    )
+    private val supportedVideoMimeTypes = setOf(
+        "video/x-flv", "video/quicktime", "video/mpeg", "video/mpegps",
+        "video/mpg", "video/mp4", "video/webm", "video/wmv", "video/3gpp"
+    )
 
     internal fun referencedAssetIds(content: String): List<String> =
         assetIdPattern.findAll(content).map { it.groupValues[1] }.distinct().toList()
@@ -33,10 +45,11 @@ internal object ChatMediaAttachmentResolver {
         projectId: String,
         history: List<ChatMessage>
     ): List<ChatMessage> = withContext(Dispatchers.IO) {
-        if (projectId.isBlank() || history.none { it.role == "user" && "asset_id=" in it.content }) {
+        val recentHistory = history.takeLast(40)
+        if (projectId.isBlank() || recentHistory.none { it.role == "user" && "asset_id=" in it.content }) {
             return@withContext history
         }
-        val requestedIds = history.asReversed()
+        val requestedIds = recentHistory.asReversed()
             .filter { it.role == "user" }
             .flatMap { referencedAssetIds(it.content) }
             .distinct()
@@ -46,17 +59,37 @@ internal object ChatMediaAttachmentResolver {
             MediaProjectStore.listAssets(context, projectId).associateBy { it.id }
         }.getOrElse { return@withContext history }
 
-        var remainingBytes = MAX_TOTAL_IMAGE_BYTES
+        var remainingBytes = MAX_TOTAL_MEDIA_BYTES
+        var imageCount = 0
+        var audioCount = 0
+        var videoCount = 0
         val prepared = linkedMapOf<String, ChatMessageMediaPart>()
         for (assetId in requestedIds) {
             if (remainingBytes <= 0) break
             val asset = assets[assetId] ?: continue
-            if (asset.kind != MediaAssetKind.IMAGE) continue
-            val part = runCatching { prepareImage(context, asset) }.getOrNull() ?: continue
+            val part = when (asset.kind) {
+                MediaAssetKind.IMAGE -> {
+                    if (imageCount >= MAX_IMAGES_PER_REQUEST) null
+                    else runCatching { prepareImage(context, asset) }.getOrNull()
+                }
+                MediaAssetKind.AUDIO -> {
+                    if (audioCount >= MAX_AUDIO_FILES_PER_REQUEST) null
+                    else runCatching { prepareInlineMedia(context, asset, 2_048) }.getOrNull()
+                }
+                MediaAssetKind.VIDEO -> {
+                    if (videoCount >= MAX_VIDEO_FILES_PER_REQUEST) null
+                    else runCatching { prepareInlineMedia(context, asset, 4_096) }.getOrNull()
+                }
+            } ?: continue
             val byteCount = (part.dataBase64.length * 3L / 4L).toInt()
             if (byteCount !in 1..remainingBytes) continue
             prepared[assetId] = part
             remainingBytes -= byteCount
+            when (asset.kind) {
+                MediaAssetKind.IMAGE -> imageCount++
+                MediaAssetKind.AUDIO -> audioCount++
+                MediaAssetKind.VIDEO -> videoCount++
+            }
         }
 
         history.map { message ->
@@ -68,12 +101,37 @@ internal object ChatMediaAttachmentResolver {
         }
     }
 
+    private fun prepareInlineMedia(
+        context: Context,
+        asset: MediaAsset,
+        estimatedTokens: Int
+    ): ChatMessageMediaPart? {
+        val file = MediaProjectStore.assetFile(context, asset)
+        if (!file.isFile || file.length() <= 0L || file.length() != asset.byteSize ||
+            file.length() > MAX_INLINE_MEDIA_BYTES
+        ) return null
+        val mime = asset.mimeType.lowercase()
+        val supported = when (asset.kind) {
+            MediaAssetKind.AUDIO -> mime in supportedAudioMimeTypes
+            MediaAssetKind.VIDEO -> mime in supportedVideoMimeTypes
+            MediaAssetKind.IMAGE -> false
+        }
+        if (!supported) return null
+        val bytes = file.readBytes()
+        return ChatMessageMediaPart(
+            kind = asset.kind.name,
+            mimeType = mime,
+            dataBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+            estimatedTokens = estimatedTokens
+        )
+    }
+
     private fun prepareImage(context: Context, asset: MediaAsset): ChatMessageMediaPart? {
         val file = MediaProjectStore.assetFile(context, asset)
         if (!file.isFile || file.length() <= 0L || file.length() != asset.byteSize) return null
         val mime = asset.mimeType.lowercase()
         if (asset.rotationDegrees % 360 == 0 && file.length() <= MAX_IMAGE_BYTES &&
-            mime in passThroughMimeTypes
+            mime in passThroughImageMimeTypes
         ) {
             val bytes = file.readBytes()
             return ChatMessageMediaPart(
