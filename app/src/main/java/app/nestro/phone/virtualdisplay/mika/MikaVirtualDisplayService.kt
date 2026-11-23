@@ -53,7 +53,7 @@ internal class MikaVirtualDisplayService(
         DisplayManager::class.java.getDeclaredConstructor(Context::class.java)
             .apply { isAccessible = true }.newInstance(context)
 
-    @SuppressLint("PrivateApi")
+    @get:SuppressLint("PrivateApi")
     private val taskManager: Any by lazy {
         Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)!!
     }
@@ -381,8 +381,6 @@ internal class MikaVirtualDisplayService(
             events.forEach { event ->
                 sent = inject(event, displayId) && sent
             }
-        } finally {
-            events.forEach { event -> event.recycle() }
         }
         return if (sent) 1 else 2
     }
