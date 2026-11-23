@@ -51,7 +51,8 @@ class ChatRequestContextAssemblerLightweightTest {
         var retrievalCalls = 0
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> retrievalCalls++; ConversationRecallResult("旧对话", emptyList()) },
-            retrieveUserMemory = { _, _ -> retrievalCalls++; "个人记忆" }
+            retrieveUserMemory = { _, _ -> retrievalCalls++; "个人记忆" },
+            conversationRecallVersion = { _, _ -> error("普通聊天不应读取历史语料版本") }
         )
         val result = assembler.assemble(
             projectId = "p", conversationId = "c", prompt = "帮我搜索咖啡价格",
