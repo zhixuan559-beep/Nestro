@@ -49,10 +49,8 @@ internal object ChatMediaAttachmentResolver {
         if (projectId.isBlank() || recentHistory.none { it.role == "user" && "asset_id=" in it.content }) {
             return@withContext history
         }
-        val requestedIds = recentHistory.asReversed()
-            .filter { it.role == "user" }
-            .flatMap { referencedAssetIds(it.content) }
-            .distinct()
+        val owners = mostRecentAssetOwners(recentHistory)
+        val requestedIds = owners.keys.toList()
         if (requestedIds.isEmpty()) return@withContext history
 
         val assets = runCatching {
@@ -95,7 +93,9 @@ internal object ChatMediaAttachmentResolver {
         history.map { message ->
             if (message.role != "user") message
             else {
-                val parts = referencedAssetIds(message.content).mapNotNull(prepared::get)
+                val parts = referencedAssetIds(message.content)
+                    .filter { owners[it] == message.id }
+                    .mapNotNull(prepared::get)
                 if (parts.isEmpty()) message else message.copy(mediaParts = parts)
             }
         }
@@ -109,6 +109,16 @@ internal object ChatMediaAttachmentResolver {
     internal fun estimateVideoTokens(durationMs: Long): Int {
         val seconds = ((durationMs.coerceAtLeast(0L) + 999L) / 1_000L).coerceAtLeast(1L)
         return (seconds * 256L).coerceIn(4_096L, 65_536L).toInt()
+    }
+
+    internal fun mostRecentAssetOwners(history: List<ChatMessage>): Map<String, String> {
+        val owners = linkedMapOf<String, String>()
+        history.asReversed().filter { it.role == "user" }.forEach { message ->
+            referencedAssetIds(message.content).forEach { assetId ->
+                owners.putIfAbsent(assetId, message.id)
+            }
+        }
+        return owners
     }
 
     private fun prepareInlineMedia(
