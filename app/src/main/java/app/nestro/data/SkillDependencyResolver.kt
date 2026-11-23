@@ -203,12 +203,14 @@ object SkillDependencyResolver {
             if (unresolved == null) return if (hasCycle(state.bundles)) null else state
             val ranges = state.constraints[unresolved].orEmpty()
             val installed = installedVersions[unresolved]
+            if (unresolved in installedSkills && unresolved in disabledSkills) {
+                error("依赖技能已停用，请先启用：$unresolved")
+            }
             if (installed != null && ranges.all { runCatching { SkillSemVer.matches(installed, it) }.getOrDefault(false) }) {
                 if (installedSkills.isEmpty() && installedMetadata.isEmpty() && disabledSkills.isEmpty()) {
                     val installedSolution = search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
                     if (installedSolution != null) return installedSolution
                 } else if (unresolved in installedSkills) {
-                    require(unresolved !in disabledSkills) { "依赖技能已停用，请先启用：$unresolved" }
                     val dependencyIssues = inspectInstalledSkill(unresolved, installedSkills, installedMetadata, disabledSkills)
                     require(dependencyIssues.isEmpty()) {
                         "已安装依赖的完整依赖链不可用：$unresolved；${dependencyIssues.joinToString("；")}"
