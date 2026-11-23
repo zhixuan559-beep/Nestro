@@ -954,7 +954,13 @@ class NestroApplication : Application() {
                     throw cancelled
                 } catch (error: Exception) {
                     val reason = (error.message ?: error.javaClass.simpleName).take(2_000)
-                    automationRepository.recordAutomationResult(eventId, "FAILED", error = reason)
+                    val retryableBeforeSideEffects = app.nestro.agent.AgentTaskRetryPolicy.isRetryable(error) &&
+                        state.attempts < state.maxRetries
+                    automationRepository.recordAutomationResult(
+                        eventId,
+                        if (retryableBeforeSideEffects) "QUEUED" else "FAILED",
+                        error = reason
+                    )
                     taskContext.fail(reason)
                     throw error
                 }
