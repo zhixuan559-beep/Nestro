@@ -112,8 +112,11 @@ class WorkflowExecutionCoordinator(
                         if (lease != null && invokeModelWithTools == null) {
                             error("工作流步骤 ${step.title} 声明了工具能力，但未提供工具感知的模型调用适配器")
                         }
-                        invokeModelWithTools?.invoke(step, prompt, lease?.access)
-                            ?: invokeModel(step, prompt)
+                        if (lease != null && invokeModelWithTools != null) {
+                            invokeModelWithTools.invoke(step, prompt, lease.access)
+                        } else {
+                            invokeModel(step, prompt)
+                        }
                     } finally {
                         lease?.let { AgentToolLeaseRegistry.release(it.id) }
                     }
