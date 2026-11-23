@@ -310,6 +310,7 @@ class ExpertTeamExecutionCoordinator(
             .put("teamDescription", teamDescription)
             .put("goal", plan.projectGoal)
             .put("acceptance", plan.finalAcceptanceCriteria)
+            .put("reworkRound", plan.reworkRound)
             .put("members", JSONArray().apply {
                 members.toSortedMap().forEach { (name, member) ->
                     put(JSONObject().put("name", name)
