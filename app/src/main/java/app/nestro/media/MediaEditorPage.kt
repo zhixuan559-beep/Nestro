@@ -614,7 +614,7 @@ fun MediaEditorPage(
             }) { Text("重做") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("主视频轨 + 多条音频混音轨", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            Text("主视频轨 + 最多 8 条音频混音轨", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = {
                 runCatching {
                     val next = MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
