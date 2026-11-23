@@ -2780,11 +2780,6 @@ fun NestroApp(initialPage: String = "home") {
                                 Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 if (teamRunStatus.isNotBlank()) {
                                     AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
-                                    if (busy) {
-                                        TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                                            Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint)
-                                        }
-                                    }
                                 }
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
                                 if (activeTeamRunHistory.isNotEmpty()) {
