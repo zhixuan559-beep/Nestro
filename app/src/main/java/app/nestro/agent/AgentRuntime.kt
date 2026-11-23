@@ -36,13 +36,19 @@ data class AgentTaskMetadata(
 
 class RetryableAgentTaskException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+class NonRetryableAgentTaskException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+
 object AgentTaskRetryPolicy {
-    fun isRetryable(error: Throwable): Boolean = generateSequence(error) { it.cause }.any {
+    fun isRetryable(error: Throwable): Boolean {
+        val causes = generateSequence(error) { it.cause }.toList()
+        if (causes.any { it is NonRetryableAgentTaskException }) return false
+        return causes.any {
         it is RetryableAgentTaskException ||
             it is java.net.SocketTimeoutException ||
             it is java.net.ConnectException ||
             it is java.net.UnknownHostException ||
             it is java.net.SocketException
+        }
     }
 
     fun backoffMillis(attempt: Int): Long {
