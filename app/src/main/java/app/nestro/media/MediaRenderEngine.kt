@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.audio.ToInt16PcmAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
@@ -28,7 +30,7 @@ object MediaRenderEngine {
         videoClips.forEach { clip ->
             if (clip.timelineStartMs > cursor) videoBuilder.addGap((clip.timelineStartMs - cursor) * 1_000L)
             val asset = assets[clip.assetId] ?: error("视频轨道引用了不存在的素材")
-            videoBuilder.addItem(editedItem(context, asset, clip, removeAudio = videoTrack.muted || clip.muted))
+            videoBuilder.addItem(editedItem(context, asset, clip, removeAudio = videoTrack.muted || clip.muted, audioVolume = videoTrack.volume))
             cursor = clip.timelineEndMs
         }
         val sequences = mutableListOf(videoBuilder.build())
@@ -50,7 +52,7 @@ object MediaRenderEngine {
                         audioBuilder.addGap(clip.durationMs * 1_000L)
                     } else {
                         val asset = assets[clip.assetId] ?: error("音频轨道引用了不存在的素材")
-                        audioBuilder.addItem(editedItem(context, asset, clip))
+                        audioBuilder.addItem(editedItem(context, asset, clip, audioVolume = audioTrack.volume))
                     }
                     audioCursor = clip.timelineEndMs
                 }
@@ -65,14 +67,22 @@ object MediaRenderEngine {
         return builder.build()
     }
 
-    private fun normalizedAudioEffects(): Effects =
-        Effects(listOf(ToInt16PcmAudioProcessor()), emptyList())
+    private fun normalizedAudioEffects(volume: Float): Effects {
+        val channelMixer = ChannelMixingAudioProcessor()
+        for (inputChannels in 1..6) {
+            channelMixer.putChannelMixingMatrix(
+                ChannelMixingMatrix.createForConstantPower(inputChannels, 2).scaleBy(volume)
+            )
+        }
+        return Effects(listOf(ToInt16PcmAudioProcessor(), channelMixer), emptyList())
+    }
 
     private fun editedItem(
         context: Context,
         asset: MediaAsset,
         clip: MediaClip,
-        removeAudio: Boolean = false
+        removeAudio: Boolean = false,
+        audioVolume: Float = 1f
     ): EditedMediaItem {
         val file: File = MediaProjectStore.assetFile(context, asset)
         require(file.isFile && file.length() == asset.byteSize) { "素材文件缺失或大小已变化：" + asset.displayName }
@@ -97,7 +107,7 @@ object MediaRenderEngine {
         if (removeAudio || asset.kind == MediaAssetKind.IMAGE) {
             editedBuilder.setRemoveAudio(true)
         } else {
-            editedBuilder.setEffects(normalizedAudioEffects())
+            editedBuilder.setEffects(normalizedAudioEffects(audioVolume))
         }
         return editedBuilder.build()
     }
