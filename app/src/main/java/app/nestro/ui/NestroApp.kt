@@ -1610,7 +1610,7 @@ fun NestroApp(initialPage: String = "home") {
                             }
                         },
                             shouldPause = { expertTeamPauseController.isPaused() },
-                            awaitResume = { expertTeamPauseController.awaitResume() },
+                            awaitResume = { expertTeamPauseController.awaitResume { stopRequested } },
                             toolCatalog = appRuntime.agentToolCatalog
                         )
                     } finally {
