@@ -19,7 +19,8 @@ internal class ChatRequestContextAssembler(
     private val memoryVersion: (String) -> String = { projectId ->
         val token = UserMemoryStore.mutationVersion(projectId)
         "${token.projectVersion}:${token.globalVersion}"
-    }
+    },
+    private val conversationRecallVersion: suspend (String, String) -> String = { _, _ -> "" }
 ) {
     private data class CachedAssembly(val storedAt: Long, val value: ChatRequestContextAssembly)
     private val assemblyCache = object : LinkedHashMap<String, CachedAssembly>(32, 0.75f, true) {
@@ -47,11 +48,15 @@ internal class ChatRequestContextAssembler(
         )
         // Cache the final assembled prompt context, not merely embeddings. The key
         // covers every input that affects retrieval or the final system context.
+        // Historical recall depends on the whole project corpus, not only current input.
+        val recallCorpusVersion = if (recallEnabled) {
+            conversationRecallVersion(projectId, conversationId)
+        } else ""
         val cacheKey = UserMemoryStore.fingerprint(buildString {
             append(projectId).append('|').append(conversationId).append('|')
             append(prompt).append('|').append(recallEnabled).append('|').append(userMemoryEnabled).append('|')
             append(baseSystemContext).append('|').append(recallQuery).append('|').append(userMemoryQuery).append('|')
-            append(memoryVersion(projectId))
+            append(memoryVersion(projectId)).append('|').append(recallCorpusVersion)
         })
         synchronized(assemblyCache) {
             val cached = assemblyCache[cacheKey]
