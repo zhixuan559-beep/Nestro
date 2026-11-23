@@ -32,4 +32,9 @@ class SkillSemVerTest {
         assertFalse(runCatching { SkillSemVer.compare("01.0.0","1.0.0") }.isSuccess)
         assertFalse(runCatching { SkillSemVer.compare("1.0.0-01","1.0.0") }.isSuccess)
     }
+
+    @Test fun comparesLongNumericPrereleaseIdentifiersWithoutOverflow() {
+        assertTrue(SkillSemVer.compare("1.0.0-100000000000000000000", "1.0.0-99999999999999999999") > 0)
+        assertTrue(SkillSemVer.compare("1.0.0-99999999999999999999", "1.0.0-0abc") < 0)
+    }
 }
