@@ -24,10 +24,10 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-private val KnowledgeCard=androidx.compose.ui.graphics.Color(0xFF1A1C20)
-private val KnowledgeInk=androidx.compose.ui.graphics.Color(0xFFE8EAED)
-private val KnowledgeMuted=androidx.compose.ui.graphics.Color(0xFF8A8F98)
-private val KnowledgeMint=androidx.compose.ui.graphics.Color(0xFF34D399)
+private val KnowledgeCard=androidx.compose.ui.graphics.Color(0xFFF7F7F8)
+private val KnowledgeInk=androidx.compose.ui.graphics.Color(0xFF111111)
+private val KnowledgeMuted=androidx.compose.ui.graphics.Color(0xFF6B6B6B)
+private val KnowledgeMint=androidx.compose.ui.graphics.Color(0xFF111111)
 @Composable
 fun KnowledgePage(repository:KnowledgeRepository,projectId:String,readableProjectIds:Set<String> = emptySet(),writableProjectIds:Set<String> = emptySet()) {
  val context=LocalContext.current; val scope=rememberCoroutineScope()
