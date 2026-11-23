@@ -62,7 +62,7 @@ internal class CalendarExpertTeamRunner(
         val disabledSkills = runCatching {
             val rows = JSONArray(preferences.getString("disabled_skills_v1", "[]") ?: "[]")
             (0 until rows.length()).map { rows.getString(it) }.toSet()
-        }.getOrDefault(emptySet())
+        }.getOrDefault(skills.keys)
         val skillMetadata = runCatching {
             val json = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
             buildMap {
