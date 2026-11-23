@@ -43,7 +43,8 @@ internal data class ChatRequestExecutionResult(
 internal class ChatRequestExecutionCoordinator(
     private val contextAssembler: ChatRequestContextAssembler,
     private val streamingCoordinator: ChatStreamingCoordinator,
-    private val modelToolDispatcher: ModelLedToolDispatcher? = null
+    private val modelToolDispatcher: ModelLedToolDispatcher? = null,
+    private val resolveMediaAttachments: suspend (String, List<ChatMessage>) -> List<ChatMessage> = { _, history -> history }
 ) {
     suspend fun execute(
         request: ChatRequestExecutionRequest,
@@ -72,6 +73,7 @@ internal class ChatRequestExecutionCoordinator(
             recallSources = assembled.recallSources
 
             val finalSystemContext = assembled.systemContext.take(24_000)
+            val modelHistory = resolveMediaAttachments(request.projectId, request.history)
 
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             var directPersistedLength = 0
@@ -83,7 +85,7 @@ internal class ChatRequestExecutionCoordinator(
                         conversationId = request.conversationId,
                         projectId = request.projectId,
                         prompt = request.prompt,
-                        history = request.history,
+                        history = modelHistory,
                         systemContext = finalSystemContext,
                         configs = request.modelConfigs,
                         temperature = request.temperature,
@@ -153,7 +155,7 @@ internal class ChatRequestExecutionCoordinator(
             val streamed = streamingCoordinator.execute(
                 configs = request.modelConfigs,
                 history = ChatRequestPolicy.boundedChatHistory(
-                    request.history,
+                    modelHistory,
                     finalSystemContext,
                     contextWindowTokens = contextWindowTokens,
                     outputReserveTokens = outputReserveTokens
