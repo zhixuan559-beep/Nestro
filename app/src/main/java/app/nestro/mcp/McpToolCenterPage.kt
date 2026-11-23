@@ -76,8 +76,8 @@ fun McpToolCenterPage(app: NestroApplication) {
                     it.kind == "mcp_tool" &&
                         it.status in setOf(
                             AgentTaskStatus.WAITING_FOR_USER,
-                            app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
-                            app.nestro.agent.AgentTaskStatus.PAUSED
+                            AgentTaskStatus.WAITING_FOR_TASK,
+                            AgentTaskStatus.PAUSED
                         )
                 }
             }
@@ -328,7 +328,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(task.title.ifBlank { task.capabilityId }, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            if (task.status == app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER) "等待用户审批"
+                            if (task.status == AgentTaskStatus.WAITING_FOR_USER) "等待用户审批"
                             else "任务状态：${task.status}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
