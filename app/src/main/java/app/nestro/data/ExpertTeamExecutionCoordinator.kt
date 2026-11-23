@@ -2,6 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskMetadata
+import app.nestro.agent.AgentTaskStatus
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
@@ -284,6 +285,8 @@ class ExpertTeamExecutionCoordinator(
         projectId: String,
         taskId: String = UUID.randomUUID().toString(),
         shouldStop: () -> Boolean = { false },
+        shouldPause: () -> Boolean = { false },
+        awaitResume: suspend () -> Unit = {},
         eventSink: ExpertTeamEventSink? = null,
         onPackage: suspend (String, String, String) -> Unit = { _, _, _ -> },
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
@@ -355,6 +358,12 @@ class ExpertTeamExecutionCoordinator(
             maxRetries = 0
         ) { taskContext ->
             var sequence = 0L
+            suspend fun awaitIfPaused() {
+                if (!shouldPause()) return
+                taskContext.pause("用户暂停专家项目；当前工作包已到安全检查点")
+                awaitResume()
+                taskContext.transition(AgentTaskStatus.RUNNING, "用户恢复专家项目")
+            }
             suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
                 eventSink?.append(
                     ExpertTeamCollaborationEvent(
@@ -369,6 +378,7 @@ class ExpertTeamExecutionCoordinator(
                 plan = plan,
                 availableMembers = members.keys,
                 shouldStop = shouldStop,
+                awaitIfPaused = ::awaitIfPaused,
                 resumeResults = resumeResults,
                 invoke = { memberName, instruction ->
                     val member = members[memberName] ?: error("专家不在当前团队中：$memberName")
