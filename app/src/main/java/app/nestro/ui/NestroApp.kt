@@ -2690,6 +2690,15 @@ fun NestroApp(initialPage: String = "home") {
                                 HorizontalDivider(color = Line, modifier = Modifier.padding(vertical = 8.dp))
                                 Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 Text("固定专家组合在这里管理；点击群组即可进入独立群聊。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (teamRunStatus.isNotBlank()) Text(teamRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                expertTeamRunHistory.firstOrNull { it.projectId == activeProjectId }?.let { latestTeamRun ->
+                                    Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                            Text("最近一次协作 · ${latestTeamRun.teamName}", color = Ink, style = MaterialTheme.typography.titleSmall)
+                                            Text("成功 ${latestTeamRun.successfulMembers} / ${latestTeamRun.members.size} · 失败 ${latestTeamRun.failedMembers}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入群组") }
                                     OutlinedButton(onClick = {
@@ -2716,6 +2725,21 @@ fun NestroApp(initialPage: String = "home") {
                                             Text(team.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                                             if (team.description.isNotBlank()) Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            val teamIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, team.id)]?.contains("*") ?: true
+                                            TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, teamIsGlobal.not()) }) {
+                                                Text(if (teamIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                            }
+                                            TextButton(onClick = {
+                                                val memberBundles = team.members.mapNotNull { member ->
+                                                    (expertPrompts[member]?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(member))
+                                                        .takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
+                                                }
+                                                if (memberBundles.size >= 2) {
+                                                    teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)
+                                                    val safeName = team.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "team" }
+                                                    exportTeamLauncher.launch("$safeName.nestro-team.json")
+                                                } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
+                                            }) { Text("导出群组", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Button(
                                                     onClick = { openExpertTeamChat(team.id, team.name) },
