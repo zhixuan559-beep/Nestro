@@ -3,7 +3,6 @@ package app.nestro.data
 import app.nestro.agent.AgentToolResult
 import app.nestro.agent.AgentToolAccess
 import app.nestro.model.ChatStreamingCoordinator
-import app.nestro.model.ModelModality
 
 internal data class ChatRequestExecutionRequest(
     val requestId: String,
@@ -77,26 +76,10 @@ internal class ChatRequestExecutionCoordinator(
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
             val modelHistory = resolveMediaAttachments(request.projectId, request.history)
             if (request.shouldStop()) throw IllegalStateException("用户停止生成")
-            val mediaParts = modelHistory.flatMap { it.mediaParts }
-            val requiredModalities = mediaParts.map { part ->
-                when (part.kind.lowercase()) {
-                    "image" -> ModelModality.IMAGE
-                    "audio" -> ModelModality.AUDIO
-                    "video" -> ModelModality.VIDEO
-                    else -> error("未知媒体类型，已阻止发送给模型：${part.kind}")
-                }
-            }.toSet()
-            val modelConfigs = request.modelConfigs.filter { config ->
-                config.inputModalities.containsAll(requiredModalities)
-            }
+            val requiredModalities = ModelCapabilityPolicy.requiredInputModalities(modelHistory)
+            val modelConfigs = ModelCapabilityPolicy.compatibleConfigs(request.modelConfigs, requiredModalities)
             if (requiredModalities.isNotEmpty() && modelConfigs.isEmpty()) {
-                val labels = requiredModalities.map { modality -> when (modality) {
-                    ModelModality.TEXT -> "文本"
-                    ModelModality.IMAGE -> "图片"
-                    ModelModality.AUDIO -> "音频"
-                    ModelModality.VIDEO -> "视频"
-                } }
-                error("当前选中模型及故障切换候选均未声明支持本次输入：${labels.joinToString("、")}。请在模型管理中核对并声明模型能力。")
+                error("当前选中模型及故障切换候选均未声明支持本次输入：${ModelCapabilityPolicy.describe(requiredModalities)}。请在模型管理中核对并声明模型能力。")
             }
             var directPersistedLength = 0
             var lastDirectPersistAt = System.currentTimeMillis()
