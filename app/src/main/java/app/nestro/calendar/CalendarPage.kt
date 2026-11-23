@@ -396,8 +396,10 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String, onBack
                         if (event.description.isNotBlank()) Text(event.description, style = MaterialTheme.typography.bodySmall)
                         if (event.automationPrompt.isNotBlank()) {
                             Text("自动任务 · ${event.automationStatus}", style = MaterialTheme.typography.labelMedium)
-                            if (event.automationDelayMinutes > 0) {
-                                Text("到期后延迟执行：${event.automationDelayMinutes} 分钟", style = MaterialTheme.typography.labelSmall)
+                            when {
+                                event.automationDelayMinutes < 0 -> Text("开始前提前执行：${-event.automationDelayMinutes} 分钟", style = MaterialTheme.typography.labelSmall)
+                                event.automationDelayMinutes > 0 -> Text("开始后延迟执行：${event.automationDelayMinutes} 分钟", style = MaterialTheme.typography.labelSmall)
+                                else -> Text("事件开始时执行", style = MaterialTheme.typography.labelSmall)
                             }
                             if (event.nextRunAt > 0L) {
                                 Text(
@@ -571,8 +573,8 @@ private fun CalendarEventEditor(
                 )
                 OutlinedTextField(
                     automationDelay,
-                    { automationDelay = it.filter(Char::isDigit).take(10) },
-                    label = { Text("到期后延迟执行分钟（0 表示立即执行）") },
+                    { automationDelay = it.filter { ch -> ch.isDigit() || ch == '-' }.take(11) },
+                    label = { Text("相对开始时间偏移分钟（负数提前，0 开始时，正数延后；最多提前 7 天）") },
                     singleLine = true,
                     enabled = automationPrompt.isNotBlank()
                 )
@@ -604,7 +606,7 @@ private fun CalendarEventEditor(
                 val reminderValue = reminder.toIntOrNull()
                 val validReminder = reminderValue != null && reminderValue in setOf(-1, 0, 5, 10, 15, 30, 60, 1440)
                 val automationDelayValue = automationDelay.toIntOrNull()
-                val validAutomationDelay = automationDelayValue != null && automationDelayValue in 0..CalendarRules.MAX_AUTOMATION_DELAY_MINUTES
+                val validAutomationDelay = automationDelayValue != null && automationDelayValue in -CalendarRules.MAX_AUTOMATION_ADVANCE_MINUTES..CalendarRules.MAX_AUTOMATION_DELAY_MINUTES
                 val validRecurrence = recurrence in CalendarRules.recurrenceValues
                 val validTimes = allDay || runCatching {
                     java.time.LocalTime.parse(startTime, calendarTimeFormat)
@@ -615,7 +617,7 @@ private fun CalendarEventEditor(
                 else if (endDate.isBefore(date)) error = "结束日期不能早于开始日期"
                 else if (!validTimes) error = "时间格式请使用 HH:mm"
                 else if (!validReminder) error = "提醒分钟数无效"
-                else if (!validAutomationDelay) error = "自动任务延迟必须为非负整数分钟"
+                else if (!validAutomationDelay) error = "自动任务偏移范围无效，最多提前 7 天"
                 else if (!validRecurrence) error = "重复规则无效"
                 else {
                     error = ""
