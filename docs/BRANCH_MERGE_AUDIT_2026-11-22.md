@@ -199,3 +199,19 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - `README.md`、`docs/design/NESTRO_UI_DESIGN.md`：分支产品状态与界面说明早于当前 main，不能作为当前功能事实。
 - **核销结论：12 个文件均已分类；未发现分支独有且当前 main 缺失的生产功能或测试。main 对专家团生命周期、会话记忆清理、技能持久化校验和 UI 状态均有更完整实现。**
 - 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
+## 2026-11-24 main 分叉分支逐条核销 — 05/20
+
+### `feature/module-6-knowledge-base`
+
+- 核对基线：`main` HEAD `91db8bae68a107603658cb04c7029cd3e5db5a40`。
+- 分支关系：merge base `dba49675483520a5413ebea494423f7a80d395ae`；branch ahead 26、behind 2052。compare 共 28 个文件差异。
+- `KnowledgePdfOcr.kt`、`KnowledgeVectorSearch.kt`、`KnowledgeRepository.kt`、`KnowledgeStore.kt`、`KnowledgeChunker.kt`、`KnowledgeSearchEngine.kt`、`KnowledgeTextDecoder.kt`：main 与分支 blob SHA 完全一致；没有理由再复制。
+- `KnowledgeEmbeddingModelManager.kt`：main 已将 BGE 句向量从分支的 CLS 单 token 取值升级为按 attention mask 进行 mean pooling，并校验 token 维度、非有限值和空 mask；分支实现更旧，不能覆盖。
+- `ConversationContextRepository.kt`：main 新增 `recallVersion`，将其他会话语料变更纳入知识/记忆召回缓存失效；分支没有这条缓存版本接口。
+- `KnowledgePage.kt`：main 使用 MaterialTheme 语义色并适配黑白主题；分支保留旧硬编码绿/深色。发现 main 空状态文案误写为“Nost”，已依据分支正确文案修正为“Nestro”。
+- `NestroApplication.kt`、`NestroDatabase.kt`、`app/build.gradle.kts`：main 已包含统一工具目录/任务状态、跨项目读取授权、语义模型能力接线、任务元数据、记忆共享和更高版本 Room 迁移；分支 schema 仍停留在 13，main 已迁移到 15。旧数据库定义不能回填覆盖。
+- 测试：BGE tokenizer、embedding 模型仪器测试、PDF/OCR、Office/XML、向量索引、向量排序、分块和 BM25 测试均与 main 对应版本相同；main 的迁移测试覆盖到 version 15，分支仅到 version 13。`module-6-ci.yml` 与 AndroidTest Manifest 也与 main blob SHA 相同。
+- 本次补充 `KnowledgeEmbeddingModelManagerTest`，覆盖 attention-mask mean pooling、无效维度、非有限值和空 mask；未运行测试。
+- README 与路线图记录的是当时模块6分支/CI状态，已被 main 当前主线说明取代，不复制。
+- **核销结论：28 个文件差异已分类；知识库生产功能与主要测试已进入 main，main 还包含更正确的 BGE pooling 和召回缓存版本失效。唯一回收的是产品名文案纠错，并为 main 的 pooling 实现补测试源码。**
+- 未合并、未删除分支；未运行构建、Gradle test、APK 或设备验收。
