@@ -3320,7 +3320,8 @@ fun NestroApp(initialPage: String = "home") {
                                                                 selectedSkill = ""
                                                             }
                                                             prefs.edit().putString("active_project_id", project.id)
-                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
+                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis())
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                             val target = conversations.firstOrNull { it.projectId == project.id }
                                                             if (target == null) {
                                                                 val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
