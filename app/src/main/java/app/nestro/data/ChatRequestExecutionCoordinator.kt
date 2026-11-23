@@ -30,7 +30,8 @@ internal data class ChatRequestExecutionResult(
     val finalization: ChatResponseFinalization,
     val recalledCount: Int,
     val recallSources: List<ConversationRecallSource>,
-    val taskPlanningFailure: Throwable?
+    val taskPlanningFailure: Throwable?,
+    val failure: Throwable? = null
 )
 
 /**
@@ -182,7 +183,8 @@ internal class ChatRequestExecutionCoordinator(
             ),
             recalledCount = recalledCount,
             recallSources = recallSources,
-            taskPlanningFailure = taskPlanningFailure
+            taskPlanningFailure = taskPlanningFailure,
+            failure = result.exceptionOrNull()
         )
     }
 }
