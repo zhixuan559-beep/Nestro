@@ -433,6 +433,9 @@ fun NestroApp(initialPage: String = "home") {
             ).filter { it.projectId == activeProjectId }.takeLast(100)
         )
     }
+    var teamEventVisibleCount by remember(activeProjectId) {
+        mutableStateOf(EXPERT_TEAM_EVENT_PAGE_SIZE)
+    }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
 
     fun applyConversationContext(conversationId: String, projectId: String) {
@@ -2767,7 +2770,8 @@ fun NestroApp(initialPage: String = "home") {
                                     Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text("最近协作过程", color = Ink, style = MaterialTheme.typography.titleSmall)
-                                            expertTeamEvents.takeLast(16).asReversed().forEach { event ->
+                                            val visibleEvents = visibleExpertTeamEvents(expertTeamEvents, teamEventVisibleCount)
+                                            visibleEvents.forEach { event ->
                                                 val who = listOf(event.memberName, event.relatedMemberName).filter { it.isNotBlank() }.joinToString(" → ")
                                                 Text(
                                                     "${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(event.createdAt))} · ${event.type} · $who · ${event.status}",
@@ -2775,6 +2779,17 @@ fun NestroApp(initialPage: String = "home") {
                                                 )
                                                 if (event.message.isNotBlank()) {
                                                     Text(event.message.take(240), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                            if (visibleEvents.size < expertTeamEvents.size) {
+                                                TextButton(
+                                                    onClick = {
+                                                        teamEventVisibleCount = (teamEventVisibleCount + EXPERT_TEAM_EVENT_PAGE_SIZE)
+                                                            .coerceAtMost(EXPERT_TEAM_EVENT_MAX_VISIBLE)
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("加载更早记录（${visibleEvents.size}/${expertTeamEvents.size}）", color = Mint)
                                                 }
                                             }
                                         }
