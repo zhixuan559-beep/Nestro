@@ -173,7 +173,7 @@ fun NestroApp(initialPage: String = "home") {
         ModelManagementUiState(prefs, modelRepository)
     }
     var config by modelUiState.config
-    var taskModeEnabled by remember(prefs) { mutableStateOf(prefs.getBoolean("chat_task_mode_enabled", false)) }
+    var taskModeEnabled by remember { mutableStateOf(true) }
     var reasoningEffort by remember(prefs) { mutableStateOf(prefs.getString("reasoning_effort_v1", "low") ?: "low") }
     var showReasoningMenu by remember { mutableStateOf(false) }
     var modelProfiles by modelUiState.modelProfiles
@@ -1847,7 +1847,6 @@ fun NestroApp(initialPage: String = "home") {
                                 ) {
                                     AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
-                                    AssistChip(onClick = { taskModeEnabled = !taskModeEnabled; prefs.edit().putBoolean("chat_task_mode_enabled", taskModeEnabled).apply() }, label = { Text(if (taskModeEnabled) "任务执行：开启" else "普通聊天") })
                                     Box {
                                         AssistChip(onClick = { showReasoningMenu = true }, label = { Text("思考：${when (reasoningEffort) { "none" -> "关闭"; "low" -> "轻量"; "medium" -> "中度"; else -> "重度" }}${if (activeModelSupportsReasoningEffort) "" else "（当前模型不支持）"}") })
                                         DropdownMenu(expanded = showReasoningMenu, onDismissRequest = { showReasoningMenu = false }) {
@@ -1856,11 +1855,6 @@ fun NestroApp(initialPage: String = "home") {
                                             }
                                         }
                                     }
-                                    AssistChip(
-                                        onClick = { page = "experts" },
-                                        label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: selectedExpert.ifBlank { "专家与专家团" }) }
-                                    )
-                                    AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 if (chatMediaStatus.isNotBlank()) {
                                     Text(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
