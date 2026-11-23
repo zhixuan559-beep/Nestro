@@ -88,7 +88,20 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
@@ -167,6 +180,15 @@ fun NestroApp(initialPage: String = "home") {
     var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
+    var drawerMounted by remember { mutableStateOf(false) }
+    LaunchedEffect(showDrawer) {
+        if (showDrawer) {
+            drawerMounted = true
+        } else {
+            delay(NestroMotion.DRAWER_OUT)
+            drawerMounted = false
+        }
+    }
     var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
@@ -1712,20 +1734,32 @@ fun NestroApp(initialPage: String = "home") {
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
             Box(Modifier.fillMaxSize()) {
-                if (showDrawer && screenWidthDp < 600) {
-                    NavigationDrawerContent(
-                        modifier = Modifier.fillMaxSize(),
-                        onNavigate = { destination -> page = destination; showDrawer = false },
-                        onClose = { showDrawer = false }
-                    )
-                } else {
-                Row(Modifier.fillMaxSize()) {
-                    if (showDrawer && screenWidthDp >= 600) {
+                if (drawerMounted && screenWidthDp < 600) {
+                    AnimatedVisibility(
+                        visible = showDrawer,
+                        enter = slideInHorizontally(animationSpec = tween(NestroMotion.DRAWER_IN)) { -it } + fadeIn(tween(NestroMotion.FADE_IN)),
+                        exit = slideOutHorizontally(animationSpec = tween(NestroMotion.DRAWER_OUT)) { -it } + fadeOut(tween(NestroMotion.STANDARD_OUT))
+                    ) {
                         NavigationDrawerContent(
-                            modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                            modifier = Modifier.fillMaxSize(),
                             onNavigate = { destination -> page = destination; showDrawer = false },
                             onClose = { showDrawer = false }
                         )
+                    }
+                } else {
+                Row(Modifier.fillMaxSize()) {
+                    if (drawerMounted && screenWidthDp >= 600) {
+                        AnimatedVisibility(
+                            visible = showDrawer,
+                            enter = expandHorizontally(animationSpec = tween(NestroMotion.DRAWER_IN), expandFrom = Alignment.Start) + fadeIn(tween(NestroMotion.FADE_IN)),
+                            exit = shrinkHorizontally(animationSpec = tween(NestroMotion.DRAWER_OUT), shrinkTowards = Alignment.Start) + fadeOut(tween(NestroMotion.STANDARD_OUT))
+                        ) {
+                            NavigationDrawerContent(
+                                modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                                onNavigate = { destination -> page = destination; showDrawer = false },
+                                onClose = { showDrawer = false }
+                            )
+                        }
                     }
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                     Row(
@@ -1739,7 +1773,9 @@ fun NestroApp(initialPage: String = "home") {
                             }
                             Column {
                                 Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                Text(status, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                Crossfade(targetState = status, animationSpec = tween(NestroMotion.FAST), label = "header-status-transition") { currentStatus ->
+                                    Text(currentStatus, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                }
                                 if (busy && teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
                                     TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
@@ -1758,7 +1794,12 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     }
 
-                    when (if (page == "teams") "experts" else page) {
+                    Crossfade(
+                        targetState = if (page == "teams") "experts" else page,
+                        animationSpec = tween(NestroMotion.STANDARD),
+                        label = "page-transition"
+                    ) { targetPage ->
+                    when (targetPage) {
                         "home", "chat" -> {
                             if (messages.isEmpty()) {
                                 Column(
@@ -1835,12 +1876,26 @@ fun NestroApp(initialPage: String = "home") {
                                                     sendPrompt(retryPrompt)
                                                 }
                                             }
-                                        })
+                                        },
+                                            modifier = Modifier.animateItem(
+                                                fadeInSpec = tween(NestroMotion.STANDARD),
+                                                placementSpec = spring(stiffness = Spring.StiffnessLow),
+                                                fadeOutSpec = tween(NestroMotion.STANDARD_OUT)
+                                            )
+                                        )
                                     }
-                                    if (busy) item { Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp)) }
+                                    item {
+                                        AnimatedVisibility(
+                                            visible = busy,
+                                            enter = fadeIn(tween(NestroMotion.FADE_IN)) + expandVertically(animationSpec = tween(NestroMotion.FADE_IN)),
+                                            exit = fadeOut(tween(NestroMotion.FAST_OUT)) + shrinkVertically(animationSpec = tween(NestroMotion.FAST_OUT))
+                                        ) {
+                                            Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp))
+                                        }
+                                    }
                                 }
                             }
-                            Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            Column(Modifier.fillMaxWidth().animateContentSize().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
                                 Row(
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1881,17 +1936,19 @@ fun NestroApp(initialPage: String = "home") {
                                         modifier = Modifier.weight(1f),
                                         placeholder = { Text("输入或按住说话…", color = Muted) },
                                         trailingIcon = {
-                                            if (busy) {
-                                                IconButton(onClick = {
-                                                    stopRequested = true
-                                                    status = "正在停止…"
-                                                    appRuntime.chatExecutionService.cancel(activeRequestId)
-                                                }) {
-                                                    Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
-                                                }
-                                            } else {
-                                                IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
-                                                    Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                            Crossfade(targetState = busy, animationSpec = tween(NestroMotion.FAST), label = "send-stop-transition") { isBusy ->
+                                                if (isBusy) {
+                                                    IconButton(onClick = {
+                                                        stopRequested = true
+                                                        status = "正在停止…"
+                                                        appRuntime.chatExecutionService.cancel(activeRequestId)
+                                                    }) {
+                                                        Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
+                                                    }
+                                                } else {
+                                                    IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
+                                                        Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                                    }
                                                 }
                                             }
                                         },
@@ -3770,6 +3827,7 @@ fun NestroApp(initialPage: String = "home") {
                             }
                         }
                         else -> SimplePage("Nost", "本地优先的 AI 助手")
+                    }
                     }
                 }
                 }

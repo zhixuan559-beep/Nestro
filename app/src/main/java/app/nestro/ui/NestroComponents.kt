@@ -45,13 +45,13 @@ internal fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null, onOpenMediaSetup: (() -> Unit)? = null) {
+internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null, onOpenMediaSetup: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val user = message.role == "user"
     val videoMarker = Regex("""\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\]""")
     val setupMarker = "[NESTRO_MEDIA_PROVIDER_SETUP]"
     val videoAssetId = videoMarker.find(message.content)?.groupValues?.getOrNull(1)
     val visibleContent = message.content.replace(videoMarker, "").replace(setupMarker, "").trim()
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
             Surface(
                 color = if (user) Card2 else Bg,
