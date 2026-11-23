@@ -873,6 +873,23 @@ class NestroApplication : Application() {
                 require(configs.isNotEmpty()) { "日历自动任务没有可用的已选模型或 API Key" }
                 val conversationId = "calendar-$eventId".take(120)
                 val requestId = taskContext.taskId
+                val recordUsage: (ModelConfig, Int, Int) -> Unit = { config, inputTokens, outputTokens ->
+                    recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = false)
+                }
+                val recordProviderUsage: (ModelConfig, Int, Int) -> Unit = { config, inputTokens, outputTokens ->
+                    recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = true)
+                }
+                val expertRunner = app.nestro.data.CalendarExpertTeamRunner(
+                    preferences = preferences,
+                    coordinator = expertTeamExecutionCoordinator,
+                    chatExecutionService = chatExecutionService,
+                    modelConfigs = configs,
+                    projectId = state.projectId,
+                    conversationId = conversationId,
+                    parentTaskId = taskContext.taskId,
+                    onUsage = recordUsage,
+                    onProviderUsage = recordProviderUsage
+                )
                 var latestPartialAnswer = ""
                 val execution = chatRequestExecutionCoordinator.execute(
                     request = ChatRequestExecutionRequest(
@@ -885,19 +902,15 @@ class NestroApplication : Application() {
                         modelConfigs = configs,
                         baseSystemContext = "这是用户在日历中明确设置的定时自动任务。请按目标完成工作；普通回答直接回答，需要外部能力时由主模型按权限和审批规则调用已接入工具。当前项目为：${state.projectId}。事件 ID：$eventId。",
                         taskModeEnabled = true,
-                        expertTeamEnabled = false,
+                        expertTeamEnabled = expertRunner.hasAvailableTeam(),
                         parentTaskId = taskContext.taskId,
                         temperature = 0.0,
                         maxTokens = null,
                         previousAssistant = null,
                         shouldStop = { false }
                     ),
-                    onUsage = { config, inputTokens, outputTokens ->
-                        recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = false)
-                    },
-                    onProviderUsage = { config, inputTokens, outputTokens ->
-                        recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = true)
-                    },
+                    onUsage = recordUsage,
+                    onProviderUsage = recordProviderUsage,
                     planPhoneAgent = { arguments ->
                         val goal = arguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt
                         val plan = app.nestro.phone.PhoneAgentPlanner.plan(goal)
@@ -910,6 +923,9 @@ class NestroApplication : Application() {
                             true,
                             output = "已创建 Phone Agent 任务：${created.id}；当前状态：${created.status}。"
                         )
+                    },
+                    runExpertTeam = { systemContext, arguments ->
+                        expertRunner.run(systemContext, arguments)
                     },
                     onPartialAnswer = { partial ->
                         latestPartialAnswer = partial.take(24_000)
