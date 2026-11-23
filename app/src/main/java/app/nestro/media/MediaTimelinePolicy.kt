@@ -6,11 +6,21 @@ object MediaTimelinePolicy {
     const val MAX_PROJECT_DURATION_MS = 7_200_000L
     const val MAX_SUBTITLES = 10_000
     const val MAX_CLIPS_PER_TRACK = 2_000
+    const val MAX_AUDIO_TRACKS = 8
 
     fun addTrack(timeline: MediaTimeline, kind: MediaTrackKind): MediaTimeline {
-        require(timeline.tracks.none { it.kind == kind }) { "当前版本每个项目只允许一条主视频轨和一条音频轨" }
-        val id = if (kind == MediaTrackKind.VIDEO) "video-main" else "audio-main"
-        return timeline.copy(tracks = timeline.tracks + MediaTrack(id, if (kind == MediaTrackKind.VIDEO) "主视频轨" else "音频轨", kind))
+        val track = when (kind) {
+            MediaTrackKind.VIDEO -> {
+                require(timeline.tracks.none { it.kind == MediaTrackKind.VIDEO }) { "项目只能有一条主视频轨" }
+                MediaTrack("video-main", "主视频轨", kind)
+            }
+            MediaTrackKind.AUDIO -> {
+                val count = timeline.tracks.count { it.kind == MediaTrackKind.AUDIO }
+                require(count < MAX_AUDIO_TRACKS) { "音频轨最多支持 $MAX_AUDIO_TRACKS 条" }
+                MediaTrack("audio-${UUID.randomUUID()}", "音频轨 ${count + 1}", kind)
+            }
+        }
+        return timeline.copy(tracks = timeline.tracks + track)
     }
 
     fun addClip(timeline: MediaTimeline, trackId: String, asset: MediaAsset): MediaTimeline {
@@ -60,10 +70,15 @@ object MediaTimelinePolicy {
         require(timeline.projectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))) { "项目 ID 无效" }
         require(timeline.tracks.map { it.id }.distinct().size == timeline.tracks.size) { "轨道 ID 重复" }
         require(timeline.tracks.count { it.kind == MediaTrackKind.VIDEO } == 1) { "必须且只能有一条主视频轨" }
-        require(timeline.tracks.count { it.kind == MediaTrackKind.AUDIO } <= 1) { "当前版本只允许一条音频轨" }
+        val audioTracks = timeline.tracks.filter { it.kind == MediaTrackKind.AUDIO }
+        require(audioTracks.size <= MAX_AUDIO_TRACKS) { "音频轨数量超限" }
         val videoDurationMs = timeline.tracks.first { it.kind == MediaTrackKind.VIDEO }.clips.maxOfOrNull { it.timelineEndMs } ?: 0L
-        val audioDurationMs = timeline.tracks.firstOrNull { it.kind == MediaTrackKind.AUDIO }?.clips?.maxOfOrNull { it.timelineEndMs } ?: 0L
-        if (videoDurationMs > 0) require(audioDurationMs <= videoDurationMs) { "音频轨不能超过主视频时长，请先裁剪或移动音频片段" }
+        if (videoDurationMs > 0) {
+            audioTracks.forEach { track ->
+                val audioDurationMs = track.clips.maxOfOrNull { it.timelineEndMs } ?: 0L
+                require(audioDurationMs <= videoDurationMs) { "${track.name}不能超过主视频时长，请先裁剪或移动音频片段" }
+            }
+        }
         val byId = assets.associateBy { it.id }
         val allClips = timeline.tracks.flatMap { it.clips }
         require(allClips.map { it.id }.distinct().size == allClips.size) { "剪辑片段 ID 重复" }
