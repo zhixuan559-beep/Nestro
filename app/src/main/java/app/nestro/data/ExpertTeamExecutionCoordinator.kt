@@ -181,8 +181,11 @@ class ExpertTeamExecutionCoordinator(
                 if (lease != null && invokeMemberWithTools == null) {
                     error("专家成员 ${member.name} 声明了工具能力，但未提供工具感知的模型调用适配器")
                 }
-                invokeMemberWithTools?.invoke(member, prompt, lease?.access)
-                    ?: invokeMember(member, prompt)
+                if (lease != null && invokeMemberWithTools != null) {
+                    invokeMemberWithTools.invoke(member, prompt, lease.access)
+                } else {
+                    invokeMember(member, prompt)
+                }
             } finally {
                 lease?.let { AgentToolLeaseRegistry.release(it.id) }
             }
