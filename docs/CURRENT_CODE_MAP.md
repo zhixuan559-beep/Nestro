@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 当前唯一开发与交付基线：`main`，本轮源码复核 HEAD `126f1b5167511315ccb8755fa72ae18aaf881a14`（2026-11-23）。
+> 当前唯一开发与交付基线：`main`，本轮源码复核 HEAD `1647d0f0671c61eb9762bb24565a952339638a02`（2026-11-24）。
 > 本文的目录统计与部分模块落点最初来自 `integration/19-modules` 历史审计，尚未在当前 main 重新统计；不得把旧统计数字或历史分支状态当作 main 的现状。具体功能状态必须按 main 当前源码、调用点和数据流核验。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。
 >
@@ -26,9 +26,9 @@
 | 13 MCP 工具中心 | `mcp/McpStreamableHttpClient.kt`、`mcp/McpToolCenter.kt`、`mcp/McpToolCenterPage.kt` | `test/.../McpToolCenterTest.kt` |
 | 14 GitHub 工作台 | `git/GitWorkbench.kt`、`git/GitWorkbenchPage.kt` | `test/.../GitWorkbenchPolicyTest.kt`、`androidTest/.../GitAccountStoreTest.kt` |
 | 15 AI 共建工作台 | `coworkbench/AiCoworkbenchPage.kt`、`coworkbench/AiCoworkbenchService.kt`、`coworkbench/CoworkbenchDataFlowAnalyzer.kt`、`coworkbench/GitHubActionsCoworkbenchRunner.kt` | `test/.../CoworkbenchPolicyTest.kt`、`CoworkbenchStaticAnalyzerTest.kt`、`CoworkbenchReportParserTest.kt` |
-| 16 统一能力中心 | `data/CapabilityRegistryStore.kt`、`agent/AgentRuntime.kt`、`agent/AgentTaskCoordinator.kt`、`agent/RoomAgentTaskStateStore.kt`、`agent/RoomAgentTaskTraceStore.kt`、`agent/AgentTaskTrace.kt` | `test/.../AgentRuntimeTest.kt`、`AgentTaskCoordinatorTest.kt`、`androidTest/.../CapabilityRegistryStoreTest.kt` |
-| 17 智能剪辑 | `media/MediaEditorPage.kt`、`media/MediaProjectStore.kt`、`media/MediaRenderEngine.kt`、`media/MediaRenderTaskStore.kt`、`media/MediaRenderWorker.kt`、`media/MediaVideoGenerationClient.kt` | `test/.../MediaProjectCodecTest.kt`、`androidTest/.../MediaProjectArchiveTest.kt` |
-| 18 日历调度 | `calendar/CalendarDatabase.kt`、`calendar/CalendarRepository.kt`、`calendar/CalendarRules.kt`、`calendar/CalendarProviderBridge.kt`、`calendar/CalendarReminderScheduler.kt`、`calendar/CalendarPage.kt`、`data/LocalBackupRepository.kt` | `test/.../CalendarRulesTest.kt`、`CalendarRulesAutomationTest.kt`、`androidTest/.../CalendarDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt` |
+| 16 统一能力中心/任务总览 | `data/CapabilityRegistryStore.kt`、`agent/AgentRuntime.kt`、`agent/AgentTaskCoordinator.kt`、`agent/RoomAgentTaskStateStore.kt`、`agent/RoomAgentTaskTraceStore.kt`、`agent/AgentTaskTrace.kt`、`data/NestroDatabase.kt`、`ui/AgentTaskCenterPage.kt`、`ui/ToolsDirectoryPage.kt`、`ui/NestroApp.kt` | `test/.../AgentRuntimeTest.kt`、`AgentTaskCoordinatorTest.kt`、`androidTest/.../CapabilityRegistryStoreTest.kt` |
+| 17 智能剪辑 | `media/MediaEditorPage.kt`、`media/MediaProjectStore.kt`、`media/MediaTimelinePolicy.kt`、`media/MediaProjectCodec.kt`、`media/MediaRenderEngine.kt`、`media/MediaRenderTaskStore.kt`、`media/MediaRenderWorker.kt`、`media/MediaVideoGenerationClient.kt` | `test/.../MediaTimelinePolicyTest.kt`、`MediaProjectCodecTest.kt`、`androidTest/.../MediaProjectArchiveTest.kt` |
+| 18 日历调度 | `calendar/CalendarDatabase.kt`、`calendar/CalendarRepository.kt`、`calendar/CalendarRules.kt`、`calendar/CalendarProviderBridge.kt`、`calendar/CalendarReminderScheduler.kt`、`calendar/CalendarPage.kt`、`data/CalendarExpertTeamRunner.kt`、`data/CalendarWorkflowRunner.kt`、`data/ChatRequestExecutionCoordinator.kt`、`data/ModelLedToolDispatcher.kt`、`data/LocalBackupRepository.kt` | `test/.../CalendarRulesTest.kt`、`CalendarRulesAutomationTest.kt`、`androidTest/.../CalendarDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt` |
 | 19 多模态与社区生态 | `media/MediaIntelligenceProvider.kt`、`media/MediaProviderConfigStore.kt`、`media/MediaAiTaskStore.kt`、`media/MediaVideoGenerationClient.kt`、`data/ModelLedToolDispatcher.kt`、`NestroApplication.kt` | `test/.../MediaProviderConfigTest.kt`、`androidTest/.../MediaAiTaskStoreTest.kt`、`MediaProviderConfigStoreTest.kt` |
 
 ## 关键跨模块调用链
@@ -65,16 +65,16 @@
 
 ### 日历
 
-当前 `CalendarReminderScheduler` / Worker 按 occurrence + automationDelayMinutes 安排触发，入队 `AgentTaskCoordinator`；延迟配置经 UI、Room、Repository、Worker 和备份/恢复贯通。定义修改会递增 automationGeneration，任务 ID/幂等键与 WorkManager 唯一任务名按 generation 隔离；旧 generation 的 Worker 会被拒绝，generation=0 保留旧任务标识兼容。待执行的延迟 occurrence 即使事件开始后进程重启仍会被重新排程。`NestroApplication` 注册 `calendar_automation` handler，经 `ChatRequestExecutionCoordinator` 进入主模型工具链，结果/错误/状态回写 `CalendarEvent`。仍缺任意时间条件模型、日历专属语义型业务错误映射；通用 AgentTaskState.attempts/maxRetries、AgentTaskRetryPolicy 退避与外部副作用重试保护已存在。HTTP 408/425/429/5xx 已映射为可重试异常。calendar handler 当前不直接启用 expertTeam 或 workflow.run。新增测试源码尚未运行。日历是辅助自动调度功能，不作为独立页面；当前 CalendarPage 仅承载既有配置入口，后续 UI 阶段应把日程/延迟配置并入任务或工作流编辑入口，不另建独立日历产品页。
+当前 `CalendarReminderScheduler` / Worker 按 occurrence + automationDelayMinutes 安排触发，入队 `AgentTaskCoordinator`；延迟配置经 UI、Room、Repository、Worker 和备份/恢复贯通。定义修改会递增 automationGeneration，任务 ID/幂等键与 WorkManager 唯一任务名按 generation 隔离；旧 generation 的 Worker 会被拒绝，generation=0 保留旧任务标识兼容。待执行的延迟 occurrence 即使事件开始后进程重启仍会被重新排程。`NestroApplication` 注册 `calendar_automation` handler，经 `ChatRequestExecutionCoordinator` 进入主模型工具链，结果/错误/状态回写 `CalendarEvent`。仍缺任意时间条件模型、日历专属语义型业务错误映射；通用 AgentTaskState.attempts/maxRetries、AgentTaskRetryPolicy 退避与外部副作用重试保护已存在。HTTP 408/425/429/5xx 已映射为可重试异常。截至 2026-11-24 main，calendar handler 已按项目可用专家启用 expert_team.run，并通过 workflow.list/workflow.run 调度项目可见工作流。新增测试源码尚未运行。日历是辅助自动调度功能，不作为独立页面；当前 CalendarPage 仅承载既有配置入口，后续 UI 阶段应把日程/延迟配置并入任务或工作流编辑入口，不另建独立日历产品页。
 
 ## 当前结构性缺口（按最新源码回读，仍在总审计中）
 
 - 统一任务机的通用 retry 默认值为 2；`WorkflowExecutionCoordinator` 与 `ExpertTeamExecutionCoordinator` 的 `runInline` 已显式设置 `maxRetries=0`，避免整段工作流/专家团队在结果不确定时重放。日历父任务仍允许有限重试；`ModelLedToolDispatcher` 在外部副作用工具开始后将后续失败包装为 `NonRetryableAgentTaskException`。MCP、媒体 AI、媒体渲染和生成式插件路径也显式禁用整段自动重试。
-- 模块16已有生成式插件 runInline、步骤 checkpoint、恢复 UI、统一审批与项目能力授权/调用审计；仍缺统一跨模块任务总览收敛、任意代码插件沙箱和完整 Android VoiceInteractionService。
+- 模块16已有生成式插件 runInline、步骤 checkpoint、恢复 UI、统一审批与项目能力授权/调用审计；新增项目级统一任务中心，直接读取 AgentTaskCoordinator 状态与 trace，支持查看、暂停、恢复、取消。仍缺更完整的能力权限总览、任意代码插件沙箱和完整 Android VoiceInteractionService。
 - 模块7自动记忆候选写入已新增 `NestroDao.saveUserMemoryCandidateIfSourceValid`：项目存在性、来源会话项目归属、来源 user message 校验与对应 upsert/replace 位于同一个 Room `@Transaction`；`UserMemoryRepositoryInstrumentedTest` 已增加 DAO 边界回归测试，但尚未运行。来源 ID 仍是普通字段、没有外键级联约束，删除源数据后的记忆清理策略仍需单独收口；独立全局/项目/会话记忆上下文缓存仍未实现。手动 global_memory_v1 与自动结构化记忆是不同能力。
 - 模块8 `PhoneAgentPlanner` 已有 NAVIGATION 与 TRAVEL 分类；单点导航和多日旅行规划均会要求使用 `open_navigation` 打开 Google Maps Directions 预览、读取路线并经 `confirm_sensitive` 交用户确认后再主屏交接。当前顺序由规划步骤/模型指令驱动，硬状态门禁是否能阻断模型绕过仍待补强与验证；路线链路仍待真机验收。`PhoneAgentFloatingPreview` 现已增加独立拖动条、屏幕边界钳制和位置状态，窗口移动代码及边界单元测试源码已提交，尚未运行测试。窗口内屏幕滑动、点击与角部缩放继续保留。
-- 模块17仍限单视频轨/最多单音频轨；多轨/PIP、转场、速度曲线、关键帧、字幕烧录和高级混音缺失。
-- 模块18已接统一任务机与主模型工具链；延迟触发已贯通 UI/持久化/WorkManager/Worker/备份，并具备定义版本隔离与重启补排程。通用任务机已有 attempts/maxRetries、瞬时网络/HTTP 错误退避和副作用后禁止重放；仍缺任意时间条件触发及日历专属语义型业务错误映射，目前不直接调度 expert DAG/workflow。
+- 模块17现支持 1 条主视频轨 + 最多 8 条音频混音轨，音频轨可独立静音和设置 0–200% 音量；仍只有单视频轨，PIP/多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音未完成。
+- 模块18已接统一任务机与主模型工具链；延迟触发已贯通 UI/持久化/WorkManager/Worker/备份，并具备定义版本隔离与重启补排程。日历自动任务现可调用项目可见专家 DAG 与已保存 PROMPT/EXPERT/SKILL 工作流，工作流审批复用 AgentApprovalCoordinator；工作流步骤内部暂不开放外部工具调用。仍缺任意时间条件触发及日历专属语义型业务错误映射。
 - 模块3主聊天历史与工具决策轮已按候选模型最小 `contextWindowTokens` 动态裁剪，并按 `maxTokens`/默认值计算输出 reserve；系统提示词自身超窗压缩/截断保护仍待补。原生工具并发只覆盖显式声明的安全只读工具。
 - ChatMessage 原生多模态 parts、通用视频问答、非语音音频事件理解仍未实现；现有媒体素材导入桥接与 media.ai.run 能力不可夸大。
 - 模块1专家项目与模块3工作流的工具感知调用入口现已接通：`NestroApp` 分别提供 `invokeMemberWithTools` / `invokeModelWithTools`，将操作级 `AgentToolAccess` 原始租约和精确工具 allow-list 交给 `ChatRequestExecutionCoordinator`；`ModelLedToolDispatcher` 在原生工具调用及兼容文本协议两条路径都复用同一租约处理器，并继续执行项目能力授权、AgentRuntime 权限判断、审批和 MCP 重放检查点。专家项目 `runInline` 与工作流 `runInline` 现在写入 projectId/conversationId 等 `AgentTaskMetadata`。新增 allow-list 单元测试源码，尚未运行编译或测试。模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
@@ -86,4 +86,5 @@
 
 - 当前唯一开发与交付基线已切换为 `main`，本次回读时 HEAD：`f33f67f8625ed8d2992b683358da055de5848775`。
 - 本文此前以 `integration/19-modules` 为基线的记录均视为历史审计线索，不自动代表当前 `main` 状态；后续功能状态必须按 `main` 当前源码、调用点和数据流重新核实。
-- 本轮只完成已证明无生产调用的 `UnifiedAgentDispatcher` 及其专属测试清理；十九模块全量复核仍在进行，未进入编译/测试阶段。
+- 2026-11-24 后续增补：新增项目级统一任务中心；媒体时间线支持多音频轨与独立音量；日历自动任务接入专家 DAG 与已保存工作流调度。详细边界见本文件结构性缺口和 `FUNCTION_AUDIT.md` 的 2026-11-24 增补。
+- 当前仍未完成 ChatMessage 原生多模态 parts、PIP/多视频轨与转场、任意时间条件触发及工作流步骤内部工具调用。未运行编译/测试/构建。
