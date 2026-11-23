@@ -65,24 +65,3 @@ internal fun ConversationPageLoadEffect(
         }
     }
 }
-
-/** Persists a consistent snapshot whenever conversation or project state changes. */
-@Composable
-internal fun ConversationSnapshotPersistenceEffect(
-    databaseReady: Boolean,
-    conversations: List<ConversationRecord>,
-    projects: List<ProjectRecord>,
-    persistSnapshot: suspend (List<ConversationRecord>, List<ProjectRecord>) -> Unit,
-    onFailure: (Throwable) -> Unit
-) {
-    LaunchedEffect(conversations, projects, databaseReady) {
-        if (!databaseReady) return@LaunchedEffect
-        try {
-            persistSnapshot(conversations.toList(), projects.toList())
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Throwable) {
-            onFailure(failure)
-        }
-    }
-}

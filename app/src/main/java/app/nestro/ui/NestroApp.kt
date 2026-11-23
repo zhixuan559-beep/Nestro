@@ -49,6 +49,8 @@ import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
 import app.nestro.data.ChatContextRetrievalPolicy
 import app.nestro.data.ChatExecutionAuthorization
+import app.nestro.data.CapabilityRegistryStore
+import app.nestro.data.SkillDependencyResolver
 import app.nestro.data.ChatEndpointPolicy
 import app.nestro.data.ChatHttpTransport
 import app.nestro.data.ChatHistoryItem
@@ -193,7 +195,7 @@ fun NestroApp(initialPage: String = "home") {
         if (showDrawer) {
             drawerMounted = true
         } else {
-            delay(NestroMotion.DRAWER_OUT)
+            delay(NestroMotion.DRAWER_OUT.toLong())
             drawerMounted = false
         }
     }
@@ -1635,7 +1637,7 @@ fun NestroApp(initialPage: String = "home") {
                                         maxTokens = requestExpertProfiles[member.name]?.maxTokens,
                                         previousAssistant = null,
                                         shouldStop = { stopRequested },
-                                        allowedToolIds = discovery.list().map { it.id }.toSet(),
+                                        allowedToolIds = discovery?.list()?.map { it.id }?.toSet().orEmpty(),
                                                                              taskToolAccess = discovery
                                     ),
                                     onUsage = recordModelUsage,
@@ -2397,6 +2399,7 @@ fun NestroApp(initialPage: String = "home") {
                                                          UUID.randomUUID().toString()
                                                      }
                                                      val conversationId = activeConversationId
+                                                     val workflowExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, selectedTeamId)
                                                      val projectId = activeProjectId
                                                      val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
                                                          prefs, projectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
@@ -2487,7 +2490,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                      val execution = appRuntime.chatRequestExecutionCoordinator.execute(
                                                                          request = ChatRequestExecutionRequest(
                                                                              requestId = scopedRequestId,
-                                                                             conversationId = requestConversationId,
+                                                                             conversationId = conversationId,
                                                                              projectId = projectId,
                                                                              prompt = stepPrompt,
                                                                              startedAt = startedAt,
@@ -2507,7 +2510,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                          onUsage = recordModelUsage,
                                                                          onProviderUsage = recordProviderModelUsage,
                                                                          planPhoneAgent = { toolArguments ->
-                                                                             if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                                                                             if (!workflowExecutionAuthorization.shouldExecutePhoneAgent()) {
                                                                                  app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
                                                                              } else {
                                                                                  val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: stepPrompt
@@ -2518,7 +2521,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                                      val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
                                                                                      val created = appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
                                                                                          projectId,
-                                                                                         requestConversationId,
+                                                                                         conversationId,
                                                                                          phonePlan
                                                                                      )
                                                                                      app.nestro.agent.AgentToolResult(
@@ -2546,7 +2549,7 @@ fun NestroApp(initialPage: String = "home") {
                                                                  input = input,
                                                                  taskId = effectiveWorkflowTaskId,
                                                                  projectId = projectId,
-                                                                 conversationId = requestConversationId,
+                                                                 conversationId = conversationId,
                                                                  invokeModel = { step, stepPrompt ->
                                                                      invokeWorkflowStep(step, stepPrompt)
                                                                  },

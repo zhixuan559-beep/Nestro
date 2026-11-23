@@ -134,7 +134,7 @@ object SkillDependencyResolver {
                 bundle.dependencies.forEach { dep ->
                     val current = nextConstraints[dep.name].orEmpty().toMutableList()
                     current.add(dep.version)
-                    nextConstraints[dep.name] = current.distinct()
+                    nextConstraints[dep.name] = current.distinct().toMutableList()
                 }
                 val next = State(nextConstraints, state.selected + (unresolved to candidate), state.bundles + (unresolved to bundle), state.satisfied)
                 val solved = search(next, depth + 1)

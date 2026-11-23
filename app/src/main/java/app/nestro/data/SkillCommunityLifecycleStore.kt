@@ -20,7 +20,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
         val history = historyJson()
         val planned = bundles.associateBy { it.name }
-        val currentVersions = metadata.keys().associateWith { name ->
+        val currentVersions = metadata.keys().asSequence().associateWith { name ->
             runCatching { JSONObject(metadata.optString(name, "{}")).optString("version") }.getOrDefault("")
         }.toMutableMap()
         bundles.forEach { bundle ->
