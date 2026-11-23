@@ -152,6 +152,7 @@ object SkillDependencyResolver {
         disabledSkills: Set<String> = emptySet(),
         loadVerifiedBundle: (SignedSkillRelease) -> SkillBundle = { SkillCommunityClient.downloadVerifiedBundle(it) }
     ): InstallPlan {
+        require(rootRelease in catalog) { "原始签名目录版本已失效或内容被修改" }
         val byName = catalog.groupBy { it.name }
         var attempts = 0
         val rootBundle = verifiedRootBundle ?: loadVerifiedBundle(rootRelease)
