@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 当前唯一开发与交付基线：`main`，本轮源码复核 HEAD `1647d0f0671c61eb9762bb24565a952339638a02`（2026-11-24）。
+> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `4544afbae82d1dc28927037e679a8534e1fec6fe`（2026-11-24）。
 > 本文的目录统计与部分模块落点最初来自 `integration/19-modules` 历史审计，尚未在当前 main 重新统计；不得把旧统计数字或历史分支状态当作 main 的现状。具体功能状态必须按 main 当前源码、调用点和数据流核验。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。
 >
@@ -13,7 +13,7 @@
 |---|---|---|
 | 1 专家系统 | `data/ExpertTeamEngine.kt`、`data/ExpertTeamExecutionCoordinator.kt`、`data/ExpertProjectPlanExecutor.kt`、`data/ExpertTemplateCatalog.kt`、`data/ModelLedToolDispatcher.kt`、`ui/ExpertWorkspaceUiState.kt`（协作历史分页/暂停控制） | `test/.../ExpertTeamEngineTest.kt`、`ExpertTeamExecutionCoordinatorTest.kt`、`ExpertProjectPlanExecutorTest.kt`、`ui/ExpertTeamEventPaginationTest.kt`、`ui/ExpertTeamPauseControllerTest.kt` |
 | 2 模型管理 | `model/ModelRegistry.kt`、`model/ModelRegistryStore.kt`、`model/ModelConfigurationRepository.kt`、`model/ModelConnectionService.kt`、`model/ModelDiscoveryService.kt`、`ui/ModelManagerPage.kt`、`ui/ModelManagementUiState.kt` | `test/.../ModelProfileCatalogTest.kt`、`ModelToolDecisionParserTest.kt` |
-| 3 聊天系统 | `data/ChatMessage.kt`、`data/ChatRequestContextAssembler.kt`、`data/ChatRequestExecutionCoordinator.kt`、`data/ChatRequestRecoveryCoordinator.kt`、`data/ModelLedToolDispatcher.kt`、`data/OpenAiClient.kt`、`model/ChatExecutionService.kt`、`ui/NestroApp.kt` | `test/.../ChatRequestContextAssemblerTest.kt`、`ChatRequestExecutionCoordinatorTest.kt`、`ChatRequestRecoveryCoordinatorTest.kt`、`model/ChatStreamingCoordinatorTest.kt` |
+| 3 聊天系统 | `data/ChatMessage.kt`、`data/ChatMessageContentSerializer.kt`、`data/ChatRequestContextAssembler.kt`、`data/ChatRequestExecutionCoordinator.kt`、`data/ChatRequestRecoveryCoordinator.kt`、`data/ModelLedToolDispatcher.kt`、`data/OpenAiClient.kt`、`media/ChatMediaAttachmentResolver.kt`、`model/ChatExecutionService.kt`、`ui/NestroApp.kt` | `test/.../ChatRequestContextAssemblerTest.kt`、`ChatRequestExecutionCoordinatorTest.kt`、`ChatRequestRecoveryCoordinatorTest.kt`、`ChatMessageContentSerializerTest.kt`、`ChatMediaAttachmentResolverTest.kt`、`model/ChatStreamingCoordinatorTest.kt` |
 | 4 数据与备份 | `data/NestroDatabase.kt`、`data/ConversationPersistenceService.kt`、`data/LocalBackupRepository.kt`、`data/LocalBackupCompatibility.kt`、`data/ProjectPackageCodec.kt` | `androidTest/.../NestroDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt`、`test/.../ProjectPackageCodecTest.kt` |
 | 5 项目空间 | `data/ProjectSpaceRepository.kt`、`data/ProjectAccessControlStore.kt`、`data/ProjectResourceScopeStore.kt`、`data/ProjectSpaceRules.kt` | `androidTest/.../ProjectSpaceLifecycleTest.kt`、`ProjectAccessControlStoreTest.kt`、`test/.../ProjectResourceScopeStoreTest.kt` |
 | 6 知识库 | `data/KnowledgeRepository.kt`、`data/KnowledgeSearchEngine.kt`、`data/KnowledgeVectorSearch.kt`、`data/KnowledgeEmbeddingModelManager.kt`、`data/KnowledgePdfOcr.kt`、`data/KnowledgeChunker.kt` | `test/.../KnowledgeSearchEngineTest.kt`、`KnowledgeEmbeddingPoolingTest.kt`、`androidTest/.../KnowledgeVectorIndexDatabaseTest.kt`、`KnowledgePdfImportTest.kt` |
@@ -55,9 +55,9 @@
 
 ### 聊天附件与多模态
 
-聊天输入区多选图片/音频/视频 → `MediaProjectStore.importAsset` → 当前项目素材库 → 草稿附加真实 asset_id → 主模型查询素材 → `media.ai.run` → 图片理解/语音转写/视频场景分析/音频处理 Provider。
+聊天输入区多选图片/音频/视频 → `MediaProjectStore.importAsset` → 当前项目素材库 → 草稿附加真实 asset_id。图片请求由 `ChatMediaAttachmentResolver` 从同一素材库回查并生成 request-only image parts，经 `ChatMessageContentSerializer` 分别转为 OpenAI `image_url`、Anthropic base64 image block、Gemini `inlineData`；`ChatRequestPolicy` 保留 parts 并计入预算。音频/视频仍通过主模型 `media.ai.run/status` 调用现有专业 Provider。
 
-当前仍未实现 ChatMessage/OpenAI/Anthropic/Gemini 原生多模态 content parts；此桥接依赖项目素材导入。视频场景分析不等于通用视频问答，语音转写不等于非语音声音事件理解。
+不新增 Room 附件字段、独立文件目录或第二套媒体仓库。原生音视频 parts、通用视频问答、非语音声音事件理解仍未实现；实际图片输入还取决于所选模型与服务商是否支持视觉。
 
 ### 审批与工作流
 
@@ -76,9 +76,9 @@
 - 模块17现支持 1 条主视频轨 + 最多 8 条音频混音轨，音频轨可独立静音和设置 0–200% 音量；仍只有单视频轨，PIP/多视频轨、转场、速度曲线、关键帧、字幕烧录和高级混音未完成。
 - 模块18已接统一任务机与主模型工具链；延迟触发已贯通 UI/持久化/WorkManager/Worker/备份，并具备定义版本隔离与重启补排程。日历自动任务现可调用项目可见专家 DAG 与已保存 PROMPT/EXPERT/SKILL 工作流，工作流审批复用 AgentApprovalCoordinator；工作流步骤内部暂不开放外部工具调用。仍缺任意时间条件触发及日历专属语义型业务错误映射。
 - 模块3主聊天历史与工具决策轮已按候选模型最小 `contextWindowTokens` 动态裁剪，并按 `maxTokens`/默认值计算输出 reserve；系统提示词自身超窗压缩/截断保护仍待补。原生工具并发只覆盖显式声明的安全只读工具。
-- ChatMessage 原生多模态 parts、通用视频问答、非语音音频事件理解仍未实现；现有媒体素材导入桥接与 media.ai.run 能力不可夸大。
+- 原生 image parts 已接通 OpenAI/Anthropic/Gemini；原生 audio/video parts、通用视频问答、非语音音频事件理解仍未实现；现有音视频素材导入与 media.ai.run 桥接不可夸大。
 - 模块1专家项目与模块3工作流的工具感知调用入口现已接通：`NestroApp` 分别提供 `invokeMemberWithTools` / `invokeModelWithTools`，将操作级 `AgentToolAccess` 原始租约和精确工具 allow-list 交给 `ChatRequestExecutionCoordinator`；`ModelLedToolDispatcher` 在原生工具调用及兼容文本协议两条路径都复用同一租约处理器，并继续执行项目能力授权、AgentRuntime 权限判断、审批和 MCP 重放检查点。专家项目 `runInline` 与工作流 `runInline` 现在写入 projectId/conversationId 等 `AgentTaskMetadata`。新增 allow-list 单元测试源码，尚未运行编译或测试。模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
-- 模块17多视频轨/PIP/转场/速度曲线/关键帧/字幕烧录等高级视频编辑仍未完成；模块19原生聊天多模态 content parts/通用视频问答/非语音音频事件理解仍未完成。现有素材导入与专业媒体任务不能代替原生多模态传输层。
+- 模块17多视频轨/PIP/转场/速度曲线/关键帧/字幕烧录等高级视频编辑仍未完成；模块19原生图片 parts 已接通，原生音视频 parts/通用视频问答/非语音音频事件理解仍未完成。现有素材导入与专业媒体任务不能代替原生音视频传输层。
 - 全部新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
 
 
