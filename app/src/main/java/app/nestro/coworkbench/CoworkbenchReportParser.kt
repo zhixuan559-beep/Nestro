@@ -190,8 +190,8 @@ object CoworkbenchReportParser {
                 setFeature("http://xml.org/sax/features/external-parameter-entities", false)
                 isXIncludeAware = false
                 isExpandEntityReferences = false
-                runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "") }
-                runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "") }
+                runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "") }
+                runCatching { setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "") }
             }
             val builder = factory.newDocumentBuilder().apply {
                 setEntityResolver { _, _ -> InputSource(StringReader("")) }
@@ -215,7 +215,7 @@ object CoworkbenchReportParser {
             // Validate every nested suite even when the root provides aggregate counters.
             // Otherwise a malformed child (including a negative value) could be hidden by valid root totals.
             val suites = root.getElementsByTagName("testsuite")
-            for (index in 0 until suites.length()) {
+            for (index in 0 until suites.length) {
                 val suite = suites.item(index) as org.w3c.dom.Element
                 listOf("tests", "failures", "errors", "skipped").forEach { suiteCount(suite, it) }
             }

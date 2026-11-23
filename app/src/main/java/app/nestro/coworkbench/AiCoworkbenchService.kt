@@ -225,11 +225,12 @@ class AiCoworkbenchService(context: Context, private val git: GitWorkbenchReposi
         withContext(Dispatchers.IO) {
             val root = File(repository.localPath).canonicalFile
             require(root.isDirectory) { "本地仓库目录不可用" }
-            root.walkTopDown().take(10_000)
+            root.walkTopDown()
                 .onEnter { dir ->
                     dir == root || (dir.name !in setOf(".git", ".gradle", "build", "node_modules", ".idea", ".nestro", "dist", "out") &&
                         !java.nio.file.Files.isSymbolicLink(dir.toPath()))
                 }
+                .take(10_000)
                 .filter { file ->
                     file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath()) &&
                         !CoworkbenchContextPolicy.isSensitivePath(root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')) &&

@@ -136,7 +136,7 @@ object ChatRequestPolicy {
 
 
 /** Model-specific context window selection shared by every request entry point. */
-object ModelContextWindowPolicy {
+internal object ModelContextWindowPolicy {
     const val DEFAULT_CONTEXT_WINDOW_TOKENS = 16_384
     const val DEFAULT_OUTPUT_RESERVE_TOKENS = 2_048
 

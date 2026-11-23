@@ -239,7 +239,7 @@ object CoworkbenchStaticAnalyzer {
             .findAll(text).filter { match ->
                 Regex("""android:exported\s*=\s*["']true["']""", RegexOption.IGNORE_CASE)
                     .containsMatchIn(match.groupValues[2])
-            }.map { it.groupValues[1] + ":" + Regex("""android:name\s*=\s*["']([^"']+)["']""")
+            }.map { match -> match.groupValues[1] + ":" + Regex("""android:name\s*=\s*["']([^"']+)["']""")
                 .find(match.groupValues[2])?.groupValues?.get(1).orEmpty() }.toSet()
 
     private fun containsTrueAttribute(text: String, attribute: String): Boolean =

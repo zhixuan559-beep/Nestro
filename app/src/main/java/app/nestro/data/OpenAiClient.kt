@@ -334,7 +334,8 @@ internal object OpenAiClient {
                 val calls = mutableListOf<Triple<String, String, Map<String, String>>>()
                 var answer = ""
                 when (protocol) {
-                    app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS -> {
+                    app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
+                    app.nestro.model.ModelApiProtocol.CUSTOM -> {
                         val message = payload.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
                             ?: error("OpenAI-compatible 响应缺少 message")
                         answer = when (val content = message.opt("content")) {
@@ -444,7 +445,8 @@ internal object OpenAiClient {
                         return NativeToolCompletion(result.output, requiresUser = true, toolCallsExecuted = executed)
                     }
                     when (protocol) {
-                        app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS ->
+                        app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
+                    app.nestro.model.ModelApiProtocol.CUSTOM ->
                             openAiResults.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.output.take(12_000)))
                         app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
                             anthropicResults.put(JSONObject().put("type", "tool_result").put("tool_use_id", callId).put("content", result.output.take(12_000)))
@@ -455,7 +457,8 @@ internal object OpenAiClient {
                     }
                 }
                 when (protocol) {
-                    app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS ->
+                    app.nestro.model.ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
+                    app.nestro.model.ModelApiProtocol.CUSTOM ->
                         for (index in 0 until openAiResults.length()) openAiMessages.put(openAiResults.getJSONObject(index))
                     app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
                         anthropicMessages.put(JSONObject().put("role", "user").put("content", anthropicResults))
