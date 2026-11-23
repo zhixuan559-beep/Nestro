@@ -88,7 +88,7 @@ class MikaAgentDisplay(
 
     /** Replace the frame surface without changing display ID or the app task on that display. */
     suspend fun resize(newWidth: Int, newHeight: Int, newDpi: Int): Boolean = suspendCancellableCoroutine { continuation ->
-        if (released) { continuation.resume(false); return@suspendCoroutine }
+        if (released) { continuation.resume(false); return@suspendCancellableCoroutine }
         val posted = handler.post {
             if (!continuation.isActive) return@post
             if (released) { continuation.resume(false); return@post }
