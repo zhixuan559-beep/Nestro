@@ -1416,3 +1416,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 回读 `MediaProjectStore.exportProjectArchive/importProjectArchive`：工程 ZIP 包含 `project.json`、时间线及经大小/SHA-256 校验的原始素材；明确不包含渲染后的 MP4、导出任务和临时文件。通用 `LocalBackupRepository` 备份也不收集 `media-editor` 二进制目录。
 - 发现 `MediaEditorPage` 恢复确认文案曾错误声称工程 ZIP 会替换“已导出的视频文件”。已修正为仅替换时间线、素材索引和原始素材，并提示 MP4 成品需单独保存；在备份/恢复入口增加 ZIP 与通用设备备份的范围说明。
 - 源码提交：`a29e53684a87432dc3504320c1ba633b7de22859`；页面文案已回读验证。未运行 UI 测试或编译。
+
+
+## 2026-11-24 历史会话召回缓存失效修复
+
+- 原 64 项/60 秒上下文 LRU 的缓存键包含当前请求、项目和用户记忆版本，但没有纳入当前项目其他会话语料的变化；历史会话新增、修改或删除后，可能在 TTL 内继续命中旧召回上下文。
+- 已在 `NestroDao` 增加 `conversationRecallCorpusVersion(projectId, currentConversationId)`，用其他会话数量、更新时间总和及最大更新时间生成轻量版本指纹；`ConversationContextRepository` 暴露版本读取，`ChatRequestContextAssembler` 仅在策略启用历史召回时读取并纳入缓存键。普通聊天不增加这次 Room 查询。
+- `NestroApplication` 已接线，并新增 `ChatRequestContextAssemblerTest.conversationCorpusVersionInvalidatesHistoricalRecallCache` 测试源码。
+- 代码提交：`e99d9db9aafa320c0d50f1cfbcfa14d8604dad04`（DAO）、`11ee3a4d2c8dad20166241c0e1d232ece6c421ab`（Repository）、`120d2afffcad2326ab37b2159ca8a41d53695aab`（Assembler）、`7d8268e3326a00b52ac9763b9266ccb327ad447b`（Application）、`a97874c7977921081958e5d0ae5734debacc282c`（测试源码）。
+- 已逐文件回读确认 DAO→Repository→Assembler→Application→测试的版本链完整；未运行编译或测试。独立全局/项目/会话三级记忆缓存仍未实现，不能把本次失效修复说成该功能已完成。
