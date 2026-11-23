@@ -1186,3 +1186,41 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 发现新的跨模块时序要求：聊天完成路径先更新 Compose/本地快照，再立即启动自动记忆提取；Room snapshot effect 有 300ms debounce。不能假设 memory source message 已先写入 Room。后续对 `UserMemoryStore.saveCandidates` 增加 DAO 归属验证时，必须同步在记忆提取前事务性持久化当前 conversation/messages，且确保新建会话也先 upsert；测试 fixture 需真实创建 project/conversation/message。
 - 用户原始记忆缓存定义已恢复：缓存只属于记忆模块，不与统一调度耦合；分全局/项目/会话作用域，命中复用已整理/检索的上下文，未命中才重新本地检索/整理；按当前问题动态取用，新增/修改/删除记忆时更新或失效对应缓存，避免串项目/串会话。目标是节省 Token，本地处理不调用模型。现有 BGE embeddingCache 不满足此要求。
 - 当前源码基线尚未完成所有 19 模块逐项验收；未运行 Gradle、JVM/Android 测试、模拟器/真机/API 联调。
+
+
+## 2026-11-23 专家目录、品牌入口与统一任务机二次回读
+
+当前源码基线：`integration/19-modules`，本轮相关整合提交包含 `7bd5ef684b942f8ffafc9293406e6f947b12007b`；本次界面收拢与文档更新已继续写入当前分支。以下是源码回读，不代表编译或测试通过。
+
+### 用户界面与账号边界
+
+- 专家与专家团已收敛为同一目录页面：专家列表在前、专家团列表在后，不再保留独立的 `teams` 页面分支或专家/专家团切换标签。
+- 单个专家按 `expertName + projectId` 生成稳定会话 ID，进入独立私聊；专家团按 `teamId + projectId` 生成独立群聊。两者复用既有 `ConversationPersistenceService` / Room 消息存储，不新增第二套聊天存储。
+- 专家团目录保留创建、编辑、导入导出、项目范围设置、进入群聊、解散和删除群。解散会移除团队关系但保留历史群聊；删除群会清理关联会话和草稿。删除/解散的最终行为仍需设备交互验收。
+- 聊天切换、项目切换、启动恢复、历史引用跳转和项目包导入路径会按会话 ID 恢复专家/专家团上下文；普通新对话会清除专家/团队上下文，避免串线。
+- 主侧栏当前入口为新建对话、最近对话、项目空间、专家与专家团、工具与扩展、设置；`ToolsDirectoryPage` 收纳模型、Skills、工作流、插件、MCP、记忆、知识库、产物及媒体/代码工作区。
+- 主路由不再提供 Calendar 或 Phone Agent 独立入口；日历通知回到聊天主页，Phone Agent 仍由主模型按需调用。底层日历与手机执行能力没有删除。
+- 当前界面文案明确免 Nost 账号、免注册；源码抽查未发现 Nost 注册/登录流程。第三方模型服务的 API/OAuth 连接属于供应商连接，不等于 Nost 账号。
+- 外观采用 MaterialTheme 黑白配色，设置保留跟随系统/纯白/纯黑。Logo launcher 资源尚未完成宣传图双环符号的最终还原与集成，不能标记 Logo 交付完成。
+
+### 统一任务机当前源码状态（纠正旧审计结论）
+
+- `AgentTaskCoordinator` 已提供持久任务状态、幂等键、checkpoint、恢复、trace、有限重试与指数退避；全局最多 3 个任务并发，并按任务 lane 限制资源竞争（Phone Agent、媒体 AI、媒体渲染各自单 lane；编排类任务共享 orchestration lane）。
+- 原生模型工具调用仅对显式标记 `parallelSafe` 的只读工具并发；工具定义校验禁止外部写入、设备操作或需要确认的工具声明为 parallelSafe。非只读工具仍串行；兼容文本工具协议每轮仍是单动作。
+- 工作流通过 `WorkflowExecutionCoordinator` → `AgentTaskCoordinator.runInline` 执行；审批前持久化 `WAITING_FOR_USER`，批准恢复 RUNNING，拒绝转 FAILED。进程重建后的审批界面恢复仍需统一验收。
+- 生成式插件通过 `AgentTaskCoordinator.runInline` 执行，逐步写入插件步骤 checkpoint；外部写入经统一审批策略；应用侧已有待恢复/终止入口。恢复会重新经过审批，不把历史批准当作跨进程永久授权。
+- MCP 工具中心直接调用与模型驱动调用均已接入统一任务机/审批记录；外部调用有 approval/executing/completed 检查点，结果不确定时保守阻止自动重放。
+- Phone Agent 通过统一协调器与 WorkManager 适配器协作；领域任务表保留动作计划、动作日志和不确定动作安全标记，不等于第二套通用任务队列。
+- 媒体 AI 与媒体渲染 Worker 均已通过 `AgentTaskCoordinator.runInline` 执行；WorkManager 负责后台唤醒，领域 JSON 保留素材、参数、进度、结果和结果消费信息，统一任务状态作为执行生命周期权威。
+- 日历自动任务已使用 occurrence 确定性 taskId 与 idempotencyKey，经 `AgentTaskCoordinator.enqueue` 进入 `calendar_automation` handler，再通过 `ChatRequestExecutionCoordinator` 调用主模型工具链；父子任务审批状态同步，事件保存 nextRunAt/lastRunAt/lastTaskId/幂等键/结果/错误，编辑/完成/删除会取消关联活动任务。日历不再只是通知提醒系统。
+- 上述是当前源码静态核对结果；不能据此声称并发压力、跨模块恢复、设备重启或外部 API 联调已通过。
+
+### 仍需代码/验收区分的事项
+
+- 多模型真实 context window 尚未进入 ModelDefinition，聊天历史预算仍使用默认估算窗口。
+- 专家团完整双向自由交流、可编辑 DAG、返工/暂停控制和完整历史分页仍不完整；本轮补齐的是独立专家私聊/群聊生命周期，不等于完成全部专家协作产品交互。
+- 通用跨模块资源冲突键、创作与 Phone Agent 多轮往返的端到端依赖图及统一产物交接仍需专项核对，不能只凭工具都已注册就宣称完整。
+- 日历目前支持单次及每日/每周/每月/每年 occurrence；任意时间条件/更复杂延迟触发规则仍需明确需求后再补，不为隐藏辅助能力扩张成独立日历产品。
+- 媒体 AI/渲染、日历、插件、MCP、工作流与专家协作的领域状态映射、取消竞态、进程恢复和结果消费仍需统一回归测试。
+- Logo 原图双环像素级还原、Android launcher icon 资源集成尚未完成。
+- 未运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器、真机或 GitHub Actions；按用户要求留到所有代码收口后的最后阶段。
