@@ -136,14 +136,16 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             }
         }
         snapshots.remove(snapshots.length() - 1)
-        val disabled = setDisabled(name, previous.optBoolean("wasDisabled", true))
+        val disabled = setDisabled(
+            name,
+            previous.optBoolean("hadSkill") && previous.optBoolean("wasDisabled", true)
+        )
         if (previous.optBoolean("hadSkill")) {
             skills.put(name, previous.getString("prompt"))
             metadata.put(name, previous.getString("metadata"))
         } else {
             skills.remove(name)
             metadata.remove(name)
-            disabled.remove(name)
         }
         if (snapshots.length() == 0) history.remove(name) else history.put(name, snapshots)
         commit(skills, metadata, history, disabled)

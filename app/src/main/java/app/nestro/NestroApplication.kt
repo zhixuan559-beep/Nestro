@@ -24,6 +24,7 @@ import app.nestro.media.MediaAiTaskStatus
 import app.nestro.media.MediaAiTaskScheduler
 import app.nestro.media.MediaProviderConfigStore
 import app.nestro.media.MediaProjectStore
+import app.nestro.media.MediaRenderWorker
 import app.nestro.media.MediaVideoGeneration
 import kotlinx.coroutines.delay
 import org.json.JSONObject
@@ -276,7 +277,7 @@ class NestroApplication : Application() {
                 )
             ) {
                 val providerStore = MediaProviderConfigStore(this@NestroApplication)
-                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }
+                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }
                 if (providers.isEmpty()) {
                     app.nestro.agent.AgentToolResult(true, output = "当前尚未配置媒体服务商。")
                 } else {
@@ -373,7 +374,7 @@ class NestroApplication : Application() {
                 }
                 if (!kindAllowed) return@register app.nestro.agent.AgentToolResult(false, error = "素材类型与所选媒体操作不匹配")
                 val providerStore = MediaProviderConfigStore(this@NestroApplication)
-                val providers = providerStore.list()
+                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }
                 val supportsAction: (app.nestro.media.MediaProviderConfig) -> Boolean = { config ->
                     when (action) {
                         "image" -> config.model.isNotBlank()
@@ -1027,7 +1028,7 @@ class NestroApplication : Application() {
                                 runCatching { mcpToolCenterService.resume(scopeId) }
                             }
                             "media_ai" -> MediaAiTaskScheduler.resume(this@NestroApplication, state.projectId, state.input)
-                            "media_render" -> app.nestro.media.MediaRenderWorker.resume(this@NestroApplication, state.projectId, state.input)
+                            "media_render" -> MediaRenderWorker.resume(this@NestroApplication, state.projectId, state.input)
                             "calendar_automation" -> agentTaskCoordinator.resume(scopeId)
                             "phone_agent" -> phoneAgentTaskService.enqueue(scopeId)
                             // Workflow, expert-team and chat/plugin runInline handlers are

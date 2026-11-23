@@ -19,6 +19,7 @@ import app.nestro.data.CapabilityToolAuditRecord
 import app.nestro.NestroApplication
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.SkillCommunityClient
+import app.nestro.data.SkillDependencyResolver
 import app.nestro.data.SignedSkillRelease
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -364,9 +365,9 @@ fun CapabilityDirectoryPage(projectId: String) {
                 scope.launch {
                     val installed=runCatching {
                         val meta=JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}")
-                        meta.keys().associateWith { name -> runCatching { JSONObject(meta.optString(name,"{}")).optString("version") }.getOrDefault("") }
+                        meta.keys().asSequence().associateWith { name -> runCatching { JSONObject(meta.optString(name,"{}")).optString("version") }.getOrDefault("") }
                     }.getOrDefault(emptyMap())
-                    val result=withContext(Dispatchers.IO) { runCatching { app.nestro.data.SkillDependencyResolver.resolve(
+                    val result=withContext(Dispatchers.IO) { runCatching { SkillDependencyResolver.resolve(
                         releases.firstOrNull { it.name==bundle.name && it.version==bundle.version && !trustStore.isFingerprintRevoked(it.signerFingerprint) } ?: error("原始签名目录版本已失效或签名者已撤销"),
                         releases.filterNot { trustStore.isFingerprintRevoked(it.signerFingerprint) }, installed, bundle
                     ) } }
