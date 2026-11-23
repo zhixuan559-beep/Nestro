@@ -139,7 +139,14 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val snapshots = history.optJSONArray(name) ?: error("没有可回退的历史版本")
         require(snapshots.length() > 0) { "没有可回退的历史版本" }
         val previous = snapshots.getJSONObject(snapshots.length() - 1)
-        val restoredVersion = if (previous.optBoolean("hadSkill")) runCatching { JSONObject(previous.getString("metadata")).optString("version") }.getOrDefault("") else ""
+        val restoredBundle = if (previous.optBoolean("hadSkill")) {
+            SkillBundleParser.fromStored(
+                name,
+                previous.getString("prompt"),
+                previous.optString("metadata").takeIf { it.isNotBlank() }
+            )
+        } else null
+        val restoredVersion = restoredBundle?.version.orEmpty()
         metadata.keys().forEach { dependentName ->
             if (dependentName == name) return@forEach
             val dependent = JSONObject(metadata.optString(dependentName, "{}"))
@@ -158,9 +165,9 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             name,
             previous.optBoolean("hadSkill") && previous.optBoolean("wasDisabled", true)
         )
-        if (previous.optBoolean("hadSkill")) {
-            skills.put(name, previous.getString("prompt"))
-            metadata.put(name, previous.getString("metadata"))
+        if (restoredBundle != null) {
+            skills.put(name, restoredBundle.prompt)
+            metadata.put(name, SkillBundleParser.metadataJson(restoredBundle))
         } else {
             skills.remove(name)
             metadata.remove(name)
@@ -192,7 +199,9 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         require(rows.length() <= 500) { "停用技能列表超过 500 项" }
         val seen = mutableSetOf<String>()
         for (index in 0 until rows.length()) {
-            val name = rows.optString(index).trim()
+            val raw = rows.opt(index)
+            require(raw is String) { "停用技能列表损坏" }
+            val name = raw.trim()
             require(name.isNotBlank() && name.length <= 40 && seen.add(name)) { "停用技能列表损坏" }
         }
         return rows
