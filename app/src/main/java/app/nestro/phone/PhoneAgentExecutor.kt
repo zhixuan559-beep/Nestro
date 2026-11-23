@@ -124,7 +124,8 @@ object PhoneAgentExecutor {
                 val message = "即将启动地图导航，请本人核对路线后再启动。"
                 val handedOff = service.handoffToUser(taskId, message)
                 val userMessage = if (handedOff) message else "$message 隔离屏自动交接未成功，请检查执行窗口。"
-                val resumeAt = if (handedOff) index + 1 else index
+                // This action is always user-owned; never replay the navigation-start click on resume.
+                val resumeAt = index + 1
                 PhoneAgentTaskStore.recordActionResult(
                     dao,
                     taskId,
