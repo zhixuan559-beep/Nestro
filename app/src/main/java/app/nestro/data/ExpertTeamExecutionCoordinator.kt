@@ -360,7 +360,7 @@ class ExpertTeamExecutionCoordinator(
             var sequence = 0L
             suspend fun awaitIfPaused() {
                 if (!shouldPause()) return
-                taskContext.pause("用户暂停专家项目；当前工作包已到安全检查点")
+                taskContext.pause("用户暂停专家项目；当前执行批次已到安全检查点")
                 awaitResume()
                 taskContext.transition(AgentTaskStatus.RUNNING, "用户恢复专家项目")
             }
