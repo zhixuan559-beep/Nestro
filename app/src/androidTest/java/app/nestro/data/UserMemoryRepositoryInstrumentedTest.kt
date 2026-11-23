@@ -168,6 +168,47 @@ class UserMemoryRepositoryInstrumentedTest {
     }
 
     @Test
+    fun daoCandidateWriteValidatesSourceAndPersistsWithinTheTransactionalBoundary() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = database.dao()
+            dao.putProjects(listOf(
+                ProjectEntity("project-a", "项目 A", "", 1L),
+                ProjectEntity("project-b", "项目 B", "", 1L)
+            ))
+            dao.putConversation(ConversationEntity("conversation-a", "来源会话", 200L, "project-a"))
+            dao.putMessages(listOf(
+                MessageEntity("message-a", "conversation-a", 0, "user", "偏好清晰直接的表达方式"),
+                MessageEntity("assistant-a", "conversation-a", 1, "assistant", "收到")
+            ))
+            val candidate = memory().copy(
+                id = "transactional-memory",
+                fingerprint = UserMemoryStore.fingerprint("preference|偏好清晰直接的表达方式")
+            )
+
+            assertFalse(dao.saveUserMemoryCandidateIfSourceValid(
+                candidate.copy(sourceMessageId = "assistant-a")
+            ))
+            assertFalse(dao.saveUserMemoryCandidateIfSourceValid(
+                candidate.copy(projectId = "project-b")
+            ))
+            assertTrue(dao.saveUserMemoryCandidateIfSourceValid(candidate))
+            val stored = requireNotNull(dao.userMemoryByFingerprint(
+                "project-a",
+                candidate.fingerprint
+            ))
+            assertEquals("conversation-a", stored.sourceConversationId)
+            assertEquals("message-a", stored.sourceMessageId)
+            assertTrue(dao.userMemories("project-b").isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun importRejectsInvalidPayloadWithoutChangingExistingProjectData() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
