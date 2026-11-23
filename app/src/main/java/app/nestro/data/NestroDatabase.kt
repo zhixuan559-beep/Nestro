@@ -325,15 +325,6 @@ interface NestroDao {
             CASE WHEN :term12 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term12) || '%' THEN 1 ELSE 0 END
         ) DESC, c.updatedAt DESC, m.position DESC LIMIT :limit
     """)
-    @Query("""
-        SELECT CAST(COUNT(*) AS TEXT) || ':' ||
-               CAST(COALESCE(SUM(updatedAt), 0) AS TEXT) || ':' ||
-               CAST(COALESCE(MAX(updatedAt), 0) AS TEXT)
-        FROM conversations
-        WHERE projectId = :projectId AND id != :currentConversationId
-    """)
-    suspend fun conversationRecallCorpusVersion(projectId: String, currentConversationId: String): String
-
     suspend fun searchConversationMessagesByTerms(
         projectId: String, currentConversationId: String,
         term1: String,
@@ -350,6 +341,15 @@ interface NestroDao {
         term12: String,
         limit: Int = 40
     ): List<ConversationMemoryHit>
+    @Query("""
+        SELECT CAST(COUNT(*) AS TEXT) || ':' ||
+               CAST(COALESCE(SUM(updatedAt), 0) AS TEXT) || ':' ||
+               CAST(COALESCE(MAX(updatedAt), 0) AS TEXT)
+        FROM conversations
+        WHERE projectId = :projectId AND id != :currentConversationId
+    """)
+    suspend fun conversationRecallCorpusVersion(projectId: String, currentConversationId: String): String
+
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
 
