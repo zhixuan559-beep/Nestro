@@ -134,7 +134,11 @@ internal object ChatMediaAttachmentResolver {
             file.length() > MAX_INLINE_MEDIA_BYTES
         ) return null
         val rawMime = asset.mimeType.lowercase()
-        val mime = if (rawMime == "audio/x-wav") "audio/wav" else rawMime
+        val mime = when (rawMime) {
+            "audio/x-wav" -> "audio/wav"
+            "audio/mpga" -> "audio/mpeg"
+            else -> rawMime
+        }
         val supported = when (asset.kind) {
             MediaAssetKind.AUDIO -> mime in supportedAudioMimeTypes
             MediaAssetKind.VIDEO -> mime in supportedVideoMimeTypes
