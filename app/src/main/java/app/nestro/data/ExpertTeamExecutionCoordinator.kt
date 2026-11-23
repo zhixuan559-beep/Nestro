@@ -298,7 +298,7 @@ class ExpertTeamExecutionCoordinator(
         onPackage: suspend (String, String, String) -> Unit = { _, _, _ -> },
         invokeMember: suspend (ExpertTeamMemberTask, String) -> String,
         toolCatalog: AgentToolCatalog? = null,
-        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolDiscovery?) -> String)? = null
+        invokeMemberWithTools: (suspend (ExpertTeamMemberTask, String, AgentToolAccess?) -> String)? = null
     ): ExpertProjectExecutionResult {
         val planIdentityJson = JSONObject()
             .put("teamName", teamName)
