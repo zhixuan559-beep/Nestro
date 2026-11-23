@@ -138,4 +138,40 @@ class ChatRequestPolicyTest {
         assertEquals(listOf("第一个问题", "第二个问题"), bounded.map { it.content })
     }
 
+    @Test
+    fun boundedHistoryPreservesMediaPartsAndChargesTheirTokenBudget() {
+        val image = ChatMessageMediaPart("IMAGE", "image/jpeg", "aGVsbG8=", estimatedTokens = 100)
+        val retained = ChatRequestPolicy.boundedHistory(
+            listOf(ChatHistoryItem("user", "描述这张图", listOf(image))),
+            systemPrompt = "",
+            contextWindowTokens = 120,
+            outputReserveTokens = 20
+        )
+        assertEquals(1, retained.size)
+        assertEquals(listOf(image), retained.single().mediaParts)
+        assertTrue(retained.single().content.isEmpty())
+
+        val dropped = ChatRequestPolicy.boundedHistory(
+            listOf(ChatHistoryItem("user", "描述这张图", listOf(image))),
+            systemPrompt = "",
+            contextWindowTokens = 80,
+            outputReserveTokens = 20
+        )
+        assertEquals(1, dropped.size)
+        assertTrue(dropped.single().mediaParts.isEmpty())
+        assertTrue(dropped.single().content.isNotEmpty())
+    }
+
+    @Test
+    fun boundedChatHistoryCarriesResolvedMediaParts() {
+        val image = ChatMessageMediaPart("IMAGE", "image/png", "aGVsbG8=", estimatedTokens = 32)
+        val bounded = ChatRequestPolicy.boundedChatHistory(
+            listOf(ChatMessage("user-1", "user", "看图", mediaParts = listOf(image))),
+            systemPrompt = "",
+            contextWindowTokens = 4_096,
+            outputReserveTokens = 512
+        )
+        assertEquals(listOf(image), bounded.single().mediaParts)
+    }
+
 }
