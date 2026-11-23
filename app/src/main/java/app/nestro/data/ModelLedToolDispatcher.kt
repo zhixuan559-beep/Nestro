@@ -189,6 +189,7 @@ internal class ModelLedToolDispatcher(
         taskModeEnabled: Boolean,
         expertTeamEnabled: Boolean,
         parentTaskId: String? = null,
+        allowedToolIds: Set<String>? = null,
         planPhoneAgent: suspend (Map<String, String>) -> AgentToolResult,
         runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
@@ -200,6 +201,7 @@ internal class ModelLedToolDispatcher(
         val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter(visibleToolFilter)
+            .filter { allowedToolIds == null || it.id in allowedToolIds }
             .filter { it.id !in setOf("phone_agent.execute", "phone_agent.wait") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
