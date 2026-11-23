@@ -304,14 +304,12 @@ fun NestroApp(initialPage: String = "home") {
             val remaining = conversations.filterNot { it.id in teamChatIds }
             val activeWasDeleted = activeConversationId in teamChatIds
             conversations = remaining
-            ConversationPreferencesStore.saveConversationList(prefs, conversations)
-            if (activeWasDeleted) {
-                scope.launch {
+            scope.launch {
+                if (activeWasDeleted) {
                     val next = remaining.firstOrNull { it.projectId == activeProjectId }
                         ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
                     if (remaining.none { it.id == next.id }) {
                         conversations = listOf(next) + conversations
-                        ConversationPreferencesStore.saveConversationList(prefs, conversations)
                     }
                     val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
                         withContext(Dispatchers.IO) {
@@ -322,6 +320,22 @@ fun NestroApp(initialPage: String = "home") {
                     messages = nextMessages
                     prefs.edit().putString("active_conversation_id", next.id)
                         .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
+                }
+                val conversationSnapshot = conversations.toList()
+                val projectSnapshot = projects.toList()
+                val versionSnapshot = persistedConversationVersions.toMap()
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persist(
+                            prefs = prefs,
+                            conversations = conversationSnapshot,
+                            projects = projectSnapshot,
+                            knownVersions = versionSnapshot,
+                            snapshotTimestamp = System.currentTimeMillis()
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot)
                 }
             }
         }
@@ -458,7 +472,18 @@ fun NestroApp(initialPage: String = "home") {
             )
             if (existing == null) {
                 conversations = listOf(record) + conversations
-                ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = teamName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
             }
             val loadedMessages = if (existing != null && databaseReady) {
                 withContext(Dispatchers.IO) {
