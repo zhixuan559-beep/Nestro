@@ -4,7 +4,7 @@
 
 Nestro 不运营自营账号系统，也不托管用户的模型推理服务。用户自行选择兼容的模型服务商并配置 API Key。
 
-> **当前阶段（2026-11-24）：唯一开发与交付主线为 `main`，本轮业务源码与测试源码回读基线为 `62ce60c32261b182bbc441163f21fabd6b935ec8`。所有新功能、修复和文档更新直接提交 main；历史分支仅作为代码对照证据，不作为开发入口，不整分支合并或覆盖现有实现。十九模块当前状态以 [十九模块功能审计](docs/FUNCTION_AUDIT.md)、[当前代码地图](docs/CURRENT_CODE_MAP.md)、[十九模块完整清单](docs/NESTRO_19_MODULES.md) 和 [实现状态与开发路线图](docs/IMPLEMENTATION_ROADMAP.md) 为准。功能整合和清理完成前不运行最终构建；未经编译、测试和设备验收不得宣称交付完成。**
+> **当前阶段（2026-11-24）：唯一开发与交付主线为 `main`，本轮业务源码与测试源码回读基线为 `eb2ae1ad011f42bcfa43b6216d107bb0faa6ee98`。所有新功能、修复和文档更新直接提交 main；历史分支仅作为代码对照证据，不作为开发入口，不整分支合并或覆盖现有实现。十九模块当前状态以 [十九模块功能审计](docs/FUNCTION_AUDIT.md)、[当前代码地图](docs/CURRENT_CODE_MAP.md)、[十九模块完整清单](docs/NESTRO_19_MODULES.md) 和 [实现状态与开发路线图](docs/IMPLEMENTATION_ROADMAP.md) 为准。功能整合和清理完成前不运行最终构建；未经编译、测试和设备验收不得宣称交付完成。**
 
 ## 产品原则
 
@@ -21,7 +21,7 @@ Nestro 不运营自营账号系统，也不托管用户的模型推理服务。�
 
 - **统一对话调度**：主模型通过现有 AgentRuntime/AgentToolCatalog 调度专家团、Phone Agent、MCP、GitHub 工作台、媒体分析、视频生成及工作流；统一任务中心复用 AgentTaskCoordinator 和 trace，不另建任务队列。
 - **创作与执行混合调度**：Phone Agent、Media AI、视频生成可作为后台任务返回 task_id；主模型可按素材依赖穿插执行与专家 DAG。跨模块多轮交接、取消恢复和真实设备行为仍需完整验收。
-- **听得懂、看得懂**：聊天附件已按 asset_id 从现有项目素材库解析为 request-only image/audio/video parts；OpenAI 接图片与 WAV/MP3 音频，Anthropic 接图片，Gemini 接图片/音频/视频。大文件仍走既有 media.ai.run/status 专业任务桥接；模型能力声明/兼容性门禁和真实服务商联调仍待补，不能把协议接线等同于模型验收。
+- **听得懂、看得懂**：聊天附件已按 asset_id 从现有项目素材库解析为 request-only image/audio/video parts；OpenAI 接图片；仅当模型 ID 含 `audio` 时发送 WAV/MP3 input_audio，Anthropic 接图片，Gemini 接图片/音频/视频。大文件仍走既有 media.ai.run/status 专业任务桥接；模型能力声明/兼容性门禁和真实服务商联调仍待补，不能把协议接线等同于模型验收。
 - **专家团协作**：自动组队、DAG、并行工作包、checkpoint、恢复及私聊/团队会话入口已有代码；自由持续群聊、可编辑任务图、失败工作包返工和完整团队生命周期仍待补齐。
 - **插件/MCP/工作流**：现有工具授权、审批、任务检查点、恢复和审计路径优先复用；仍需继续核对各类审批等待、撤销、取消及进程恢复的端到端一致性。
 - **日历调度**：日历触发已接入 AgentTaskCoordinator，可调用项目可见专家 DAG 和已保存 PROMPT/EXPERT/SKILL 工作流；任意时间条件触发和日历专属语义型业务错误映射仍待补齐。
