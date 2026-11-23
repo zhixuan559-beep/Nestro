@@ -18,7 +18,9 @@ internal data class ChatRequestExecutionRequest(
     val temperature: Double?,
     val maxTokens: Int?,
     val previousAssistant: ChatMessage?,
-    val shouldStop: () -> Boolean
+    val shouldStop: () -> Boolean,
+    /** Optional task-local allow-list; null preserves normal chat discovery. */
+    val allowedToolIds: Set<String>? = null
 )
 
 internal data class ChatRequestExecutionResult(
@@ -85,6 +87,7 @@ internal class ChatRequestExecutionCoordinator(
                         taskModeEnabled = request.taskModeEnabled,
                         expertTeamEnabled = request.expertTeamEnabled,
                         parentTaskId = request.parentTaskId,
+                        allowedToolIds = request.allowedToolIds,
                         planPhoneAgent = { arguments ->
                             try {
                                 planPhoneAgent(arguments)
