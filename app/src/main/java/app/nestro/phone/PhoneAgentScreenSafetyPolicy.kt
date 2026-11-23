@@ -90,4 +90,20 @@ object PhoneAgentScreenSafetyPolicy {
         return consentTerms.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) } &&
             consentVerbs.any { normalized.contains(it.replace(Regex("\\s+"), "").lowercase()) }
     }
+
+    /**
+     * A route preview is safe to inspect, but starting turn-by-turn navigation is a
+     * user decision. Do not rely on the model to remember to emit confirm_sensitive.
+     */
+    fun requiresNavigationStartHandoff(screenText: String, targetLabel: String): Boolean {
+        val screen = screenText.lowercase().replace(Regex("\\s+"), "")
+        val target = targetLabel.lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
+        val isDirectionsScreen = listOf(
+            "googlemaps", "路线", "路线预览", "directions", "route", "预计到达", "到达时间"
+        ).any(screen::contains)
+        val isNavigationStart = listOf(
+            "开始导航", "启动导航", "开始", "导航", "startnavigation", "start", "navigate", "go"
+        ).any { target == it || target.contains(it) }
+        return isDirectionsScreen && isNavigationStart
+    }
 }
