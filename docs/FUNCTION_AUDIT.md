@@ -1453,3 +1453,11 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 新增 `PhoneAgentPlannerTest` 覆盖 TRAVEL 分类、路线确认/交接步骤，以及旅行/酒店预订/普通购物的分类边界；同时修正导航测试对现有确认文案的断言。
 - 源码提交：`71a69244101187dae3cfe68128a301949b145c57`；分类边界提交：`4ad37c5769e3cab74dbf18b4ad3bba2121d2659c`；测试源码提交：`a7f65550e151044273be3292b408f01ca994ea79`。
 - 当前路线顺序仍主要由 Planner 步骤和模型指令约束，尚未证明存在可阻断模型绕过的硬状态门禁；设备导航与自动化测试未运行。
+
+
+## 2026-11-24 模型上下文窗口动态预算接线
+
+- 发现 `ModelContextWindowPolicy.effectiveContextWindow/outputReserve` 与模型目录 `contextWindowTokens` 字段此前已有实现，但主聊天和主模型工具决策轮仍调用 `boundedChatHistory` 固定默认值，策略未接入真实请求路径。
+- 已将候选模型中最小的已知 context window 接入 `ChatRequestExecutionCoordinator` 与 `ModelLedToolDispatcher`；主聊天历史按模型窗口与 maxTokens/默认输出 reserve 裁剪，实际 maxTokens 超出窗口时同步收敛。工具决策轮也使用相同的保守窗口，并限制决策输出预算。
+- 新增 `ChatRequestPolicyTest` 覆盖 failover 最小窗口选择、未知窗口保守默认值和输出 reserve 上限。源码提交：`c25ba94296552a9a31f26f2b7707d8d780c19ffa`、`78f49576184f20dafadfaf2c6e7fdcfcf20131c8`；测试提交：`e657e97f17a866ba5304a4b524d6e1eb17ac64c4`。
+- 已回读确认主聊天与工具决策两条路径均已接线；系统提示词本身超过模型窗口时的压缩/截断保护仍未补。未运行编译或测试。
