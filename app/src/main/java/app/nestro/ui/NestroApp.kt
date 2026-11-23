@@ -449,7 +449,7 @@ fun NestroApp(initialPage: String = "home") {
             expertTeamPauseController.pause()
             teamExecutionPaused = expertTeamPauseController.isPaused()
             if (teamExecutionPaused) {
-                teamRunStatus = "暂停请求已提交，将在当前工作包完成后暂停"
+                teamRunStatus = "暂停请求已提交，将在当前执行批次完成后暂停"
             }
         }
     }
