@@ -1635,7 +1635,8 @@ fun NestroApp(initialPage: String = "home") {
                                         maxTokens = requestExpertProfiles[member.name]?.maxTokens,
                                         previousAssistant = null,
                                         shouldStop = { stopRequested },
-                                        allowedToolIds = discovery.list().map { it.id }.toSet()
+                                        allowedToolIds = discovery.list().map { it.id }.toSet(),
+                                                                             taskToolAccess = discovery
                                     ),
                                     onUsage = recordModelUsage,
                                     onProviderUsage = recordProviderModelUsage,
@@ -2424,7 +2425,7 @@ fun NestroApp(initialPage: String = "home") {
                                                          suspend fun invokeWorkflowStep(
                                                              step: WorkflowStep,
                                                              stepPrompt: String,
-                                                             discovery: app.nestro.agent.AgentToolDiscovery? = null
+                                                             discovery: app.nestro.agent.AgentToolAccess? = null
                                                          ): String {
                                                              val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
                                                              val roleContext = when (step.kind) {
@@ -2500,7 +2501,8 @@ fun NestroApp(initialPage: String = "home") {
                                                                              maxTokens = expertOptions?.maxTokens,
                                                                              previousAssistant = null,
                                                                              shouldStop = { stopRequested },
-                                                                             allowedToolIds = discovery.list().map { it.id }.toSet()
+                                                                             allowedToolIds = discovery.list().map { it.id }.toSet(),
+                                                                             taskToolAccess = discovery
                                                                          ),
                                                                          onUsage = recordModelUsage,
                                                                          onProviderUsage = recordProviderModelUsage,
