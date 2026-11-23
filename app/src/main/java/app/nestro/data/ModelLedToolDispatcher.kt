@@ -744,6 +744,7 @@ ${prompt.take(8_000)}
                 states = stateStore,
                 traces = RoomAgentTaskTraceStore(database.dao())
             )
+            nativeToolCallsExecuted.incrementAndGet()
             val result = try {
                 runtime.execute(AgentToolRequest(taskId, spec.id, decision.arguments))
             } finally {
@@ -777,8 +778,14 @@ ${prompt.take(8_000)}
             markTerminal(AgentTaskStatus.PAUSED, "工具调度已取消，可重新发起")
             throw cancelled
         } catch (error: Exception) {
-            markTerminal(AgentTaskStatus.FAILED, error.message ?: "模型工具调度失败")
-            throw error
+            val terminalError = if (nativeToolCallsExecuted.get() > 0 && error !is app.nestro.agent.NonRetryableAgentTaskException) {
+                app.nestro.agent.NonRetryableAgentTaskException(
+                    "工具调用已开始或执行结果不确定，已阻止自动重试以避免重复副作用：${error.message ?: "模型工具调度失败"}",
+                    error
+                )
+            } else error
+            markTerminal(AgentTaskStatus.FAILED, terminalError.message ?: "模型工具调度失败")
+            throw terminalError
         }
     }
 
