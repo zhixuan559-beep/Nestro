@@ -85,4 +85,34 @@ class SkillBundleParserTest {
         assertEquals("短技能", imported.name)
         assertEquals("只输出摘要。", imported.prompt)
     }
+    @Test
+    fun reconstructsStoredSkillAndPreservesVerifiedSignerFingerprint() {
+        val fingerprint = "a".repeat(64)
+        val metadata = """{"version":"1.2.0","description":"研究","source":"已验证签名社区目录","signerFingerprint":"$fingerprint","permissions":["network_read"],"dependencies":[{"name":"web-search","version":">=1.0"}]}"""
+        val bundle = SkillBundleParser.fromStored("资料研究员", prompt, metadata)
+        assertEquals("1.2.0", bundle.version)
+        assertEquals(fingerprint, bundle.signerFingerprint)
+        assertEquals(listOf("network_read"), bundle.permissions)
+        assertEquals("web-search", bundle.dependencies.single().name)
+    }
+
+    @Test
+    fun refusesToExportCorruptStoredSkillMetadata() {
+        val invalid = listOf(
+            "{not-json",
+            """{"version":"1.0.0","permissions":"root_access"}""",
+            """{"version":"1.0.0","dependencies":{"name":"search"}}""",
+            """{"version":"1.0.0","permissions":["root_access"]}""",
+            """{"version":"1.0.0","signerFingerprint":"not-a-sha256"}"""
+        )
+        invalid.forEach { metadata ->
+            try {
+                SkillBundleParser.exportJson("损坏技能", prompt, metadata)
+                fail("corrupt stored metadata must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+
 }
