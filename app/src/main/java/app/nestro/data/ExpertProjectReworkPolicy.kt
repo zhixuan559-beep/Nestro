@@ -56,7 +56,7 @@ internal object ExpertProjectTaskIdentity {
             append(plan.reworkRound).append('\n')
             append(plan.projectGoal).append('\n')
             append(plan.finalAcceptanceCriteria).append('\n')
-            plan.packages.sortedBy { it.id }.forEach { item ->
+            plan.packages.forEach { item ->
                 append(item.id).append('|').append(item.memberName).append('|')
                     .append(item.instruction).append('|').append(item.acceptanceCriteria).append('|')
                     .append(item.dependsOn.sorted().joinToString(",")).append('\n')
