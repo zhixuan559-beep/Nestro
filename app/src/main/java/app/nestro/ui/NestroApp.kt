@@ -3924,6 +3924,7 @@ fun NestroApp(initialPage: String = "home") {
                             draft = prompt
                             page = "home"
                         }
+                        "tasks" -> AgentTaskCenterPage(appRuntime, activeProjectId)
                         "capabilities" -> CapabilityDirectoryPage(activeProjectId)
                         "mcp" -> McpToolCenterPage(appRuntime)
                         "plugins" -> GeneratedPluginCenterPage(
