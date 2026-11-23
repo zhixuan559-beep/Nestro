@@ -75,6 +75,7 @@ fun MediaEditorPage(
     var tasks by remember(projectId) { mutableStateOf(emptyList<MediaRenderTask>()) }
     var status by remember(projectId) { mutableStateOf("导入本地视频、音频或图片，素材只保存在当前项目。") }
     var selectedAssetId by remember(projectId) { mutableStateOf("") }
+    var selectedAudioTrackId by remember(projectId) { mutableStateOf("audio-main") }
     var subtitleDraft by remember(projectId) { mutableStateOf("") }
     var subtitleEdits by remember(projectId) { mutableStateOf(emptyMap<String, String>()) }
     var subtitlePage by remember(projectId) { mutableStateOf(0) }
@@ -109,6 +110,9 @@ fun MediaEditorPage(
         }
         assets = result.first
         timeline = result.second
+        if (result.second.tracks.none { it.id == selectedAudioTrackId && it.kind == MediaTrackKind.AUDIO }) {
+            selectedAudioTrackId = result.second.tracks.firstOrNull { it.kind == MediaTrackKind.AUDIO }?.id.orEmpty()
+        }
         tasks = result.third
     }
 
@@ -402,13 +406,19 @@ fun MediaEditorPage(
     fun addAssetToTimeline(asset: MediaAsset) {
         val kind = if (asset.kind == MediaAssetKind.AUDIO) MediaTrackKind.AUDIO else MediaTrackKind.VIDEO
         var next = timeline
-        var track = next.tracks.firstOrNull { it.kind == kind }
+        var track = if (kind == MediaTrackKind.AUDIO) {
+            next.tracks.firstOrNull { it.id == selectedAudioTrackId && it.kind == kind }
+                ?: next.tracks.firstOrNull { it.kind == kind }
+        } else {
+            next.tracks.firstOrNull { it.kind == kind }
+        }
         if (track == null) {
             next = MediaTimelinePolicy.addTrack(next, kind)
             track = next.tracks.last()
         }
-        runCatching { MediaTimelinePolicy.addClip(next, track.id, asset) }
-            .onSuccess(::persist)
+        val targetTrackId = track.id
+        runCatching { MediaTimelinePolicy.addClip(next, targetTrackId, asset) }
+            .onSuccess { saved -> persist(saved) { if (kind == MediaTrackKind.AUDIO) selectedAudioTrackId = targetTrackId } }
             .onFailure { status = "添加剪辑失败：" + (it.message ?: "时间线不允许该操作") }
     }
 
@@ -580,7 +590,14 @@ fun MediaEditorPage(
                 scope.launch { runCatching { timeline = withContext(Dispatchers.IO) { MediaProjectStore.redo(context, projectId) } }
                     .onFailure { status = it.message ?: "重做失败" } }
             }) { Text("重做") }
-            Text("一条主视频轨 + 一条音频混音轨", style = MaterialTheme.typography.bodySmall)
+            Text("主视频轨 + 多条音频混音轨", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = {
+                runCatching {
+                    val next = MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
+                    val newTrackId = next.tracks.last().id
+                    persist(next) { selectedAudioTrackId = newTrackId }
+                }.onFailure { status = it.message ?: "新增音频轨失败" }
+            }) { Text("添加音频轨") }
         }
         Text("时间线 · " + formatDuration(timeline.durationMs), style = MaterialTheme.typography.titleMedium)
         timeline.tracks.forEach { track ->
@@ -589,6 +606,9 @@ fun MediaEditorPage(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(track.name + " · " + track.kind.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                         if (track.kind == MediaTrackKind.AUDIO) {
+                            TextButton(onClick = { selectedAudioTrackId = track.id }) {
+                                Text(if (selectedAudioTrackId == track.id) "当前添加轨" else "设为添加轨")
+                            }
                             TextButton(onClick = {
                                 persist(timeline.copy(tracks = timeline.tracks.map {
                                     if (it.id == track.id) it.copy(muted = !it.muted) else it
