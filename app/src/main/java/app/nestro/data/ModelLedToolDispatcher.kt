@@ -196,6 +196,7 @@ internal class ModelLedToolDispatcher(
         expertTeamEnabled: Boolean,
         parentTaskId: String? = null,
         allowedToolIds: Set<String>? = null,
+        taskToolAccess: AgentToolAccess? = null,
         planPhoneAgent: suspend (Map<String, String>) -> AgentToolResult,
         runExpertTeam: suspend (String, Map<String, String>) -> String,
         onUsage: (ModelConfig, Int, Int) -> Unit,
@@ -204,7 +205,7 @@ internal class ModelLedToolDispatcher(
     ): ModelToolDispatchResult? {
         // Phone Agent registers short-lived device-action handlers while executing a task;
         // those task-local controls must never leak into ordinary chat tool discovery.
-        val candidates = catalog.list()
+        val candidates = (taskToolAccess?.list() ?: catalog.list())
             .filterNot { it.id.startsWith("phone.") }
             .filter(visibleToolFilter)
             .let { filterTaskAllowedTools(it, allowedToolIds) }
@@ -402,10 +403,13 @@ ${prompt.take(8_000)}
                     ?: return@completeWithNativeTools NativeToolCallResult("工具未注册，已阻止执行：$toolId")
                 nativeToolCallsExecuted.incrementAndGet()
                 val mcpOrdinal = if (spec.id.startsWith("mcp_")) mcpCallOrdinal.incrementAndGet() else 0
-                val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+                val lease = if (taskToolAccess == null) {
+                    AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+                } else null
+                val toolAccess = taskToolAccess ?: requireNotNull(lease).access
                 val scopedAccess = object : AgentToolAccess {
-                    override fun find(id: String) = lease.access.find(id)
-                    override fun list() = lease.access.list()
+                    override fun find(id: String) = toolAccess.find(id)
+                    override fun list() = toolAccess.list()
                     override suspend fun invoke(id: String, args: Map<String, String>) =
                         when (id) {
                             "phone_agent.execute" -> planPhoneAgent(args).let { result -> result.copy(output = result.output.take(4_000), error = result.error.take(2_000)) }
@@ -432,7 +436,7 @@ ${prompt.take(8_000)}
                                         AgentToolResult(true, output = savedOutput)
                                     } else {
                                         saveMcpReplayCall(stateStore, taskId, id, invocationArguments, mcpOrdinal, "EXECUTING")
-                                        val result = lease.access.invoke(id, invocationArguments)
+                                        val result = toolAccess.invoke(id, invocationArguments)
                                         if (result.success) {
                                             saveMcpReplayCall(
                                                 stateStore, taskId, id, invocationArguments,
@@ -442,7 +446,7 @@ ${prompt.take(8_000)}
                                         result
                                     }
                                 } else {
-                                    lease.access.invoke(id, invocationArguments)
+                                    toolAccess.invoke(id, invocationArguments)
                                 }
                             }
                         }
@@ -535,7 +539,7 @@ ${prompt.take(8_000)}
                         runtime.execute(AgentToolRequest(taskId, spec.id, arguments))
                     }
                 } finally {
-                    AgentToolLeaseRegistry.release(lease.id)
+                    lease?.let { AgentToolLeaseRegistry.release(it.id) }
                 }
                 if (result.requiresUser) {
                     NativeToolCallResult(
