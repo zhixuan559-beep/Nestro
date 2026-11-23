@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `50d56781a3414c6165e8d48a8824e49918fbfd10`（2026-11-24）。
+> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `6e94cfb5a5b13172876b0777108ccbe733081cee`（2026-11-24）。
 > 本轮已重新统计 `main` recursive tree：459 entries、392 files、48 directories，其中 211 个 main Kotlin 源文件、135 个 JVM/AndroidTest Kotlin 文件、16 个 docs 文件。功能状态按当前 main 源码、调用点和数据流核验；历史分支提交数不等于有效功能缺口。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。
 >
