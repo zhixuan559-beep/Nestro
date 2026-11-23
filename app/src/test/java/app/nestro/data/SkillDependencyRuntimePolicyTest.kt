@@ -51,4 +51,42 @@ class SkillDependencyRuntimePolicyTest {
             SkillDependencyResolver.findDependents("base", skills, metadata + ("broken" to "{not-json"))
         )
     }
+
+    @Test fun candidateDependenciesRequireVisibleEnabledCompatibleInstalledSkills() {
+        val installed = mapOf("base" to "base prompt")
+        val metadata = mapOf("base" to """{"version":"1.5.0"}""")
+        val candidate = SkillBundle(
+            name = "consumer",
+            version = "1.0.0",
+            description = "",
+            prompt = "consumer prompt",
+            source = "local",
+            permissions = emptyList(),
+            dependencies = listOf(SkillDependency("base", "^1.0.0"))
+        )
+        assertTrue(SkillDependencyResolver.inspectCandidate(candidate, installed, metadata).isEmpty())
+        assertTrue(SkillDependencyResolver.inspectCandidate(candidate, installed, metadata, setOf("base")).isNotEmpty())
+        assertTrue(
+            SkillDependencyResolver.inspectCandidate(
+                candidate,
+                installed,
+                mapOf("base" to """{"version":"0.9.0"}""")
+            ).isNotEmpty()
+        )
+        assertTrue(SkillDependencyResolver.inspectCandidate(candidate, emptyMap(), emptyMap()).isNotEmpty())
+    }
+
+    @Test fun replacementCannotBreakInstalledDependentsAndCorruptMetadataFailsClosed() {
+        val skills = mapOf("base" to "base prompt", "consumer" to "consumer prompt")
+        val metadata = mapOf(
+            "base" to """{"version":"1.0.0"}""",
+            "consumer" to """{"dependencies":[{"name":"base","version":"^1.0.0"}]}"""
+        )
+        assertEquals(emptyList<String>(), SkillDependencyResolver.findIncompatibleDependents("base", "1.5.0", skills, metadata))
+        assertEquals(listOf("consumer"), SkillDependencyResolver.findIncompatibleDependents("base", "2.0.0", skills, metadata))
+        assertEquals(
+            null,
+            SkillDependencyResolver.findIncompatibleDependents("base", "2.0.0", skills, metadata + ("consumer" to "{bad"))
+        )
+    }
 }
