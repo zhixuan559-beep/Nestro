@@ -1,5 +1,6 @@
 package app.nestro.mcp
 import android.content.Context
+import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -198,7 +199,11 @@ private object McpCredentialVault {
   val packed=c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).getString(PREFIX+id,null)?:return ""
   return runCatching{val p=packed.split(":");require(p.size==2);val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(p[0],Base64.NO_WRAP)));cipher.updateAAD(id.toByteArray(Charsets.UTF_8));String(cipher.doFinal(Base64.decode(p[1],Base64.NO_WRAP)),Charsets.UTF_8)}.getOrElse{throw IllegalStateException("MCP 凭据无法解密，请重新保存 Bearer Token",it)}
  }
- fun delete(c:Context,id:String){
+ fun removeFrom(editor: SharedPreferences.Editor, id: String) {
+   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
+   editor.remove(PREFIX + id)
+  }
+  fun delete(c:Context,id:String){
   require(id.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
   check(c.getSharedPreferences("nestro_local",Context.MODE_PRIVATE).edit().remove(PREFIX+id).commit()){"MCP 凭据删除失败"}
  }

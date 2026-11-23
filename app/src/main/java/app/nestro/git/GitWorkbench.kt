@@ -595,7 +595,7 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
         val account = requireAccount(requireLocal(id).accountId)
         val branch = git.repository.branch
         val results = git.push().setCredentialsProvider(credentials(account))
-            .setTimeout(45).setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call()
+            .setTimeout(45).setRefSpecs(RefSpec("HEAD:refs/heads/$branch")).call().toList()
         val messages = results.flatMap { it.remoteUpdates }.map { it.status.name }
         if (results.isEmpty() || messages.isEmpty()) {
             GitOperationResult(false, "远程未返回任何分支推送结果，不能判定为成功。")
@@ -640,12 +640,14 @@ class GitWorkbenchRepository(context: Context, private val api: GitProviderApi =
             save()
         }
         val commit = git.repository.resolve(commitId + "^{commit}") ?: error("找不到指定提交")
-        val result = git.revert().include(commit).call()
+        git.revert().include(commit).call()
+        val conflicts = git.status().call().conflicting.toList()
+        val newHead = git.repository.resolve("HEAD")?.name
         when {
-            !result.unmergedPaths.isNullOrEmpty() ->
-                GitOperationResult(false, "回滚产生冲突，请人工处理。", result.unmergedPaths.orEmpty())
-            result.newHead != null ->
-                GitOperationResult(true, "已生成反向提交：" + result.newHead.name)
+            conflicts.isNotEmpty() ->
+                GitOperationResult(false, "回滚产生冲突，请人工处理。", conflicts)
+            !newHead.isNullOrBlank() ->
+                GitOperationResult(true, "已生成反向提交：$newHead")
             else -> GitOperationResult(false, "回滚未生成新提交，仓库状态：" + git.repository.repositoryState.name)
         }
     }

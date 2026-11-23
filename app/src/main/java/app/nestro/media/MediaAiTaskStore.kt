@@ -284,12 +284,6 @@ class MediaAiTaskWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
     }
 
-    override fun onStopped() {
-        activeProvider?.cancelActiveRequests()
-        activeVideoClient?.cancel()
-        super.onStopped()
-    }
-
     private fun fail(projectId:String,taskId:String,message:String):Boolean {
         runCatching { MediaAiTaskStore.update(applicationContext,projectId,taskId,errorMessage=message) }
         return false

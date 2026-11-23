@@ -1,6 +1,9 @@
 package app.nestro.mcp
 
 import app.nestro.NestroApplication
+import app.nestro.agent.AgentApprovalDecision
+import app.nestro.agent.AgentTaskState
+import app.nestro.agent.AgentTaskStatus
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +30,7 @@ fun McpToolCenterPage(app: NestroApplication) {
     var servers by remember { mutableStateOf(repository.listServers()) }
     var tools by remember { mutableStateOf(repository.listTools()) }
     var audits by remember { mutableStateOf(repository.listAudits()) }
-    var recoverableTasks by remember { mutableStateOf(emptyList<app.nestro.agent.AgentTaskState>()) }
+    var recoverableTasks by remember { mutableStateOf(emptyList<AgentTaskState>()) }
     var serverName by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
@@ -72,7 +75,7 @@ fun McpToolCenterPage(app: NestroApplication) {
                 app.agentTaskCoordinator.recoverableTasks().filter {
                     it.kind == "mcp_tool" &&
                         it.status in setOf(
-                            app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                            AgentTaskStatus.WAITING_FOR_USER,
                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
                             app.nestro.agent.AgentTaskStatus.PAUSED
                         )
