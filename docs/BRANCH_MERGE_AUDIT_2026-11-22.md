@@ -185,3 +185,17 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - `IMPLEMENTATION_ROADMAP.md`、`NESTRO_19_MODULES.md`、`PHASE2_CODE_MAP.md`：分支进度和代码地图落后于当前 main；仅作历史线索，不复制其状态描述。
 - **核销结论：10 个文件均已分类；该分支没有需要回收的独有生产实现或测试。其 MCP 主体、UI、任务接线和测试均由 main 更完整版本取代。**
 - 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
+## 2026-11-24 main 分叉分支逐条核销 — 04/20
+
+### `feature/expert-group-chat-lifecycle`
+
+- 核对基线：`main` HEAD `abe10dc87ef2f8d87d2f3ff39bd630673cb2e219`。
+- 分支关系：merge base `4107e1e2dac20313f5bd77e6de6f665a79484115`；branch ahead 28、behind 429。compare 共 12 个文件差异。
+- `MainActivity.kt`、`ConversationMemoryStore.kt`、`ExpertBundleParser.kt`、`ExpertProfileCodec.kt`、`VoiceInputButton.kt`、`strings.xml`：main 与分支 blob SHA 完全一致，无需复制。
+- `ConversationPersistenceService.kt`：main 额外包含删除/恢复会话时的记忆来源失效清理；分支没有更完整实现。
+- `SkillBundleParser.kt`：main 已新增 `fromStored` 和 `validateStoredCollection`，对持久化技能元数据做恢复/备份校验；分支旧解析器不覆盖 main。
+- `NestroApp.kt`：分支已有专家团群聊入口、团队成员状态和协作事件记录；main 保留这些能力，并增加团队运行暂停/恢复控制、项目计划工作包执行、事件展示、主模型审核回流和更完整的团队生命周期。分支没有需要单独回收的群聊能力。
+- `Theme.kt`：分支错误色仍使用红色；main 已按当前黑白极简主题统一为单色错误语义，保留 main。
+- `README.md`、`docs/design/NESTRO_UI_DESIGN.md`：分支产品状态与界面说明早于当前 main，不能作为当前功能事实。
+- **核销结论：12 个文件均已分类；未发现分支独有且当前 main 缺失的生产功能或测试。main 对专家团生命周期、会话记忆清理、技能持久化校验和 UI 状态均有更完整实现。**
+- 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
