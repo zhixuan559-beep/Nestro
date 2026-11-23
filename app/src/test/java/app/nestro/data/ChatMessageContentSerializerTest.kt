@@ -85,4 +85,12 @@ class ChatMessageContentSerializerTest {
     }
 
 
+    @Test
+    fun modelIdAudioHintEnablesOpenAiAudioInput() {
+        assertTrue(ChatMessageContentSerializer.modelIdHintsAudioInputSupport("gpt-4o-audio-preview"))
+        assertTrue(ChatMessageContentSerializer.modelIdHintsAudioInputSupport("Qwen-Audio"))
+        assertTrue(!ChatMessageContentSerializer.modelIdHintsAudioInputSupport("gpt-4o-mini"))
+    }
+
+
 }
