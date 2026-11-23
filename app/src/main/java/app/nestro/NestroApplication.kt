@@ -895,7 +895,10 @@ class NestroApplication : Application() {
                 visibleToolFilter = { tool ->
                     !tool.id.startsWith("mcp_") || mcpToolCenterRepository.isToolGranted(tool.id)
                 }
-            )
+            ),
+            resolveMediaAttachments = { projectId, history ->
+                app.nestro.media.ChatMediaAttachmentResolver.resolve(this@NestroApplication, projectId, history)
+            }
         )
     }
 
