@@ -1383,10 +1383,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 - `ToolsDirectoryPage` 的 14 个管理入口（模型、双模型比较、语音、Skills、工作流、插件、MCP、能力授权、记忆、知识库、产物、媒体、AI 共建、Git）均在 `NestroApp` 找到对应路由分支；本轮未发现目录入口断链。
 - 主进程共享 `AgentToolCatalog` 与 `AgentTaskCoordinator`；当前静态注册 11 个内置工具，MCP/生成式插件按连接与安装状态动态注册。Phone Agent 与 calendar automation 有具名 Handler；媒体 AI、媒体渲染、工作流和专家团队通过统一协调器的 `runInline` 进入统一任务生命周期。
-- **确认一项真实接口缺口：** `AgentCapabilityRegistry.register` 在生产调用链中没有注册点；`WorkflowStepKind` 只有 PROMPT/EXPERT/SKILL，`WorkflowStep` 与专家成员执行配置均没有可持久化的 allowed tool IDs。虽然 Workflow/Expert 协调器预留了工具租约和工具感知回调，但当前运行时没有生产声明可打开租约，故不能把“专家/工作流步骤内部可调用工具”标记为已打通。主模型直接调用 `expert_team.run`、Phone Agent、媒体和动态 MCP/插件工具的路径另行存在。
+- **专家/工作流工具租约缺口已作最小安全接通：** 新增 `AgentCapabilityRegistry.registerReadOnlyTools`，每次专家成员调用、专家项目工作包和工作流步骤执行前，按 operation 生成独立作用域，仅注册共享目录中 `READ_ONLY && !requiresConfirmation` 的工具；随后创建工具租约并在调用结束时释放租约/注销声明。现有工具感知回调因此可实际收到只读工具发现列表。外部写入、设备操作、需确认工具不会自动暴露给子步骤，仍由主模型统一调度并经过项目授权与用户审批；没有扩大子 Agent 的副作用权限。
+- 已更新 `ExpertTeamExecutionCoordinatorTest` 与 `WorkflowExecutionCoordinatorTest`：移除测试中手工注册能力的假接线，改为验证生产协调器自动提供只读工具，并排除设备操作、外部写入和标记需确认的只读工具。生产代码提交 `af57b8bd5a6882a3c859a2175cbbd2c1d7ff8d97`；审批边界测试提交 `07373ca3bd5664cbf6186eb9c9ca49317a7688b5`。已回读代码与测试源码，尚未执行测试。
+- **仍未完成的更细粒度能力配置：** 当前按安全默认策略自动开放只读工具，没有提供每个专家/工作流步骤的持久化自定义工具 allowlist；如后续要让步骤直接调用外部写入/设备/MCP 副作用工具，必须先补显式授权配置和审批恢复测试，不能直接扩大默认权限。
 - `NestroApplication.kt` 的 `media.provider.list` 曾对每个 Provider 连续重复读取三次；已改为单次读取，提交 `3fb55b0bb8a6ed5e91ffc7ee930c20324505d182`，并回读确认。
 - 本轮只完成源码/路由/注册关系静态核查；尚未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验收。不得将接口存在等同于运行通过。
 
 ### 下一步
 
-先补齐并测试专家成员/工作流步骤的显式工具能力声明、项目范围校验、租约创建与审批续跑，再继续逐项核对十九模块的 UI 操作、数据流、错误/恢复路径和跨模块调用；全部代码收口后再统一构建 APK 与验收。
+继续逐项核对十九模块的 UI 操作、数据流、项目授权、任务状态、错误/恢复路径和跨模块调用；逐项修复真实缺口并补测试源码。全部代码收口后再统一构建 APK 与验收。
