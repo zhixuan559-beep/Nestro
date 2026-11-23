@@ -1425,3 +1425,10 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - `NestroApplication` 已接线，并新增 `ChatRequestContextAssemblerTest.conversationCorpusVersionInvalidatesHistoricalRecallCache` 测试源码。
 - 代码提交：`e99d9db9aafa320c0d50f1cfbcfa14d8604dad04`（DAO）、`11ee3a4d2c8dad20166241c0e1d232ece6c421ab`（Repository）、`120d2afffcad2326ab37b2159ca8a41d53695aab`（Assembler）、`7d8268e3326a00b52ac9763b9266ccb327ad447b`（Application）、`a97874c7977921081958e5d0ae5734debacc282c`（测试源码）。
 - 已逐文件回读确认 DAO→Repository→Assembler→Application→测试的版本链完整；未运行编译或测试。独立全局/项目/会话三级记忆缓存仍未实现，不能把本次失效修复说成该功能已完成。
+
+
+## 2026-11-24 Mika 虚拟屏任务关闭调用修正
+
+- 静态回读 `MikaVirtualDisplayService.removeTask(taskId)` 发现反射调用 `removeTask(int)` 时漏传 `taskId`，导致调用参数数量不匹配，任务关闭路径会失败。
+- 已修正为 `.invoke(taskManager, taskId)`；原有“调用后再次查询任务是否消失”的结果核验保留，不把反射调用返回本身当作成功。
+- 源码提交：`80bc8d7b04834e14fcd5db29b27ad1796d8c6307`；已回读确认参数传递。未运行设备测试。
