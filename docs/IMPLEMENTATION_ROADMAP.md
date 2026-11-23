@@ -1,7 +1,7 @@
 # 2026-11-24 当前工作基线（main）
 
 - **当前唯一开发与交付主线**：`main`。
-- **本轮业务源码回读基线**：`a256fef031b6d60c5e966ac71066ef9a79c87c0f`（2026-11-24）；其后文档更新不改变该源码基线。
+- **本轮业务源码回读基线**：`62ce60c32261b182bbc441163f21fabd6b935ec8`（2026-11-24）；其后文档更新不改变该源码基线。
 - **本轮已完成的代码整合**：
   - 模块16新增项目级统一任务中心：复用 AgentTaskCoordinator 状态与 trace，支持查看最近任务、执行记录、错误和暂停/恢复/取消；工具目录和 NestroApp 路由已接通。
   - 模块17支持主视频轨 + 最多 8 条音频轨；音频轨可选择添加目标、静音、独立 0–200% 音量、删除空轨；渲染按轨混音，工程 codec 兼容旧数据默认音量 100%，补充对应测试源码。
@@ -20,6 +20,7 @@
 - `ChatMessage.mediaParts` 仅为请求期临时字段；Room、备份格式和原始媒体目录不新增第二套存储。历史消息通过原有 asset_id 在后续请求重新解析。
 - `ChatRequestPolicy` 在上下文裁剪时保留媒体 parts 并按模态/时长估算 token 成本；OpenAI Chat Completions 支持 image_url 与 WAV/MP3 input_audio，Anthropic 支持 base64 image，Gemini 使用 inlineData 图片/音频/视频并把媒体放在文本指令之前。
 - 新增 serializer、asset_id 解析、时长预算、request coordinator 传递与 context budget 回归测试源码；尚未运行编译或测试。模型能力声明/兼容性门禁、真实 API 验证、大文件直传和跨 Provider 一致性仍未完成。
+- 技能库：适配历史分支 `fromStored` 安全思路，统一走 main 的严格 SkillSemVer/权限/依赖/签名指纹校验；`LocalBackupRepository` 在备份导出和恢复前验证持久化技能集合，拒绝损坏元数据。
 
 ## 2026-11-23 20:00 UTC — 本轮静态复核补充
 
