@@ -130,7 +130,7 @@ class UserMemoryRepositoryInstrumentedTest {
     }
 
     @Test
-    fun deletingOrEditingSourceMessageRemovesOnlyItsProjectMemory() = runBlocking {
+    fun deletingSourceMessageRemovesOnlyItsProjectMemory() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
             .allowMainThreadQueries()
