@@ -25,7 +25,7 @@ object PhoneAgentPlanner {
         val text = prompt.trim()
         val normalized = text.lowercase()
         val travelIntent = listOf("旅行", "旅游", "出游", "行程", "旅游攻略", "景点", "自驾游", "周边游", "多地游").any { normalized.contains(it) }
-        val explicitBookingIntent = listOf("订", "预订", "预定", "预约", "购买", "下单", "挂号").any { normalized.contains(it) }
+        val explicitBookingIntent = listOf("预订", "预定", "预约", "订票", "订酒店", "订房", "订机票", "订火车票", "订餐厅", "买机票", "挂号").any { normalized.contains(it) }
         val category = when {
             listOf("下载素材", "下载图片", "下载视频", "素材采集", "收集素材", "获取素材", "图片素材", "视频素材", "音频素材").any { normalized.contains(it) } -> Category.CREATIVE_ASSET
             travelIntent && !explicitBookingIntent -> Category.TRAVEL
