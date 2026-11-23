@@ -22,4 +22,12 @@ class ChatMediaAttachmentResolverTest {
     fun ignoresContentWithoutAssetMarkers() {
         assertEquals(emptyList<String>(), ChatMediaAttachmentResolver.referencedAssetIds("普通聊天文本"))
     }
+    @Test
+    fun estimatesAudioAndVideoTokenCostsFromDuration() {
+        assertEquals(2_048, ChatMediaAttachmentResolver.estimateAudioTokens(0L))
+        assertEquals(6_000, ChatMediaAttachmentResolver.estimateAudioTokens(60_000L))
+        assertEquals(4_096, ChatMediaAttachmentResolver.estimateVideoTokens(0L))
+        assertEquals(15_360, ChatMediaAttachmentResolver.estimateVideoTokens(60_000L))
+    }
+
 }
