@@ -28,6 +28,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private data class CapabilityEntry(val name:String,val description:String,val source:String,val permission:String,val state:String)
+private data class InstalledSkillSnapshot(
+    val versions: Map<String, String>,
+    val skills: Map<String, String>,
+    val metadata: Map<String, String>,
+    val disabled: Set<String>
+)
 
 @Composable
 fun CapabilityDirectoryPage(projectId: String) {
@@ -363,14 +369,39 @@ fun CapabilityDirectoryPage(projectId: String) {
             confirmButton={TextButton(onClick={
                 loading=true
                 scope.launch {
-                    val installed=runCatching {
-                        val meta=JSONObject(prefs.getString("skill_metadata_v1","{}") ?: "{}")
-                        meta.keys().asSequence().associateWith { name -> runCatching { JSONObject(meta.optString(name,"{}")).optString("version") }.getOrDefault("") }
-                    }.getOrDefault(emptyMap())
-                    val result=withContext(Dispatchers.IO) { runCatching { SkillDependencyResolver.resolve(
-                        releases.firstOrNull { it.name==bundle.name && it.version==bundle.version && !trustStore.isFingerprintRevoked(it.signerFingerprint) } ?: error("原始签名目录版本已失效或签名者已撤销"),
-                        releases.filterNot { trustStore.isFingerprintRevoked(it.signerFingerprint) }, installed, bundle
-                    ) } }
+                    val rootRelease = releases.firstOrNull {
+                        it.name == bundle.name && it.version == bundle.version && !trustStore.isFingerprintRevoked(it.signerFingerprint)
+                    } ?: error("原始签名目录版本已失效或签名者已撤销")
+                    val trustedCatalog = releases.filterNot { trustStore.isFingerprintRevoked(it.signerFingerprint) }
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val rawSkills = prefs.getString("skills", "{}") ?: "{}"
+                            val rawMetadata = prefs.getString("skill_metadata_v1", "{}") ?: "{}"
+                            val rawDisabled = prefs.getString("disabled_skills_v1", "[]") ?: "[]"
+                            SkillBundleParser.validateStoredCollection(rawSkills, rawMetadata)
+                            val skillJson = JSONObject(rawSkills)
+                            val metadataJson = JSONObject(rawMetadata)
+                            val installedSkills = skillJson.keys().asSequence().associateWith { name -> skillJson.optString(name) }
+                            val installedMetadata = metadataJson.keys().asSequence().associateWith { name -> metadataJson.optString(name) }
+                            val disabledJson = JSONArray(rawDisabled)
+                            val disabledSkills = (0 until disabledJson.length()).map { disabledJson.optString(it) }.toSet()
+                            val installedVersions = installedSkills.keys.associateWith { name ->
+                                installedMetadata[name]?.let { raw ->
+                                    JSONObject(raw).optString("version", "1.0.0").ifBlank { "1.0.0" }
+                                } ?: "1.0.0"
+                            }
+                            val snapshot = InstalledSkillSnapshot(installedVersions, installedSkills, installedMetadata, disabledSkills)
+                            SkillDependencyResolver.resolve(
+                                rootRelease,
+                                trustedCatalog,
+                                snapshot.versions,
+                                bundle,
+                                snapshot.skills,
+                                snapshot.metadata,
+                                snapshot.disabled
+                            )
+                        }
+                    }
                     result.onSuccess { pendingPlan=it; pendingBundle=null }
                         .onFailure { installStatus="依赖解析失败："+(it.message ?: "无法形成完整安装计划") }
                     loading=false
