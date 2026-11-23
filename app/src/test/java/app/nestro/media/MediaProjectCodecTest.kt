@@ -13,9 +13,10 @@ class MediaProjectCodecTest {
             durationMs = 12_000, sha256 = "abc", importedAt = 10
         )
         val withAudioTrack = MediaTimelinePolicy.addTrack(base, MediaTrackKind.AUDIO)
-        val withClip = MediaTimelinePolicy.addClip(withAudioTrack, "video-main", video).copy(
+        val withVideoClip = MediaTimelinePolicy.addClip(withAudioTrack, "video-main", video)
+        val withClip = withVideoClip.copy(
             revision = 7,
-            tracks = withAudioTrack.tracks.map { track ->
+            tracks = withVideoClip.tracks.map { track ->
                 when (track.id) {
                     "audio-main" -> track.copy(volume = 0.75f)
                     else -> track.copy(volume = 1.25f)
