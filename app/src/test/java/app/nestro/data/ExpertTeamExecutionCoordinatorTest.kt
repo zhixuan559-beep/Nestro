@@ -64,6 +64,9 @@ class ExpertTeamExecutionCoordinatorTest {
             register(AgentToolSpec("device.click", "点击设备", AgentToolPermission.DEVICE_ACTION)) {
                 app.nestro.agent.AgentToolResult(true, "已点击")
             }
+            register(AgentToolSpec("sensitive.read", "需要确认的只读工具", AgentToolPermission.READ_ONLY, requiresConfirmation = true)) {
+                app.nestro.agent.AgentToolResult(true, "需确认")
+            }
         }
         var captured: app.nestro.agent.AgentToolDiscovery? = null
         try {

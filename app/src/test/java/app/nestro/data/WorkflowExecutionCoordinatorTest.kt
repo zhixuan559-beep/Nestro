@@ -63,6 +63,9 @@ class WorkflowExecutionCoordinatorTest {
             register(AgentToolSpec("message.send", "发送消息", AgentToolPermission.EXTERNAL_WRITE)) {
                 app.nestro.agent.AgentToolResult(true, "已发送")
             }
+            register(AgentToolSpec("sensitive.read", "需要确认的只读工具", AgentToolPermission.READ_ONLY, requiresConfirmation = true)) {
+                app.nestro.agent.AgentToolResult(true, "需确认")
+            }
         }
         var captured: AgentToolDiscovery? = null
         try {
