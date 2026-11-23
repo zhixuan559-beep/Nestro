@@ -62,7 +62,7 @@ class ModelCapabilityPolicyTest {
             ModelConfig("https://one.example.com", "one", "secret"),
             ModelConfig("https://two.example.com", "two", "secret")
         )
-        assertEquals(configs, ModelCapabilityPolicy.compatibleConfigs(configs, emptySet()))
+        assertEquals(configs, ModelCapabilityPolicy.compatibleConfigs(configs, emptyList()))
     }
 
     @Test
