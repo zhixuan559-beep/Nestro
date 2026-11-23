@@ -2833,6 +2833,7 @@ fun NestroApp(initialPage: String = "home") {
                                                             conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
                                                             activeConversationId = next.id
                                                             activeProjectId = record.projectId
+                                                            selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, record.projectId) == next.id }?.id.orEmpty()
                                                             val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
                                                                 withContext(Dispatchers.IO) {
                                                                     appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
@@ -2845,7 +2846,8 @@ fun NestroApp(initialPage: String = "home") {
                                                             if (remaining.any { it.id == next.id }) {
                                                                 conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
                                                             }
-                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
+                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                         } else {
                                                             conversations = remaining
                                                         }
@@ -3300,9 +3302,11 @@ fun NestroApp(initialPage: String = "home") {
                                                                 conversations = listOf(created) + conversations
                                                                 ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                 activeConversationId = created.id
+                                                                selectedTeamId = ""
                                                                 messages = emptyList()
                                                             } else {
                                                                 activeConversationId = target.id
+                                                                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, project.id) == target.id }?.id.orEmpty()
                                                                 val targetMessages = if (databaseReady) {
                                                                     withContext(Dispatchers.IO) {
                                                                         appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
@@ -3314,7 +3318,8 @@ fun NestroApp(initialPage: String = "home") {
                                                                 }
                                                                 conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
                                                             }
-                                                            prefs.edit().putString("active_conversation_id", activeConversationId).apply()
+                                                            prefs.edit().putString("active_conversation_id", activeConversationId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
                                                             page = "home"
                                                         }
                                                     }) {
@@ -3941,8 +3946,9 @@ fun NestroApp(initialPage: String = "home") {
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
                             activeConversationId = conversation.id
+                            selectedTeamId = ""
                             messages = emptyList()
-                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).apply()
+                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).remove("selected_team_id").apply()
                             ConversationPreferencesStore.saveConversationList(prefs, conversations)
                             page = "home"
                         } else {
@@ -3975,12 +3981,14 @@ fun NestroApp(initialPage: String = "home") {
                                     } else target.messages
                                     activeConversationId = target.id
                                     activeProjectId = target.projectId
+                                    selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, target.projectId) == target.id }?.id.orEmpty()
                                     messages = targetMessages
                                     conversations = conversations.map { record ->
                                         if (record.id == target.id) record.copy(messages = targetMessages, messagesLoaded = true) else record
                                     }
                                     conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
-                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
+                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId)
+                                        .putString("selected_team_id", selectedTeamId).apply()
                                     page = "home"
                                 }
                             }
