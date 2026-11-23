@@ -149,10 +149,7 @@ class CalendarReminderWorker(
             return Result.success()
         }
         CalendarReminderScheduler.notify(applicationContext, event, occurrenceStart)
-        val latestEvent = repository.event(eventId)
-        if (latestEvent != null) {
-            CalendarReminderScheduler.schedule(applicationContext, latestEvent, replaceAutomation = false)
-        }
+        CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
         return Result.success()
     }
 }
@@ -193,13 +190,16 @@ class CalendarAutomationWorker(
         val dispatched = if (existing != null) {
             existing
         } else {
-            repository.recordAutomationDispatch(
-                eventId = eventId,
-                nextRunAt = nextRunAt,
-                lastRunAt = System.currentTimeMillis(),
-                taskId = taskId,
-                idempotencyKey = idempotencyKey
+            val dispatchRecorded = repository.recordAutomationDispatch(
+                eventId = eventId, nextRunAt = nextRunAt, lastRunAt = System.currentTimeMillis(),
+                taskId = taskId, idempotencyKey = idempotencyKey,
+                expectedGeneration = scheduledGeneration
             )
+            if (!dispatchRecorded) {
+                val latestEvent = repository.event(eventId)
+                if (latestEvent != null) CalendarReminderScheduler.schedule(applicationContext, latestEvent, replaceAutomation = false)
+                return Result.success()
+            }
             try {
                 app.agentTaskCoordinator.enqueue(
                     taskId = taskId,
@@ -222,7 +222,8 @@ class CalendarAutomationWorker(
                 repository.recordAutomationResult(
                     eventId,
                     "FAILED",
-                    error = (error.message ?: "统一任务机接收日历任务失败").take(2_000)
+                    error = (error.message ?: "统一任务机接收日历任务失败").take(2_000),
+                    expectedGeneration = scheduledGeneration
                 )
                 return Result.failure()
             }
@@ -244,10 +245,15 @@ class CalendarAutomationWorker(
                 eventId = eventId,
                 status = persistedStatus,
                 result = if (persistedStatus == "COMPLETED") dispatched.resultSummary else "",
-                error = if (persistedStatus in setOf("FAILED", "CANCELLED", "WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED")) dispatched.lastError else ""
+                error = if (persistedStatus in setOf("FAILED", "CANCELLED", "WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED")) dispatched.lastError else "",
+                expectedGeneration = scheduledGeneration
             )
         }
-        CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
+        val latestEvent = repository.event(eventId)
+        if (latestEvent != null) {
+            if (latestEvent.automationGeneration != scheduledGeneration) app.agentTaskCoordinator.cancel(taskId)
+            CalendarReminderScheduler.schedule(applicationContext, latestEvent, replaceAutomation = false)
+        }
         return Result.success()
     }
 }
