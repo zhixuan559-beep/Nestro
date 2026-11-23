@@ -79,8 +79,8 @@ internal fun AgentTaskCenterPage(
         if (busyTaskId.isNotBlank()) return
         busyTaskId = task.taskId
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
+            val failure = try {
+                withContext(Dispatchers.IO) {
                     when (action) {
                         "pause" -> application.agentTaskCoordinator.pause(task.taskId)
                         "resume" -> application.agentTaskCoordinator.resume(task.taskId)
@@ -88,15 +88,20 @@ internal fun AgentTaskCenterPage(
                         else -> error("未知任务操作")
                     }
                 }
+                null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                error
             }
-            status = if (result.isSuccess) {
+            status = if (failure == null) {
                 when (action) {
                     "pause" -> "已提交暂停请求"
                     "resume" -> "已提交恢复请求"
                     else -> "已提交取消请求"
                 }
             } else {
-                "操作失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+                "操作失败：${failure.message ?: "未知错误"}"
             }
             busyTaskId = ""
             reloadTasks()
