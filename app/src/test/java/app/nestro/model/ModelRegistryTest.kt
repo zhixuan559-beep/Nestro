@@ -344,7 +344,7 @@ class ModelRegistryTest {
         assertFalse(decoded.models.single().supportsNativeToolCalling)
 
         val oldPayload = encoded.replace(
-            ",\\"inputModalities\\":[\\"TEXT\\",\\"IMAGE\\",\\"AUDIO\\"],\\"supportsNativeToolCalling\\":false",
+            ",\"inputModalities\":[\"TEXT\",\"IMAGE\",\"AUDIO\"],\"supportsNativeToolCalling\":false
             ""
         )
         val oldDecoded = ModelRegistryCodec.decodeOrNull(oldPayload)!!
