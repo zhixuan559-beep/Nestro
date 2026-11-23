@@ -102,10 +102,14 @@ class WorkflowExecutionCoordinator(
                 workflow = workflow,
                 userInput = input,
                 invokeModel = { step, prompt ->
+                    val operation = "step-" + UUID.nameUUIDFromBytes(
+                        "$taskId:${step.id}".toByteArray(Charsets.UTF_8)
+                    ).toString()
+                    AgentCapabilityRegistry.registerReadOnlyTools("workflow", operation, toolCatalog)
                     val lease = AgentCapabilityRegistry.openLease(
                         taskId = taskId,
                         owner = "workflow",
-                        operation = step.id,
+                        operation = operation,
                         catalog = toolCatalog
                     )
                     try {
@@ -119,6 +123,7 @@ class WorkflowExecutionCoordinator(
                         }
                     } finally {
                         lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                        AgentCapabilityRegistry.unregister("workflow", operation)
                     }
                 },
                 onStep = onStep,

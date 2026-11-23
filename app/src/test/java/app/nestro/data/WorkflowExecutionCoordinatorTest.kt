@@ -65,7 +65,6 @@ class WorkflowExecutionCoordinatorTest {
             }
         }
         var captured: AgentToolDiscovery? = null
-        AgentCapabilityRegistry.register("workflow", "step-research", setOf("knowledge.search"))
         try {
             val workflow = WorkflowDefinition(
                 id = "workflow-tools",
@@ -89,7 +88,6 @@ class WorkflowExecutionCoordinatorTest {
             assertEquals(null, captured?.find("knowledge.search"))
             assertEquals(null, captured?.find("message.send"))
         } finally {
-            AgentCapabilityRegistry.unregister("workflow", "step-research")
             coordinator.close()
         }
     }

@@ -323,6 +323,17 @@ object AgentCapabilityRegistry {
         declarations[Key(owner, operation)] = toolIds.toSortedSet()
     }
 
+    /** Give an operation a bounded, read-only view of the shared catalog by default. */
+    fun registerReadOnlyTools(owner: String, operation: String, catalog: AgentToolCatalog?): Set<String> {
+        val allowed = catalog?.list()
+            ?.filter { it.permission == AgentToolPermission.READ_ONLY && !it.requiresConfirmation }
+            ?.map { it.id }
+            ?.toSet()
+            .orEmpty()
+        register(owner, operation, allowed)
+        return allowed
+    }
+
     fun unregister(owner: String, operation: String): Boolean =
         declarations.remove(Key(owner, operation)) != null
 

@@ -173,10 +173,14 @@ class ExpertTeamExecutionCoordinator(
         emit("team_started", status = "running", message = task.take(2_000))
 
         suspend fun invokeWithLease(member: ExpertTeamMemberTask, prompt: String): String {
+            val operation = "member-" + UUID.nameUUIDFromBytes(
+                "$taskId:${member.name}".toByteArray(Charsets.UTF_8)
+            ).toString()
+            AgentCapabilityRegistry.registerReadOnlyTools("expert_team", operation, toolCatalog)
             val lease = AgentCapabilityRegistry.openLease(
                 taskId = taskId,
                 owner = "expert_team",
-                operation = member.name,
+                operation = operation,
                 catalog = toolCatalog
             )
             return try {
@@ -190,6 +194,7 @@ class ExpertTeamExecutionCoordinator(
                 }
             } finally {
                 lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                AgentCapabilityRegistry.unregister("expert_team", operation)
             }
         }
 
@@ -407,9 +412,13 @@ class ExpertTeamExecutionCoordinator(
                 resumeResults = resumeResults,
                 invoke = { memberName, instruction ->
                     val member = members[memberName] ?: error("专家不在当前团队中：$memberName")
+                    val operation = "member-" + UUID.nameUUIDFromBytes(
+                        "$taskId:${member.name}".toByteArray(Charsets.UTF_8)
+                    ).toString()
+                    AgentCapabilityRegistry.registerReadOnlyTools("expert_team_project", operation, toolCatalog)
                     val lease = AgentCapabilityRegistry.openLease(
                         taskId = taskId, owner = "expert_team_project",
-                        operation = member.name, catalog = toolCatalog
+                        operation = operation, catalog = toolCatalog
                     )
                     try {
                         if (lease != null && invokeMemberWithTools == null) {
@@ -419,6 +428,7 @@ class ExpertTeamExecutionCoordinator(
                             ?: invokeMember(member, instruction)
                     } finally {
                         lease?.let { AgentToolLeaseRegistry.release(it.id) }
+                        AgentCapabilityRegistry.unregister("expert_team_project", operation)
                     }
                 },
                 onPackage = { packageId, status, detail ->

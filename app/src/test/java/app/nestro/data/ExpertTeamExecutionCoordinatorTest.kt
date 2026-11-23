@@ -66,8 +66,6 @@ class ExpertTeamExecutionCoordinatorTest {
             }
         }
         var captured: app.nestro.agent.AgentToolDiscovery? = null
-        AgentCapabilityRegistry.register("expert_team", "选题", setOf("knowledge.search"))
-        AgentCapabilityRegistry.register("expert_team", "文案", setOf("knowledge.search"))
         try {
             val result = service.execute(
                 teamId = "team-tools",
@@ -91,8 +89,6 @@ class ExpertTeamExecutionCoordinatorTest {
             assertEquals(null, captured?.find("knowledge.search"))
             assertEquals(null, captured?.find("device.click"))
         } finally {
-            AgentCapabilityRegistry.unregister("expert_team", "选题")
-            AgentCapabilityRegistry.unregister("expert_team", "文案")
             coordinator.close()
         }
     }
