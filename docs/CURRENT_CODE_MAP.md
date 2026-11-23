@@ -79,3 +79,10 @@
 - 模块1专家项目与模块3工作流的工具感知调用入口现已接通：`NestroApp` 分别提供 `invokeMemberWithTools` / `invokeModelWithTools`，将操作级 `AgentToolAccess` 原始租约和精确工具 allow-list 交给 `ChatRequestExecutionCoordinator`；`ModelLedToolDispatcher` 在原生工具调用及兼容文本协议两条路径都复用同一租约处理器，并继续执行项目能力授权、AgentRuntime 权限判断、审批和 MCP 重放检查点。专家项目 `runInline` 与工作流 `runInline` 现在写入 projectId/conversationId 等 `AgentTaskMetadata`。新增 allow-list 单元测试源码，尚未运行编译或测试。模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
 - 模块17多视频轨/PIP/多音轨、模块19原生聊天多模态 content parts/通用视频问答/非语音音频事件理解仍未完成；现有素材导入与专业媒体任务不能代替原生多模态传输层。
 - 全部新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
+
+
+## 2026-11-24 主线基线切换说明
+
+- 当前唯一开发与交付基线已切换为 `main`，本次回读时 HEAD：`f33f67f8625ed8d2992b683358da055de5848775`。
+- 本文此前以 `integration/19-modules` 为基线的记录均视为历史审计线索，不自动代表当前 `main` 状态；后续功能状态必须按 `main` 当前源码、调用点和数据流重新核实。
+- 本轮只完成已证明无生产调用的 `UnifiedAgentDispatcher` 及其专属测试清理；十九模块全量复核仍在进行，未进入编译/测试阶段。
