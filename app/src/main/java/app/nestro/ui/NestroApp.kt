@@ -654,7 +654,8 @@ fun NestroApp(initialPage: String = "home") {
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 prefs.edit().putString("selected_expert", selectedExpert).apply()
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, activeProjectId) == activeConversationId }?.id
+                    ?: (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } }.orEmpty()
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -707,7 +708,8 @@ fun NestroApp(initialPage: String = "home") {
                 expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, activeProjectId) == activeConversationId }?.id
+                    ?: (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } }.orEmpty()
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -2735,8 +2737,9 @@ fun NestroApp(initialPage: String = "home") {
                                     val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
                                     conversations = listOf(record) + conversations
                                     activeConversationId = id
+                                    selectedTeamId = ""
                                     messages = emptyList()
-                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).apply()
+                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).remove("selected_team_id").apply()
                                     ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                     page = "home"
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
@@ -2755,12 +2758,14 @@ fun NestroApp(initialPage: String = "home") {
                                                             ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
                                                         activeConversationId = record.id
                                                         activeProjectId = record.projectId
+                                                        selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, record.projectId) == record.id }?.id.orEmpty()
                                                         messages = loadedMessages
                                                         conversations = conversations.map { item ->
                                                             if (item.id == record.id) item.copy(messages = loadedMessages, messagesLoaded = true) else item
                                                         }
                                                         conversations.firstOrNull { it.id == record.id }?.let { persistedConversationVersions[record.id] = it.hashCode() }
-                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
+                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId)
+                                                            .putString("selected_team_id", selectedTeamId).apply()
                                                         page = "home"
                                                     }
                                                 }) {
