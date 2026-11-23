@@ -121,3 +121,42 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - 已从 `main` 删除 `app/src/main/java/app/nestro/agent/UnifiedAgentDispatcher.kt` 与仅覆盖该死代码的 `app/src/test/java/app/nestro/agent/UnifiedAgentDispatcherTest.kt`。删除提交：`7124010867e79028159a1cf07c26fd55e95f6f4d`、`60b64468062f54dec19e77c54acf2d1645a66435`。
 - 同轮复核确认 `ChatNetworkPolicy` 被 `ChatExecutionService` / `OpenAiClient` 使用，`TtsCapability` 被 `AndroidTextToSpeechController` 使用；两者不是死代码，保留。
 - 本次只清理已证明无生产引用的旧路由，不涉及历史分支删除，不运行编译或测试。
+
+## 2026-11-24 main 分叉分支逐条核销 — 01/20
+
+### `feature/knowledge-retrieval-ranking`
+
+- 核对基线：`main`，核对时 HEAD：`e198f0f93096801dd2a9dd915d5414f91adb2231`。
+- 分支关系：merge base `5064e9c635655d1d2260c4b096fc65d5bf3b061c`；branch ahead 90、behind 3104。共 39 个文件差异。ahead 数只表示独有提交数量，不代表 90 项功能缺失。
+- **未整分支合并、未删除分支、未覆盖 main。**
+
+#### 文件与实现核销
+
+- `KnowledgeSearchEngine.kt`、`KnowledgeTextDecoder.kt`、`KnowledgeTextDecoderTest.kt`：main 与分支 blob SHA 完全一致，无需重复复制。
+- `KnowledgeChunker.kt`、`KnowledgeStore.kt`、`NestroDatabase.kt`：分支版本较旧。main 已有更严格的 UTF-16 代理对边界保护、项目级 FTS/BM25 与向量检索、候选窗口抽样、PDF/OCR 入口和更高版本 Room 迁移；不覆盖当前实现。
+- `KnowledgePdfImportTest.kt`：分支有基础 PDF 测试；main 已有相同基础覆盖并额外加入扫描 PDF OCR 测试，保留 main。
+- `CapabilityRegistryStore.kt`：main 已有更严格的描述符字段边界、损坏注册表 fail-closed、注销时清理项目授权并记录撤销，以及工具授权/审计；分支旧实现不复制。main 的 Android instrumentation 测试覆盖授权隔离、损坏数据、描述符元数据、MCP 授权和敏感参数名过滤。
+- `CapabilityTaskEngine.kt`：旧 CapabilityTaskStore/Engine 另建任务表、队列和状态机；main 已由 `AgentTaskCoordinator`、`RoomAgentTaskStateStore`、`AgentTaskStateEntity` 统一承载幂等键、重试退避、检查点、恢复和 trace。只保留现有统一任务内核，不复制第二套队列。旧引擎按 `projectId + kind + callerKey` 派生 SHA-256 业务键的思路已核对；main 现有 `enqueue(idempotencyKey=...)` 与各调用方业务键已覆盖幂等机制，不搬入旧 Store。
+- `CapabilityCenterPage.kt`：旧能力中心 UI 不复制。main 将能力授权/审计整合进 `CapabilityDirectoryPage`，任务状态和操作由 `AgentTaskCenterPage` 承担；不是缺失后再造一页。
+- `UserMemoryStore.kt`：main 已有 MemoryMutationToken、并发提取失效、来源项目/会话/消息事务校验、显式 supersedes、指纹冲突保护、跨项目授权、语义与关键词回退；不覆盖 main。
+- `PhoneAgentActionParser.kt`、`PhoneAgentAgent.kt`、`PhoneAgentService.kt`、`PhoneAgentWorker.kt`、`PhoneAgentWorkScheduler.kt`、`PhoneAgentPlanner.kt`、`PhoneAgentModelClient.kt`、`PhoneAgentTaskStore.kt`、`NestroApp.kt`：分支是较早的独立 WorkManager/无障碍执行快照；main 已接入统一 AgentTaskCoordinator、隔离虚拟屏、更新后的风险策略和当前 UI。旧 Phone Agent 源文件不整块回收。
+- `AndroidManifest.xml`、`app/build.gradle.kts`、`settings.gradle.kts`、`.github/workflows/android.yml`、`README.md`、`IMPLEMENTATION_ROADMAP.md`：分支配置和说明早于 main 当前虚拟屏、前台服务类型、OAuth、媒体与 CI 校验链；不复制旧配置。
+
+#### 本次选择性回收
+
+- 分支旧 `PhoneAgentTaskStore` 有明确的 `STATUS_INTERRUPTED`（“中断待核对”），区分“任务真的在执行”与“上次动作结果不确定、必须先核对页面”。main 原先只保留 `STATUS_RUNNING`，界面虽提示核对页面，但状态仍显示执行中。
+- 已在 main 选择性恢复这个语义，并接入：任务状态持久化、`markInterrupted`、恢复候选、统一任务状态映射、Agent/Executor 重试门禁、Worker、Phone Agent 页面、备份导入状态白名单和统一工具等待终态。
+- 新增测试源码覆盖中断状态判定及用户可见状态；未运行测试或编译。
+- 仅恢复运行时确实使用的状态逻辑；没有复制分支里仅被测试调用的旧辅助方法，避免新增死代码。
+
+#### 仍需保留的测试覆盖候选
+
+- 分支旧 `NestroDatabaseMigrationTest` 中有一组记忆集成场景，当前 main 的测试函数未逐项对应：项目清空隔离、指定 owner 项目纠正、CRUD/指纹、过期提取不能复活删除项、全局关闭后的提取失效、无效纠正拒绝降级新增、指纹冲突保护、会话删除使旧提取失效、共享授权隔离、upsert 保留身份与共享状态。
+- main 当前源码已有相应的新 API/事务保护，但旧测试依赖旧版方法签名和旧 schema 版本，不能原样复制。列为**待按 main 当前 API 重写的测试覆盖项**，不把“源码存在”当作测试通过，也不把这组测试差异误报成缺失功能。
+- 分支其余 Phone Agent/知识库测试已与 main 当前 `PhoneAgentRiskPolicyTest`、`PhoneAgentTaskStoreTest`、知识库测试及更新后的实现逐项对照；旧测试中与当前实现模型不兼容的部分不直接复制。
+
+#### 核销结论
+
+- **功能层面：已核对并选择性回收 1 项独有语义；其余生产实现均为相同代码、被 main 更强实现替代，或属于重复子系统。**
+- **测试层面：记忆集成测试场景仍需按 main 当前 API 重写，作为本分支遗留测试覆盖项继续跟踪。**
+- 分支继续保留作历史证据；本次没有 merge、delete、build、Gradle test、APK 或设备验收。
