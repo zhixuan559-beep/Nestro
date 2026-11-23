@@ -409,7 +409,7 @@ internal class MikaVirtualDisplayService(
     @SuppressLint("PrivateApi")
     private fun removeTask(taskId: Int): Boolean {
         val invoked = runCatching {
-            taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager)
+            taskManager.javaClass.getMethod("removeTask", Int::class.javaPrimitiveType).invoke(taskManager, taskId)
             true
         }.getOrDefault(false)
         // Some framework/OEM variants expose a void method; verify removal instead of
