@@ -1,10 +1,10 @@
 package app.nestro.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val NestroDarkColors = darkColorScheme(
+private val NostColors = lightColorScheme(
     primary = Mint,
     onPrimary = Background,
     background = Background,
@@ -13,13 +13,14 @@ private val NestroDarkColors = darkColorScheme(
     onSurface = TextPrimary,
     surfaceVariant = SurfaceRaised,
     onSurfaceVariant = TextSecondary,
+    outline = Divider,
     error = Danger
 )
 
 @Composable
 fun NestroTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = NestroDarkColors,
+        colorScheme = NostColors,
         content = content
     )
 }
