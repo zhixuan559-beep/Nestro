@@ -20,7 +20,7 @@ fun NestroTheme(content: @Composable () -> Unit) {
             surfaceVariant = Color(0xFF1A1A1A),
             onSurfaceVariant = Color(0xFFAAAAAA),
             outline = Color(0xFF303030),
-            error = Color(0xFFFF6B6B)
+            error = Color.White
         )
     } else {
         lightColorScheme(
@@ -33,7 +33,7 @@ fun NestroTheme(content: @Composable () -> Unit) {
             surfaceVariant = Color(0xFFF5F5F5),
             onSurfaceVariant = Color(0xFF6B6B6B),
             outline = Color(0xFFE5E5E7),
-            error = Color(0xFFB42318)
+            error = Color(0xFF111111)
         )
     }
     MaterialTheme(colorScheme = colors, content = content)
