@@ -15,13 +15,13 @@ import java.util.UUID
 internal fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: String = "", maxTokens: Int = 2048): List<ChatMessage> {
     val source = history.takeLast(40)
     val bounded = ChatRequestPolicy.boundedHistory(
-        source.map { ChatHistoryItem(it.role, it.content) },
+        source.map { ChatHistoryItem(it.role, it.content, it.mediaParts) },
         systemPrompt,
         outputReserveTokens = maxTokens
     )
     // boundedHistory may skip blank entries; never infer source positions from the result size.
     return bounded.mapIndexed { index, item ->
-        ChatMessage("request-context-$index", item.role, item.content)
+        ChatMessage("request-context-$index", item.role, item.content, mediaParts = item.mediaParts)
     }
 }
 
@@ -31,7 +31,8 @@ private fun estimatedUsageInput(history: List<ChatMessage>, systemPrompt: String
         append(systemPrompt)
         bounded.forEach { message -> append('\n').append(message.role).append(":").append(message.content) }
     }
-    return ChatRequestPolicy.estimateTokens(text).coerceAtMost(Int.MAX_VALUE / 4) * 4
+    val mediaTokens = bounded.sumOf { message -> message.mediaParts.sumOf { it.estimatedTokens.coerceAtLeast(1) } }
+    return (ChatRequestPolicy.estimateTokens(text) + mediaTokens).coerceAtMost(Int.MAX_VALUE / 4) * 4
 }
 
 private fun estimatedUsageOutput(response: String): Int =
@@ -217,20 +218,19 @@ internal object OpenAiClient {
         val openAiMessages = JSONArray().apply {
             if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
             boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach {
-                put(JSONObject().put("role", it.role).put("content", it.content))
+                put(ChatMessageContentSerializer.openAiMessage(it))
             }
         }
         val anthropicMessages = JSONArray().apply {
             boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048)
                 .filter { it.role == "user" || it.role == "assistant" }
-                .forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+                .forEach { put(ChatMessageContentSerializer.anthropicMessage(it)) }
         }
         val geminiContents = JSONArray().apply {
             boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048)
                 .filter { it.role == "user" || it.role == "assistant" }
                 .forEach { message ->
-                    put(JSONObject().put("role", if (message.role == "assistant") "model" else "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", message.content))))
+                    put(ChatMessageContentSerializer.geminiContent(message))
                 }
         }
         val openAiTools = JSONArray().apply {
@@ -536,7 +536,7 @@ internal object OpenAiClient {
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg ->
-                        put(JSONObject().put("role", msg.role).put("content", msg.content))
+                        put(ChatMessageContentSerializer.openAiMessage(msg))
                     }
                 })
                 put("stream", false)
@@ -578,7 +578,7 @@ internal object OpenAiClient {
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
+                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(ChatMessageContentSerializer.openAiMessage(msg)) }
                 })
                 if (supportsOpenAiStreamUsage(config)) put("stream_options", JSONObject().put("include_usage", true))
                 put("stream", true)
@@ -655,7 +655,7 @@ internal object OpenAiClient {
                 if (systemPrompt.isNotBlank()) put("system", systemPrompt)
                 put("messages", JSONArray().apply {
                     messages.filter { it.role == "user" || it.role == "assistant" }.forEach { message ->
-                        put(JSONObject().put("role", message.role).put("content", message.content))
+                        put(ChatMessageContentSerializer.anthropicMessage(message))
                     }
                 })
                 put("stream", false)
@@ -666,8 +666,7 @@ internal object OpenAiClient {
                 }
                 put("contents", JSONArray().apply {
                     messages.filter { it.role == "user" || it.role == "assistant" }.forEach { message ->
-                        put(JSONObject().put("role", if (message.role == "assistant") "model" else "user")
-                            .put("parts", JSONArray().put(JSONObject().put("text", message.content))))
+                        put(ChatMessageContentSerializer.geminiContent(message))
                     }
                 })
                 put("generationConfig", JSONObject().put("maxOutputTokens", (maxTokens ?: 2048).coerceIn(1, 32768)))
