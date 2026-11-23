@@ -6,8 +6,19 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertTeamBundle
+import app.nestro.data.ExpertTeamCollaborationEvent
 import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.ExpertTeamRunResult
+
+internal const val EXPERT_TEAM_EVENT_PAGE_SIZE = 16
+internal const val EXPERT_TEAM_EVENT_MAX_VISIBLE = 100
+
+/** Returns the requested recent collaboration events, newest first. */
+internal fun visibleExpertTeamEvents(
+    events: List<ExpertTeamCollaborationEvent>,
+    visibleCount: Int
+): List<ExpertTeamCollaborationEvent> =
+    events.takeLast(visibleCount.coerceIn(1, EXPERT_TEAM_EVENT_MAX_VISIBLE)).asReversed()
 
 /**
  * Owns expert editor, import/export, team editor and team-run presentation state.
