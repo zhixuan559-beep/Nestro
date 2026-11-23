@@ -107,6 +107,7 @@ object ExpertProjectPlanExecutor {
         availableMembers: Set<String>,
         maxParallel: Int = 4,
         shouldStop: () -> Boolean = { false },
+        awaitIfPaused: suspend () -> Unit = {},
         resumeResults: List<ExpertWorkPackageResult> = emptyList(),
         onPackageResult: suspend (List<ExpertWorkPackageResult>) -> Unit = {},
         invoke: suspend (memberName: String, instruction: String) -> String,
@@ -131,6 +132,7 @@ object ExpertProjectPlanExecutor {
         val results = linkedMapOf<String, ExpertWorkPackageResult>()
         resumeResults.filter { it.status == "success" }.forEach { results[it.packageId] = it }
         for (wave in topologicalWaves(plan)) {
+            awaitIfPaused()
             val pendingWave = wave.filterNot { it.id in results }
             if (pendingWave.isEmpty()) continue
             if (shouldStop()) throw CancellationException("用户停止专家项目")
@@ -200,6 +202,7 @@ object ExpertProjectPlanExecutor {
                     }
                 }.awaitAll()
             }
+            awaitIfPaused()
         }
         return ExpertProjectExecutionResult(
             plan = plan,
