@@ -162,3 +162,48 @@ class ChatRequestContextAssemblerParallelRetrievalTest {
         assertTrue(result.systemContext.contains("并行来源"))
     }
 }
+
+
+class ChatRequestContextAssemblerCacheTest {
+    @Test
+    fun cachesFinalContextAndExpiresAfterTtl() = kotlinx.coroutines.runBlocking {
+        var now = 1_000L
+        var retrievalCalls = 0
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ ->
+                retrievalCalls++
+                ConversationRecallResult("conversation-$retrievalCalls", emptyList())
+            },
+            retrieveUserMemory = { _, _ ->
+                retrievalCalls++
+                "user-memory-$retrievalCalls"
+            },
+            cacheTtlMillis = 500L,
+            nowMillis = { now }
+        )
+        val args = arrayOf("p", "c", "根据知识库和我的偏好回忆历史", emptyList<ChatMessage>(), "base")
+        val first = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
+        val second = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
+        assertEquals(first, second)
+        assertEquals(2, retrievalCalls)
+        now += 501L
+        val third = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
+        assertTrue(third.systemContext.contains("conversation-3"))
+        assertEquals(4, retrievalCalls)
+    }
+
+    @Test
+    fun cacheSeparatesProjectsConversationsAndBaseContext() = kotlinx.coroutines.runBlocking {
+        var retrievalCalls = 0
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ -> retrievalCalls++; ConversationRecallResult("", emptyList()) },
+            retrieveUserMemory = { _, _ -> retrievalCalls++; "" }
+        )
+        val prompt = "根据知识库和我的偏好回忆历史"
+        assembler.assemble("p1", "c1", prompt, emptyList(), "base")
+        assembler.assemble("p2", "c1", prompt, emptyList(), "base")
+        assembler.assemble("p1", "c2", prompt, emptyList(), "base")
+        assembler.assemble("p1", "c1", prompt, emptyList(), "different base")
+        assertEquals(8, retrievalCalls)
+    }
+}
