@@ -2501,54 +2501,6 @@ fun NestroApp(initialPage: String = "home") {
                                                                  invokeModelWithTools = { step, stepPrompt, discovery ->
                                                                      invokeWorkflowStep(step, stepPrompt, discovery)
                                                                  },
-                                                                         WorkflowStepKind.EXPERT -> {
-                                                                             val expertName = step.targetId.ifBlank { step.title }
-                                                                             check(!projectResourceScopesReadOnly &&
-                                                                                 ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId, workflowReadableProjectIds)) {
-                                                                                 "工作流引用的专家「$expertName」不属于当前项目，已阻止跨项目调用"
-                                                                             }
-                                                                             val profile = expertProfiles[expertName]
-                                                                             check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
-                                                                             val workflowSkills = skills.filterKeys { skillName ->
-                                                                                 !projectResourceScopesReadOnly &&
-                                                                                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
-                                                                             }
-                                                                             listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills, skillMetadata)).filter { it.isNotBlank() }.joinToString("\n\n")
-                                                                         }
-                                                                         WorkflowStepKind.SKILL -> {
-                                                                             val skillName = step.targetId.ifBlank { step.title }
-                                                                             check(!projectResourceScopesReadOnly &&
-                                                                                 ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)) {
-                                                                                 "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
-                                                                             }
-                                                                             val workflowSkills = skills.filterKeys { candidate ->
-                                                                                 !projectResourceScopesReadOnly &&
-                                                                                     ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, candidate, projectId, workflowReadableProjectIds)
-                                                                             }
-                                                                             val prompt = workflowSkills[skillName]?.takeIf { it.isNotBlank() }
-                                                                                 ?: error("工作流引用的技能「$skillName」不存在")
-                                                                             val dependencyIssues = SkillDependencyResolver.inspectInstalledSkill(
-                                                                                 skillName, workflowSkills, skillMetadata, disabledSkills
-                                                                             )
-                                                                             check(dependencyIssues.isEmpty()) {
-                                                                                 "工作流技能依赖未满足，已阻止执行：${dependencyIssues.joinToString("；")}"
-                                                                             }
-                                                                             prompt
-                                                                         }
-                                                                         WorkflowStepKind.PROMPT -> ""
-                                                                     }
-                                                                     withContext(Dispatchers.IO) {
-                                                                         appRuntime.chatExecutionService.completeWithFallback(
-                                                                             requestModelConfigs,
-                                                                             listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
-                                                                             listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
-                                                                             temperature = expertOptions?.temperature,
-                                                                             maxTokens = expertOptions?.maxTokens,
-                                                                             onUsage = recordModelUsage,
-                                                                             onProviderUsage = recordProviderModelUsage
-                                                                         )
-                                                                     }
-                                                                 },
                                                                  onStep = { index, step ->
                                                                      if (stopRequested) throw IllegalStateException("用户停止工作流")
                                                                      workflowPauseGate?.await()
