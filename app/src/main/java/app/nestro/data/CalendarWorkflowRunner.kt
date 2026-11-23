@@ -51,6 +51,9 @@ internal class CalendarWorkflowRunner(
             ?: error("当前项目找不到该工作流，或该工作流不在项目可见范围内")
         WorkflowDefinitionCodec.validate(workflow)
         val resources = loadResources(scopes)
+        val runnableSkills = SkillDependencyResolver.filterSatisfiedSkills(
+            resources.skills, resources.skillMetadata, resources.disabledSkills
+        )
         workflow.steps.filter { it.enabled }.forEach { step ->
             when (step.kind) {
                 WorkflowStepKind.PROMPT -> Unit
@@ -60,8 +63,7 @@ internal class CalendarWorkflowRunner(
                         ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.EXPERT, step.targetId, projectId)
                 ) { "工作流步骤“${step.title}”引用了当前项目不可用的专家：${step.targetId}" }
                 WorkflowStepKind.SKILL -> require(
-                    resources.skills[step.targetId]?.isNotBlank() == true &&
-                        step.targetId !in resources.disabledSkills &&
+                    runnableSkills[step.targetId]?.isNotBlank() == true &&
                         ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.SKILL, step.targetId, projectId)
                 ) { "工作流步骤“${step.title}”引用了当前项目不可用或已停用的技能：${step.targetId}" }
             }
@@ -90,7 +92,7 @@ internal class CalendarWorkflowRunner(
                             )
                             listOf(role, skills).filter { it.isNotBlank() }.joinToString("\n\n")
                         }
-                        WorkflowStepKind.SKILL -> resources.skills[step.targetId].orEmpty()
+                        WorkflowStepKind.SKILL -> runnableSkills[step.targetId].orEmpty()
                     }
                     val systemPrompt = listOf(
                         "你是 Nestro 的工作流步骤执行模型。严格完成当前步骤，不要声称执行了未提供的外部工具；输出应可供后续步骤直接使用。",
