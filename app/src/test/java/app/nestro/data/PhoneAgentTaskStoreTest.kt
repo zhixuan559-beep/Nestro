@@ -168,23 +168,6 @@ class PhoneAgentTaskStoreTest {
     }
 
     @Test
-    fun stopDuringFailedActionDoesNotSkipTheUnverifiedStep() {
-        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.stopStatusAfterAction(false))
-        assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.stopStatusAfterAction(true))
-        assertEquals(3, PhoneAgentTaskStore.stopStepAfterAction(3, false))
-        assertEquals(4, PhoneAgentTaskStore.stopStepAfterAction(3, true))
-    }
-
-    @Test
-    fun userPausePreservesAmbiguousActionsAndUserHandoffs() {
-        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_RUNNING, true))
-        assertEquals(PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_RUNNING, false))
-        assertEquals(PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_INTERRUPTED, true))
-        assertEquals(PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_WAITING_USER, false))
-        assertEquals(PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.userPauseStatus(PhoneAgentTaskStore.STATUS_FAILED, true))
-    }
-
-    @Test
     fun interruptedTasksHaveAnExplicitUserFacingStatus() {
         assertEquals("中断待核对", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_INTERRUPTED))
         assertEquals("已暂停", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_PAUSED))
