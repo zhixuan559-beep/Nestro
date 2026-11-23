@@ -61,7 +61,7 @@ class SkillBundleParserTest {
 
     @Test
     fun exportedSkillPreservesPermissionsAndDependencies() {
-        val metadata = """{"version":"1.2.0","description":"研究","source":"local","permissions":["network_read"],"dependencies":[{"name":"web-search","version":">=1.0"}]}"""
+        val metadata = """{"version":"1.2.0","description":"研究","source":"local","permissions":["network_read"],"dependencies":[{"name":"web-search","version":">=1.0.0"}]}"""
         val exported = org.json.JSONObject(SkillBundleParser.exportJson("资料研究员", prompt, metadata))
         assertEquals("资料研究员", exported.getString("name"))
         assertEquals("1.2.0", exported.getString("version"))
