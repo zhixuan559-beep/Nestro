@@ -1,23 +1,23 @@
 # NESTRO 当前代码地图
 
-> 静态审计基线：`integration/19-modules`，源码审计基线 `9a4c1fbcd757017243da823f9758b7569c834713`（2026-11-22 17:20 UTC；当前分支 HEAD 可通过 GitHub 实时读取，后续审计以最新 HEAD 为准）。
+> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `d833ce6ddbdb68298a59dd169f64ba7c62f6cc3a`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。本地图正在按新基线重新核对；不得将旧代码地图当作当前完整审计结果。
 >
-> 当前树：434 个 Git tree 条目，其中 Kotlin 源码/测试文件 329 个（主源码 203 个、JVM 测试 93 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
+> 当前树：444 个 Git tree 条目，其中 Kotlin 源码/测试文件 332 个（主源码 205 个、JVM 测试 94 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
 > 功能是否完整以 `FUNCTION_AUDIT.md` 为准；十九模块需求范围以 `NESTRO_19_MODULES.md` 为准；未完成事项以 `IMPLEMENTATION_ROADMAP.md` 为准。
 
 ## 十九模块源码落点
 
 | 模块 | 当前主要实现 | 主要测试/验证源码 |
 |---|---|---|
-| 1 专家系统 | `data/ExpertTeamEngine.kt`、`data/ExpertTeamExecutionCoordinator.kt`、`data/ExpertProjectPlanExecutor.kt`、`data/ExpertTemplateCatalog.kt`、`data/ModelLedToolDispatcher.kt` | `test/.../ExpertTeamEngineTest.kt`、`ExpertTeamExecutionCoordinatorTest.kt`、`ExpertProjectPlanExecutorTest.kt` |
+| 1 专家系统 | `data/ExpertTeamEngine.kt`、`data/ExpertTeamExecutionCoordinator.kt`、`data/ExpertProjectPlanExecutor.kt`、`data/ExpertTemplateCatalog.kt`、`data/ModelLedToolDispatcher.kt`、`ui/ExpertWorkspaceUiState.kt` | `test/.../ExpertTeamEngineTest.kt`、`ExpertTeamExecutionCoordinatorTest.kt`、`ExpertProjectPlanExecutorTest.kt`、`ui/ExpertTeamEventPaginationTest.kt` |
 | 2 模型管理 | `model/ModelRegistry.kt`、`model/ModelRegistryStore.kt`、`model/ModelConfigurationRepository.kt`、`model/ModelConnectionService.kt`、`model/ModelDiscoveryService.kt`、`ui/ModelManagerPage.kt`、`ui/ModelManagementUiState.kt` | `test/.../ModelProfileCatalogTest.kt`、`ModelToolDecisionParserTest.kt` |
 | 3 聊天系统 | `data/ChatMessage.kt`、`data/ChatRequestContextAssembler.kt`、`data/ChatRequestExecutionCoordinator.kt`、`data/ChatRequestRecoveryCoordinator.kt`、`data/ModelLedToolDispatcher.kt`、`data/OpenAiClient.kt`、`model/ChatExecutionService.kt`、`ui/NestroApp.kt` | `test/.../ChatRequestContextAssemblerTest.kt`、`ChatRequestExecutionCoordinatorTest.kt`、`ChatRequestRecoveryCoordinatorTest.kt`、`model/ChatStreamingCoordinatorTest.kt` |
 | 4 数据与备份 | `data/NestroDatabase.kt`、`data/ConversationPersistenceService.kt`、`data/LocalBackupRepository.kt`、`data/LocalBackupCompatibility.kt`、`data/ProjectPackageCodec.kt` | `androidTest/.../NestroDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt`、`test/.../ProjectPackageCodecTest.kt` |
 | 5 项目空间 | `data/ProjectSpaceRepository.kt`、`data/ProjectAccessControlStore.kt`、`data/ProjectResourceScopeStore.kt`、`data/ProjectSpaceRules.kt` | `androidTest/.../ProjectSpaceLifecycleTest.kt`、`ProjectAccessControlStoreTest.kt`、`test/.../ProjectResourceScopeStoreTest.kt` |
 | 6 知识库 | `data/KnowledgeRepository.kt`、`data/KnowledgeSearchEngine.kt`、`data/KnowledgeVectorSearch.kt`、`data/KnowledgeEmbeddingModelManager.kt`、`data/KnowledgePdfOcr.kt`、`data/KnowledgeChunker.kt` | `test/.../KnowledgeSearchEngineTest.kt`、`KnowledgeEmbeddingPoolingTest.kt`、`androidTest/.../KnowledgeVectorIndexDatabaseTest.kt`、`KnowledgePdfImportTest.kt` |
 | 7 我的记忆 | `data/UserMemoryStore.kt`、`data/UserMemoryRepository.kt`、`data/AutomaticMemoryExtractionCoordinator.kt`、`data/ConversationMemoryStore.kt`、`data/ProjectMemorySettingsStore.kt`、`ui/MemoryUiState.kt` | `test/.../UserMemoryStoreTest.kt`、`AutomaticMemoryExtractionCoordinatorTest.kt`、`androidTest/.../UserMemoryRepositoryInstrumentedTest.kt` |
-| 8 Phone Agent | `data/PhoneAgentTaskStore.kt`、`phone/PhoneAgentTaskService.kt`、`phone/PhoneAgentWorkScheduler.kt`、`phone/PhoneAgentWorker.kt`、`phone/PhoneAgentExecutor.kt`、`phone/PhoneAgentService.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayController.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayService.kt` | `test/.../PhoneAgentTaskStoreTest.kt`、各 PhoneAgent policy tests |
+| 8 Phone Agent | `data/PhoneAgentTaskStore.kt`、`phone/PhoneAgentTaskService.kt`、`phone/PhoneAgentWorkScheduler.kt`、`phone/PhoneAgentWorker.kt`、`phone/PhoneAgentExecutor.kt`、`phone/PhoneAgentService.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayController.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayService.kt`、`ui/PhoneAgentPage.kt`（浮动预览交互） | `test/.../PhoneAgentTaskStoreTest.kt`、各 PhoneAgent policy tests |
 | 9 语音系统 | `speech/AndroidSpeechRecognitionController.kt`、`speech/AndroidTextToSpeechController.kt`、`speech/OpenAiCompatibleSpeechProviders.kt`、`speech/OpenAiRealtimeVoiceProvider.kt`、`ui/VoiceInputButton.kt`、`ui/VoiceSystemPage.kt` | `test/.../SpeechProvidersTest.kt`、`SpeechHttpPolicyTest.kt`、`androidTest/.../VoiceInputButtonTest.kt` |
 | 10 Artifacts | `data/ArtifactStore.kt`、`ui/ArtifactLibraryPage.kt` | `test/.../ArtifactStoreBackupTest.kt`、`ArtifactStoreReferenceTest.kt`、`androidTest/.../ArtifactStoreTest.kt` |
 | 11 专家模板 | `data/ExpertTemplateCatalog.kt`、`data/ExpertProfileCodec.kt`、`data/ExpertRevisionAndTemplate.kt` | `test/.../ExpertTemplateCatalogTest.kt`、`ExpertProfileCodecTest.kt` |
