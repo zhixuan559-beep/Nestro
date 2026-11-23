@@ -22,7 +22,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 |---:|---|---|
 | 1 | 专家系统 | 主模型自动组队/DAG、并行依赖、checkpoint、历史分页及会话内批次暂停/继续/停止已有代码；工具感知调用回调已接通，专家成员默认只获得共享目录中无需确认的只读工具，外部写入/设备操作仍由主模型统一调度；进程重启后的专家任务恢复 UI 尚未接通。可编辑 DAG、失败包返工、结构化验收/返工协议仍缺。 |
 | 2 | 模型管理 | 服务商生态与魔搭 OAuth 代码链路已补齐；待部署 OAuth 服务、注册第三方应用并确认 OAuth Token 的推理权限；未验收、未锁定 |
-| 3 | 聊天系统 | 主模型原生工具调用、流式聊天、上下文组装、会话记忆召回、请求取消/恢复已接入；图片附件从当前项目素材库按 asset_id 解析为 request-only image parts，并接入 OpenAI/Anthropic/Gemini 原生消息序列化；ChatRequestPolicy 保留图片 parts 并计入上下文预算，不修改 Room 消息结构。音频/视频仍通过 media.ai.run/status 专业任务桥接；原生音视频 parts、通用视频问答、非语音音频事件理解仍待补。主聊天历史与工具决策轮已按候选模型最小 contextWindowTokens 动态预算并约束输出 reserve，但系统提示词自身超窗压缩/截断策略仍待补 |
+| 3 | 聊天系统 | 主模型原生工具调用、流式聊天、上下文组装、会话记忆召回、请求取消/恢复已接入；图片/音频/视频附件从当前项目素材库按 asset_id 解析为 request-only media parts；OpenAI 接 image_url 与 WAV/MP3 input_audio，Anthropic 接 base64 image，Gemini 接 inlineData image/audio/video；ChatRequestPolicy 保留 parts 并按估算 token 成本计入上下文预算，不修改 Room 消息结构。大文件仍通过 media.ai.run/status 专业任务桥接；模型能力声明/兼容性门禁与真实 API 联调待完成。主聊天历史与工具决策轮已按候选模型最小 contextWindowTokens 动态预算并约束输出 reserve，但系统提示词自身超窗压缩/截断策略仍待补 |
 | 4 | 数据与备份 | Room 持久化、迁移、版本化 JSON 备份/恢复和项目包代码存在；媒体工程 ZIP 当前独立于通用备份；记忆跨项目共享字段已补 13→14 迁移与完整备份往返测试源码，尚待执行验证 |
 | 5 | 项目空间 | 项目 CRUD、项目范围、READ/WRITE 授权和资源归属代码存在；跨模块文件/专家/Skill/工作流/产物/媒体资源的生命周期一致性仍需联测 |
 | 6 | 知识库 | 本地文档导入、PDF OCR、分块、BM25/FTS、BGE ONNX 向量检索和索引重建代码存在；真实模型性能、长文档和设备资源验证待后续阶段 |
@@ -38,7 +38,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已接通；CapabilityDirectoryPage 具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤有逐步骤审批与 checkpoint；专家成员默认获得只读工具租约，工作流步骤默认只读、显式开启并通过步骤审批后可发现完整工具目录，实际调用仍走工具级授权/审批。专家与工作流任务均传递项目/会话元数据。任务中心页面已接入，但仅覆盖已登记统一任务且带 projectId 的任务；仍需补专家级副作用工具 allowlist、完整业务幂等语义和跨进程恢复验收。 |
 | 17 | 智能剪辑 | 模块17代码已整合到 main（历史来源 feature/module-17-smart-editing）；尚未编译、测试及设备验收，未锁定 |
 | 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口已按当前项目可见专家启用 expertTeamEnabled，并开放仅日历自动任务可用的 workflow.list/workflow.run；专家 DAG/保存工作流复用既有执行器与审批。仍缺任意时间条件触发和日历专属语义型业务错误映射，工作流步骤内部暂不开放外部工具。 |
-| 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页图片附件已新增原生 image parts 传输，音频/视频仍由主模型按 asset_id 调度专业媒体任务；原生音视频输入、通用视频问答、非语音音频理解与图像生成仍缺；真实 API/信任根配置与统一验收待完成 |
+| 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页图片/音频/视频已新增按 Provider 能力序列化的原生 media parts；OpenAI 支持图片及 WAV/MP3 输入音频，Anthropic 支持图片，Gemini 支持图片/音频/视频；大文件仍由主模型按 asset_id 调度专业媒体任务；模型能力门禁、真实 API 验证与跨服务商一致性仍缺；真实 API/信任根配置与统一验收待完成 |
 
 
 ## 模块1：专家系统
@@ -457,3 +457,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块3：图片素材现在通过现有 asset_id 解析链路进入请求期 `ChatMessage.mediaParts`；OpenAI/Anthropic/Gemini 使用各自图片消息格式。音频/视频仍由既有 Media AI 工具链处理。
 - 新增 `ChatMessageContentSerializerTest`、`ChatMediaAttachmentResolverTest` 与 `ChatRequestExecutionCoordinatorTest` 回归测试源码；未运行编译或测试。
 - 仍需补原生音频/视频 parts、模型视觉能力声明/兼容性门禁、通用视频问答与非语音音频事件理解。
+
+
+## 2026-11-24 原生音视频接线补充
+
+- OpenAI：图片与 WAV/MP3 input_audio；Anthropic：图片；Gemini：图片/音频/视频 inlineData。Gemini 每请求限制 1 个音频、最多 10 个视频；当前 resolver 将音视频单文件限制在 8 MiB、请求媒体总量限制在 12 MiB。
+- `ChatRequestPolicy` 按媒体类型/时长估算 token 成本；大文件仍由 `media.ai.run/status` 处理。模型能力声明/兼容性门禁和真实服务商联调仍未完成。
+- 新增 serializer、asset_id 解析、时长预算与 coordinator 回归测试源码；未运行编译或测试。
