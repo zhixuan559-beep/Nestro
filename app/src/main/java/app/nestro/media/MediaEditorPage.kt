@@ -616,6 +616,19 @@ fun MediaEditorPage(
                                     if (it.id == track.id) it.copy(muted = !it.muted) else it
                                 }))
                             }) { Text(if (track.muted) "取消静音" else "静音") }
+                            TextButton(
+                                enabled = track.clips.isEmpty(),
+                                onClick = {
+                                    val fallbackTrackId = timeline.tracks.firstOrNull {
+                                        it.kind == MediaTrackKind.AUDIO && it.id != track.id
+                                    }?.id.orEmpty()
+                                    runCatching {
+                                        persist(MediaTimelinePolicy.removeTrack(timeline, track.id)) {
+                                            if (selectedAudioTrackId == track.id) selectedAudioTrackId = fallbackTrackId
+                                        }
+                                    }.onFailure { status = it.message ?: "删除音频轨失败" }
+                                }
+                            ) { Text("删除轨") }
                         }
                     }
                     track.clips.sortedBy { it.timelineStartMs }.forEach { clip ->
