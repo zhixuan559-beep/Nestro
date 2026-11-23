@@ -45,6 +45,17 @@ jobs:
       - name: Compile production Kotlin
         run: gradle --no-daemon --stacktrace compileDebugKotlin
 
+      - name: Build installable debug APK early
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Upload installable debug APK early
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nestro-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run JVM unit tests
         run: gradle --no-daemon --stacktrace testDebugUnitTest
 
