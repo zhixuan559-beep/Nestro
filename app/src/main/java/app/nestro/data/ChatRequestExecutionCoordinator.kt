@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentToolResult
+import app.nestro.agent.AgentToolAccess
 import app.nestro.model.ChatStreamingCoordinator
 
 internal data class ChatRequestExecutionRequest(
@@ -20,7 +21,9 @@ internal data class ChatRequestExecutionRequest(
     val previousAssistant: ChatMessage?,
     val shouldStop: () -> Boolean,
     /** Optional task-local allow-list; null preserves normal chat discovery. */
-    val allowedToolIds: Set<String>? = null
+    val allowedToolIds: Set<String>? = null,
+    /** The exact operation lease; keeps discovery and invocation bound to the same handlers. */
+    val taskToolAccess: AgentToolAccess? = null
 )
 
 internal data class ChatRequestExecutionResult(
@@ -88,6 +91,7 @@ internal class ChatRequestExecutionCoordinator(
                         expertTeamEnabled = request.expertTeamEnabled,
                         parentTaskId = request.parentTaskId,
                         allowedToolIds = request.allowedToolIds,
+                        taskToolAccess = request.taskToolAccess,
                         planPhoneAgent = { arguments ->
                             try {
                                 planPhoneAgent(arguments)
