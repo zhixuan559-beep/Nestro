@@ -377,10 +377,12 @@ internal class MikaVirtualDisplayService(
         if (displayOfTask(taskId) != displayId || packageOfTask(taskId) != packageName) return 0
         val events = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray()) ?: return 0
         var sent = true
-        events.forEach { event ->
-            try {
+        try {
+            events.forEach { event ->
                 sent = inject(event, displayId) && sent
             }
+        } finally {
+            events.forEach { event -> event.recycle() }
         }
         return if (sent) 1 else 2
     }
