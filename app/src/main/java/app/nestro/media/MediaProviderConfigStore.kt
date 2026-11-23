@@ -29,6 +29,8 @@ data class MediaProviderConfig(
     val transcriptionPath: String = "audio/transcriptions",
     val scenePath: String = "media/scenes",
     val audioProcessPath: String = "audio/process",
+    val imageGenerationModel: String = "",
+    val imageGenerationPath: String = "images/generations",
     val videoGenerationModel: String = "",
     val videoSubmitPath: String = "video/generations",
     val videoStatusPath: String = "video/generations/{job_id}",
@@ -47,14 +49,16 @@ data class MediaProviderConfig(
         require(apiKey.isNotBlank() && apiKey.length <= 4096 && apiKey.none { it.isISOControl() }) { "API Key 无效" }
         require(model.isBlank() || (model.length <= 120 && model.none { it.isISOControl() })) { "视觉/聊天模型名称无效" }
         require(transcriptionModel.isBlank() || (transcriptionModel.length <= 120 && transcriptionModel.none { it.isISOControl() })) { "转写模型名称无效" }
-        require(model.isNotBlank() || transcriptionModel.isNotBlank() || videoGenerationModel.isNotBlank()) {
-            "至少配置一个聊天、转写或视频生成模型"
+        require(model.isNotBlank() || transcriptionModel.isNotBlank() || imageGenerationModel.isNotBlank() || videoGenerationModel.isNotBlank()) {
+            "至少配置一个聊天、转写、图像生成或视频生成模型"
         }
+        if (imageGenerationModel.isNotBlank()) require(imageGenerationModel.length <= 120 && imageGenerationModel.none { it.isISOControl() }) { "图像生成模型名称无效" }
+        if (imageGenerationModel.isNotBlank()) require(imageGenerationPath.isNotBlank()) { "已配置图像生成模型时必须填写接口路径" }
         val uri = URI(baseUrl.trim().trimEnd('/'))
         require(uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "媒体服务地址必须使用 HTTPS，且不能包含 URL 凭据" }
         require(uri.rawQuery == null && uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "媒体服务地址包含不允许的路径参数" }
         require(transcriptionPath.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && transcriptionPath.split('/').none { it == "." || it == ".." }) { "转写 API 路径无效" }
-        listOf(scenePath, audioProcessPath, videoSubmitPath).filter { it.isNotBlank() }.forEach {
+        listOf(scenePath, audioProcessPath, imageGenerationPath, videoSubmitPath).filter { it.isNotBlank() }.forEach {
             require(it.matches(Regex("[A-Za-z0-9._~/-]{1,160}")) && it.split('/').none { part -> part == "." || part == ".." }) { "媒体 API 路径无效" }
         }
         require(videoStatusPath.length in 1..200 && videoStatusPath.matches(Regex("[A-Za-z0-9._~/{}/-]+")) &&
@@ -128,7 +132,8 @@ data class MediaProviderSummary(
     val displayName: String,
     val baseUrl: String,
     val model: String,
-    val videoGenerationModel: String = ""
+    val videoGenerationModel: String = "",
+    val imageGenerationModel: String = ""
 )
 
 class MediaProviderConfigStore(context: Context) {
@@ -159,7 +164,7 @@ class MediaProviderConfigStore(context: Context) {
             val row = providers.optJSONObject(id) ?: return@mapNotNull null
             MediaProviderSummary(
                 id, row.optString("displayName"), row.optString("baseUrl"),
-                row.optString("model"), row.optString("videoGenerationModel")
+                row.optString("model"), row.optString("videoGenerationModel"), row.optString("imageGenerationModel")
             )
         }.sortedBy { it.displayName }
     }
@@ -194,6 +199,8 @@ class MediaProviderConfigStore(context: Context) {
                 transcriptionPath = json.optString("transcriptionPath", "audio/transcriptions"),
                 scenePath = json.optString("scenePath", "media/scenes"),
                 audioProcessPath = json.optString("audioProcessPath", "audio/process"),
+                imageGenerationModel = json.optString("imageGenerationModel", ""),
+                imageGenerationPath = json.optString("imageGenerationPath", "images/generations"),
                 videoGenerationModel = json.optString("videoGenerationModel", ""),
                 videoSubmitPath = json.optString("videoSubmitPath", "video/generations"),
                 videoStatusPath = json.optString("videoStatusPath", "video/generations/{job_id}"),
@@ -246,6 +253,8 @@ class MediaProviderConfigStore(context: Context) {
         .put("transcriptionPath", config.transcriptionPath.trim())
         .put("scenePath", config.scenePath.trim())
         .put("audioProcessPath", config.audioProcessPath.trim())
+        .put("imageGenerationModel", config.imageGenerationModel.trim())
+        .put("imageGenerationPath", config.imageGenerationPath.trim())
         .put("videoGenerationModel", config.videoGenerationModel.trim())
         .put("videoSubmitPath", config.videoSubmitPath.trim())
         .put("videoStatusPath", config.videoStatusPath.trim())
