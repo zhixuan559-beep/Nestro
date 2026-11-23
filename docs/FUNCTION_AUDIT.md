@@ -1438,3 +1438,9 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 - 本文较早记录的 `UserMemoryStore.saveCandidates` 预检与写入分离问题已被后续代码修复，不再是当前缺口。当前 `NestroDao.saveUserMemoryCandidateIfSourceValid` 使用 Room `@Transaction`，在同一事务内校验项目存在、来源会话归属、来源 user 消息存在，再执行插入或替换；`UserMemoryStore.saveCandidates` 已调用该 DAO 入口。
 - 当前剩余边界是来源 ID 仍为普通字段、没有外键级联；源会话/消息后续删除时如何清理关联记忆仍需单独收口。
+
+
+## 2026-11-24 Phone Agent 浮动预览位置拖动状态更正
+
+- 旧审计记录称 `PhoneAgentFloatingPreview` 固定右下角、不能移动窗口；当前 main 源码已增加顶部独立拖动条、`windowOffset` 位置状态及 `clampPhoneAgentPreviewOffset` 可视边界钳制，且已有边界单元测试源码。
+- 当前状态：窗口位置拖动代码已实现，仍待统一执行测试与设备验收。旧“不能移动窗口”的记录仅保留为历史状态，不再作为当前缺口。
