@@ -74,11 +74,11 @@ internal object ChatMediaAttachmentResolver {
                 }
                 MediaAssetKind.AUDIO -> {
                     if (audioCount >= MAX_AUDIO_FILES_PER_REQUEST) null
-                    else runCatching { prepareInlineMedia(context, asset, 2_048) }.getOrNull()
+                    else runCatching { prepareInlineMedia(context, asset, estimateAudioTokens(asset.durationMs)) }.getOrNull()
                 }
                 MediaAssetKind.VIDEO -> {
                     if (videoCount >= MAX_VIDEO_FILES_PER_REQUEST) null
-                    else runCatching { prepareInlineMedia(context, asset, 4_096) }.getOrNull()
+                    else runCatching { prepareInlineMedia(context, asset, estimateVideoTokens(asset.durationMs)) }.getOrNull()
                 }
             } ?: continue
             val byteCount = (part.dataBase64.length * 3L / 4L).toInt()
@@ -99,6 +99,16 @@ internal object ChatMediaAttachmentResolver {
                 if (parts.isEmpty()) message else message.copy(mediaParts = parts)
             }
         }
+    }
+
+    internal fun estimateAudioTokens(durationMs: Long): Int {
+        val seconds = ((durationMs.coerceAtLeast(0L) + 999L) / 1_000L).coerceAtLeast(1L)
+        return (seconds * 100L).coerceIn(2_048L, 16_384L).toInt()
+    }
+
+    internal fun estimateVideoTokens(durationMs: Long): Int {
+        val seconds = ((durationMs.coerceAtLeast(0L) + 999L) / 1_000L).coerceAtLeast(1L)
+        return (seconds * 256L).coerceIn(4_096L, 65_536L).toInt()
     }
 
     private fun prepareInlineMedia(
