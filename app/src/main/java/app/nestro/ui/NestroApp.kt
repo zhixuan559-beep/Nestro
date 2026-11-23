@@ -71,6 +71,8 @@ import app.nestro.data.ExpertTeamBundleParser
 import app.nestro.data.ExpertTeamDefaults
 import app.nestro.data.ExpertTeamMemberTask
 import app.nestro.data.ExpertProjectPlan
+import app.nestro.data.ExpertProjectReworkPolicy
+import app.nestro.data.ExpertProjectTaskIdentity
 import app.nestro.data.ExpertWorkPackage
 import app.nestro.data.ExpertTeamRunResult
 import app.nestro.data.ExpertTeamRunHistoryCodec
@@ -1583,8 +1585,27 @@ fun NestroApp(initialPage: String = "home") {
                             finalAcceptanceCriteria = "所有工作包完成，主模型完成交叉审查并整合交付。"
                         )
                     }
-                    teamRunStatus = "专家团“$teamName”正在拆解并执行项目…"
-                    teamMemberStatuses = plan.packages.associate { it.id to "waiting" }
+                    val reworkRound = toolArguments["rework_round"]?.toIntOrNull() ?: 0
+                    val executionPlan = ExpertProjectReworkPolicy.apply(
+                        plan,
+                        reworkRound,
+                        toolArguments["review_feedback"].orEmpty()
+                    )
+                    val teamTaskId = ExpertProjectTaskIdentity.create(
+                        baseTaskId = assistantId,
+                        teamId = teamId,
+                        projectId = requestProjectId,
+                        teamName = teamName,
+                        teamDescription = teamDescription,
+                        plan = executionPlan,
+                        members = memberTasks
+                    )
+                    teamRunStatus = if (reworkRound == 0) {
+                        "专家团“$teamName”正在拆解并执行项目…"
+                    } else {
+                        "专家团“$teamName”正在执行第 $reworkRound 轮验收返工…"
+                    }
+                    teamMemberStatuses = executionPlan.packages.associate { it.id to "waiting" }
                     val eventPrefsKey = "expert_team_events_v1"
                     expertTeamPauseController.resume()
                     teamExecutionPaused = false
@@ -1593,11 +1614,11 @@ fun NestroApp(initialPage: String = "home") {
                         teamId = teamId,
                         teamName = teamName,
                         teamDescription = teamDescription,
-                        plan = plan,
+                        plan = executionPlan,
                         members = memberTasks,
                         projectId = requestProjectId,
                         conversationId = requestConversationId,
-                        taskId = assistantId + "-team-project",
+                        taskId = teamTaskId,
                         shouldStop = { stopRequested },
                         eventSink = app.nestro.data.ExpertTeamEventSink { event ->
                             withContext(Dispatchers.IO) {
@@ -1648,7 +1669,7 @@ fun NestroApp(initialPage: String = "home") {
                             withContext(Dispatchers.IO) {
                                 val memberSystemContext = listOf(requestSystemContext, memberPrompt)
                                     .filter { it.isNotBlank() }.joinToString("\n\n").take(18_000)
-                                val parentTaskId = assistantId + "-team-project"
+                                val parentTaskId = teamTaskId
                                 val scopedRequestId = UUID.nameUUIDFromBytes(
                                     "expert-member-tools:$parentTaskId:${member.name}:$memberPrompt".toByteArray(Charsets.UTF_8)
                                 ).toString()
@@ -1714,8 +1735,10 @@ fun NestroApp(initialPage: String = "home") {
                         withContext(Dispatchers.Main) { teamExecutionPaused = false }
                     }
                     val projectResultContext = buildString {
-                        append("专家项目：").append(plan.projectGoal).append("\n")
-                        append("最终验收标准：").append(plan.finalAcceptanceCriteria).append("\n\n")
+                        append("专家项目：").append(executionPlan.projectGoal).append("\n")
+                        append("最终验收标准：").append(executionPlan.finalAcceptanceCriteria).append("\n")
+                        append("团队任务 ID：").append(teamTaskId).append("\n")
+                        append("返工轮次：").append(executionPlan.reworkRound).append("\n\n")
                         projectPlanResult.packageResults.forEach { item ->
                             append("【").append(item.memberName).append(" / ").append(item.packageId).append(" / ").append(item.status).append("】\n")
                             append(item.output.ifBlank { item.error }.take(5_000)).append("\n\n")
