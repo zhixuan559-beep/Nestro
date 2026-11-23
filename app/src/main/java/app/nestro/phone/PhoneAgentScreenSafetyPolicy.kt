@@ -100,12 +100,12 @@ object PhoneAgentScreenSafetyPolicy {
         val target = targetLabel.lowercase().replace(Regex("[\\s：:，,。.!！?？、_-]+"), "")
         val explicitNavigationStart = listOf(
             "开始导航", "启动导航", "立即导航", "startnavigation", "navigatenow", "navigate"
-        ).any(target::contains)
+        ).any { target.contains(it) }
         if (explicitNavigationStart) return true
 
         val isDirectionsScreen = listOf(
             "googlemaps", "路线", "路线预览", "directions", "route", "预计到达", "到达时间"
-        ).any(screen::contains)
+        ).any { screen.contains(it) }
         val genericStart = target in setOf("开始", "出发", "导航", "start", "go")
         return isDirectionsScreen && genericStart
     }
