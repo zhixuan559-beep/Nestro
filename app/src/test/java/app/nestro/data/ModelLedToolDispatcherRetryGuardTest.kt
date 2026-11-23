@@ -2,6 +2,7 @@ package app.nestro.data
 
 import app.nestro.agent.AgentTaskRetryPolicy
 import app.nestro.agent.NonRetryableAgentTaskException
+import app.nestro.agent.RetryableAgentTaskException
 import java.net.SocketTimeoutException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -22,6 +23,19 @@ class ModelLedToolDispatcherRetryGuardTest {
         val guarded = guardRetryAfterToolExecution(error, toolCallsExecuted = 1)
         assertTrue(guarded is NonRetryableAgentTaskException)
         assertFalse(AgentTaskRetryPolicy.isRetryable(guarded))
+    }
+
+    @Test
+    fun transientHttpStatusesAreRetryableButPermanentClientErrorsAreNot() {
+        listOf(408, 425, 429, 500, 502, 503, 504, 529).forEach { status ->
+            val failure = AgentTaskRetryPolicy.exceptionForHttpStatus(status, "HTTP $status")
+            assertTrue("HTTP $status should be retryable", failure is RetryableAgentTaskException)
+            assertTrue(AgentTaskRetryPolicy.isRetryable(failure))
+        }
+        listOf(400, 401, 403, 404, 422).forEach { status ->
+            val failure = AgentTaskRetryPolicy.exceptionForHttpStatus(status, "HTTP $status")
+            assertFalse("HTTP $status must not be retried", AgentTaskRetryPolicy.isRetryable(failure))
+        }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import app.nestro.agent.AgentTaskRetryPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -313,7 +314,7 @@ internal object OpenAiClient {
                         (responseText.contains("tool", ignoreCase = true) || responseText.contains("function", ignoreCase = true))) {
                         throw NativeToolCallingUnsupportedException("当前服务商不支持此原生工具调用协议：$errorMessage")
                     }
-                    throw IllegalStateException("HTTP $responseCode: $errorMessage")
+                    throw AgentTaskRetryPolicy.exceptionForHttpStatus(responseCode, "HTTP $responseCode: $errorMessage")
                 }
                 val payload = JSONObject(responseText)
                 val usage = payload.optJSONObject("usage")
@@ -540,7 +541,7 @@ internal object OpenAiClient {
             val code = ChatHttpTransport.postJson(connection, body.toString())
             val response = ChatHttpTransport.readBody(connection, code)
             if (code !in 200..299) {
-                throw IllegalStateException(ChatEndpointPolicy.errorMessage(code, response))
+                throw AgentTaskRetryPolicy.exceptionForHttpStatus(code, ChatEndpointPolicy.errorMessage(code, response))
             }
             val payload = JSONObject(response)
             val usage = payload.optJSONObject("usage")
@@ -583,7 +584,7 @@ internal object OpenAiClient {
             if (code !in 200..299) {
                 val response = ChatHttpTransport.readBody(connection, code)
                 val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException("HTTP $code: " + (detail?.takeIf { it.isNotBlank() } ?: response.take(300)))
+                throw AgentTaskRetryPolicy.exceptionForHttpStatus(code, "HTTP $code: " + (detail?.takeIf { it.isNotBlank() } ?: response.take(300)))
             }
             val decoder = app.nestro.data.OpenAiSseDecoder()
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -715,7 +716,7 @@ internal object OpenAiClient {
             val code = connection.responseCode
             val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
                 ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException("HTTP $code: " + nativeError(config, response))
+            if (code !in 200..299) throw AgentTaskRetryPolicy.exceptionForHttpStatus(code, "HTTP $code: " + nativeError(config, response))
             val payload = JSONObject(response)
             val text = when (config.protocol) {
                 app.nestro.model.ModelApiProtocol.ANTHROPIC_MESSAGES ->
@@ -777,7 +778,7 @@ internal object OpenAiClient {
             val code = connection.responseCode
             if (code !in 200..299) {
                 val error = (connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }).orEmpty()
-                throw IllegalStateException("HTTP $code: " + nativeError(config, error))
+                throw AgentTaskRetryPolicy.exceptionForHttpStatus(code, "HTTP $code: " + nativeError(config, error))
             }
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 while (true) {

@@ -39,6 +39,13 @@ class RetryableAgentTaskException(message: String, cause: Throwable? = null) : E
 class NonRetryableAgentTaskException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 
 object AgentTaskRetryPolicy {
+    fun isRetryableHttpStatus(statusCode: Int): Boolean =
+        statusCode in setOf(408, 425, 429) || statusCode in 500..599
+
+    fun exceptionForHttpStatus(statusCode: Int, message: String): Exception =
+        if (isRetryableHttpStatus(statusCode)) RetryableAgentTaskException(message)
+        else IllegalStateException(message)
+
     fun isRetryable(error: Throwable): Boolean {
         val causes = generateSequence(error) { it.cause }.toList()
         if (causes.any { it is NonRetryableAgentTaskException }) return false
