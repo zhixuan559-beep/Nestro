@@ -73,6 +73,12 @@ internal data class ModelToolDispatchResult(
     val streamedToUi: Boolean = false
 )
 
+internal fun filterTaskAllowedTools(
+    specs: List<AgentToolSpec>,
+    allowedToolIds: Set<String>?
+): List<AgentToolSpec> =
+    if (allowedToolIds == null) specs else specs.filter { it.id in allowedToolIds }
+
 /**
  * Model-led decision loop. The model chooses reply vs. a declared capability;
  * this dispatcher owns the allow-list, permission gate, execution and result handoff.
@@ -201,7 +207,7 @@ internal class ModelLedToolDispatcher(
         val candidates = catalog.list()
             .filterNot { it.id.startsWith("phone.") }
             .filter(visibleToolFilter)
-            .filter { allowedToolIds == null || it.id in allowedToolIds }
+            .let { filterTaskAllowedTools(it, allowedToolIds) }
             .filter { it.id !in setOf("phone_agent.execute", "phone_agent.wait") || taskModeEnabled }
             .filter { it.id != "expert_team.run" || expertTeamEnabled }
             .take(40)
