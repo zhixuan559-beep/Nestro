@@ -86,6 +86,7 @@ import android.content.Context
 import android.net.Uri
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -181,6 +182,13 @@ fun NestroApp(initialPage: String = "home") {
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
     var drawerMounted by remember { mutableStateOf(false) }
+    BackHandler(enabled = showDrawer || page !in setOf("home", "chat")) {
+        if (showDrawer) {
+            showDrawer = false
+        } else {
+            page = "home"
+        }
+    }
     LaunchedEffect(showDrawer) {
         if (showDrawer) {
             drawerMounted = true
