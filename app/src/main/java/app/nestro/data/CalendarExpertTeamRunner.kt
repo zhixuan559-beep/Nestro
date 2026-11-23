@@ -76,14 +76,16 @@ internal class CalendarExpertTeamRunner(
         return Directory(names, prompts, profiles, skills, disabledSkills, skillMetadata)
     }
 
-    fun hasAvailableTeam(): Boolean = runCatching {
+    fun availableMemberNames(): List<String> = runCatching {
         val directory = directory()
         val scopes = ProjectResourceScopeStore.load(preferences)
-        directory.names.count { name ->
+        directory.names.filter { name ->
             directory.profiles[name]?.enabled != false &&
                 ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.EXPERT, name, projectId)
-        } >= 2
-    }.getOrDefault(false)
+        }
+    }.getOrDefault(emptyList())
+
+    fun hasAvailableTeam(): Boolean = availableMemberNames().size >= 2
 
     suspend fun run(systemContext: String, arguments: Map<String, String>): String {
         require(modelConfigs.isNotEmpty()) { "当前没有可用的文本模型配置，无法执行专家项目" }
