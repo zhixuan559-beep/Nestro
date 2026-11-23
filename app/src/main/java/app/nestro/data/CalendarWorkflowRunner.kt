@@ -68,7 +68,7 @@ internal class CalendarWorkflowRunner(
         }
 
         val startedAt = System.currentTimeMillis()
-        val taskId = UUID.nameUUIDFromBytes("$requestId:workflow:$workflowId".toByteArray()).toString()
+        val taskId = UUID.nameUUIDFromBytes("$requestId:workflow:$workflowId:$input".toByteArray()).toString()
         return try {
             val result = coordinator.execute(
                 workflow = workflow,
