@@ -48,7 +48,7 @@ object PhoneAgentExecutor {
     suspend fun resume(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, afterUserHandoff: Boolean = false, allowRetryCurrentAction: Boolean = false, catalog: AgentToolCatalog = InMemoryAgentToolCatalog(), onProgress: suspend (Int, ActionResult) -> Unit = { _, _ -> }): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         val actionCount = try { PhoneAgentTaskStore.decodeActions(task.planJson).size } catch (_: Exception) { 0 }
-        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED) && task.currentStep < actionCount && !allowRetryCurrentAction) {
+        if (task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED, PhoneAgentTaskStore.STATUS_INTERRUPTED) && task.currentStep < actionCount && !allowRetryCurrentAction) {
             PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_PAUSED, task.currentStep)
             taskContext.pause("任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
             return ExecutionResult(Outcome.PAUSED, 0, emptyList(), "任务曾在动作执行期间中断。请先核对手机当前页面，再点击继续。")
