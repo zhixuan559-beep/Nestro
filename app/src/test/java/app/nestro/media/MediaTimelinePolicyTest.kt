@@ -135,4 +135,21 @@ class MediaTimelinePolicyTest {
             MediaTimelinePolicy.validate(withVideo, listOf(video, audio, longAudio))
         }
     }
+
+    @Test
+    fun onlyEmptyAudioTracksCanBeRemoved() {
+        val initial = MediaTimeline.empty(project)
+        val withSecondTrack = MediaTimelinePolicy.addTrack(initial, MediaTrackKind.AUDIO)
+        val secondTrackId = withSecondTrack.tracks.last().id
+        val removed = MediaTimelinePolicy.removeTrack(withSecondTrack, secondTrackId)
+        assertEquals(1, removed.tracks.count { it.kind == MediaTrackKind.AUDIO })
+
+        val withClip = MediaTimelinePolicy.addClip(withSecondTrack, secondTrackId, audio)
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.removeTrack(withClip, secondTrackId)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.removeTrack(initial, "video-main")
+        }
+    }
 }
