@@ -44,4 +44,32 @@ class PhoneAgentScreenSafetyPolicyTest {
             "验证码是什么？"
         ).forEach { assertFalse(it, PhoneAgentScreenSafetyPolicy.requiresUserHandoff(it)) }
     }
+
+    @Test
+    fun navigationStartRequiresExplicitUserHandoff() {
+        assertTrue(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "Google Maps · 驾车 · 12 分钟 · 8.5 公里",
+                "开始导航"
+            )
+        )
+        assertTrue(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "Directions · 12 min · 8.5 km",
+                "Start"
+            )
+        )
+        assertFalse(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "Google Maps · 12 分钟 · 8.5 公里",
+                "添加途经点"
+            )
+        )
+        assertFalse(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "商品详情：可查看导航功能",
+                "开始"
+            )
+        )
+    }
 }
