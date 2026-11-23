@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 object CalendarRules {
+    const val MAX_AUTOMATION_DELAY_MINUTES = Int.MAX_VALUE
     const val NONE = "NONE"
     const val DAILY = "DAILY"
     const val WEEKLY = "WEEKLY"
@@ -20,6 +21,8 @@ object CalendarRules {
         if (event.description.length > 4000) return "备注不能超过 4000 个字符"
         if (event.location.length > 300) return "地点不能超过 300 个字符"
         if (event.automationPrompt.length > 12_000) return "自动执行目标不能超过 12000 个字符"
+        if (event.automationDelayMinutes !in 0..MAX_AUTOMATION_DELAY_MINUTES) return "自动任务延迟必须为非负整数分钟"
+        if (event.automationGeneration < 0L) return "自动任务版本无效"
         if (event.automationPrompt.isNotBlank() &&
             !event.automationProjectId.matches(Regex("^[A-Za-z0-9_-]{1,80}$"))
         ) return "自动执行任务必须绑定有效项目"
@@ -68,6 +71,61 @@ object CalendarRules {
     fun nextAutomationOccurrenceStart(event: CalendarEvent, now: Long): Long? {
         if (event.completed || event.automationPrompt.isBlank()) return null
         return nextOccurrenceAfter(event, now, 0L)
+    }
+
+    private fun automationTriggerAtUnchecked(event: CalendarEvent, occurrenceStart: Long): Long? {
+        if (event.automationPrompt.isBlank() || occurrenceStart < event.startAt) return null
+        val delayMillis = event.automationDelayMinutes.coerceIn(0, MAX_AUTOMATION_DELAY_MINUTES) * 60_000L
+        return if (Long.MAX_VALUE - occurrenceStart < delayMillis) Long.MAX_VALUE else occurrenceStart + delayMillis
+    }
+
+    /** Returns the scheduled execution instant for a valid occurrence of this event. */
+    fun automationTriggerAt(event: CalendarEvent, occurrenceStart: Long): Long? {
+        if (!isOccurrence(event, occurrenceStart)) return null
+        return automationTriggerAtUnchecked(event, occurrenceStart)
+    }
+
+    /** Finds the next occurrence whose delayed execution instant has not passed yet. */
+    fun nextAutomationScheduledOccurrenceStart(event: CalendarEvent, now: Long): Long? {
+        if (event.completed || event.automationPrompt.isBlank()) return null
+        var candidate = event.startAt
+        val anchor = Instant.ofEpochMilli(event.startAt).atZone(ZoneId.systemDefault())
+        var guard = 0
+        while (guard++ < 20_000) {
+            val triggerAt = automationTriggerAtUnchecked(event, candidate) ?: return null
+            if (triggerAt > now) return candidate
+            if (event.recurrence == NONE) return null
+            candidate = nextStart(candidate, event.recurrence, anchor.dayOfMonth, anchor.monthValue)
+            if (candidate == Long.MAX_VALUE) return null
+        }
+        return null
+    }
+
+    /** Returns the next automation execution instant, including its configured post-event delay. */
+    fun nextAutomationRunAt(event: CalendarEvent, now: Long): Long? {
+        val occurrence = nextAutomationScheduledOccurrenceStart(event, now) ?: return null
+        return automationTriggerAt(event, occurrence)
+    }
+
+    /** Stable per-definition task identity; edits advance automationGeneration before rescheduling. */
+    fun automationTaskId(event: CalendarEvent, occurrenceStart: Long): String {
+        require(event.id.isNotBlank() && event.id.length <= 80)
+        require(occurrenceStart > 0L && event.automationGeneration >= 0L)
+        return if (event.automationGeneration == 0L) {
+            "calendar-${event.id}-$occurrenceStart"
+        } else {
+            "cal-${event.id}-$occurrenceStart-g${event.automationGeneration}"
+        }
+    }
+
+    fun automationIdempotencyKey(event: CalendarEvent, occurrenceStart: Long): String {
+        require(event.id.isNotBlank() && event.id.length <= 80)
+        require(occurrenceStart > 0L && event.automationGeneration >= 0L)
+        return if (event.automationGeneration == 0L) {
+            "calendar:${event.id}:$occurrenceStart"
+        } else {
+            "calendar:${event.id}:$occurrenceStart:g${event.automationGeneration}"
+        }
     }
 
     private fun nextOccurrenceAfter(event: CalendarEvent, now: Long, leadTimeMillis: Long): Long? {

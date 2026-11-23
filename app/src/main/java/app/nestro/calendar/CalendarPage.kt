@@ -395,6 +395,9 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                         if (event.description.isNotBlank()) Text(event.description, style = MaterialTheme.typography.bodySmall)
                         if (event.automationPrompt.isNotBlank()) {
                             Text("自动任务 · ${event.automationStatus}", style = MaterialTheme.typography.labelMedium)
+                            if (event.automationDelayMinutes > 0) {
+                                Text("到期后延迟执行：${event.automationDelayMinutes} 分钟", style = MaterialTheme.typography.labelSmall)
+                            }
                             if (event.nextRunAt > 0L) {
                                 Text(
                                     "下次执行：" + Instant.ofEpochMilli(event.nextRunAt).atZone(zone).format(calendarDateTimeFormat),
@@ -441,7 +444,7 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
             initial = editing,
             defaultDate = selectedDate,
             onDismiss = { showEditor = false },
-            onSave = { title, description, location, automationPrompt, date, endDate, startTime, endTime, allDay, recurrence, reminder ->
+            onSave = { title, description, location, automationPrompt, automationDelay, date, endDate, startTime, endTime, allDay, recurrence, reminder ->
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
@@ -468,7 +471,8 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
                                     sourceSystemCalendarId = old?.sourceSystemCalendarId,
                                     sourceSystemImported = old?.sourceSystemImported ?: false,
                                     automationPrompt = automationPrompt.take(12_000),
-                                    automationProjectId = if (automationPrompt.isBlank()) "" else activeProjectId
+                                    automationProjectId = if (automationPrompt.isBlank()) "" else activeProjectId,
+                                    automationDelayMinutes = if (automationPrompt.isBlank()) 0 else automationDelay
                                 )
                             )
                         }
@@ -502,12 +506,13 @@ private fun CalendarEventEditor(
     initial: CalendarEvent?,
     defaultDate: LocalDate,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, LocalDate, LocalDate, String, String, Boolean, String, Int) -> Unit
+    onSave: (String, String, String, String, Int, LocalDate, LocalDate, String, String, Boolean, String, Int) -> Unit
 ) {
     var title by remember(initial) { mutableStateOf(initial?.title.orEmpty()) }
     var description by remember(initial) { mutableStateOf(initial?.description.orEmpty()) }
     var location by remember(initial) { mutableStateOf(initial?.location.orEmpty()) }
     var automationPrompt by remember(initial) { mutableStateOf(initial?.automationPrompt.orEmpty()) }
+    var automationDelay by remember(initial) { mutableStateOf((initial?.automationDelayMinutes ?: 0).toString()) }
     var date by remember(initial) {
         mutableStateOf(
             initial?.let { Instant.ofEpochMilli(it.startAt).atZone(ZoneId.systemDefault()).toLocalDate() } ?: defaultDate
@@ -563,6 +568,13 @@ private fun CalendarEventEditor(
                     placeholder = { Text("填写要交给主模型执行的目标；留空则只保留日程提醒") },
                     minLines = 3
                 )
+                OutlinedTextField(
+                    automationDelay,
+                    { automationDelay = it.filter(Char::isDigit).take(10) },
+                    label = { Text("到期后延迟执行分钟（0 表示立即执行）") },
+                    singleLine = true,
+                    enabled = automationPrompt.isNotBlank()
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("重复")
                     Spacer(Modifier.size(8.dp))
@@ -590,6 +602,8 @@ private fun CalendarEventEditor(
             TextButton(onClick = {
                 val reminderValue = reminder.toIntOrNull()
                 val validReminder = reminderValue != null && reminderValue in setOf(-1, 0, 5, 10, 15, 30, 60, 1440)
+                val automationDelayValue = automationDelay.toIntOrNull()
+                val validAutomationDelay = automationDelayValue != null && automationDelayValue in 0..CalendarRules.MAX_AUTOMATION_DELAY_MINUTES
                 val validRecurrence = recurrence in CalendarRules.recurrenceValues
                 val validTimes = allDay || runCatching {
                     java.time.LocalTime.parse(startTime, calendarTimeFormat)
@@ -600,10 +614,11 @@ private fun CalendarEventEditor(
                 else if (endDate.isBefore(date)) error = "结束日期不能早于开始日期"
                 else if (!validTimes) error = "时间格式请使用 HH:mm"
                 else if (!validReminder) error = "提醒分钟数无效"
+                else if (!validAutomationDelay) error = "自动任务延迟必须为非负整数分钟"
                 else if (!validRecurrence) error = "重复规则无效"
                 else {
                     error = ""
-                    onSave(title, description, location, automationPrompt.trim(), date, endDate, startTime, endTime, allDay, recurrence, reminderValue!!)
+                    onSave(title, description, location, automationPrompt.trim(), automationDelayValue!!, date, endDate, startTime, endTime, allDay, recurrence, reminderValue!!)
                 }
             }) { Text("保存") }
         },

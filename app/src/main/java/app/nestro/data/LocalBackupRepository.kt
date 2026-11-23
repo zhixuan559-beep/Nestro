@@ -259,7 +259,9 @@ internal suspend fun buildLocalBackup(context: Context, prefs: android.content.S
             .put("sourceSystemCalendarId", JSONObject.NULL)
             .put("sourceSystemImported", event.sourceSystemImported)
             .put("automationPrompt", event.automationPrompt)
-            .put("automationProjectId", event.automationProjectId))
+            .put("automationProjectId", event.automationProjectId)
+            .put("automationDelayMinutes", event.automationDelayMinutes)
+            .put("automationGeneration", event.automationGeneration))
     }
     root.put("calendar_events_v1", calendarArray)
     root.put("base_url", prefs.getString("base_url", "") ?: "")
@@ -788,7 +790,9 @@ private suspend fun applyLocalBackup(
             sourceSystemCalendarId = null,
             sourceSystemImported = item.booleanOrDefault("sourceSystemImported", item.requiredString("id").startsWith("system-")),
             automationPrompt = item.stringOrDefault("automationPrompt", "").take(12_000),
-            automationProjectId = item.stringOrDefault("automationProjectId", "")
+            automationProjectId = item.stringOrDefault("automationProjectId", ""),
+            automationDelayMinutes = item.intOrDefault("automationDelayMinutes", 0),
+            automationGeneration = item.longOrDefault("automationGeneration", 0L)
         )
         require(
             CalendarRules.validate(event) == null &&

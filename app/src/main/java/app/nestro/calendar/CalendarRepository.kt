@@ -18,6 +18,8 @@ class CalendarRepository(context: Context) {
             completed = old?.completed ?: false,
             automationPrompt = old?.automationPrompt.orEmpty(),
             automationProjectId = old?.automationProjectId.orEmpty(),
+            automationDelayMinutes = old?.automationDelayMinutes ?: 0,
+            automationGeneration = old?.automationGeneration ?: 0L,
             nextRunAt = old?.nextRunAt ?: 0L,
             lastRunAt = old?.lastRunAt ?: 0L,
             lastTaskId = old?.lastTaskId.orEmpty(),
@@ -36,6 +38,7 @@ class CalendarRepository(context: Context) {
         val automationDefinitionChanged = old != null && (
             old.automationPrompt != event.automationPrompt ||
                 old.automationProjectId != event.automationProjectId ||
+                old.automationDelayMinutes != event.automationDelayMinutes ||
                 old.startAt != event.startAt ||
                 old.recurrence != event.recurrence ||
                 old.completed != event.completed
@@ -53,18 +56,24 @@ class CalendarRepository(context: Context) {
             sourceSystemEventId = event.sourceSystemEventId ?: old?.sourceSystemEventId,
             sourceSystemCalendarId = event.sourceSystemCalendarId ?: old?.sourceSystemCalendarId,
             sourceSystemImported = event.sourceSystemImported || old?.sourceSystemImported == true,
+            automationDelayMinutes = if (event.automationPrompt.isBlank()) 0 else event.automationDelayMinutes,
+            automationGeneration = when {
+                old == null -> event.automationGeneration.coerceAtLeast(0L)
+                automationDefinitionChanged -> Math.addExact(old.automationGeneration.coerceAtLeast(0L), 1L)
+                else -> old.automationGeneration.coerceAtLeast(0L)
+            },
             nextRunAt = old?.nextRunAt ?: event.nextRunAt,
             lastRunAt = old?.lastRunAt ?: event.lastRunAt,
             lastTaskId = old?.lastTaskId ?: event.lastTaskId,
             lastIdempotencyKey = old?.lastIdempotencyKey ?: event.lastIdempotencyKey,
-            automationStatus = old?.automationStatus ?: event.automationStatus,
-            automationResult = old?.automationResult ?: event.automationResult,
-            automationError = old?.automationError ?: event.automationError,
-            automationUpdatedAt = old?.automationUpdatedAt ?: event.automationUpdatedAt
+            automationStatus = if (automationDefinitionChanged) "IDLE" else old?.automationStatus ?: event.automationStatus,
+            automationResult = if (automationDefinitionChanged) "" else old?.automationResult ?: event.automationResult,
+            automationError = if (automationDefinitionChanged) "" else old?.automationError ?: event.automationError,
+            automationUpdatedAt = if (automationDefinitionChanged) now else old?.automationUpdatedAt ?: event.automationUpdatedAt
         )
         dao.put(saved)
         val nextAutomationRun = if (saved.automationPrompt.isNotBlank()) {
-            CalendarRules.nextAutomationOccurrenceStart(saved, now) ?: 0L
+            CalendarRules.nextAutomationRunAt(saved, now) ?: 0L
         } else 0L
         dao.updateAutomationNextRunAt(saved.id, nextAutomationRun, now)
         CalendarReminderScheduler.schedule(appContext, saved)

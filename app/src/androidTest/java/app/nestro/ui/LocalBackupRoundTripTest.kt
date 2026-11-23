@@ -26,6 +26,8 @@ import app.nestro.data.ProjectEntity
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.data.UserMemoryEntity
+import app.nestro.calendar.CalendarDatabase
+import app.nestro.calendar.CalendarEvent
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -154,6 +156,17 @@ class LocalBackupRoundTripTest {
                 .commit()
 
             val dao = database.dao()
+            val calendarDao = CalendarDatabase.get(context).calendarDao()
+            calendarDao.deleteAll()
+            val calendarStart = System.currentTimeMillis() + 3_600_000L
+            calendarDao.put(CalendarEvent(
+                id = "calendar-backup-event", title = "延迟自动任务", description = "", location = "",
+                startAt = calendarStart, endAt = calendarStart + 60_000L, allDay = false,
+                recurrence = "NONE", reminderMinutes = -1, completed = false,
+                createdAt = calendarStart - 1_000L, updatedAt = calendarStart - 1_000L,
+                automationPrompt = "整理项目周报", automationProjectId = "p1",
+                automationDelayMinutes = 45, automationGeneration = 3L
+            ))
             dao.putProjects(listOf(
                 ProjectEntity("default", "默认项目", "", 1L),
                 ProjectEntity("p1", "测试项目", "项目指令", 2L)
@@ -196,6 +209,7 @@ class LocalBackupRoundTripTest {
             assertTrue("外部备份不得包含旧 Profile Key 明文", !backup.contains("legacy-secret-must-not-survive"))
             assertTrue("外部备份不得包含活动模型 Key 明文", !backup.contains("active-secret-must-not-survive"))
             ArtifactStore.delete(context, savedArtifact)
+            calendarDao.deleteAll()
 
             database.withTransaction {
                 dao.deleteAllConversations()
@@ -230,6 +244,9 @@ class LocalBackupRoundTripTest {
             assertTrue("恢复必须保留非默认项目", dao.loadProjects().any { it.id == "p1" })
             assertEquals("这是需要恢复的知识库片段内容 restoreindexmarker", dao.allKnowledgeChunks().single().content)
             assertEquals("k1", dao.searchKnowledgeChunksFts("p1", "restoreindexmarker", 5).single().id)
+            val restoredCalendarEvent = calendarDao.event("calendar-backup-event")
+            assertEquals(45, restoredCalendarEvent?.automationDelayMinutes)
+            assertEquals(3L, restoredCalendarEvent?.automationGeneration)
             val ftsCount = database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM knowledge_chunks_fts")
             assertEquals(1, ftsCount.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 })
             assertEquals("偏好使用简洁中文表达", dao.allUserMemories().single().content)
@@ -285,6 +302,7 @@ class LocalBackupRoundTripTest {
         } finally {
             File(context.filesDir, "artifacts").deleteRecursively()
             File(context.filesDir, "backup-restore").deleteRecursively()
+            CalendarDatabase.get(context).calendarDao().deleteAll()
             LocalVault.clearAllApiKeys(context)
             database.close()
             prefs.edit().clear().commit()

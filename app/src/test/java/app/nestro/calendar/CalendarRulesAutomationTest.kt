@@ -14,7 +14,9 @@ class CalendarRulesAutomationTest {
         recurrence: String = CalendarRules.NONE,
         reminderMinutes: Int = -1,
         automationPrompt: String = "整理本周项目进度",
-        automationProjectId: String = "project-a"
+        automationProjectId: String = "project-a",
+        automationDelayMinutes: Int = 0,
+        automationGeneration: Long = 0L
     ) = CalendarEvent(
         id = "calendar-event",
         title = "自动任务",
@@ -29,7 +31,9 @@ class CalendarRulesAutomationTest {
         createdAt = startAt - 1_000L,
         updatedAt = startAt - 1_000L,
         automationPrompt = automationPrompt,
-        automationProjectId = automationProjectId
+        automationProjectId = automationProjectId,
+        automationDelayMinutes = automationDelayMinutes,
+        automationGeneration = automationGeneration
     )
 
     @Test
@@ -62,6 +66,60 @@ class CalendarRulesAutomationTest {
 
         assertNull(CalendarRules.nextOccurrenceStart(value, System.currentTimeMillis()))
         assertEquals(start, CalendarRules.nextAutomationOccurrenceStart(value, System.currentTimeMillis()))
+    }
+
+    @Test
+    fun automationDelayIsAppliedAfterTheOccurrenceAndIncludedInNextRun() {
+        val start = System.currentTimeMillis() + 3_600_000L
+        val value = event(startAt = start, automationDelayMinutes = 45)
+
+        assertEquals(start + 45 * 60_000L, CalendarRules.automationTriggerAt(value, start))
+        assertEquals(start + 45 * 60_000L, CalendarRules.nextAutomationRunAt(value, start - 1L))
+        assertEquals(start + 45 * 60_000L, CalendarRules.nextAutomationRunAt(value, start + 1L))
+        assertNull(CalendarRules.automationTriggerAt(value, start + 1L))
+    }
+
+    @Test
+    fun delayedOneTimeAutomationRemainsScheduledAfterTheEventStarts() {
+        val start = System.currentTimeMillis() - 5 * 60_000L
+        val value = event(startAt = start, automationDelayMinutes = 30)
+
+        assertEquals(start, CalendarRules.nextAutomationScheduledOccurrenceStart(value, System.currentTimeMillis()))
+        assertEquals(start + 30 * 60_000L, CalendarRules.nextAutomationRunAt(value, System.currentTimeMillis()))
+    }
+
+    @Test
+    fun recurringAutomationDelayMovesEachOccurrenceWithoutChangingOccurrenceIdentity() {
+        val zone = ZoneId.systemDefault()
+        val start = LocalDate.now().plusDays(1).atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        val value = event(startAt = start, recurrence = CalendarRules.DAILY, automationDelayMinutes = 30)
+        val nextOccurrence = CalendarRules.nextAutomationOccurrenceStart(value, start + 1L)!!
+
+        assertTrue(CalendarRules.isOccurrence(value, nextOccurrence))
+        assertEquals(nextOccurrence + 30 * 60_000L, CalendarRules.automationTriggerAt(value, nextOccurrence))
+        assertEquals(nextOccurrence + 30 * 60_000L, CalendarRules.nextAutomationRunAt(value, start + 1L))
+    }
+
+    @Test
+    fun automationDelayMustStayWithinSupportedRange() {
+        val start = System.currentTimeMillis() + 60_000L
+        assertNull(CalendarRules.validate(event(startAt = start, automationDelayMinutes = Int.MAX_VALUE)))
+        assertTrue(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -1)).orEmpty().contains("延迟"))
+        assertTrue(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -1)).orEmpty().contains("延迟"))
+    }
+
+    @Test
+    fun automationDefinitionGenerationPreventsReusingCancelledOccurrenceIdentity() {
+        val start = System.currentTimeMillis() + 60_000L
+        val legacy = event(startAt = start)
+        val first = legacy.copy(automationGeneration = 1L)
+        val edited = first.copy(automationGeneration = 2L)
+
+        assertEquals("calendar-calendar-event-$start", CalendarRules.automationTaskId(legacy, start))
+        assertEquals("calendar:calendar-event:$start", CalendarRules.automationIdempotencyKey(legacy, start))
+        assertTrue(CalendarRules.automationTaskId(first, start) != CalendarRules.automationTaskId(edited, start))
+        assertTrue(CalendarRules.automationIdempotencyKey(first, start) != CalendarRules.automationIdempotencyKey(edited, start))
+        assertTrue(CalendarRules.automationTaskId(edited, start).length <= 120)
     }
 
     @Test

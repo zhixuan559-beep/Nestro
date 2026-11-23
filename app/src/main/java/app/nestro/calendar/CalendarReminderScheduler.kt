@@ -47,20 +47,27 @@ object CalendarReminderScheduler {
 
         if (replaceAutomation) workManager.cancelAllWorkByTag(automationTag(event.id))
         val automationOccurrence = if (event.automationPrompt.isNotBlank() && event.automationProjectId.isNotBlank()) {
-            CalendarRules.nextAutomationOccurrenceStart(event, now)
+            CalendarRules.nextAutomationScheduledOccurrenceStart(event, now)
         } else null
         if (automationOccurrence != null) {
-            val automationRequest = OneTimeWorkRequestBuilder<CalendarAutomationWorker>()
-                .setInputData(workDataOf("event_id" to event.id, "occurrence_start" to automationOccurrence))
-                .setInitialDelay((automationOccurrence - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-                .addTag("calendar-automation")
-                .addTag(automationTag(event.id))
-                .build()
-            workManager.enqueueUniqueWork(
-                automationWorkName(event.id, automationOccurrence),
-                ExistingWorkPolicy.KEEP,
-                automationRequest
-            )
+            val automationTriggerAt = CalendarRules.automationTriggerAt(event, automationOccurrence)
+            if (automationTriggerAt != null) {
+                val automationRequest = OneTimeWorkRequestBuilder<CalendarAutomationWorker>()
+                    .setInputData(workDataOf(
+                        "event_id" to event.id,
+                        "occurrence_start" to automationOccurrence,
+                        "automation_generation" to event.automationGeneration
+                    ))
+                    .setInitialDelay((automationTriggerAt - now).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+                    .addTag("calendar-automation")
+                    .addTag(automationTag(event.id))
+                    .build()
+                workManager.enqueueUniqueWork(
+                    automationWorkName(event.id, automationOccurrence, event.automationGeneration),
+                    ExistingWorkPolicy.KEEP,
+                    automationRequest
+                )
+            }
         }
     }
 
@@ -77,7 +84,9 @@ object CalendarReminderScheduler {
 
     private fun workName(eventId: String) = "calendar-reminder-$eventId"
     private fun automationTag(eventId: String) = "calendar-automation-$eventId"
-    private fun automationWorkName(eventId: String, occurrenceStart: Long) = "calendar-automation-$eventId-$occurrenceStart"
+    private fun automationWorkName(eventId: String, occurrenceStart: Long, generation: Long) =
+        if (generation == 0L) "calendar-automation-$eventId-$occurrenceStart"
+        else "calendar-automation-$eventId-$occurrenceStart-g$generation"
 
     internal fun notify(context: Context, event: CalendarEvent, occurrenceStart: Long) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -154,6 +163,8 @@ class CalendarAutomationWorker(
         if (occurrenceStart <= 0L) return Result.failure()
         val dao = CalendarDatabase.get(applicationContext).calendarDao()
         val event = dao.event(eventId) ?: return Result.success()
+        val scheduledGeneration = inputData.getLong("automation_generation", 0L)
+        if (event.automationGeneration != scheduledGeneration) return Result.success()
         if (event.completed || event.automationPrompt.isBlank() || event.automationProjectId.isBlank()) {
             return Result.success()
         }
@@ -161,16 +172,18 @@ class CalendarAutomationWorker(
             CalendarReminderScheduler.schedule(applicationContext, event, replaceAutomation = false)
             return Result.success()
         }
-        if (System.currentTimeMillis() + 60_000L < occurrenceStart) return Result.retry()
+        val automationTriggerAt = CalendarRules.automationTriggerAt(event, occurrenceStart)
+            ?: return Result.success()
+        if (System.currentTimeMillis() + 60_000L < automationTriggerAt) return Result.retry()
         val app = applicationContext as? NestroApplication ?: return Result.retry()
-        val taskId = "calendar-$eventId-$occurrenceStart"
+        val taskId = CalendarRules.automationTaskId(event, occurrenceStart)
         val input = JSONObject()
             .put("eventId", eventId)
             .put("occurrenceStart", occurrenceStart)
             .put("prompt", event.automationPrompt.take(12_000))
             .toString()
-        val idempotencyKey = "calendar:$eventId:$occurrenceStart"
-        val nextRunAt = CalendarRules.nextAutomationOccurrenceStart(event, occurrenceStart) ?: 0L
+        val idempotencyKey = CalendarRules.automationIdempotencyKey(event, occurrenceStart)
+        val nextRunAt = CalendarRules.nextAutomationRunAt(event, automationTriggerAt) ?: 0L
         val repository = CalendarRepository(applicationContext)
         val existing = app.agentTaskCoordinator.state(taskId)
         val dispatched = if (existing != null) {
