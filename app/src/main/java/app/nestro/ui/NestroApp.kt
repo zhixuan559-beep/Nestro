@@ -1086,6 +1086,7 @@ fun NestroApp(initialPage: String = "home") {
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
+        applyConversationContext(activeConversationId, activeProjectId)
         expertPrompts = loadExpertPrompts(prefs)
         val recoveredChat = withContext(Dispatchers.IO) {
             appRuntime.chatRequestRecoveryCoordinator.recover(
