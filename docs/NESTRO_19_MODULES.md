@@ -30,13 +30,13 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 8 | Phone Agent | 隔离虚拟屏、Mika ADB/TLS 配对、Binder nonce/UID/证书校验、Accessibility 节点桥接、任务授权/暂停/用户接管及素材导入已有代码。导航链路已有 Google Maps Directions、路线核验、用户确认和主屏任务交接代码，仍待设备验证。预览支持单击缩放、双击/长按触控、拖动滑动和角部缩放，但窗口固定右下角，尚无拖动窗口位置的实现。 |
 | 9 | 语音系统 | 已合并并锁定（PR #9；CI Run #1190 的 verify 与 Android emulator instrumentation 均通过；真机音频路由/兼容性仍待最终设备阶段） |
 | 10 | 我的作品 | ArtifactStore 产物记录、项目范围、文件校验、版本/索引恢复和备份验证代码已纳入整合分支；媒体工程原文件由模块17 ZIP 归档管理，二者边界需保持清晰；完整自动化/设备验收待后续阶段 |
-| 11 | 专家模板 | 代码已静态核查并合并锁定至 refactor/phase-2-architecture（commit 544b3be）：内置/自定义模板、从专家保存、编辑、复制内置、删除二次确认、搜索/分类、套用、JSON 批量导入预览/导出；导入限制文件体积/数量/名称与 ID 唯一性/技能项目范围，持久化失败不覆盖界面状态，并兼容修复旧模板重复 ID；专家 CRUD/版本/启停/导入导出已有闭环；回归测试代码已补充但尚未执行，自动化、模拟器与真机验收留待统一阶段 |
-| 12 | 双模型对比 | 功能代码已补齐并静态复核，已快进合并锁定至 refactor/phase-2-architecture（commit 5868d6d）；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段 |
+| 11 | 专家模板 | 当前 main 已包含该模块代码（历史来源 refactor/phase-2-architecture，commit 544b3be）：内置/自定义模板、从专家保存、编辑、复制内置、删除二次确认、搜索/分类、套用、JSON 批量导入预览/导出；导入限制文件体积/数量/名称与 ID 唯一性/技能项目范围，持久化失败不覆盖界面状态，并兼容修复旧模板重复 ID；专家 CRUD/版本/启停/导入导出已有闭环；回归测试代码已补充但尚未执行，自动化、模拟器与真机验收留待统一阶段 |
+| 12 | 双模型对比 | 功能代码已补齐并静态复核，当前已在 main（历史整合提交 5868d6d）；Kotlin 编译/JVM 测试未执行，模拟器与真机验收留待十九模块统一阶段 |
 | 13 | MCP 工具中心 | 远程 HTTPS Streamable HTTP、工具发现/schema 校验、逐工具持久授权、撤销/取消和审计代码已纳入整合分支；持久 MCP 授权与任务级一次/当前任务全部授权语义需统一，测试未执行 |
-| 14 | GitHub 工作台 | 最新实现已纳入 integration/19-modules：本地仓库索引并发串行化、删除仓库隔离目录与中断恢复、凭据回滚验证、Push 结果核验；路径、服务商 URL、分支名、账号名回归测试已补充。统一编译/JVM/仪器测试/模拟器/真机验收待执行 |
-| 15 | AI 共建工作台 | 功能源码与主要回归测试已进入 integration/19-modules；已补齐导航/聊天回流、SBOM 脚本及缺失测试源码；统一编译、测试与真实 Actions 验证待执行 |
+| 14 | GitHub 工作台 | 最新实现已纳入 main：本地仓库索引并发串行化、删除仓库隔离目录与中断恢复、凭据回滚验证、Push 结果核验；路径、服务商 URL、分支名、账号名回归测试已补充。统一编译/JVM/仪器测试/模拟器/真机验收待执行 |
+| 15 | AI 共建工作台 | 功能源码与主要回归测试已进入 main；已补齐导航/聊天回流、SBOM 脚本及缺失测试源码；统一编译、测试与真实 Actions 验证待执行 |
 | 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已接通；CapabilityDirectoryPage 具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤有逐步骤审批与 checkpoint；专家成员默认获得只读工具租约，工作流步骤默认只读、显式开启并通过步骤审批后可发现完整工具目录，实际调用仍走工具级授权/审批。专家与工作流任务均传递项目/会话元数据。仍缺专家级副作用工具 allowlist、统一任务总览 UI，以及完整重试/幂等和进程恢复验收。 |
-| 17 | 智能剪辑 | feature/module-17-smart-editing 的代码历史已包含在 integration/19-modules；尚未编译、测试及设备验收，未锁定 |
+| 17 | 智能剪辑 | 模块17代码已整合到 main（历史来源 feature/module-17-smart-editing）；尚未编译、测试及设备验收，未锁定 |
 | 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口显式关闭 expertTeamEnabled，且没有 workflow.run 工具，不能直接分派专家 DAG/工作流。 |
 | 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页可多选图片/音频/视频并导入当前项目素材库，由主模型按 asset_id 调度专业模型；ChatMessage 原生多模态 part 尚未实现，视频场景分析不等于通用视频问答，非语音音频理解与图像生成仍缺；真实 API/信任根配置与统一验收待完成 |
 
