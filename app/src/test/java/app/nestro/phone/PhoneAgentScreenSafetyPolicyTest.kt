@@ -71,5 +71,17 @@ class PhoneAgentScreenSafetyPolicyTest {
                 "开始"
             )
         )
+        assertTrue(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "路线预览",
+                "开始导航"
+            )
+        )
+        assertFalse(
+            PhoneAgentScreenSafetyPolicy.requiresNavigationStartHandoff(
+                "Google Maps · 12 分钟 · 8.5 公里",
+                "Google Maps"
+            )
+        )
     }
 }
