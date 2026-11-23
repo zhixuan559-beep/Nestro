@@ -25,7 +25,9 @@ internal object ExpertProjectReworkPolicy {
             "返工计划必须只包含需要返工的工作包，并为每个工作包提供反馈"
         }
         val packages = plan.packages.map { item ->
-            val note = feedback.optString(item.id).trim()
+            val rawNote = feedback.opt(item.id)
+            require(rawNote is String) { "工作包 ${item.id} 的返工反馈必须是字符串" }
+            val note = rawNote.trim()
             require(note.isNotEmpty()) { "工作包 ${item.id} 的返工反馈为空" }
             val instruction = item.instruction + "\n\n【第${reworkRound}轮验收返工要求】\n" + note
             require(instruction.length <= 8_000) { "工作包 ${item.id} 的返工指令超过 8000 字符" }
