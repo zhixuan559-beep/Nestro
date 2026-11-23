@@ -717,3 +717,36 @@ NESTRO 不是单纯聊天、单独的 Phone Agent 或媒体编辑器，而是以
 - 工作流、插件、MCP 审批路径进一步接入统一任务状态，审批弹窗可暂时隐藏且不等于拒绝；日历子工具审批状态会回写父任务。
 - **尚未闭环：** 进程重启后的审批请求重建/原步骤恢复、日历 nextRunAt/lastRunAt 与完整错误重试记录、通用跨模块依赖/产物交接和专家团日历调度。十九模块统一构建与自动化/设备验收仍按原顺序执行。
 
+
+
+---
+
+# 2026-11-24 当前修复检查点：工具链与浮窗已接线，仍未达到编译条件
+
+- 当前分支：integration/19-modules
+- 最新本轮业务源码提交：54afc56cf5e1499e58472f239079244c829a7f08
+- 最新审计记录提交：35bf72b068f22c510f86b45e597f4a896cb67936
+- 代码地图：docs/CURRENT_CODE_MAP.md
+- 本轮新增/修改测试源码：UserMemoryRepositoryInstrumentedTest、ModelLedToolDispatcherAllowListTest、PhoneAgentPreviewLayoutTest；均未运行。
+
+## 已完成的代码修复
+
+1. 记忆来源校验与 upsert/replace 已进入同一 Room @Transaction；Store 不再使用事务外预查。仍需决定 sourceConversationId/sourceMessageId 外键级联或源数据删除时的原子清理策略。
+2. 专家项目与工作流的工具感知模型调用已接入统一 ChatRequestExecutionCoordinator / ModelLedToolDispatcher。
+3. 新增 task-local allowedToolIds，模型只能发现本操作声明的工具。
+4. 新增 taskToolAccess，执行器在原生工具调用和兼容文本协议两条路径复用原操作租约，避免从全局 catalog 重新按 ID 获取处理器；现有项目能力授权、AgentRuntime 权限判断、审批和 MCP 重放检查点仍由统一 dispatcher 执行。
+5. 专家项目与工作流任务补入 projectId/conversationId 等 AgentTaskMetadata。
+6. Phone Agent 浮窗增加可拖动区域和屏幕边界钳制，原有屏幕点击/滑动/缩放交互保留。
+
+## 尚未完成的编译前阻塞
+
+- 记忆来源删除后的完整引用完整性/级联清理；历史召回缓存版本失效。
+- 日历延迟触发、任意时间条件触发、业务失败重试与错误分类退避、专家 DAG/工作流分发。
+- 媒体多视频轨/PIP/多音轨及对应时间线、预览、渲染和工程包兼容。
+- ChatMessage 原生 image/audio/video parts、模型 Provider 编码/解码、视频问答和非语音音频事件理解。
+- 其余已设计 UI 的逐屏源码复核与实际入口接通；当前只完成 Phone Agent 浮窗拖动，不能视为界面整体完成。
+- 全量源码复核、差异/冲突检查、测试源码补齐和最终静态自检。
+
+## 编译闸门
+
+按用户要求，以上阻塞全部处理并完成全量静态自检之前，不运行 Gradle 编译或测试。完成后先向用户汇报“可进入编译测试”，由用户决定开始下一步；在此之前不得构建 APK，也不得把新增测试源码写成已通过。
