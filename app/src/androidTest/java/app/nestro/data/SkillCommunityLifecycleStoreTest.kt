@@ -190,4 +190,11 @@ class SkillCommunityLifecycleStoreTest {
         assertFalse(runCatching { store.uninstall("CommunitySkill") }.isSuccess)
         assertTrue(org.json.JSONObject(preferences.getString("skills", "{}")!!).has("CommunitySkill"))
     }
+
+    @Test fun allowsOnlyStrictlyNewerCommunityUpdates() {
+        store.install(bundle("1.0.0", "first"))
+        assertFalse(runCatching { store.install(bundle("1.0.0", "same version")) }.isSuccess)
+        assertFalse(runCatching { store.install(bundle("0.9.0", "downgrade")) }.isSuccess)
+        assertEquals("first", org.json.JSONObject(preferences.getString("skills", "{}")!!).getString("CommunitySkill"))
+    }
 }
