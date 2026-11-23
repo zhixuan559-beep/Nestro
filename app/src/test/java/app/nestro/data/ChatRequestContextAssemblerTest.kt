@@ -224,4 +224,28 @@ class ChatRequestContextAssemblerCacheTest {
         assertEquals(4, retrievalCalls)
     }
 
+    @Test
+    fun conversationCorpusVersionInvalidatesHistoricalRecallCache() = kotlinx.coroutines.runBlocking {
+        var corpusVersion = "3:100:80"
+        var recallCalls = 0
+        val assembler = ChatRequestContextAssembler(
+            retrieveMemory = { _, _, _ ->
+                recallCalls++
+                ConversationRecallResult("history-$recallCalls", emptyList())
+            },
+            retrieveUserMemory = { _, _ -> "" },
+            conversationRecallVersion = { _, _ -> corpusVersion }
+        )
+        val prompt = "回忆我们之前讨论的项目"
+        val first = assembler.assemble("p", "current", prompt, emptyList(), "base")
+        val cached = assembler.assemble("p", "current", prompt, emptyList(), "base")
+        assertEquals(first, cached)
+        assertEquals(1, recallCalls)
+
+        corpusVersion = "4:180:120"
+        val refreshed = assembler.assemble("p", "current", prompt, emptyList(), "base")
+        assertEquals(2, recallCalls)
+        assertTrue(refreshed.systemContext.contains("history-2"))
+    }
+
 }
