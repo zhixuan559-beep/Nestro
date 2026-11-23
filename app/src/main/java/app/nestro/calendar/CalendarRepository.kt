@@ -9,6 +9,8 @@ class CalendarRepository(context: Context) {
 
     suspend fun allEvents(): List<CalendarEvent> = dao.allEvents()
 
+    suspend fun event(id: String): CalendarEvent? = dao.event(id)
+
     suspend fun isAlreadyExported(calendarId: Long, eventId: Long): Boolean =
         dao.exportedSystemEvent(calendarId, eventId) != null
 
