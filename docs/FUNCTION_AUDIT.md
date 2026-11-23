@@ -1470,3 +1470,6 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 清理逻辑已集中到 `invalidateRemovedMemorySources`，避免三条持久化路径各自实现不同规则。新增 Android instrumentation 测试：来源消息删除后清理原项目记忆，同时保留导入到其他项目的独立副本。
 - 源码提交：`fe8588d75238e01d129f43883d6c7e0777b566b9`（DAO）、`6894a290ed87e9e52cf8c33deaa529848d1acf4d`（初始接线）、`c1d19369a5d5a757edbfd899ce15d8bd9abd8011`（内容/角色变化识别）、`7cb9ea857ae28ede92c44fcdc03e8eab635ce7c6`（统一清理逻辑）、`a38614bd03d079e35a117b0fac34018ae1aed7a3` / `b0d37868d5c0aa0971b0b515b9569006f8356c3d`（instrumentation 测试）。
 - 目前仍无数据库外键级联；所有会话/消息删除入口必须经过上述事务清理规则。测试未执行。
+
+
+- 追加边界复核：批量快照同步遇到会话项目归属变化时，只清理旧项目的来源记忆，不误删目标项目中已导入的独立副本；同项目消息正文被改写（即使 messageId 不变）也会使原自动记忆失效。该规则已集中到 `invalidateRemovedMemorySources`，项目移动保护提交 `3336ffe9f21c9269d99ddf2733704a3cee4f257b`，instrumentation 测试同时覆盖来源消息删除、同 ID 改写及跨项目副本保留（`126f1b5167511315ccb8755fa72ae18aaf881a14`）。
