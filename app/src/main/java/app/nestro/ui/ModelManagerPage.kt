@@ -9,6 +9,7 @@ import app.nestro.model.ModelRegistry
 import app.nestro.model.ModelProvider
 import app.nestro.model.ModelApiKey
 import app.nestro.model.ModelDefinition
+import app.nestro.model.ModelModality
 import app.nestro.model.ModelProviderPresetCatalog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -86,6 +87,8 @@ internal fun ModelManager(
     var modelOutputPriceDraft by remember { mutableStateOf("") }
     var modelCurrencyDraft by remember { mutableStateOf("USD") }
     var supportsReasoningEffortDraft by remember { mutableStateOf(false) }
+    var modelInputModalitiesDraft by remember { mutableStateOf(setOf(ModelModality.TEXT)) }
+    var supportsNativeToolCallingDraft by remember { mutableStateOf(true) }
     var selectedModelKeyIds by remember { mutableStateOf(emptySet<String>()) }
     var replacingApiKeyId by remember { mutableStateOf("") }
     var registryMessage by remember { mutableStateOf("") }
@@ -210,6 +213,8 @@ internal fun ModelManager(
                     modelOutputPriceDraft = ""
                     modelCurrencyDraft = "USD"
                     supportsReasoningEffortDraft = false
+                    modelInputModalitiesDraft = setOf(ModelModality.TEXT)
+                    supportsNativeToolCallingDraft = true
                 })
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, color = Ink)
@@ -424,6 +429,8 @@ internal fun ModelManager(
                             modelOutputPriceDraft = item.outputPricePerMillion?.toString().orEmpty()
                             modelCurrencyDraft = item.currency
                             supportsReasoningEffortDraft = item.supportsReasoningEffort
+                            modelInputModalitiesDraft = item.inputModalities + ModelModality.TEXT
+                            supportsNativeToolCallingDraft = item.supportsNativeToolCalling
                         }) { Text("编辑", color = Mint) }
                         TextButton(onClick = { onActivateRegistryModel(item.id) }, enabled = available && item.id != activeRegistryModelId) { Text("设为当前", color = Mint) }
                         TextButton(onClick = { onDeleteRegistryModel(item.id) }) { Text("删除模型", color = ColorStop) }
@@ -454,6 +461,33 @@ internal fun ModelManager(
                 Text("该模型明确支持 reasoning_effort（四档参数）", color = Ink, style = MaterialTheme.typography.bodySmall)
             }
             Text("只有服务商确认支持 Off/Low/Medium/High 四档时才勾选；否则不发送该参数。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("模型输入能力", color = Ink, style = MaterialTheme.typography.titleSmall)
+            Text("仅勾选模型官方文档或实测确认支持的类型；未声明的图片、音频、视频不会发送给该模型。", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                ModelModality.values().forEach { modality ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = modality in modelInputModalitiesDraft,
+                            enabled = modality != ModelModality.TEXT,
+                            onCheckedChange = { checked ->
+                                modelInputModalitiesDraft = if (checked) modelInputModalitiesDraft + modality
+                                else modelInputModalitiesDraft - modality
+                            }
+                        )
+                        Text(when (modality) {
+                            ModelModality.TEXT -> "文本"
+                            ModelModality.IMAGE -> "图片"
+                            ModelModality.AUDIO -> "音频"
+                            ModelModality.VIDEO -> "视频"
+                        }, color = Ink, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = supportsNativeToolCallingDraft, onCheckedChange = { supportsNativeToolCallingDraft = it })
+                Text("支持原生 Function / Tool Calling", color = Ink, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("关闭后不会向该模型发送原生工具定义；系统仍可使用受限的 DIRECT/TOOL 文本兼容协议。", color = Muted, style = MaterialTheme.typography.bodySmall)
             Text("关联 API Key（可多选，按顺序故障切换）", color = Muted, style = MaterialTheme.typography.bodySmall)
             registry.apiKeys.filter { it.providerId == selectedProviderId }.forEach { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -480,13 +514,17 @@ internal fun ModelManager(
                         outputPricePerMillion = outputPrice,
                         currency = modelCurrencyDraft.trim().uppercase(),
                         supportsReasoningEffort = supportsReasoningEffortDraft,
-                        contextWindowTokens = contextWindow
+                        contextWindowTokens = contextWindow,
+                        inputModalities = modelInputModalitiesDraft + ModelModality.TEXT,
+                        supportsNativeToolCalling = supportsNativeToolCallingDraft
                     )
                     onSaveRegistryModel(model)
                     editingRegistryModelId = ""
                     modelNameDraft = ""
                     modelCodeDraft = ""
                     modelContextWindowDraft = ""
+                    modelInputModalitiesDraft = setOf(ModelModality.TEXT)
+                    supportsNativeToolCallingDraft = true
                     selectedModelKeyIds = emptySet()
                     modelInputPriceDraft = ""
                     modelOutputPriceDraft = ""
