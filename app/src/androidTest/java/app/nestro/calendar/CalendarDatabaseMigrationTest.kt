@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
@@ -78,6 +80,45 @@ class CalendarDatabaseMigrationTest {
             val persisted = repository.event(eventId)
             assertNotNull(persisted)
             assertEquals(taskId, persisted?.lastTaskId)
+        } finally {
+            repository.delete(eventId)
+        }
+    }
+
+
+    @Test
+    fun staleAutomationGenerationCannotOverwriteNewDefinition() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = CalendarRepository(context)
+        val eventId = "calendar-stale-generation-regression"
+        repository.delete(eventId)
+        val start = System.currentTimeMillis() + 3_600_000L
+        try {
+            val created = repository.save(CalendarEvent(
+                id = eventId, title = "旧定义", description = "", location = "",
+                startAt = start, endAt = start + 60_000L, allDay = false,
+                recurrence = CalendarRules.NONE, reminderMinutes = -1, completed = false,
+                createdAt = start - 1L, updatedAt = start - 1L
+            ))
+            val oldTaskId = CalendarRules.automationTaskId(created, start)
+            assertTrue(repository.recordAutomationDispatch(
+                eventId, start, System.currentTimeMillis(), oldTaskId, "old-generation-key",
+                expectedGeneration = created.automationGeneration
+            ))
+            val updated = repository.save(created.copy(automationPrompt = "新定义任务", automationProjectId = "project-new"))
+            assertEquals(created.automationGeneration + 1L, updated.automationGeneration)
+            assertFalse(repository.recordAutomationDispatch(
+                eventId, start, System.currentTimeMillis(), oldTaskId, "old-generation-key",
+                expectedGeneration = created.automationGeneration
+            ))
+            assertFalse(repository.recordAutomationResult(
+                eventId, "COMPLETED", result = "旧任务结果",
+                expectedGeneration = created.automationGeneration
+            ))
+            val latest = repository.event(eventId)
+            assertEquals(updated.automationGeneration, latest?.automationGeneration)
+            assertEquals("IDLE", latest?.automationStatus)
+            assertEquals("", latest?.automationResult)
         } finally {
             repository.delete(eventId)
         }
