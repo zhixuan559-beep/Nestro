@@ -94,4 +94,45 @@ class MediaTimelinePolicyTest {
             MediaTimelinePolicy.addTrack(MediaTimeline.empty(project), MediaTrackKind.VIDEO)
         }
     }
+
+    @Test
+    fun multipleAudioTracksCanBeCreatedAndValidatedTogether() {
+        val initial = MediaTimeline.empty(project)
+        val withSecondAudioTrack = MediaTimelinePolicy.addTrack(initial, MediaTrackKind.AUDIO)
+        val secondTrackId = withSecondAudioTrack.tracks.last().id
+        val secondAudio = audio.copy(id = "audio-asset-2")
+        val withClips = MediaTimelinePolicy.addClip(
+            MediaTimelinePolicy.addClip(withSecondAudioTrack, "audio-main", audio),
+            secondTrackId,
+            secondAudio
+        )
+        val withVideo = MediaTimelinePolicy.addClip(withClips, "video-main", video)
+        assertEquals(2, withVideo.tracks.count { it.kind == MediaTrackKind.AUDIO })
+        MediaTimelinePolicy.validate(withVideo, listOf(video, audio, secondAudio))
+    }
+
+    @Test
+    fun audioTrackLimitIsEnforced() {
+        var timeline = MediaTimeline.empty(project)
+        repeat(MediaTimelinePolicy.MAX_AUDIO_TRACKS - 1) {
+            timeline = MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
+        }
+        assertEquals(MediaTimelinePolicy.MAX_AUDIO_TRACKS, timeline.tracks.count { it.kind == MediaTrackKind.AUDIO })
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
+        }
+    }
+
+    @Test
+    fun everyAudioTrackMustStayWithinVideoDuration() {
+        val initial = MediaTimeline.empty(project)
+        val withSecondTrack = MediaTimelinePolicy.addTrack(initial, MediaTrackKind.AUDIO)
+        val longAudio = audio.copy(durationMs = 12_000)
+        val withFirstAudio = MediaTimelinePolicy.addClip(withSecondTrack, "audio-main", audio)
+        val withLongAudio = MediaTimelinePolicy.addClip(withFirstAudio, withSecondTrack.tracks.last().id, longAudio)
+        val withVideo = MediaTimelinePolicy.addClip(withLongAudio, "video-main", video)
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.validate(withVideo, listOf(video, audio, longAudio))
+        }
+    }
 }
