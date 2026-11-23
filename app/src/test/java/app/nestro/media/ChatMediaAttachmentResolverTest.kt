@@ -30,4 +30,14 @@ class ChatMediaAttachmentResolverTest {
         assertEquals(15_360, ChatMediaAttachmentResolver.estimateVideoTokens(60_000L))
     }
 
+    @Test
+    fun repeatedAssetReferencesBelongToTheMostRecentUserMessageOnly() {
+        val assetId = "123e4567-e89b-12d3-a456-426614174099"
+        val history = listOf(
+            ChatMessage("older", "user", "asset_id=$assetId;"),
+            ChatMessage("newer", "user", "asset_id=$assetId;")
+        )
+        assertEquals(mapOf(assetId to "newer"), ChatMediaAttachmentResolver.mostRecentAssetOwners(history))
+    }
+
 }
