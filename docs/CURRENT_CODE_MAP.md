@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `12c0183d7140dcae228aa5fbb54dac20ccf1d7a0`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
+> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `4b26d25af3cad1c8b99d5be19151b842783241d3`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。本地图正在按新基线重新核对；不得将旧代码地图当作当前完整审计结果。
 >
 > 当前树：445 个 Git tree 条目，其中 Kotlin 源码/测试文件 333 个（主源码 205 个、JVM 测试 95 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
