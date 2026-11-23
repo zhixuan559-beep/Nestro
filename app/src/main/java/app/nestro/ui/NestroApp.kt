@@ -1857,10 +1857,8 @@ fun NestroApp(initialPage: String = "home") {
                                             }
                                         }
                                     }
-                                    AssistChip(
-                                        onClick = { page = "experts" },
-                                        label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: selectedExpert.ifBlank { "专家与专家团" }) }
-                                    )
+                                    AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
+                                    AssistChip(onClick = { page = "experts" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
                                     AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
                                 }
                                 if (chatMediaStatus.isNotBlank()) {
@@ -2526,6 +2524,10 @@ fun NestroApp(initialPage: String = "home") {
                          "experts" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("专家与专家团", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = true, onClick = { page = "experts" }, label = { Text("专家") })
+                                    FilterChip(selected = false, onClick = { page = "experts" }, label = { Text("专家团") })
+                                }
                                 Text("单个专家可以独立聊天；专家团由多个专家组成，可以在群聊上下文中协作。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
@@ -2689,6 +2691,8 @@ fun NestroApp(initialPage: String = "home") {
                                     Text("＋ 创建专家")
                                 }
 
+
+                                Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
                                 if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
                                 val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
                                 if (activeTeamRunHistory.isNotEmpty()) {
@@ -2724,47 +2728,28 @@ fun NestroApp(initialPage: String = "home") {
                                         }
                                     }
                                 }
-
-                                HorizontalDivider(color = Line, modifier = Modifier.padding(vertical = 8.dp))
-                                Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                Text("固定专家组合在这里管理；点击群组即可进入独立群聊。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                if (teamRunStatus.isNotBlank()) Text(teamRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
-                                expertTeamRunHistory.firstOrNull { it.projectId == activeProjectId }?.let { latestTeamRun ->
-                                    Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                            Text("最近一次协作 · ${latestTeamRun.teamName}", color = Ink, style = MaterialTheme.typography.titleSmall)
-                                            Text("成功 ${latestTeamRun.successfulMembers} / ${latestTeamRun.members.size} · 失败 ${latestTeamRun.failedMembers}", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入群组") }
-                                    OutlinedButton(onClick = {
-                                        editingTeamId = ""
-                                        teamDraftName = ""
-                                        teamDraftDescription = ""
-                                        teamDraftMembers = emptySet()
-                                        showTeamDialog = true
-                                    }) { Text("＋ 创建群组") }
+                                    OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入团队") }
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                expertTeams.filter {
-                                    !projectResourceScopesReadOnly && ProjectResourceScopeStore.isTeamVisibleFromProjects(
-                                        projectResourceScopes, it.id, it.members, activeProjectId, readableProjectIds
-                                    )
-                                }.forEach { team ->
-                                    Surface(
-                                        color = if (team.id == selectedTeamId) Card2 else Card,
-                                        shape = RoundedCornerShape(14.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
+                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isTeamVisibleFromProjects(projectResourceScopes, it.id, it.members, activeProjectId, readableProjectIds) }.forEach { team ->
+                                    Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Text(team.name, color = Ink, style = MaterialTheme.typography.titleMedium)
-                                            if (team.description.isNotBlank()) Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
+                                            Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                            val teamIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourc                        "teams" -> { page = "experts" }
-rser.exportJson(team.name, team.description, memberBundles)
+                                            val teamIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, team.id)]?.contains("*") ?: true
+                                            TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, teamIsGlobal.not()) }) {
+                                                Text(if (teamIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                            }
+                                            TextButton(onClick = {
+                                                val memberBundles = team.members.mapNotNull { member ->
+                                                    (expertPrompts[member]?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(member))
+                                                        .takeIf { it.isNotBlank() }?.let { ExpertTeamMemberBundle(member, it) }
+                                                }
+                                                if (memberBundles.size >= 2) {
+                                                    teamExportJson = ExpertTeamBundleParser.exportJson(team.name, team.description, memberBundles)
                                                     val safeName = team.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "team" }
                                                     exportTeamLauncher.launch("$safeName.nestro-team.json")
                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
