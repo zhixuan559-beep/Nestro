@@ -23,7 +23,7 @@
     <application
         android:name=".NestroApplication"
         android:allowBackup="false"
-        android:label="Nestro"
+        android:label="Nost"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <provider
