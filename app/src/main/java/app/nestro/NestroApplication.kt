@@ -39,6 +39,7 @@ import app.nestro.data.ConversationPersistenceService
 import app.nestro.data.ChatRequestRecoveryCoordinator
 import app.nestro.data.ConversationStartupCoordinator
 import app.nestro.data.UserMemoryRepository
+import app.nestro.data.UserMemoryStore
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
 import app.nestro.data.ProjectAccessControlStore
@@ -703,7 +704,7 @@ class NestroApplication : Application() {
     }
     internal val chatRequestContextAssembler: ChatRequestContextAssembler by lazy {
         val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
-        suspend fun readableProjectsFor(targetProjectId: String): List<String> {
+        fun readableProjectsFor(targetProjectId: String): List<String> {
             val candidates = runCatching {
                 ProjectPreferencesStore.loadProjects(preferences)
                     .filter { it.archivedAt == 0L }
@@ -723,6 +724,13 @@ class NestroApplication : Application() {
                 } else {
                     val readableSources = readableProjectsFor(projectId).filterNot { it == projectId }.toSet()
                     userMemoryRepository.recall(projectId, prompt, readableSources).context
+                }
+            },
+            memoryVersion = { projectId ->
+                val memoryAuthorized = CapabilityRegistryStore.authorize(preferences, projectId, "memory")
+                "authorized=$memoryAuthorized|" + readableProjectsFor(projectId).joinToString("|") { sourceId ->
+                    val token = UserMemoryStore.mutationVersion(sourceId)
+                    "$sourceId:${token.projectVersion}:${token.globalVersion}"
                 }
             }
         )

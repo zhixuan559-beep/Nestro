@@ -13,6 +13,12 @@ class UserMemoryRepository(
             size > 400
     }
 
+    /** Versioned LRU of fully ranked recall results (separate from the embedding-vector cache). */
+    private val recallResultCache = object : LinkedHashMap<String, MemoryRecall>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MemoryRecall>?): Boolean =
+            size > 200
+    }
+
     suspend fun list(projectId: String): List<UserMemoryEntity> =
         UserMemoryStore.list(database.dao(), projectId)
 
@@ -21,12 +27,24 @@ class UserMemoryRepository(
         query: String,
         readableSourceProjectIds: Set<String> = emptySet()
     ): MemoryRecall {
+        val sourceIds = (readableSourceProjectIds + projectId).distinct().sorted()
+        val versionsBeforeRead = sourceIds.joinToString("|") { id ->
+            val version = UserMemoryStore.mutationVersion(id)
+            id + ":" + version.projectVersion + ":" + version.globalVersion
+        }
+        val cacheKey = UserMemoryStore.fingerprint(
+            projectId + "|" + sourceIds.joinToString(",") + "|" + versionsBeforeRead + "|" + query.trim().lowercase()
+        )
+        synchronized(recallResultCache) {
+            recallResultCache[cacheKey]?.let { return it }
+        }
+
         val memories = database.dao().userMemoriesForRecall(projectId, readableSourceProjectIds.sorted(), 200)
         val keywordFallback = UserMemoryStore.recall(memories, query)
-        val context = appContext ?: return keywordFallback
-        if (memories.isEmpty() || !KnowledgeEmbeddingModelManager.isInstalled(context)) return keywordFallback
-
-        return runCatching {
+        val context = appContext
+        val result = if (context == null || memories.isEmpty() || !KnowledgeEmbeddingModelManager.isInstalled(context)) {
+            keywordFallback
+        } else runCatching {
             val queryVector = KnowledgeEmbeddingModelManager.embed(context, listOf(query)).single()
             val missing = memories.filter { memory ->
                 synchronized(embeddingCache) { memory.fingerprint !in embeddingCache }
@@ -49,6 +67,16 @@ class UserMemoryRepository(
             }
             UserMemoryStore.recallSemantic(memories, query, queryVector, vectorsByMemoryId)
         }.getOrDefault(keywordFallback)
+
+        // Do not publish a result if memory changed while retrieval was running.
+        val versionsAfterRead = sourceIds.joinToString("|") { id ->
+            val version = UserMemoryStore.mutationVersion(id)
+            id + ":" + version.projectVersion + ":" + version.globalVersion
+        }
+        if (versionsBeforeRead == versionsAfterRead) {
+            synchronized(recallResultCache) { recallResultCache[cacheKey] = result }
+        }
+        return result
     }
 
     suspend fun saveCandidates(

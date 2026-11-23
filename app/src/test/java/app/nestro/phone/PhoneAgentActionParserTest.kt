@@ -185,4 +185,29 @@ class PhoneAgentActionParserTest {
         } catch (_: RuntimeException) {
         }
     }
+    @Test
+    fun navigationActionBuildsEncodedGoogleMapsDirectionsUrl() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"open_navigation","origin":"成都天府广场","destination":"成都东站","mode":"driving"}]}"""
+        ).actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://www.google.com/maps/dir/?api=1&destination="))
+        assertTrue(action.url.contains("origin="))
+        assertTrue(action.url.endsWith("&travelmode=driving"))
+        assertTrue(action.url.contains("%"))
+    }
+
+    @Test
+    fun navigationActionRejectsUnsupportedModeAndEmptyDestination() {
+        listOf(
+            """{"done":false,"actions":[{"type":"open_navigation","destination":"成都东站","mode":"flying"}]}""",
+            """{"done":false,"actions":[{"type":"open_navigation","destination":"","mode":"walking"}]}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid navigation request must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
 }
