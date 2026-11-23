@@ -31,7 +31,29 @@ class ModelCapabilityPolicyTest {
             "https://two.example.com", "multimodal", "secret",
             inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.AUDIO)
         )
-        assertEquals(listOf(imageAndAudio), ModelCapabilityPolicy.compatibleConfigs(listOf(imageOnly, imageAndAudio), required))
+        assertEquals(listOf(imageAndAudio), ModelCapabilityPolicy.compatibleConfigs(listOf(imageOnly, imageAndAudio), history))
+    }
+
+    @Test
+    fun protocolLimitsExcludeUnsupportedMediaEvenWhenModelDeclaresIt() {
+        val history = listOf(
+            ChatMessage(
+                "message",
+                "user",
+                "分析视频",
+                mediaParts = listOf(ChatMessageMediaPart("VIDEO", "video/mp4", "data", 4_096))
+            )
+        )
+        val openAi = ModelConfig(
+            "https://openai.example.com", "vision-model", "secret",
+            inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.VIDEO)
+        )
+        val gemini = ModelConfig(
+            "https://gemini.example.com", "video-model", "secret",
+            protocol = app.nestro.model.ModelApiProtocol.GEMINI_GENERATE_CONTENT,
+            inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.VIDEO)
+        )
+        assertEquals(listOf(gemini), ModelCapabilityPolicy.compatibleConfigs(listOf(openAi, gemini), history))
     }
 
     @Test
