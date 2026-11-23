@@ -1,5 +1,6 @@
 package app.nestro.data
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 
@@ -48,24 +49,33 @@ internal object ExpertProjectTaskIdentity {
         plan: ExpertProjectPlan,
         members: Map<String, ExpertTeamMemberTask>
     ): String {
-        val identity = buildString {
-            append(teamId).append('\n')
-            append(projectId).append('\n')
-            append(teamName).append('\n')
-            append(teamDescription).append('\n')
-            append(plan.reworkRound).append('\n')
-            append(plan.projectGoal).append('\n')
-            append(plan.finalAcceptanceCriteria).append('\n')
-            plan.packages.forEach { item ->
-                append(item.id).append('|').append(item.memberName).append('|')
-                    .append(item.instruction).append('|').append(item.acceptanceCriteria).append('|')
-                    .append(item.dependsOn.sorted().joinToString(",")).append('\n')
-            }
-            members.toSortedMap().forEach { (name, member) ->
-                append(name).append('|').append(member.rolePrompt).append('|')
-                    .append(member.assignedTask).append('\n')
-            }
-        }
+        val identity = JSONObject()
+            .put("teamId", teamId)
+            .put("projectId", projectId)
+            .put("teamName", teamName)
+            .put("teamDescription", teamDescription)
+            .put("reworkRound", plan.reworkRound)
+            .put("projectGoal", plan.projectGoal)
+            .put("finalAcceptanceCriteria", plan.finalAcceptanceCriteria)
+            .put("packages", JSONArray().apply {
+                plan.packages.forEach { item ->
+                    put(JSONObject()
+                        .put("id", item.id)
+                        .put("memberName", item.memberName)
+                        .put("instruction", item.instruction)
+                        .put("acceptanceCriteria", item.acceptanceCriteria)
+                        .put("dependsOn", JSONArray(item.dependsOn)))
+                }
+            })
+            .put("members", JSONArray().apply {
+                members.toSortedMap().forEach { (name, member) ->
+                    put(JSONObject()
+                        .put("name", name)
+                        .put("rolePrompt", member.rolePrompt)
+                        .put("assignedTask", member.assignedTask))
+                }
+            })
+            .toString()
         val digest = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
         val suffix = digest.take(10).joinToString("") { byte ->
             (byte.toInt() and 0xff).toString(16).padStart(2, '0')
