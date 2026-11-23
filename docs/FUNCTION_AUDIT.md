@@ -1362,3 +1362,31 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 日历自动任务当前仍未直接分派专家 DAG/Workflow；expertTeamEnabled=false 与无 workflow.run 工具的边界保持不变。
 - 日历定位为辅助自动调度功能，不作为独立页面；当前 CalendarPage 仅暂存既有配置入口，最终应把日程/延迟配置嵌入任务或工作流编辑入口，完成调用关系核对后再移除独立导航。
 - 本轮未运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器或真机；遵守十九模块代码收口后统一验收的门禁。
+
+
+## 2026-11-23 — 38 条分支最终核销与接口首轮复核
+
+核验基线：当前 main（媒体 Provider 重复读取修复提交前后代码树一致，修复提交为 `3fb55b0bb8a6ed5e91ffc7ee930c20324505d182`）。
+
+### 分支核销
+
+- 重新读取仓库分支列表：共 38 条，包含 main，另有 37 条历史分支；逐条对照当前 main 的提交关系与递归 Git tree。
+- PR #29（`integration/19-modules` → `main`）已合并，merge commit 为 `8ca91d29209f6500f528712387703ae64124b26b`；integration 分支没有领先 main 的提交，整合树的有效成果已进入 main。
+- 37 条历史分支中，17 条分支 tip 已是 main 的祖先（ahead_by=0），没有未合并提交；其余分支虽有分叉提交，但逐树比较未发现新的有效生产实现遗漏。
+- `feature/knowledge-retrieval-ranking` 的独有文件为旧 `CapabilityTaskEngine.kt`、旧 `CapabilityCenterPage.kt` 及两个旧测试。旧引擎使用另一套任务表/状态所有者，会与当前 `AgentTaskCoordinator` 重复；旧页面的能力目录部分由 `CapabilityDirectoryPage` 承接，任务总览 UI 尚未适配当前统一任务模型，因此不迁入旧实现。当前能力注册表 instrumentation 测试已保留并适配。
+- `feature/module-7-skill-library` 的独有文件为旧 `SkillCommunityInstallPlanner.kt`、`SkillInstallPolicy.kt` 和相关测试。当前主线已使用更新的 SemVer 2.0、约束回溯求解、签名信任根/撤销、安装计划及原子生命周期 API；旧接口不覆盖当前实现，不重复迁入。
+- 其余若干旧分支仅多出一份只有 package 声明的空 `ConversationIntelligence.kt`，不是可用实现；模块5历史设计文档已存在于 main。其他分支的独有路径均已在 main 找到或被当前更高版本实现替代。
+- PR #1（旧知识检索/能力中心 Draft）与 PR #3（旧 Phase 2 架构 Draft）已关闭；当前开放 PR 数为 0。
+- **分支引用尚未删除。** 当前 GitHub 连接没有 DELETE git ref / delete branch 操作；未用强制移动分支指针伪装删除，也未声称已清理。待具备删除 ref 权限的连接后，可按上述核销结果删除 37 条历史分支，保留 main。
+
+### UI 与接口首轮复核
+
+- `ToolsDirectoryPage` 的 14 个管理入口（模型、双模型比较、语音、Skills、工作流、插件、MCP、能力授权、记忆、知识库、产物、媒体、AI 共建、Git）均在 `NestroApp` 找到对应路由分支；本轮未发现目录入口断链。
+- 主进程共享 `AgentToolCatalog` 与 `AgentTaskCoordinator`；当前静态注册 11 个内置工具，MCP/生成式插件按连接与安装状态动态注册。Phone Agent 与 calendar automation 有具名 Handler；媒体 AI、媒体渲染、工作流和专家团队通过统一协调器的 `runInline` 进入统一任务生命周期。
+- **确认一项真实接口缺口：** `AgentCapabilityRegistry.register` 在生产调用链中没有注册点；`WorkflowStepKind` 只有 PROMPT/EXPERT/SKILL，`WorkflowStep` 与专家成员执行配置均没有可持久化的 allowed tool IDs。虽然 Workflow/Expert 协调器预留了工具租约和工具感知回调，但当前运行时没有生产声明可打开租约，故不能把“专家/工作流步骤内部可调用工具”标记为已打通。主模型直接调用 `expert_team.run`、Phone Agent、媒体和动态 MCP/插件工具的路径另行存在。
+- `NestroApplication.kt` 的 `media.provider.list` 曾对每个 Provider 连续重复读取三次；已改为单次读取，提交 `3fb55b0bb8a6ed5e91ffc7ee930c20324505d182`，并回读确认。
+- 本轮只完成源码/路由/注册关系静态核查；尚未运行 Gradle 编译、JVM/Android 测试、模拟器或真机验收。不得将接口存在等同于运行通过。
+
+### 下一步
+
+先补齐并测试专家成员/工作流步骤的显式工具能力声明、项目范围校验、租约创建与审批续跑，再继续逐项核对十九模块的 UI 操作、数据流、错误/恢复路径和跨模块调用；全部代码收口后再统一构建 APK 与验收。
