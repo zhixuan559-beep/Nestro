@@ -145,7 +145,8 @@ class NestroAppSmokeTest {
 
     @Test
     fun modelConnectionTestStaysDisabledUntilRequiredFieldsAreProvided() {
-        composeRule.onNodeWithContentDescription("模型设置").performClick()
+        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+        composeRule.onNodeWithText("模型管理").performClick()
 
         composeRule.onNodeWithText("测试当前编辑配置")
             .performScrollTo()
