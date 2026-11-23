@@ -589,12 +589,28 @@ fun MediaEditorPage(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = {
-                scope.launch { runCatching { timeline = withContext(Dispatchers.IO) { MediaProjectStore.undo(context, projectId) } }
-                    .onFailure { status = it.message ?: "撤销失败" } }
+                scope.launch {
+                    runCatching {
+                        val restored = withContext(Dispatchers.IO) { MediaProjectStore.undo(context, projectId) }
+                        timeline = restored
+                        audioTrackVolumeDrafts = restored.tracks.associate { it.id to it.volume }
+                        if (restored.tracks.none { it.id == selectedAudioTrackId && it.kind == MediaTrackKind.AUDIO }) {
+                            selectedAudioTrackId = restored.tracks.firstOrNull { it.kind == MediaTrackKind.AUDIO }?.id.orEmpty()
+                        }
+                    }.onFailure { status = it.message ?: "撤销失败" }
+                }
             }) { Text("撤销") }
             TextButton(onClick = {
-                scope.launch { runCatching { timeline = withContext(Dispatchers.IO) { MediaProjectStore.redo(context, projectId) } }
-                    .onFailure { status = it.message ?: "重做失败" } }
+                scope.launch {
+                    runCatching {
+                        val restored = withContext(Dispatchers.IO) { MediaProjectStore.redo(context, projectId) }
+                        timeline = restored
+                        audioTrackVolumeDrafts = restored.tracks.associate { it.id to it.volume }
+                        if (restored.tracks.none { it.id == selectedAudioTrackId && it.kind == MediaTrackKind.AUDIO }) {
+                            selectedAudioTrackId = restored.tracks.firstOrNull { it.kind == MediaTrackKind.AUDIO }?.id.orEmpty()
+                        }
+                    }.onFailure { status = it.message ?: "重做失败" }
+                }
             }) { Text("重做") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -644,6 +660,7 @@ fun MediaEditorPage(
                     val trackVolume = audioTrackVolumeDrafts[track.id] ?: track.volume
                     Text("轨道音量 · ${(trackVolume * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
                     Slider(
+                        enabled = !isSaving,
                         value = trackVolume,
                         onValueChange = { value ->
                             audioTrackVolumeDrafts = audioTrackVolumeDrafts + (track.id to value)
