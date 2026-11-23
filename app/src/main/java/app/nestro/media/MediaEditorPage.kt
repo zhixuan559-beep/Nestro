@@ -473,15 +473,17 @@ fun MediaEditorPage(
                     showAiConsent = false
                     val provider = MediaIntelligenceRegistry.current() ?: return@TextButton
                     val asset = assets.firstOrNull { it.id == selectedAssetId } ?: return@TextButton
-                    val created = withContext(Dispatchers.IO) {
-                        MediaAiTaskStore.create(context, projectId, asset.id, provider.providerId, aiAction,
-                            "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
+                    scope.launch {
+                        val created = withContext(Dispatchers.IO) {
+                            MediaAiTaskStore.create(context, projectId, asset.id, provider.providerId, aiAction,
+                                "请描述图片中的主要内容、可见文字、场景与适合用于视频剪辑的画面要点。")
+                        }
+                        activeMediaAiTaskId = created.id
+                        mediaAiRunning = true
+                        mediaAiProgress = 0f
+                        withContext(Dispatchers.IO) { MediaAiTaskScheduler.enqueue(context, projectId, created.id) }
+                        status = "媒体 AI 任务已加入后台队列；应用关闭或进程被回收后会自动恢复。"
                     }
-                    activeMediaAiTaskId = created.id
-                    mediaAiRunning = true
-                    mediaAiProgress = 0f
-                    withContext(Dispatchers.IO) { MediaAiTaskScheduler.enqueue(context, projectId, created.id) }
-                    status = "媒体 AI 任务已加入后台队列；应用关闭或进程被回收后会自动恢复。"
                 }) { Text("确认处理") }
             },
             dismissButton = { TextButton(onClick = { showAiConsent = false }) { Text("取消") } }

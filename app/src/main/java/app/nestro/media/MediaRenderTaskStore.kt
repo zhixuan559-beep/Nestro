@@ -96,7 +96,7 @@ object MediaRenderTaskStore {
     }
 
     @Synchronized
-    suspend fun delete(context: Context, projectId: String, taskId: String) {
+    fun delete(context: Context, projectId: String, taskId: String) {
         val target = file(context, projectId, taskId)
         if (!target.exists()) return
         val current = read(context, projectId, taskId)

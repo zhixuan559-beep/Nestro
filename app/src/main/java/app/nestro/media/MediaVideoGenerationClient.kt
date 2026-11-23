@@ -194,7 +194,7 @@ class MediaVideoGenerationClient(private val config: MediaProviderConfig) {
 }
 
 object MediaVideoGeneration {
-    fun enqueue(
+    suspend fun enqueue(
         context: Context,
         projectId: String,
         providerId: String,

@@ -35,7 +35,7 @@ object MediaIntelligenceRegistry {
         if (activeProviderId == providerId) activeProviderId = providers.keys().firstOrNull()
     }
     fun current(): MediaIntelligenceProvider? = activeProviderId?.let(providers::get)
-    fun list(): List<MediaIntelligenceProvider> = providers.values.sortedBy { it.displayName }
+    fun list(): List<MediaIntelligenceProvider> = providers.values.toList().sortedBy { provider -> provider.displayName }
 }
 
 object MediaPromptFactory {

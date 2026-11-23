@@ -125,7 +125,7 @@ object MediaProjectStore {
             }
         }
         require(assets.map { it.id }.distinct().size == assets.size) { "素材索引包含重复 ID" }
-        assets.sortedByDescending { it.importedAt }
+        return assets.sortedByDescending { it.importedAt }
     }
 
     @Synchronized
