@@ -1759,7 +1759,7 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     }
 
-                    when (page) {
+                    when (if (page == "teams") "experts" else page) {
                         "home", "chat" -> {
                             if (messages.isEmpty()) {
                                 Column(
