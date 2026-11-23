@@ -160,3 +160,14 @@ This closes the PR #1 semantic-mapping gate only. It does **not** mean the full 
 - **功能层面：已核对并选择性回收 1 项独有语义；其余生产实现均为相同代码、被 main 更强实现替代，或属于重复子系统。**
 - **测试层面：记忆集成测试场景仍需按 main 当前 API 重写，作为本分支遗留测试覆盖项继续跟踪。**
 - 分支继续保留作历史证据；本次没有 merge、delete、build、Gradle test、APK 或设备验收。
+## 2026-11-24 main 分叉分支逐条核销 — 02/20
+
+### `feature/module-8-phone-agent`
+
+- 核对基线：`main` HEAD `d45d32f67c2f0b3aaa72824a0c7732038fa64a21`。
+- 分支关系：merge base `af3d5a7ee2057f546a88ed7f96e80b73eca4a32a`；branch ahead 11、behind 1862。compare 显示 4 个文件差异。
+- `.github/scripts/run-android-instrumentation.sh`、`.github/workflows/module-8-ci.yml`、`gradle.properties`：main 与分支 blob SHA 完全一致，实际没有待回收差异。
+- `.github/workflows/android.yml`：分支版本只保留较早的 Android CI 触发器/runner 环境声明，缺少 main 当前的 concurrency、手动 dispatch、debug APK 早期构建、依赖图/SBOM 证据、完整验证报告等步骤；main 工作流覆盖更完整，不复制分支版本。
+- 4 个文件已全部分类；未发现产品源码、测试源码或模块8独有实现。
+- **核销结论：该分支 11 个 ahead 提交没有留下需要回收的独有产品代码；其 3 个非 workflow 文件与 main 完全相同，workflow 由 main 更新版本取代。**
+- 未合并、未删除分支；未运行构建、测试、APK 或设备验收。
