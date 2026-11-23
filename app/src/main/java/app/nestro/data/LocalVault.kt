@@ -9,6 +9,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import app.nestro.model.ModelApiProtocol
+import app.nestro.model.ModelModality
 
 internal data class ModelConfig(
     val baseUrl: String,
@@ -16,7 +17,9 @@ internal data class ModelConfig(
     val apiKey: String,
     val reasoningEffort: String? = null,
     val protocol: ModelApiProtocol = ModelApiProtocol.OPENAI_CHAT_COMPLETIONS,
-    val contextWindowTokens: Int? = null
+    val contextWindowTokens: Int? = null,
+    val inputModalities: Set<ModelModality> = setOf(ModelModality.TEXT),
+    val supportsNativeToolCalling: Boolean = true
 )
 
 internal object LocalVault {
