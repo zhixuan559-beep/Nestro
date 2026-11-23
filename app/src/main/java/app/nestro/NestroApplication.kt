@@ -271,6 +271,108 @@ class NestroApplication : Application() {
             }
             register(
                 app.nestro.agent.AgentToolSpec(
+                    id = "workflow.list",
+                    description = "列出当前日历自动任务项目范围内可见的已保存工作流，返回 workflow_id、名称、步骤类型和说明。仅日历自动任务调度器可调用。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val requestId = arguments["__nestro_request_id"].orEmpty()
+                val parent = requestId.takeIf { it.isNotBlank() }?.let { agentTaskCoordinator.state(it) }
+                if (parent?.owner != "calendar_automation") {
+                    app.nestro.agent.AgentToolResult(false, error = "工作流列表仅对日历自动任务开放")
+                } else {
+                    try {
+                        val projectId = arguments["__nestro_project_id"].orEmpty()
+                        val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
+                        val scopes = app.nestro.data.ProjectResourceScopeStore.load(preferences)
+                        val workflows = app.nestro.data.WorkflowDefinitionCodec.decode(
+                            preferences.getString("workflows_v1", "[]") ?: "[]"
+                        ).filter {
+                            app.nestro.data.ProjectResourceScopeStore.isVisible(
+                                scopes, app.nestro.data.ProjectResourceKind.WORKFLOW, it.id, projectId
+                            )
+                        }
+                        val output = if (workflows.isEmpty()) {
+                            "当前项目没有可用的已保存工作流。"
+                        } else workflows.joinToString("\n") { workflow ->
+                            "workflow_id=${workflow.id}; name=${workflow.name}; description=${workflow.description}; steps=" +
+                                workflow.steps.filter { it.enabled }.joinToString(",") { "${it.kind.name}:${it.title}" }
+                        }
+                        app.nestro.agent.AgentToolResult(true, output = output.take(12_000))
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        app.nestro.agent.AgentToolResult(false, error = error.message ?: "读取工作流列表失败")
+                    }
+                }
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
+                    id = "workflow.run",
+                    description = "运行 workflow.list 返回的当前项目已保存工作流。只执行 PROMPT、EXPERT、SKILL 步骤；标记审批的步骤必须等待用户确认。成员不直接调用外部工具，外部能力仍由顶层调度器处理。仅日历自动任务调度器可调用。",
+                    permission = app.nestro.agent.AgentToolPermission.READ_ONLY
+                )
+            ) { arguments ->
+                val requestId = arguments["__nestro_request_id"].orEmpty()
+                val parent = requestId.takeIf { it.isNotBlank() }?.let { agentTaskCoordinator.state(it) }
+                if (parent?.owner != "calendar_automation") {
+                    app.nestro.agent.AgentToolResult(false, error = "工作流执行仅对日历自动任务开放")
+                } else {
+                    try {
+                        val preferences = getSharedPreferences("nestro_local", MODE_PRIVATE)
+                        val profiles = ModelProfileCatalogCodec.decode(
+                            preferences.getString("model_profiles_v1", "[]").orEmpty()
+                        )
+                        val registry = modelConfigurationRepository.loadRegistry(profiles)
+                        val activeModelId = preferences.getString("active_model_registry_id", "").orEmpty()
+                        val failoverEnabled = preferences.getBoolean("model_failover_enabled", false)
+                        val reasoningEffort = preferences.getString("reasoning_effort_v1", "low")
+                        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+                            registry = registry,
+                            activeModelId = activeModelId,
+                            failoverEnabled = failoverEnabled,
+                            reasoningEffort = reasoningEffort,
+                            readKey = modelConfigurationRepository::readApiKey
+                        ).ifEmpty {
+                            val profileId = preferences.getString("active_model_profile_id", "").orEmpty()
+                            val profile = profiles.firstOrNull { it.id == profileId }
+                            val key = profile?.let { modelConfigurationRepository.readProfileKey(it.id) }.orEmpty()
+                            if (profile != null && key.isNotBlank()) {
+                                listOf(ModelConfig(profile.baseUrl, profile.model, key))
+                            } else emptyList()
+                        }
+                        val runner = app.nestro.data.CalendarWorkflowRunner(
+                            preferences = preferences,
+                            coordinator = workflowExecutionCoordinator,
+                            approvalCoordinator = agentApprovalCoordinator,
+                            chatExecutionService = chatExecutionService,
+                            modelConfigs = configs,
+                            projectId = arguments["__nestro_project_id"].orEmpty(),
+                            conversationId = arguments["__nestro_conversation_id"].orEmpty(),
+                            requestId = requestId,
+                            onUsage = { config, inputTokens, outputTokens ->
+                                recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = false)
+                            },
+                            onProviderUsage = { config, inputTokens, outputTokens ->
+                                recordBackgroundModelUsage(preferences, registry, config, inputTokens, outputTokens, providerReported = true)
+                            }
+                        )
+                        val output = runner.run(
+                            arguments["workflow_id"].orEmpty(),
+                            arguments["input"].orEmpty()
+                        )
+                        app.nestro.agent.AgentToolResult(true, output = output.take(12_000))
+                    } catch (pending: app.nestro.agent.AgentApprovalPendingException) {
+                        throw pending
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        app.nestro.agent.AgentToolResult(false, error = error.message ?: "工作流执行失败")
+                    }
+                }
+            }
+            register(
+                app.nestro.agent.AgentToolSpec(
                     id = "media.provider.list",
                     description = "列出当前用户已配置的媒体服务商及配置字段声明的媒体能力：视觉模型、音频转写模型、视频场景接口、音频处理接口、视频生成模型。无需参数；配置存在不代表第三方接口已完成联调验证。",
                     permission = app.nestro.agent.AgentToolPermission.READ_ONLY
