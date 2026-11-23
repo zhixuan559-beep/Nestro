@@ -60,10 +60,10 @@ class ChatMessageContentSerializerTest {
             ChatMessageMediaPart("VIDEO", "video/mp4", "bXA0", 4_096)
         ))
         val parts = ChatMessageContentSerializer.geminiParts(mixed)
-        assertEquals("请理解这些素材", parts.getJSONObject(0).getString("text"))
-        assertEquals("image/jpeg", parts.getJSONObject(1).getJSONObject("inlineData").getString("mimeType"))
-        assertEquals("audio/mpeg", parts.getJSONObject(2).getJSONObject("inlineData").getString("mimeType"))
-        assertEquals("video/mp4", parts.getJSONObject(3).getJSONObject("inlineData").getString("mimeType"))
+        assertEquals("image/jpeg", parts.getJSONObject(0).getJSONObject("inlineData").getString("mimeType"))
+        assertEquals("audio/mpeg", parts.getJSONObject(1).getJSONObject("inlineData").getString("mimeType"))
+        assertEquals("video/mp4", parts.getJSONObject(2).getJSONObject("inlineData").getString("mimeType"))
+        assertEquals("请理解这些素材", parts.getJSONObject(3).getString("text"))
         assertTrue(ChatMessageContentSerializer.geminiContent(mixed).getJSONArray("parts").length() == 4)
     }
 
