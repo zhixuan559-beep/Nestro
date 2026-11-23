@@ -143,7 +143,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             SkillBundleParser.fromStored(
                 name,
                 previous.getString("prompt"),
-                previous.optString("metadata").takeIf { it.isNotBlank() }
+                previous.opt("metadata") as? String
             )
         } else null
         val restoredVersion = restoredBundle?.version.orEmpty()
