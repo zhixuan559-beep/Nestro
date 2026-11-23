@@ -126,6 +126,10 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
         composeRule.onNodeWithText("工作流", substring = false).performClick()
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
+        composeRule.onNodeWithText("自动调度").performClick()
+        composeRule.onNodeWithText("本机保存 · 支持重复日程与后台提醒").assertIsDisplayed()
+        composeRule.onNodeWithText("返回工作流").performClick()
+        composeRule.onNodeWithText("工作流").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("设置", substring = true).performClick()
