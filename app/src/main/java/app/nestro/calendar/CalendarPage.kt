@@ -567,7 +567,7 @@ private fun CalendarEventEditor(
                 OutlinedTextField(
                     automationPrompt,
                     { automationPrompt = it.take(12_000) },
-                    label = { Text("到期自动执行（可选）") },
+                    label = { Text("日程开始时自动执行（可选）") },
                     placeholder = { Text("填写要交给主模型执行的目标；留空则只保留日程提醒") },
                     minLines = 3
                 )
