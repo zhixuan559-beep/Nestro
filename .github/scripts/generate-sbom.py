@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 COORDINATE = re.compile(
-    r"^\s*(?:\+---|\\---|---)\s+"
+    r"^\s*(?:\|\s*)*(?:\+---|\\---|---)\s+"
     r"([^\s:]+):([^\s:]+):([^\s]+)"
     r"(?:\s+->\s+([^\s]+))?"
 )
