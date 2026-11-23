@@ -72,7 +72,7 @@
 - 统一任务机的通用 retry 默认值为 2；`WorkflowExecutionCoordinator` 与 `ExpertTeamExecutionCoordinator` 的 `runInline` 已显式设置 `maxRetries=0`，避免整段工作流/专家团队在结果不确定时重放。日历父任务仍允许有限重试；`ModelLedToolDispatcher` 在外部副作用工具开始后将后续失败包装为 `NonRetryableAgentTaskException`。MCP、媒体 AI、媒体渲染和生成式插件路径也显式禁用整段自动重试。
 - 模块16已有生成式插件 runInline、步骤 checkpoint、恢复 UI、统一审批与项目能力授权/调用审计；仍缺统一跨模块任务总览收敛、任意代码插件沙箱和完整 Android VoiceInteractionService。
 - 模块7自动记忆候选写入已新增 `NestroDao.saveUserMemoryCandidateIfSourceValid`：项目存在性、来源会话项目归属、来源 user message 校验与对应 upsert/replace 位于同一个 Room `@Transaction`；`UserMemoryRepositoryInstrumentedTest` 已增加 DAO 边界回归测试，但尚未运行。来源 ID 仍是普通字段、没有外键级联约束，删除源数据后的记忆清理策略仍需单独收口；独立全局/项目/会话记忆上下文缓存仍未实现。手动 global_memory_v1 与自动结构化记忆是不同能力。
-- 模块8已有 `PhoneAgentPlanner` 的 NAVIGATION 分类、`open_navigation` Google Maps Directions 动作、路线读取核验、`confirm_sensitive` 用户确认和主屏导航交接代码；路线链路仍待真机验证。`PhoneAgentFloatingPreview` 现已增加独立拖动条、屏幕边界钳制和位置状态，窗口移动代码及边界单元测试源码已提交，尚未运行测试。窗口内屏幕滑动、点击与角部缩放继续保留。
+- 模块8 `PhoneAgentPlanner` 已有 NAVIGATION 与 TRAVEL 分类；单点导航和多日旅行规划均会要求使用 `open_navigation` 打开 Google Maps Directions 预览、读取路线并经 `confirm_sensitive` 交用户确认后再主屏交接。当前顺序由规划步骤/模型指令驱动，硬状态门禁是否能阻断模型绕过仍待补强与验证；路线链路仍待真机验收。`PhoneAgentFloatingPreview` 现已增加独立拖动条、屏幕边界钳制和位置状态，窗口移动代码及边界单元测试源码已提交，尚未运行测试。窗口内屏幕滑动、点击与角部缩放继续保留。
 - 模块17仍限单视频轨/最多单音频轨；多轨/PIP、转场、速度曲线、关键帧、字幕烧录和高级混音缺失。
 - 模块18已接统一任务机与主模型工具链；延迟触发已贯通 UI/持久化/WorkManager/Worker/备份，并具备定义版本隔离与重启补排程。通用任务机已有 attempts/maxRetries、瞬时网络/HTTP 错误退避和副作用后禁止重放；仍缺任意时间条件触发及日历专属语义型业务错误映射，目前不直接调度 expert DAG/workflow。
 - 模块3仍缺按真实模型 context-window 动态预算；原生工具并发只覆盖显式声明的安全只读工具。
