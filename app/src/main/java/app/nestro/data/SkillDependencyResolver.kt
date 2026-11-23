@@ -69,6 +69,27 @@ object SkillDependencyResolver {
         return issues.toList()
     }
 
+    /**
+     * Returns skills that directly depend on the target. Corrupt stored metadata fails closed
+     * so callers cannot disable, rename, or delete a dependency on an incomplete graph.
+     */
+    fun findDependents(
+        skillName: String,
+        installedSkills: Map<String, String>,
+        installedMetadata: Map<String, String>
+    ): List<String>? {
+        if (skillName.isBlank() || skillName.length > 40) return null
+        val dependents = mutableListOf<String>()
+        installedSkills.forEach { (candidateName, prompt) ->
+            if (candidateName == skillName) return@forEach
+            val bundle = runCatching {
+                SkillBundleParser.fromStored(candidateName, prompt, installedMetadata[candidateName])
+            }.getOrNull() ?: return null
+            if (bundle.dependencies.any { it.name == skillName }) dependents += candidateName
+        }
+        return dependents.sorted()
+    }
+
     fun filterSatisfiedSkills(
         installedSkills: Map<String, String>,
         installedMetadata: Map<String, String>,
