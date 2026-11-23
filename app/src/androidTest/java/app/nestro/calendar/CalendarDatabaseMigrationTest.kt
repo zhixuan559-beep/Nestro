@@ -50,6 +50,39 @@ class CalendarDatabaseMigrationTest {
         }
     }
 
+
+    @Test
+    fun repositoryCanReadPersistedAutomationDispatchState() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = CalendarRepository(context)
+        val eventId = "calendar-dispatch-state-regression"
+        repository.delete(eventId)
+        val start = System.currentTimeMillis() + 3_600_000L
+        try {
+            repository.save(
+                CalendarEvent(
+                    id = eventId, title = "派发状态读取", description = "", location = "",
+                    startAt = start, endAt = start + 60_000L, allDay = false,
+                    recurrence = CalendarRules.NONE, reminderMinutes = -1, completed = false,
+                    createdAt = start - 1L, updatedAt = start - 1L
+                )
+            )
+            val taskId = "calendar-task-$eventId"
+            repository.recordAutomationDispatch(
+                eventId = eventId,
+                nextRunAt = start,
+                lastRunAt = System.currentTimeMillis(),
+                taskId = taskId,
+                idempotencyKey = "calendar-key-$eventId"
+            )
+            val persisted = repository.event(eventId)
+            assertNotNull(persisted)
+            assertEquals(taskId, persisted?.lastTaskId)
+        } finally {
+            repository.delete(eventId)
+        }
+    }
+
     @Test
     fun versionFiveDatabaseAddsAutomationGenerationWithoutLosingEvents() {
         val context = ApplicationProvider.getApplicationContext<Context>()
