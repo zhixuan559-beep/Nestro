@@ -32,7 +32,7 @@ object MediaIntelligenceRegistry {
     }
     fun unregister(providerId: String) {
         providers.remove(providerId)
-        if (activeProviderId == providerId) activeProviderId = providers.keys().firstOrNull()
+        if (activeProviderId == providerId) activeProviderId = providers.keys.firstOrNull()
     }
     fun current(): MediaIntelligenceProvider? = activeProviderId?.let(providers::get)
     fun list(): List<MediaIntelligenceProvider> = providers.values.toList().sortedBy { provider -> provider.displayName }
