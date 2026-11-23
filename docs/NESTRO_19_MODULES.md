@@ -26,7 +26,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 4 | 数据与备份 | Room 持久化、迁移、版本化 JSON 备份/恢复和项目包代码存在；媒体工程 ZIP 当前独立于通用备份；记忆跨项目共享字段已补 13→14 迁移与完整备份往返测试源码，尚待执行验证 |
 | 5 | 项目空间 | 项目 CRUD、项目范围、READ/WRITE 授权和资源归属代码存在；跨模块文件/专家/Skill/工作流/产物/媒体资源的生命周期一致性仍需联测 |
 | 6 | 知识库 | 本地文档导入、PDF OCR、分块、BM25/FTS、BGE ONNX 向量检索和索引重建代码存在；真实模型性能、长文档和设备资源验证待后续阶段 |
-| 7 | 我的记忆 | 显式/自动记忆、来源校验、跨项目共享与语义召回已有代码；ChatRequestContextAssembler 已有 64 项/60 秒最终上下文 LRU，按项目、会话、prompt、基础上下文和记忆版本隔离。尚非独立全局/项目/会话三级缓存；历史召回缓存键已纳入当前项目其他会话的语料版本，新增/编辑/删除历史会话后会重新检索。saveCandidates 的来源项目/会话/user 消息校验与插入或替换已收进 DAO @Transaction，避免预检后并发删除造成来源失效；来源 ID 仍无外键级联，但会话删除及消息删除/改写路径已在 Room 事务内清理本项目对应来源记忆；未来新增删除入口必须复用同一清理规则；迁移与备份测试源码待执行。 |
+| 7 | 我的记忆 | 显式/自动记忆、来源校验、跨项目共享与语义召回已有代码；技能库导入/导出复用严格 SkillSemVer、权限/依赖 schema 与签名指纹校验，SkillBundleParser.fromStored 校验持久化元数据，LocalBackupRepository 在备份导出和恢复前验证技能集合。ChatRequestContextAssembler 已有 64 项/60 秒最终上下文 LRU，按项目、会话、prompt、基础上下文和记忆版本隔离。尚非独立全局/项目/会话三级缓存；历史召回缓存键已纳入当前项目其他会话的语料版本，新增/编辑/删除历史会话后会重新检索。saveCandidates 的来源项目/会话/user 消息校验与插入或替换已收进 DAO @Transaction，避免预检后并发删除造成来源失效；来源 ID 仍无外键级联，但会话删除及消息删除/改写路径已在 Room 事务内清理本项目对应来源记忆；未来新增删除入口必须复用同一清理规则；迁移与备份测试源码待执行。 |
 | 8 | Phone Agent | 隔离虚拟屏、Mika ADB/TLS 配对、Binder nonce/UID/证书校验、Accessibility 节点桥接、任务授权/暂停/用户接管及素材导入已有代码。`PhoneAgentPlanner` 已区分 NAVIGATION 与 TRAVEL：单点导航和多日旅行均有规划步骤；路线通过 Google Maps Directions 预览，要求核验后由 confirm_sensitive 交用户确认，再交主屏启动。该顺序当前由规划/模型指令驱动，尚未证明有绕过即阻断的硬状态门禁；仍待测试与真机验收。预览支持单击缩放、双击/长按触控、画面拖动滑动、四角缩放；顶部独立拖动条可移动窗口，并通过边界函数限制在可视区域内。对应窗口位置边界测试源码已补充，尚未执行。 |
 | 9 | 语音系统 | 已合并并锁定（PR #9；CI Run #1190 的 verify 与 Android emulator instrumentation 均通过；真机音频路由/兼容性仍待最终设备阶段） |
 | 10 | 我的作品 | ArtifactStore 产物记录、项目范围、文件校验、版本/索引恢复和备份验证代码已纳入 main；媒体工程原文件由模块17 ZIP 归档管理，二者边界需保持清晰；完整自动化/设备验收待后续阶段 |
@@ -464,3 +464,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - OpenAI：图片与 WAV/MP3 input_audio；Anthropic：图片；Gemini：图片/音频/视频 inlineData。Gemini 每请求限制 1 个音频、最多 10 个视频；当前 resolver 将音视频单文件限制在 8 MiB、请求媒体总量限制在 12 MiB。
 - `ChatRequestPolicy` 按媒体类型/时长估算 token 成本；大文件仍由 `media.ai.run/status` 处理。模型能力声明/兼容性门禁和真实服务商联调仍未完成。
 - 新增 serializer、asset_id 解析、时长预算与 coordinator 回归测试源码；未运行编译或测试。
+
+
+## 2026-11-24 技能库持久化边界补充
+
+- 从 `feature/module-7-skill-library` 仅提取 `fromStored` 的安全校验思路，按 main 当前 `SkillSemVer`、权限白名单与 signerFingerprint 结构适配，不合并旧分支的依赖解析器。
+- `LocalBackupRepository` 在备份导出与恢复前调用 `SkillBundleParser.validateStoredCollection`；损坏 JSON、错误权限/依赖类型、非法 SemVer/指纹和超限 UTF-8 元数据将被拒绝。
+- 新增对应单元测试源码，未运行编译或测试。
