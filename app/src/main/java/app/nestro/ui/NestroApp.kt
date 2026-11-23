@@ -149,6 +149,9 @@ internal fun adaptiveContentPaddingDp(screenWidthDp: Int): Int = when {
 
 private fun expertTeamConversationId(teamId: String, projectId: String): String =
     UUID.nameUUIDFromBytes("nost-team-chat:$teamId:$projectId".toByteArray(Charsets.UTF_8)).toString()
+ 
+private fun expertConversationId(expertName: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-expert-chat:$expertName:$projectId".toByteArray(Charsets.UTF_8)).toString()
 
 @Composable
 fun NestroApp(initialPage: String = "home") {
@@ -502,6 +505,52 @@ fun NestroApp(initialPage: String = "home") {
                 .putString("active_conversation_id", conversationId)
                 .putString("active_project_id", activeProjectId)
                 .putString("selected_team_id", teamId)
+                .apply()
+            page = "home"
+        }
+    }
+
+    fun openExpertChat(expertName: String) {
+        val conversationId = expertConversationId(expertName, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, expertName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = expertName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            selectedExpert = expertName
+            selectedTeamId = ""
+            taskModeEnabled = true
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_expert", expertName)
+                .remove("selected_team_id")
+                .putBoolean("chat_task_mode_enabled", true)
                 .apply()
             page = "home"
         }
@@ -2486,9 +2535,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 }
                                             )
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
-                                                selectedExpert = name
-                                                prefs.edit().putString("selected_expert", name).apply()
-                                                page = "home"
+                                                openExpertChat(name)
                                             }) {
                                                 Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
