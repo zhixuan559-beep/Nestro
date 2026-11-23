@@ -25,7 +25,6 @@ import app.nestro.data.ProjectAccessControlStore
 import app.nestro.data.ProjectResourceKind
 import app.nestro.data.ProjectMemorySettingsStore
 import app.nestro.data.ArtifactStore
-import app.nestro.calendar.CalendarPage
 import app.nestro.media.MediaProjectStore
 import app.nestro.media.MediaEditorPage
 import app.nestro.data.KnowledgeDocumentEntity
