@@ -79,6 +79,14 @@ internal fun filterTaskAllowedTools(
 ): List<AgentToolSpec> =
     if (allowedToolIds == null) specs else specs.filter { it.id in allowedToolIds }
 
+internal fun guardRetryAfterToolExecution(error: Throwable, toolCallsExecuted: Int): Throwable =
+    if (toolCallsExecuted > 0 && error !is app.nestro.agent.NonRetryableAgentTaskException) {
+        app.nestro.agent.NonRetryableAgentTaskException(
+            "工具调用已开始或执行结果不确定，已阻止自动重试以避免重复副作用：${error.message ?: "模型工具调度失败"}",
+            error
+        )
+    } else error
+
 /**
  * Model-led decision loop. The model chooses reply vs. a declared capability;
  * this dispatcher owns the allow-list, permission gate, execution and result handoff.
@@ -778,12 +786,7 @@ ${prompt.take(8_000)}
             markTerminal(AgentTaskStatus.PAUSED, "工具调度已取消，可重新发起")
             throw cancelled
         } catch (error: Exception) {
-            val terminalError = if (nativeToolCallsExecuted.get() > 0 && error !is app.nestro.agent.NonRetryableAgentTaskException) {
-                app.nestro.agent.NonRetryableAgentTaskException(
-                    "工具调用已开始或执行结果不确定，已阻止自动重试以避免重复副作用：${error.message ?: "模型工具调度失败"}",
-                    error
-                )
-            } else error
+            val terminalError = guardRetryAfterToolExecution(error, nativeToolCallsExecuted.get())
             markTerminal(AgentTaskStatus.FAILED, terminalError.message ?: "模型工具调度失败")
             throw terminalError
         }
