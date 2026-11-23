@@ -31,7 +31,8 @@ object MediaProjectCodec {
                     .put("sourceEndMs", clip.sourceEndMs).put("muted", clip.muted))
             }
             tracks.put(JSONObject().put("id", track.id).put("name", track.name)
-                .put("kind", track.kind.name).put("muted", track.muted).put("clips", clips))
+                .put("kind", track.kind.name).put("muted", track.muted)
+                .put("volume", track.volume).put("clips", clips))
         }
         val subtitles = JSONArray()
         timeline.subtitles.forEach { cue ->
@@ -59,7 +60,9 @@ object MediaProjectCodec {
             MediaTrack(
                 id = row.getString("id"), name = row.getString("name"),
                 kind = MediaTrackKind.valueOf(row.getString("kind")),
-                muted = row.optBoolean("muted"), clips = clips
+                muted = row.optBoolean("muted"),
+                volume = row.optDouble("volume", 1.0).toFloat(),
+                clips = clips
             )
         }
         val subtitleJson = json.optJSONArray("subtitles") ?: JSONArray()
