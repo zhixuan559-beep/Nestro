@@ -2,6 +2,7 @@ package app.nestro.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WorkflowEngineTest {
@@ -137,4 +138,221 @@ class WorkflowEngineTest {
         }
         assertEquals(true, failure is IllegalArgumentException)
     }
+    @Test fun parallelGroupMustBeContiguousAndHaveAtLeastTwoEnabledSteps() {
+        val invalid = WorkflowDefinition("invalid-parallel", "无效并行组", "", listOf(
+            WorkflowStep(title = "A", instruction = "A", parallelGroup = "research"),
+            WorkflowStep(title = "顺序步骤", instruction = "middle"),
+            WorkflowStep(title = "B", instruction = "B", parallelGroup = "research")
+        ))
+        assertTrue(runCatching { WorkflowDefinitionCodec.validate(invalid) }.isFailure)
+        val single = WorkflowDefinition("single-parallel", "单步组", "", listOf(
+            WorkflowStep(title = "A", instruction = "A", parallelGroup = "research")
+        ))
+        assertTrue(runCatching { WorkflowDefinitionCodec.validate(single) }.isFailure)
+    }
+
+    @Test fun codecPreservesApprovalConditionsAndParallelGroups() {
+        val workflow = WorkflowDefinition("config", "配置", "", listOf(
+            WorkflowStep(
+                title = "并行调研",
+                instruction = "分别调研",
+                condition = "nonblank",
+                approvalRequired = true,
+                parallelGroup = "research"
+            )
+        ))
+        val decoded = WorkflowDefinitionCodec.decode(WorkflowDefinitionCodec.encode(listOf(workflow))).single()
+        assertEquals("nonblank", decoded.steps.single().condition)
+        assertTrue(decoded.steps.single().approvalRequired)
+        assertEquals("research", decoded.steps.single().parallelGroup)
+    }
+
+    @Test fun workflowEditorCanInsertRemoveMoveAndUpdateSteps() {
+        val first = WorkflowStep(title = "A", instruction = "a")
+        val second = WorkflowStep(title = "B", instruction = "b")
+        var workflow = WorkflowDefinition(name = "编辑", description = "", steps = listOf(first, second))
+        val third = WorkflowStep(title = "C", instruction = "c")
+        workflow = WorkflowDefinitionEditor.insertStep(workflow, 1, third)
+        assertEquals(listOf("A", "C", "B"), workflow.steps.map { it.title })
+        workflow = WorkflowDefinitionEditor.moveStep(workflow, third.id, 2)
+        assertEquals(listOf("A", "B", "C"), workflow.steps.map { it.title })
+        workflow = WorkflowDefinitionEditor.updateStep(workflow, second.id) { it.copy(title = "B2") }
+        assertEquals("B2", workflow.steps[1].title)
+        workflow = WorkflowDefinitionEditor.removeStep(workflow, first.id)
+        assertEquals(listOf("B2", "C"), workflow.steps.map { it.title })
+    }
+
+    @Test fun workflowConditionCanSkipAndApprovalCanReject() = kotlinx.coroutines.test.runTest {
+        val skipped = WorkflowDefinition("w1","条件","",listOf(
+            WorkflowStep(title="条件步",instruction="x",condition="contains:命中")
+        ))
+        val result = WorkflowEngine.run(skipped,"目标",{ _, _ -> "不会执行" })
+        assertEquals("skipped", result.stepRuns.single().status)
+
+        val gated = WorkflowDefinition("w2","审批","",listOf(
+            WorkflowStep(title="审批步",instruction="x",approvalRequired=true)
+        ))
+        try {
+            WorkflowEngine.run(gated,"目标",{ _, _ -> "不会执行" },requestApproval={ _, _ -> false })
+            throw AssertionError("expected rejection")
+        } catch (e: WorkflowExecutionException) {
+            assertEquals("approval_rejected", e.stepRuns.single().status)
+        }
+    }
+
+    @Test fun successfulRunExposesCheckpointForResume() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("w","恢复","",listOf(
+            WorkflowStep(title="A",instruction="a"),
+            WorkflowStep(title="B",instruction="b")
+        ))
+        val result = WorkflowEngine.run(workflow,"输入",{ step, _ -> step.title })
+        assertEquals(2, result.checkpointIndex)
+        assertEquals(2, result.completedSteps)
+    }
+
+    @Test fun parallelGroupRunsConcurrentlyAndMergesOutputsForNextStep() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("parallel", "并行", "", listOf(
+            WorkflowStep(title = "研究 A", instruction = "A", parallelGroup = "research", retries = 0),
+            WorkflowStep(title = "研究 B", instruction = "B", parallelGroup = "research", retries = 0),
+            WorkflowStep(title = "汇总", instruction = "汇总", retries = 0)
+        ))
+        val bothStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val prompts = java.util.concurrent.ConcurrentHashMap<String, String>()
+        val result = WorkflowEngine.run(workflow, "目标", { step, prompt ->
+            prompts[step.title] = prompt
+            if (step.title.startsWith("研究")) {
+                if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+                kotlinx.coroutines.withTimeout(2_000) { bothStarted.await() }
+                step.title + "结果"
+            } else {
+                assertEquals(true, prompt.contains("研究 A结果"))
+                assertEquals(true, prompt.contains("研究 B结果"))
+                "最终结果"
+            }
+        })
+        assertEquals(3, result.completedSteps)
+        assertEquals("最终结果", result.output)
+        assertEquals(true, prompts["研究 A"]?.contains("用户原始目标") == true)
+        assertEquals(true, prompts["研究 B"]?.contains("用户原始目标") == true)
+    }
+
+    @Test fun parallelWavePersistsSuccessfulSiblingWhenAnotherSiblingFails() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("parallel-partial", "并行部分恢复", "", listOf(
+            WorkflowStep(id = "research-a", title = "研究 A", instruction = "A", parallelGroup = "research", retries = 0),
+            WorkflowStep(id = "research-b", title = "研究 B", instruction = "B", parallelGroup = "research", retries = 0),
+            WorkflowStep(id = "synthesis", title = "汇总", instruction = "汇总", retries = 0)
+        ))
+        val bothStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val checkpointed = mutableListOf<String>()
+        val failure = runCatching {
+            WorkflowEngine.run(
+                workflow = workflow,
+                userInput = "研究目标",
+                invokeModel = { step, _ ->
+                    if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+                    kotlinx.coroutines.withTimeout(2_000) { bothStarted.await() }
+                    if (step.id == "research-b") error("B 暂时失败")
+                    "研究 A已完成"
+                },
+                onStepCompleted = { _, run, checkpointOutput ->
+                    checkpointed += "${run.stepId}:$checkpointOutput"
+                }
+            )
+        }.exceptionOrNull() as WorkflowExecutionException
+        assertTrue(checkpointed.any { it.startsWith("research-a:研究目标") })
+        assertTrue(failure.stepRuns.any { it.stepId == "research-b" && it.status == "failed" })
+
+        val resumedCalls = mutableListOf<String>()
+        val resumed = WorkflowEngine.run(
+            workflow = workflow,
+            userInput = "研究目标",
+            invokeModel = { step, prompt ->
+                resumedCalls += step.id
+                if (step.id == "research-b") {
+                    assertEquals(false, prompt.contains("研究 A已完成"))
+                    "研究 B已完成"
+                } else {
+                    assertTrue(prompt.contains("研究 A已完成"))
+                    assertTrue(prompt.contains("研究 B已完成"))
+                    "汇总完成"
+                }
+            },
+            resumeCompletedRuns = listOf(
+                WorkflowStepRun("research-a", "研究 A", "success", 1, output = "研究 A已完成")
+            ),
+            resumeOutput = "研究目标"
+        )
+        assertEquals(listOf("research-b", "synthesis"), resumedCalls)
+        assertEquals("汇总完成", resumed.output)
+    }
+
+    @Test fun resumedParallelWaveRejoinsPriorSiblingWithoutFeedingItIntoSiblingPrompt() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("parallel-resume", "并行恢复", "", listOf(
+            WorkflowStep(id = "research-a", title = "研究 A", instruction = "A", parallelGroup = "research"),
+            WorkflowStep(id = "research-b", title = "研究 B", instruction = "B", parallelGroup = "research"),
+            WorkflowStep(id = "synthesis", title = "汇总", instruction = "汇总")
+        ))
+        val prompts = mutableMapOf<String, String>()
+        val result = WorkflowEngine.run(
+            workflow = workflow,
+            userInput = "研究目标",
+            invokeModel = { step, prompt ->
+                prompts[step.id] = prompt
+                if (step.id == "research-b") {
+                    assertEquals(false, prompt.contains("研究 A已完成"))
+                    "研究 B已完成"
+                } else {
+                    assertTrue(prompt.contains("研究 A已完成"))
+                    assertTrue(prompt.contains("研究 B已完成"))
+                    "最终汇总"
+                }
+            },
+            resumeCompletedRuns = listOf(
+                WorkflowStepRun("research-a", "研究 A", "success", 1, output = "研究 A已完成")
+            ),
+            resumeOutput = "研究目标"
+        )
+        assertEquals(3, result.completedSteps)
+        assertTrue(prompts.getValue("synthesis").contains("研究 A已完成"))
+        assertTrue(prompts.getValue("synthesis").contains("研究 B已完成"))
+        assertEquals("最终汇总", result.output)
+    }
+
+    @Test fun approvalRequiredFailsClosedWithoutApprovalHandler() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("approval-default", "审批默认拒绝", "", listOf(
+            WorkflowStep(title = "外部操作", instruction = "执行", approvalRequired = true)
+        ))
+        val failure = runCatching {
+            WorkflowEngine.run(workflow, "目标", { _, _ -> "不应执行" })
+        }.exceptionOrNull()
+        assertTrue(failure is WorkflowExecutionException)
+        assertEquals("approval_rejected", (failure as WorkflowExecutionException).stepRuns.single().status)
+    }
+
+    @Test fun runnerResumesAfterPersistedCompletedStepIds() = kotlinx.coroutines.test.runTest {
+        val workflow = WorkflowDefinition("resume", "恢复", "", listOf(
+            WorkflowStep(id = "step-a", title = "A", instruction = "A"),
+            WorkflowStep(id = "step-b", title = "B", instruction = "B")
+        ))
+        val calls = mutableListOf<String>()
+        val result = WorkflowEngine.run(
+            workflow = workflow,
+            userInput = "原始目标",
+            invokeModel = { step, prompt ->
+                calls += step.id
+                assertEquals(true, prompt.contains("A 的持久化成果"))
+                "B 完成"
+            },
+            resumeCompletedRuns = listOf(
+                WorkflowStepRun("step-a", "A", "success", 1, output = "A 的持久化成果")
+            ),
+            resumeOutput = "A 的持久化成果"
+        )
+        assertEquals(listOf("step-b"), calls)
+        assertEquals(2, result.completedSteps)
+        assertEquals("B 完成", result.output)
+    }
+
 }

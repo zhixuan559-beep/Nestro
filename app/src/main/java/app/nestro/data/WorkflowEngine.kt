@@ -3,6 +3,7 @@ package app.nestro.data
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import kotlinx.coroutines.async
 
 enum class WorkflowStepKind { PROMPT, EXPERT, SKILL }
 
@@ -17,7 +18,10 @@ data class WorkflowStep(
     val timeoutSeconds:Int=120,
     val continueOnError:Boolean=false,
     val skipIfPreviousContains:String="",
-    val repeatCount:Int=1
+    val repeatCount:Int=1,
+    val condition:String="",
+    val approvalRequired:Boolean=false,
+    val parallelGroup:String=""
 )
 
 data class WorkflowDefinition(
@@ -41,7 +45,8 @@ data class WorkflowRunResult(
     val output:String,
     val completedSteps:Int,
     val stepOutputs:List<String>,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val checkpointIndex:Int = 0
 )
 
 data class WorkflowRunRecord(
@@ -52,15 +57,17 @@ data class WorkflowRunRecord(
     val startedAt:Long,
     val status:String,
     val output:String,
-    val stepRuns:List<WorkflowStepRun> = emptyList()
+    val stepRuns:List<WorkflowStepRun> = emptyList(),
+    val projectId:String = "default"
 )
 
 object WorkflowRunHistoryCodec {
     fun encode(records:List<WorkflowRunRecord>):String = JSONArray().apply {
-        records.take(50).forEach { record ->
+        records.take(200).forEach { record ->
             put(JSONObject().put("id",record.id).put("workflowId",record.workflowId)
                 .put("workflowName",record.workflowName).put("input",record.input.take(12000))
-                .put("startedAt",record.startedAt).put("status",record.status)
+                .put("startedAt",record.startedAt).put("status",record.status).put("projectId",record.projectId)
+                .put("checkpointIndex",record.stepRuns.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1)
                 .put("output",record.output.take(20000))
                 .put("stepRuns",JSONArray().apply {
                     record.stepRuns.take(20).forEach { step ->
@@ -100,10 +107,37 @@ object WorkflowRunHistoryCodec {
                 startedAt=item.optLong("startedAt"),
                 status=item.optString("status").take(20),
                 output=item.optString("output").take(20000),
-                stepRuns=parsed
+                stepRuns=parsed,
+                projectId=item.optString("projectId", "default").ifBlank { "default" }
             )
-        }.take(50)
+        }.take(200)
     }.getOrDefault(emptyList())
+}
+
+object WorkflowDefinitionEditor {
+    fun insertStep(workflow: WorkflowDefinition, index: Int, step: WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.size < 20) { "工作流最多支持 20 个步骤" }
+        val target = index.coerceIn(0, workflow.steps.size)
+        return workflow.copy(steps = workflow.steps.toMutableList().apply { add(target, step) })
+    }
+    fun removeStep(workflow: WorkflowDefinition, stepId: String): WorkflowDefinition {
+        require(workflow.steps.size > 1) { "工作流至少保留 1 个步骤" }
+        val remaining = workflow.steps.filterNot { it.id == stepId }
+        require(remaining.size < workflow.steps.size) { "未找到要删除的步骤" }
+        return workflow.copy(steps = remaining)
+    }
+    fun moveStep(workflow: WorkflowDefinition, stepId: String, targetIndex: Int): WorkflowDefinition {
+        val currentIndex = workflow.steps.indexOfFirst { it.id == stepId }
+        require(currentIndex >= 0) { "未找到要移动的步骤" }
+        val items = workflow.steps.toMutableList()
+        val item = items.removeAt(currentIndex)
+        items.add(targetIndex.coerceIn(0, items.size), item)
+        return workflow.copy(steps = items)
+    }
+    fun updateStep(workflow: WorkflowDefinition, stepId: String, transform: (WorkflowStep) -> WorkflowStep): WorkflowDefinition {
+        require(workflow.steps.any { it.id == stepId }) { "未找到要编辑的步骤" }
+        return workflow.copy(steps = workflow.steps.map { if (it.id == stepId) transform(it) else it })
+    }
 }
 
 object WorkflowDefinitionCodec {
@@ -116,7 +150,9 @@ object WorkflowDefinitionCodec {
                         .put("retries",step.retries).put("timeoutSeconds",step.timeoutSeconds)
                         .put("continueOnError",step.continueOnError)
                         .put("skipIfPreviousContains",step.skipIfPreviousContains)
-                        .put("repeatCount",step.repeatCount))
+                        .put("repeatCount",step.repeatCount)
+                        .put("condition",step.condition).put("approvalRequired",step.approvalRequired)
+                        .put("parallelGroup",step.parallelGroup))
                 } }))
         }
     }.toString()
@@ -143,7 +179,10 @@ object WorkflowDefinitionCodec {
                     timeoutSeconds=step.optInt("timeoutSeconds",120).coerceIn(15,300),
                     continueOnError=step.optBoolean("continueOnError",false),
                     skipIfPreviousContains=step.optString("skipIfPreviousContains").take(120),
-                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3)
+                    repeatCount=step.optInt("repeatCount",1).coerceIn(1,3),
+                    condition=step.optString("condition").take(200),
+                    approvalRequired=step.optBoolean("approvalRequired",false),
+                    parallelGroup=step.optString("parallelGroup").take(40)
                 )
             }.take(20)
             val name=item.optString("name").trim()
@@ -163,6 +202,15 @@ object WorkflowDefinitionCodec {
             require(it.timeoutSeconds in 15..300) { "单步超时必须在 15 到 300 秒之间" }
             require(it.skipIfPreviousContains.length<=120) { "条件文本不能超过 120 个字符" }
             require(it.repeatCount in 1..3) { "单步循环次数必须在 1 到 3 次之间" }
+            require(it.condition.length<=200) { "条件不能超过 200 个字符" }
+            require(it.parallelGroup.length<=40) { "并行组名称不能超过 40 个字符" }
+            if(it.enabled && it.parallelGroup.isNotBlank()) {
+                val enabledGroups = workflow.steps.filter { step -> step.enabled }.map { step -> step.parallelGroup }
+                val positions = enabledGroups.mapIndexedNotNull { index, group -> index.takeIf { group == it.parallelGroup } }
+                require(positions.size in 2..4 && positions.last() - positions.first() + 1 == positions.size) {
+                    "并行组“${it.parallelGroup}”必须由连续的 2 到 4 个启用步骤组成"
+                }
+            }
             if(it.kind != WorkflowStepKind.PROMPT) {
                 require(it.targetId.isNotBlank()) { "步骤“${it.title}”尚未选择对应的专家或技能" }
             }
@@ -181,92 +229,224 @@ object WorkflowEngine {
         workflow:WorkflowDefinition,
         userInput:String,
         invokeModel:suspend (WorkflowStep,String)->String,
-        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> }
+        onStep:suspend (Int,WorkflowStep)->Unit={ _, _ -> },
+        onStepCompleted:suspend (Int,WorkflowStepRun,String)->Unit={ _, _, _ -> },
+        requestApproval:suspend (WorkflowStep,String)->Boolean={ _, _ -> false },
+        resumeCompletedRuns:List<WorkflowStepRun> = emptyList(),
+        resumeOutput:String = ""
     ):WorkflowRunResult {
         WorkflowDefinitionCodec.validate(workflow)
         require(userInput.isNotBlank() && userInput.length<=12_000) { "工作流输入为空或过长" }
-        var previousOutput=""
-        val outputs=mutableListOf<String>()
-        val runs=mutableListOf<WorkflowStepRun>()
-        val active=workflow.steps.filter { it.enabled }
-        require(active.isNotEmpty()) { "工作流没有启用的步骤" }
-        active.forEachIndexed { index,step ->
-            if(step.skipIfPreviousContains.isNotBlank() &&
-                previousOutput.contains(step.skipIfPreviousContains,ignoreCase=true)) {
-                runs += WorkflowStepRun(step.id,step.title,"skipped",0,output=previousOutput)
-                outputs += previousOutput
-                return@forEachIndexed
-            }
-            var stepOutput=previousOutput
-            var totalAttempts=0
-            var failedMessage=""
-            var completedIterations=0
-            for(iteration in 1..step.repeatCount) {
-                val iterationInput=stepOutput
-                val prompt=buildString {
+        require(resumeOutput.length <= 24_000 &&
+            resumeCompletedRuns.map { it.stepId }.distinct().size == resumeCompletedRuns.size &&
+            resumeCompletedRuns.all { row ->
+                workflow.steps.any { it.id == row.stepId } &&
+                    row.status in setOf("success", "skipped", "failed") &&
+                    row.output.length <= 8_000 && row.error.length <= 2_000
+            }) { "工作流恢复数据无效或超出长度限制" }
+        var previousOutput = resumeOutput
+        val outputs = resumeCompletedRuns.map { it.output }.toMutableList()
+        val runs = resumeCompletedRuns.toMutableList()
+        val completedIds = resumeCompletedRuns.map { it.stepId }.toSet()
+        val active = workflow.steps.filter { it.enabled && it.id !in completedIds }
+        require(active.isNotEmpty() || resumeCompletedRuns.isNotEmpty()) { "工作流没有启用的步骤" }
+
+        suspend fun executeStep(index: Int, step: WorkflowStep, input: String): Pair<WorkflowStepRun, String> {
+            var stepOutput = input
+            var totalAttempts = 0
+            var failedMessage = ""
+            var completedIterations = 0
+            for (iteration in 1..step.repeatCount) {
+                val iterationInput = stepOutput
+                val prompt = buildString {
                     append("工作流：").append(workflow.name).append("\n")
                     append("当前步骤：").append(step.title).append("\n")
                     append("当前迭代：").append(iteration).append(" / ").append(step.repeatCount).append("\n")
                     append("步骤要求：").append(step.instruction).append("\n\n")
                     append("用户原始目标：\n").append(userInput).append("\n\n")
-                    if(iterationInput.isNotBlank()) {
-                        append(if(iteration==1) "前序步骤输出：" else "本步骤上一次迭代输出：")
-                            .append("\n").append(iterationInput.take(12000)).append("\n\n")
+                    if (iterationInput.isNotBlank()) {
+                        append(if (iteration == 1) "前序步骤输出：" else "本步骤上一次迭代输出：")
+                            .append("\n").append(iterationInput.take(12_000)).append("\n\n")
                     }
                     append("请只完成当前步骤的本次迭代，输出可供后续迭代或下一步骤继续处理的结果。")
                 }
-                var attempts=0
-                var result=""
-                var failure:Throwable?=null
-                while(attempts<=step.retries && result.isBlank()) {
+                var attempts = 0
+                var result = ""
+                var failure: Throwable? = null
+                while (attempts <= step.retries && result.isBlank()) {
                     attempts++
-                    onStep(index+1,step.copy(title=if(iteration==1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
+                    onStep(index + 1, step.copy(title = if (iteration == 1) step.title else "${step.title}（迭代 $iteration/${step.repeatCount}）"))
                     try {
-                        result=kotlinx.coroutines.withTimeout(step.timeoutSeconds*1000L) {
-                            invokeModel(step,prompt).trim()
+                        result = kotlinx.coroutines.withTimeout(step.timeoutSeconds * 1000L) {
+                            invokeModel(step, prompt).trim().let { output ->
+                                if (step.parallelGroup.isNotBlank()) {
+                                    require(output.length <= 5_000) { "并行步骤“${step.title}”输出超过 5,000 字符上限" }
+                                }
+                                output.take(24_000)
+                            }
                         }
                         require(result.isNotBlank()) { "模型返回了空结果" }
-                    } catch (cancelled:kotlinx.coroutines.CancellationException) {
-                        if(cancelled is kotlinx.coroutines.TimeoutCancellationException) {
-                            failure=IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+                            failure = IllegalStateException("步骤“${step.title}”执行超时（${step.timeoutSeconds} 秒）")
                         } else throw cancelled
-                    } catch (error:Exception) {
-                        failure=error
+                    } catch (error: Exception) {
+                        failure = error
                     }
-                    if(result.isBlank() && attempts<=step.retries) {
-                        onStep(index+1,step.copy(title="${step.title}（重试 $attempts/${step.retries}）"))
+                    if (result.isBlank() && attempts <= step.retries) {
+                        onStep(index + 1, step.copy(title = "${step.title}（重试 $attempts/${step.retries}）"))
                     }
                 }
                 totalAttempts += attempts
-                if(result.isBlank()) {
-                    failedMessage=failure?.message ?: "未知错误"
-                    if(!step.continueOnError) {
-                        runs += WorkflowStepRun(step.id,step.title,"failed",totalAttempts,error=failedMessage,iterations=completedIterations)
-                        throw WorkflowExecutionException(
-                            "步骤“${step.title}”失败：$failedMessage",
-                            runs.toList(),
-                            failure
-                        )
+                if (result.isBlank()) {
+                    failedMessage = failure?.message ?: "未知错误"
+                    if (!step.continueOnError) {
+                        val failed = WorkflowStepRun(step.id, step.title, "failed", totalAttempts, error = failedMessage, iterations = completedIterations)
+                        throw WorkflowExecutionException("步骤“${step.title}”失败：$failedMessage", runs + failed, failure)
                     }
-                    stepOutput="步骤失败，已按设置继续。错误：$failedMessage"
+                    stepOutput = "步骤失败，已按设置继续。错误：$failedMessage"
                     break
                 }
-                stepOutput=result
+                stepOutput = result
                 completedIterations++
             }
-            val runStatus=if(failedMessage.isBlank()) "success" else "failed"
-            runs += WorkflowStepRun(
-                stepId=step.id,
-                title=step.title,
-                status=runStatus,
-                attempts=totalAttempts,
-                output=stepOutput,
-                error=failedMessage,
-                iterations=completedIterations
-            )
-            previousOutput=stepOutput
-            outputs += stepOutput
+            val status = if (failedMessage.isBlank()) "success" else "failed"
+            return WorkflowStepRun(
+                stepId = step.id, title = step.title, status = status,
+                attempts = totalAttempts, output = stepOutput, error = failedMessage,
+                iterations = completedIterations
+            ) to stepOutput
         }
-        return WorkflowRunResult(previousOutput,runs.count { it.status == "success" },outputs,runs)
+
+        var cursor = 0
+        while (cursor < active.size) {
+            val groupName = active[cursor].parallelGroup
+            val groupStart = cursor
+            cursor++
+            if (groupName.isNotBlank()) {
+                while (cursor < active.size && active[cursor].parallelGroup == groupName) cursor++
+            }
+            val group = active.subList(groupStart, cursor)
+            val ready = mutableListOf<Pair<Int, WorkflowStep>>()
+            group.forEachIndexed { offset, step ->
+                val index = workflow.steps.indexOfFirst { it.id == step.id }
+                when {
+                    step.condition.isNotBlank() && !evaluateCondition(step.condition, previousOutput) -> {
+                        val skipped = WorkflowStepRun(step.id, step.title, "skipped", 0, error = "条件未满足")
+                        runs += skipped
+                        outputs += previousOutput
+                        onStepCompleted(index + 1, skipped, previousOutput)
+                    }
+                    step.approvalRequired && !requestApproval(step, previousOutput) -> {
+                        val rejected = WorkflowStepRun(step.id, step.title, "approval_rejected", 0, error = "审批未通过")
+                        runs += rejected
+                        throw WorkflowExecutionException("步骤“${step.title}”未获批准", runs.toList())
+                    }
+                    step.skipIfPreviousContains.isNotBlank() &&
+                        previousOutput.contains(step.skipIfPreviousContains, ignoreCase = true) -> {
+                        val skipped = WorkflowStepRun(step.id, step.title, "skipped", 0, output = previousOutput)
+                        runs += skipped
+                        outputs += previousOutput
+                        onStepCompleted(index + 1, skipped, previousOutput)
+                    }
+                    else -> ready += index to step
+                }
+            }
+            if (ready.isEmpty()) continue
+            val groupInput = previousOutput
+            val isParallelWave = ready.size > 1 && groupName.isNotBlank()
+            val outcomes: List<Result<Pair<WorkflowStepRun, String>>> = if (isParallelWave) {
+                kotlinx.coroutines.supervisorScope {
+                    ready.map { (index, step) ->
+                        async {
+                            try {
+                                Result.success(executeStep(index, step, groupInput))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Result.failure(error)
+                            }
+                        }
+                    }.map { it.await() }
+                }
+            } else {
+                ready.map { (index, step) -> Result.success(executeStep(index, step, groupInput)) }
+            }
+            val completed = outcomes.mapIndexedNotNull { resultIndex, outcome ->
+                outcome.getOrNull()?.let { Triple(resultIndex, ready[resultIndex].first, it) }
+            }
+            completed.forEach { (_, _, pair) ->
+                runs += pair.first
+                outputs += pair.second
+            }
+            previousOutput = if (groupName.isNotBlank()) {
+                val originalActive = workflow.steps.filter { it.enabled }
+                val originalIndex = originalActive.indexOfFirst { it.id == group.first().second.id }
+                require(originalIndex >= 0) { "并行组恢复位置无效" }
+                var fullStart = originalIndex
+                while (fullStart > 0 && originalActive[fullStart - 1].parallelGroup == groupName) fullStart--
+                var fullEnd = originalIndex + 1
+                while (fullEnd < originalActive.size && originalActive[fullEnd].parallelGroup == groupName) fullEnd++
+                val groupIds = originalActive.subList(fullStart, fullEnd).map { it.id }.toSet()
+                runs.filter { it.stepId in groupIds && it.status != "skipped" }
+                    .sortedBy { row -> originalActive.indexOfFirst { it.id == row.stepId } }
+                    .joinToString("\n\n") { row ->
+                        "【并行步骤：${row.title}】\n${row.output.ifBlank { row.error }}"
+                    }.take(24_000)
+            } else {
+                completed.last().third.second
+            }
+            val failures = outcomes.mapIndexedNotNull { resultIndex, outcome ->
+                outcome.exceptionOrNull()?.let { resultIndex to it }
+            }
+            if (failures.isNotEmpty()) {
+                // Persist every successful sibling before surfacing the wave failure.
+                // The failed siblings remain absent from the checkpoint and are retried
+                // on resume; successful siblings are not repeated.
+                completed.forEach { (_, stepIndex, pair) ->
+                    onStepCompleted(stepIndex + 1, pair.first, groupInput)
+                }
+                failures.forEach { (resultIndex, error) ->
+                    val step = ready[resultIndex].second
+                    val failedRun = (error as? WorkflowExecutionException)?.stepRuns?.lastOrNull()
+                        ?.takeIf { it.status == "failed" }
+                        ?: WorkflowStepRun(step.id, step.title, "failed", 0, error = error.message ?: "并行步骤执行失败")
+                    runs += failedRun
+                }
+                val firstError = failures.first().second
+                throw WorkflowExecutionException(
+                    "并行组“$groupName”中有步骤执行失败：${firstError.message ?: "未知错误"}",
+                    runs.toList(),
+                    firstError
+                )
+            }
+            completed.forEachIndexed { completedIndex, entry ->
+                val (_, stepIndex, pair) = entry
+                // Until the final sibling is checkpointed, retain the group's input.
+                // A crash mid-wave then resumes remaining siblings without feeding them
+                // a partial output that already includes their not-yet-persisted result.
+                val checkpointOutput = if (groupName.isNotBlank() && completedIndex < completed.lastIndex) {
+                    groupInput
+                } else {
+                    previousOutput
+                }
+                onStepCompleted(stepIndex + 1, pair.first, checkpointOutput)
+            }
+        }
+        return WorkflowRunResult(
+            previousOutput,
+            runs.count { it.status == "success" },
+            outputs,
+            runs,
+            runs.indexOfLast { it.status == "success" }.coerceAtLeast(-1) + 1
+        )
+    }
+    private fun evaluateCondition(condition:String, previousOutput:String):Boolean {
+        val c=condition.trim()
+        if(c.equals("always",true)) return true
+        if(c.equals("nonblank",true)) return previousOutput.isNotBlank()
+        if(c.startsWith("contains:",true)) return previousOutput.contains(c.substringAfter(":").trim(),true)
+        if(c.startsWith("not_contains:",true)) return !previousOutput.contains(c.substringAfter(":").trim(),true)
+        return false
     }
 }

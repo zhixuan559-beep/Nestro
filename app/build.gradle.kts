@@ -5,6 +5,8 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val modelscopeOAuthBackendUrl = providers.gradleProperty("modelscopeOAuthBackendUrl").orElse("").get().trim().trimEnd('/')
+
 android {
     namespace = "app.nestro"
     compileSdk = 35
@@ -15,6 +17,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "0.3.1"
+        buildConfigField("String", "MODELSCOPE_OAUTH_BACKEND_URL", "\"${modelscopeOAuthBackendUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -26,7 +29,11 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        aidl = true
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
@@ -39,8 +46,20 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.room:room-runtime:2.6.1")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.1.202505221210-r")
+    implementation("org.slf4j:slf4j-nop:2.0.13")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    val media3Version = "1.9.0"
+    implementation("androidx.media3:media3-common:$media3Version")
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-transformer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.animation:animation")
@@ -48,8 +67,12 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("org.json:json:20240303")
 }

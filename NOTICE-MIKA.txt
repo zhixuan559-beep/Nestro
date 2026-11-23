@@ -1,0 +1,4 @@
+Mika
+Copyright 2026 wangzan101
+
+Portions of the virtual display and isolated phone execution implementation in app/src/main/java/app/nestro/phone/virtualdisplay/mika/ are adapted from Mika (https://github.com/wangzan101/Mika).

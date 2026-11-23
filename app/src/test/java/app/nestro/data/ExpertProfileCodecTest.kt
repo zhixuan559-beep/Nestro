@@ -10,6 +10,18 @@ class ExpertProfileCodecTest {
         assertEquals(profile, decoded)
     }
 
+    @Test fun excludesSkillsWithMissingOrDisabledTransitiveDependencies() {
+        val profile = ExpertProfile(skillNames = listOf("根技能", "独立技能"))
+        val skills = mapOf("根技能" to "root", "中间技能" to "middle", "独立技能" to "standalone")
+        val metadata = mapOf(
+            "根技能" to """{"version":"1.0.0","dependencies":[{"name":"中间技能","version":"^1.0.0"}]}""",
+            "中间技能" to """{"version":"1.0.0","dependencies":[{"name":"缺失技能","version":"*"}]}"""
+        )
+        val context = ExpertProfileCodec.skillContext(profile, skills, emptySet(), metadata)
+        assertFalse(context.contains("root"))
+        assertTrue(context.contains("standalone"))
+    }
+
     @Test fun excludesDisabledOrMissingSkillsFromExecutionContext() {
         val profile = ExpertProfile(skillNames=listOf("检索","写作","不存在"))
         val context = ExpertProfileCodec.skillContext(profile, mapOf("检索" to "检索指令", "写作" to "写作指令"), setOf("写作"))

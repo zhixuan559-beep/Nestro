@@ -40,7 +40,7 @@ object ConversationMemoryStore {
             }
         if (selected.isEmpty()) return@withContext ConversationRecallResult("", emptyList())
         val excerpts = selected.joinToString("\n\n") { hit ->
-            val role = when (hit.role) { "user" -> "用户"; "assistant" -> "Nestro"; else -> hit.role }
+            val role = when (hit.role) { "user" -> "用户"; "assistant" -> "Nost"; else -> hit.role }
             val title = hit.conversationTitle.ifBlank { "未命名对话" }.take(80)
             "[来源会话：$title；conversationId=${hit.conversationId}；messageId=${hit.messageId}；更新时间=${hit.updatedAt}；发言者=$role]\n${hit.content.take(850)}"
         }.take(MAX_CONTEXT_CHARS)

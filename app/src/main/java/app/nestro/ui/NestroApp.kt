@@ -1,36 +1,56 @@
 package app.nestro.ui
 
-import app.nestro.data.ConversationEntity
-import app.nestro.data.MessageEntity
-import app.nestro.data.ProjectEntity
+import app.nestro.NestroApplication
+import app.nestro.model.ModelRegistry
+import app.nestro.mcp.McpToolCenterPage
+import app.nestro.git.GitWorkbenchPage
+import app.nestro.coworkbench.AiCoworkbenchPage
+import app.nestro.model.ModelRegistryCodec
+import app.nestro.model.ModelRequestConfigurationSelector
+import app.nestro.data.runCatchingCancellable
+import app.nestro.data.ModelConfig
+import app.nestro.data.ChatMessage
+import app.nestro.data.allVersions
+import app.nestro.data.ChatRequestExecutionRequest
+import app.nestro.data.ChatResponseStatus
+import app.nestro.data.isCreationIntent
+import app.nestro.data.ConversationRecord
+import app.nestro.data.ConversationPreferencesStore
+import app.nestro.data.ProjectRecord
+import app.nestro.data.ProjectPreferencesStore
+import app.nestro.data.ConversationListItem
 import app.nestro.data.ProjectSpaceRules
+import app.nestro.data.ProjectResourceScopeStore
+import app.nestro.data.ProjectAccessControlStore
+import app.nestro.data.ProjectResourceKind
+import app.nestro.data.ProjectMemorySettingsStore
+import app.nestro.data.ArtifactStore
+import app.nestro.media.MediaProjectStore
+import app.nestro.media.MediaEditorPage
 import app.nestro.data.KnowledgeDocumentEntity
 import app.nestro.data.KnowledgeChunkEntity
-import app.nestro.data.NestroDatabase
-import app.nestro.data.KnowledgeStore
-import app.nestro.data.ConversationMemoryStore
 import app.nestro.data.ConversationRecallSource
-import androidx.room.withTransaction
 
-import app.nestro.phone.PhoneAgentService
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
-import app.nestro.phone.PhoneAgentWorkScheduler
-import app.nestro.data.PhoneAgentTaskStore
+import app.nestro.phone.PhoneAgentNotifications
 import app.nestro.data.PhoneAgentTaskEntity
 import app.nestro.data.PhoneAgentTaskLogEntity
-import app.nestro.data.UserMemoryStore
-import app.nestro.data.MemoryCandidate
 import app.nestro.data.SkillBundle
 import app.nestro.data.SkillBundleParser
 import app.nestro.data.ExpertBundle
 import app.nestro.data.ExpertBundleParser
 import app.nestro.data.LocalBackupCompatibility
-import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
+import app.nestro.data.ModelProfileLifecycle
+import app.nestro.data.ChatRequestStateStore
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.ChatContextRetrievalPolicy
+import app.nestro.data.ChatExecutionAuthorization
+import app.nestro.data.ChatEndpointPolicy
+import app.nestro.data.ChatHttpTransport
 import app.nestro.data.ChatHistoryItem
 import app.nestro.data.ExpertCatalogRules
 import app.nestro.data.ExpertProfile
@@ -38,42 +58,57 @@ import app.nestro.data.ExpertProfileCodec
 import app.nestro.data.ExpertRevision
 import app.nestro.data.ExpertRevisionCodec
 import app.nestro.data.ExpertTemplate
+import app.nestro.data.ExpertTemplateCatalog
+import app.nestro.data.ExpertTemplateBundleCodec
 import app.nestro.data.ExpertTemplateCodec
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamMemberBundle
 import app.nestro.data.ExpertTeamBundleParser
-import app.nestro.data.ExpertTeamEngine
 import app.nestro.data.ExpertTeamDefaults
 import app.nestro.data.ExpertTeamMemberTask
+import app.nestro.data.ExpertProjectPlan
+import app.nestro.data.ExpertWorkPackage
 import app.nestro.data.ExpertTeamRunResult
 import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.WorkflowDefinition
 import app.nestro.data.WorkflowStep
 import app.nestro.data.WorkflowStepKind
 import app.nestro.data.WorkflowDefinitionCodec
-import app.nestro.data.WorkflowEngine
 import app.nestro.data.WorkflowRunHistoryCodec
 import app.nestro.data.WorkflowRunRecord
 import app.nestro.data.WorkflowExecutionException
 import app.nestro.data.UserMemoryEntity
+import app.nestro.data.UserMemoryExportCodec
+import app.nestro.data.KnowledgeEmbeddingModelManager
 import app.nestro.ui.VoiceInputButton
 
 import android.content.Context
 import android.net.Uri
 import android.content.Intent
 import android.provider.Settings
-import android.speech.tts.TextToSpeech
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -85,12 +120,15 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -98,219 +136,591 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
-private val Bg = androidx.compose.ui.graphics.Color(0xFF0F1115)
-private val Card = androidx.compose.ui.graphics.Color(0xFF1A1C20)
-private val Card2 = androidx.compose.ui.graphics.Color(0xFF232529)
-private val Mint = androidx.compose.ui.graphics.Color(0xFF34D399)
-private val Ink = androidx.compose.ui.graphics.Color(0xFFE8EAED)
-private val Muted = androidx.compose.ui.graphics.Color(0xFF8A8F98)
-private val Line = androidx.compose.ui.graphics.Color(0xFF2A2D33)
-private val ColorStop = androidx.compose.ui.graphics.Color(0xFFFF7777)
 
-private data class ChatMessage(val id: String, val role: String, val content: String, val versions: List<String> = emptyList(), val activeVersion: Int = 0)
 
-private fun ChatMessage.allVersions(): List<String> = when {
-    versions.isEmpty() -> listOf(content)
-    activeVersion >= versions.size -> (versions + content).distinct().takeLast(20)
-    else -> versions.distinct().takeLast(20)
+internal fun adaptiveDrawerWidthDp(screenWidthDp: Int): Int = when {
+    screenWidthDp < 360 -> (screenWidthDp - 56).coerceIn(224, 248)
+    screenWidthDp < 600 -> (screenWidthDp - 64).coerceIn(256, 280)
+    screenWidthDp < 840 -> (screenWidthDp * 40 / 100).coerceIn(240, 320)
+    else -> (screenWidthDp * 30 / 100).coerceIn(320, 380)
 }
-private data class ConversationRecord(val id: String, val title: String, val updatedAt: Long, val messages: List<ChatMessage>, val projectId: String = "default")
-private data class ProjectRecord(val id: String, val name: String, val instructions: String, val createdAt: Long, val archivedAt: Long = 0L)
-private data class ExpertTeam(val id: String, val name: String, val description: String, val members: List<String>)
-internal data class ModelConfig(val baseUrl: String, val model: String, val apiKey: String)
+
+internal fun adaptiveContentPaddingDp(screenWidthDp: Int): Int = when {
+    screenWidthDp < 360 -> 12
+    screenWidthDp < 600 -> 16
+    screenWidthDp < 840 -> 24
+    else -> 32
+}
+
+private fun expertTeamConversationId(teamId: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-team-chat:$teamId:$projectId".toByteArray(Charsets.UTF_8)).toString()
+ 
+private fun expertConversationId(expertName: String, projectId: String): String =
+    UUID.nameUUIDFromBytes("nost-expert-chat:$expertName:$projectId".toByteArray(Charsets.UTF_8)).toString()
 
 @Composable
-fun NestroApp() {
+fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val adaptiveDrawerWidth = adaptiveDrawerWidthDp(screenWidthDp).dp
+    val adaptiveContentPadding = adaptiveContentPaddingDp(screenWidthDp).dp
     val scope = rememberCoroutineScope()
-    var ttsReady by remember { mutableStateOf(false) }
-    var speechRate by remember { mutableFloatStateOf(prefsRate(context)) }
-    val speechEngine = remember(context) {
-        TextToSpeech(context) { result ->
-            if (result == TextToSpeech.SUCCESS) {
-                ttsReady = true
-            }
-        }
-    }
-    DisposableEffect(speechEngine) {
-        onDispose {
-            speechEngine.stop()
-            speechEngine.shutdown()
-            ttsReady = false
-        }
-    }
-    LaunchedEffect(speechEngine, ttsReady, speechRate) {
-        if (ttsReady) {
-            speechEngine.language = Locale.SIMPLIFIED_CHINESE
-            speechEngine.setSpeechRate(speechRate)
-        }
-    }
-    val speakMessage: (String) -> Unit = { text ->
-        if (ttsReady && text.isNotBlank()) {
-            speechEngine.speak(text.take(4000), TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
-        }
-    }
-    val stopSpeaking: () -> Unit = { speechEngine.stop() }
+    val appRuntime = context.applicationContext as NestroApplication
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val database = remember { NestroDatabase.get(context) }
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
-    var page by remember { mutableStateOf("home") }
+    var page by remember(initialPage) { mutableStateOf(initialPage) }
+    var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
-    var config by remember { mutableStateOf(ModelConfig("", "", "")) }
-    var modelProfiles by remember { mutableStateOf(ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")) }
-    var activeModelProfileId by remember { mutableStateOf(prefs.getString("active_model_profile_id", "") ?: "") }
-    var modelFailoverEnabled by remember { mutableStateOf(prefs.getBoolean("model_failover_enabled", false)) }
-    var modelUsage by remember { mutableStateOf(ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")) }
-    var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
-    var conversations by remember { mutableStateOf(listOf<ConversationRecord>()) }
-    var projects by remember { mutableStateOf(listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis()))) }
-    var activeProjectId by remember { mutableStateOf("default") }
-    var deletingProjectId by remember { mutableStateOf("") }
-    var showProjectDialog by remember { mutableStateOf(false) }
-    var projectDraftName by remember { mutableStateOf("") }
-    var projectDraftInstructions by remember { mutableStateOf("") }
-    var editingProjectId by remember { mutableStateOf("") }
-    var activeConversationId by remember { mutableStateOf("") }
-    var conversationSearch by remember { mutableStateOf("") }
-    var showRenameConversation by remember { mutableStateOf(false) }
-    var showEditMessageDialog by remember { mutableStateOf(false) }
-    var editMessageId by remember { mutableStateOf("") }
-    var editMessageDraft by remember { mutableStateOf("") }
-    var renameConversationId by remember { mutableStateOf("") }
-    var renameConversationDraft by remember { mutableStateOf("") }
-    var globalMemory by remember { mutableStateOf("") }
-    var memoryDraft by remember { mutableStateOf("") }
-    var automaticMemories by remember { mutableStateOf(emptyList<UserMemoryEntity>()) }
-    var automaticMemoryEnabled by remember { mutableStateOf(prefs.getBoolean("automatic_memory_enabled", false)) }
-    var memoryEdits by remember { mutableStateOf(emptyMap<String, String>()) }
-    var memoryStatus by remember { mutableStateOf("") }
-    var draft by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var stopRequested by remember { mutableStateOf(false) }
-    var activeRequestId by remember { mutableStateOf("") }
-    var reuseLastUserOnSend by remember { mutableStateOf(false) }
-    var pendingAssistantRevision by remember { mutableStateOf<ChatMessage?>(null) }
-    var status by remember { mutableStateOf("尚未配置模型") }
-    var recallSources by remember { mutableStateOf(emptyList<ConversationRecallSource>()) }
-    var showRecallDialog by remember { mutableStateOf(false) }
-    var experts by remember { mutableStateOf(listOf("文案官", "选题狐", "代码佬")) }
-    var expertPrompts by remember { mutableStateOf(loadExpertPrompts(prefs)) }
-    var expertProfiles by remember { mutableStateOf(ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")) }
-    var expertRevisions by remember { mutableStateOf(ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")) }
-    var expertTemplates by remember { mutableStateOf(ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")) }
-    var showExpertTemplatesDialog by remember { mutableStateOf(false) }
-    var templateNameDraft by remember { mutableStateOf("") }
-    var showExpertHistoryDialog by remember { mutableStateOf(false) }
-    var historyExpertName by remember { mutableStateOf("") }
-    var historyCompareVersion by remember { mutableStateOf("") }
-    var skills by remember { mutableStateOf(loadSkills(prefs)) }
-    var skillMetadata by remember { mutableStateOf(loadSkillMetadata(prefs)) }
-    var disabledSkills by remember { mutableStateOf(loadDisabledSkills(prefs)) }
-    var editingSkillName by remember { mutableStateOf("") }
-    var skillDialogError by remember { mutableStateOf("") }
-    var pendingSkillBundle by remember { mutableStateOf<SkillBundle?>(null) }
-    var showSkillImportDialog by remember { mutableStateOf(false) }
-    var skillImportStatus by remember { mutableStateOf("") }
-     var skillExportStatus by remember { mutableStateOf("") }
-     var skillExportJson by remember { mutableStateOf("") }
-    var selectedSkill by remember { mutableStateOf("") }
-    var skillDraftName by remember { mutableStateOf("") }
-    var skillDraftPrompt by remember { mutableStateOf("") }
-    var showSkillDialog by remember { mutableStateOf(false) }
-    var selectedExpert by remember {
-        mutableStateOf(ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles))
+    var drawerMounted by remember { mutableStateOf(false) }
+    BackHandler(enabled = showDrawer || page !in setOf("home", "chat")) {
+        if (showDrawer) {
+            showDrawer = false
+        } else {
+            page = "home"
+        }
     }
-    var expertDraft by remember { mutableStateOf("") }
-    var editingExpertName by remember { mutableStateOf("") }
-    var expertPromptDraft by remember { mutableStateOf("") }
-    var expertGroupDraft by remember { mutableStateOf("默认") }
-    var expertAvatarDraft by remember { mutableStateOf("✦") }
-    var expertEnabledDraft by remember { mutableStateOf(true) }
-    var expertSkillDraft by remember { mutableStateOf(emptySet<String>()) }
-    var expertTemperatureDraft by remember { mutableStateOf("") }
-    var expertMaxTokensDraft by remember { mutableStateOf("") }
-    var expertDescriptionDraft by remember { mutableStateOf("") }
-    var showExpertDialog by remember { mutableStateOf(false) }
-    var expertDialogError by remember { mutableStateOf("") }
-    var expertTeams by remember { mutableStateOf(loadExpertTeams(prefs)) }
-    var selectedTeamId by remember { mutableStateOf((prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: "") }
-    var showTeamDialog by remember { mutableStateOf(false) }
-    var editingTeamId by remember { mutableStateOf("") }
-    var teamDraftName by remember { mutableStateOf("") }
-    var teamDraftDescription by remember { mutableStateOf("") }
-    var teamDraftMembers by remember { mutableStateOf(emptySet<String>()) }
-    var pendingExpertBundle by remember { mutableStateOf<ExpertBundle?>(null) }
-    var expertImportStatus by remember { mutableStateOf("") }
-    var expertExportStatus by remember { mutableStateOf("") }
-    var expertExportJson by remember { mutableStateOf("") }
-    var pendingTeamBundle by remember { mutableStateOf<ExpertTeamBundle?>(null) }
-    var teamImportStatus by remember { mutableStateOf("") }
-    var teamExportStatus by remember { mutableStateOf("") }
-    var teamExportJson by remember { mutableStateOf("") }
-    var teamRunStatus by remember { mutableStateOf("") }
-    var expertTeamRunHistory by remember {
-        mutableStateOf(ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]"))
+    LaunchedEffect(showDrawer) {
+        if (showDrawer) {
+            drawerMounted = true
+        } else {
+            delay(NestroMotion.DRAWER_OUT)
+            drawerMounted = false
+        }
     }
-    var teamMemberStatuses by remember { mutableStateOf(emptyMap<String,String>()) }
-    var workflowHistory by remember {
-        mutableStateOf(WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]"))
+    var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
+    val modelRepository = remember { appRuntime.modelConfigurationRepository }
+    val modelUiState = remember(prefs, modelRepository) {
+        ModelManagementUiState(prefs, modelRepository)
     }
-    var workflows by remember {
-        mutableStateOf(
-            WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]").ifEmpty {
-                listOf(
-                    WorkflowDefinition(
-                        name = "研究到方案",
-                        description = "先拆解问题，再形成可执行方案",
-                        steps = listOf(
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "拆解与研究", instruction = "识别目标、关键事实、约束和风险，形成结构化分析。"),
-                            WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成方案", instruction = "基于上一步结果，形成清晰、可执行、带优先级的方案。")
-                        )
-                    )
-                )
+    var config by modelUiState.config
+    var taskModeEnabled by remember { mutableStateOf(true) }
+    var reasoningEffort by remember(prefs) { mutableStateOf(prefs.getString("reasoning_effort_v1", "low") ?: "low") }
+    var showReasoningMenu by remember { mutableStateOf(false) }
+    var modelProfiles by modelUiState.modelProfiles
+    var modelRegistry by modelUiState.modelRegistry
+    var activeModelProfileId by modelUiState.activeModelProfileId
+    var activeRegistryModelId by modelUiState.activeRegistryModelId
+    var modelFailoverEnabled by modelUiState.modelFailoverEnabled
+    var modelUsage by modelUiState.modelUsage
+    val conversationUiState = remember { ConversationUiState() }
+    var messages by conversationUiState.messages
+    var conversations by conversationUiState.conversations
+    val projectSpaceUiState = remember { ProjectSpaceUiState() }
+    var projects by projectSpaceUiState.projects
+    var projectStorageReadOnly by remember { mutableStateOf(false) }
+    val initialProjectResourceScopes = remember(prefs) { runCatching { ProjectResourceScopeStore.load(prefs) } }
+    var projectResourceScopes by remember(prefs) {
+        mutableStateOf(initialProjectResourceScopes.getOrDefault(emptyMap()))
+    }
+    var projectResourceScopesReadOnly by remember(prefs) {
+        mutableStateOf(initialProjectResourceScopes.isFailure)
+    }
+    var activeProjectId by projectSpaceUiState.activeProjectId
+    fun readableSourcesFor(targetProjectId: String): Set<String> {
+        val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
+        return ProjectAccessControlStore.grantedReadableSourceProjects(prefs, targetProjectId).intersect(eligible)
+    }
+    fun writableSourcesFor(targetProjectId: String): Set<String> {
+        val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
+        return ProjectAccessControlStore.grantedWritableSourceProjects(prefs, targetProjectId).intersect(eligible)
+    }
+    var readableProjectIds by remember(activeProjectId, projects) {
+        mutableStateOf(readableSourcesFor(activeProjectId))
+    }
+    var writableProjectIds by remember(activeProjectId, projects) {
+        mutableStateOf(writableSourcesFor(activeProjectId))
+    }
+    var pendingAccessSourceProjectId by remember { mutableStateOf("") }
+    var showProjectAccessDialog by remember { mutableStateOf(false) }
+    var deletingProjectId by projectSpaceUiState.deletingProjectId
+    var showProjectDialog by projectSpaceUiState.showProjectDialog
+    var projectDraftName by projectSpaceUiState.projectDraftName
+    var projectDraftInstructions by projectSpaceUiState.projectDraftInstructions
+    var editingProjectId by projectSpaceUiState.editingProjectId
+    var activeConversationId by conversationUiState.activeConversationId
+    var conversationSearch by conversationUiState.conversationSearch
+    var conversationPageItems by conversationUiState.conversationPageItems
+    var conversationPageLoading by conversationUiState.conversationPageLoading
+    var conversationPageHasMore by conversationUiState.conversationPageHasMore
+    var conversationPageRefreshKey by conversationUiState.conversationPageRefreshKey
+    var showRenameConversation by conversationUiState.showRenameConversation
+    var showEditMessageDialog by conversationUiState.showEditMessageDialog
+    var editMessageId by conversationUiState.editMessageId
+    var editMessageDraft by conversationUiState.editMessageDraft
+    var renameConversationId by conversationUiState.renameConversationId
+    var renameConversationDraft by conversationUiState.renameConversationDraft
+    val memoryUiState = remember(prefs) { MemoryUiState(prefs) }
+    var globalMemory by memoryUiState.globalMemory
+    var memoryDraft by memoryUiState.memoryDraft
+    var manualMemoryDraft by memoryUiState.manualMemoryDraft
+    var manualMemoryCategory by memoryUiState.manualMemoryCategory
+    var manualMemoryCategoryExpanded by memoryUiState.manualMemoryCategoryExpanded
+    var automaticMemories by memoryUiState.automaticMemories
+    var automaticMemoryEnabled by memoryUiState.automaticMemoryEnabled
+    var memoryEdits by memoryUiState.memoryEdits
+    var memoryStatus by memoryUiState.memoryStatus
+    var showClearAutomaticMemoryConfirm by remember { mutableStateOf(false) }
+    var embeddingModelInstalled by remember { mutableStateOf(false) }
+    var embeddingModelInstalling by remember { mutableStateOf(false) }
+    var embeddingModelStatus by remember { mutableStateOf("正在检查本地语义模型…") }
+    LaunchedEffect(context) {
+        val installed = withContext(Dispatchers.IO) {
+            KnowledgeEmbeddingModelManager.isInstalled(context)
+        }
+        embeddingModelInstalled = installed
+        embeddingModelStatus = if (installed) "本地语义模型已安装，语义检索可用。" else "尚未安装；当前使用关键词检索。"
+    }
+    val chatExecutionUiState = remember { ChatExecutionUiState() }
+    var draft by chatExecutionUiState.draft
+    var busy by chatExecutionUiState.busy
+    var pendingCoworkbenchPrompt by remember { mutableStateOf("") }
+    var coworkbenchGeneratedPatch by remember { mutableStateOf("") }
+    var stopRequested by chatExecutionUiState.stopRequested
+    var activeRequestId by chatExecutionUiState.activeRequestId
+    var activeRequestConversationId by chatExecutionUiState.activeRequestConversationId
+    var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
+    var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
+    var status by chatExecutionUiState.status
+    val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
+            "Nost 已成为系统默认助手入口。"
+        } else {
+            "系统助手设置未更改。"
+        }
+    }
+    fun canWriteProjectResource(kind: ProjectResourceKind, resourceId: String): Boolean {
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已阻止修改。"
+            return false
+        }
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, kind, resourceId)
+        val writableSources = owners.orEmpty().filter { source ->
+            source != "*" && source != activeProjectId && ProjectAccessControlStore.authorize(prefs, source, activeProjectId, ProjectAccessControlStore.Access.WRITE)
+        }.toSet()
+        val allowed = ProjectResourceScopeStore.canWriteFromProject(projectResourceScopes, kind, resourceId, activeProjectId, writableSources)
+        if (!allowed) status = "当前项目只有读取权限，未获得资源所属项目的写入授权。"
+        return allowed
+    }
+
+
+    val updateProjectResourceScope: (ProjectResourceKind, String, Boolean) -> Boolean = { kind, resourceId, makeGlobal ->
+        if (!canWriteProjectResource(kind, resourceId)) {
+            false
+        } else {
+            runCatching {
+                val next = if (makeGlobal) {
+                    ProjectResourceScopeStore.setGlobal(projectResourceScopes, kind, resourceId)
+                } else {
+                    ProjectResourceScopeStore.setProjectScope(projectResourceScopes, kind, resourceId, setOf(activeProjectId))
+                }
+                ProjectResourceScopeStore.save(prefs, next)
+                projectResourceScopes = next
+                status = if (makeGlobal) "资源已设为全局共享" else "资源已限定在当前项目"
+                true
+            }.getOrElse {
+                status = "资源范围更新失败：" + (it.message ?: "数据无效")
+                false
             }
-        )
+        }
     }
-    var showWorkflowDialog by remember { mutableStateOf(false) }
-    var editingWorkflowId by remember { mutableStateOf("") }
-    var workflowDraftName by remember { mutableStateOf("") }
-    var workflowDraftDescription by remember { mutableStateOf("") }
-    var workflowDraftSteps by remember {
+    val assignNewProjectResourceScope: (ProjectResourceKind, String) -> Boolean = { kind, resourceId ->
+        if (projectResourceScopesReadOnly) {
+            status = "项目资源范围数据校验失败，已阻止新资源创建。"
+            false
+        } else {
+            runCatching {
+                val next = ProjectResourceScopeStore.assignNewResourceToProject(
+                    projectResourceScopes, kind, resourceId, activeProjectId
+                )
+                ProjectResourceScopeStore.save(prefs, next)
+                projectResourceScopes = next
+                status = "新资源已限定在当前项目"
+                true
+            }.getOrElse {
+                status = "新资源归属登记失败：" + (it.message ?: "数据无效")
+                false
+            }
+        }
+    }
+    var recallSources by chatExecutionUiState.recallSources
+    var showRecallDialog by chatExecutionUiState.showRecallDialog
+    val expertCatalogUiState = remember(prefs) { ExpertCatalogUiState(prefs) }
+    var experts by expertCatalogUiState.experts
+    var expertPrompts by expertCatalogUiState.expertPrompts
+    var expertProfiles by expertCatalogUiState.expertProfiles
+    var expertRevisions by expertCatalogUiState.expertRevisions
+    var expertTemplates by expertCatalogUiState.expertTemplates
+    val expertAssetsUiState = remember(prefs) {
+        ExpertAssetsUiState(loadSkills(prefs), loadSkillMetadata(prefs), loadDisabledSkills(prefs))
+    }
+    var showExpertTemplatesDialog by expertAssetsUiState.showExpertTemplatesDialog
+    var templateNameDraft by expertAssetsUiState.templateNameDraft
+    var templateSearchDraft by expertAssetsUiState.templateSearchDraft
+    var templateCategoryFilter by expertAssetsUiState.templateCategoryFilter
+    var templateStatus by expertAssetsUiState.templateStatus
+    var templateExportJson by expertAssetsUiState.templateExportJson
+    var pendingTemplateBundle by expertAssetsUiState.pendingTemplateBundle
+    var editingTemplate by expertAssetsUiState.editingTemplate
+    var templateToDelete by expertAssetsUiState.templateToDelete
+    var templateEditName by expertAssetsUiState.templateEditName
+    var templateEditDescription by expertAssetsUiState.templateEditDescription
+    var templateEditCategory by expertAssetsUiState.templateEditCategory
+    var templateEditPrompt by expertAssetsUiState.templateEditPrompt
+    var templateEditorStatus by expertAssetsUiState.templateEditorStatus
+    var showExpertHistoryDialog by expertAssetsUiState.showExpertHistoryDialog
+    var historyExpertName by expertAssetsUiState.historyExpertName
+    var historyCompareVersion by expertAssetsUiState.historyCompareVersion
+    var skills by expertAssetsUiState.skills
+    var skillMetadata by expertAssetsUiState.skillMetadata
+    var disabledSkills by expertAssetsUiState.disabledSkills
+    var editingSkillName by expertAssetsUiState.editingSkillName
+    var skillDialogError by expertAssetsUiState.skillDialogError
+    var pendingSkillBundle by expertAssetsUiState.pendingSkillBundle
+    var showSkillImportDialog by expertAssetsUiState.showSkillImportDialog
+    var skillImportStatus by expertAssetsUiState.skillImportStatus
+    var skillExportStatus by expertAssetsUiState.skillExportStatus
+    var skillExportJson by expertAssetsUiState.skillExportJson
+    var selectedSkill by expertAssetsUiState.selectedSkill
+    var skillDraftName by expertAssetsUiState.skillDraftName
+    var skillDraftPrompt by expertAssetsUiState.skillDraftPrompt
+    var showSkillDialog by expertAssetsUiState.showSkillDialog
+    var selectedExpert by expertCatalogUiState.selectedExpert
+    val expertWorkspaceUiState = remember(prefs) { ExpertWorkspaceUiState(prefs) }
+    var expertDraft by expertWorkspaceUiState.expertDraft
+    var editingExpertName by expertWorkspaceUiState.editingExpertName
+    var expertPromptDraft by expertWorkspaceUiState.expertPromptDraft
+    var expertGroupDraft by expertWorkspaceUiState.expertGroupDraft
+    var expertAvatarDraft by expertWorkspaceUiState.expertAvatarDraft
+    var expertEnabledDraft by expertWorkspaceUiState.expertEnabledDraft
+    var expertSkillDraft by expertWorkspaceUiState.expertSkillDraft
+    var expertTemperatureDraft by expertWorkspaceUiState.expertTemperatureDraft
+    var expertMaxTokensDraft by expertWorkspaceUiState.expertMaxTokensDraft
+    var expertDescriptionDraft by expertWorkspaceUiState.expertDescriptionDraft
+    var showExpertDialog by expertWorkspaceUiState.showExpertDialog
+    var expertDialogError by expertWorkspaceUiState.expertDialogError
+    var expertTeams by expertWorkspaceUiState.expertTeams
+    var selectedTeamId by expertWorkspaceUiState.selectedTeamId
+    var manualExpertSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showTeamDialog by expertWorkspaceUiState.showTeamDialog
+    var editingTeamId by expertWorkspaceUiState.editingTeamId
+    var teamDraftName by expertWorkspaceUiState.teamDraftName
+    var teamDraftDescription by expertWorkspaceUiState.teamDraftDescription
+    var teamDraftMembers by expertWorkspaceUiState.teamDraftMembers
+    var pendingExpertBundle by expertWorkspaceUiState.pendingExpertBundle
+    var expertImportStatus by expertWorkspaceUiState.expertImportStatus
+    var expertExportStatus by expertWorkspaceUiState.expertExportStatus
+    var expertExportJson by expertWorkspaceUiState.expertExportJson
+    var pendingTeamBundle by expertWorkspaceUiState.pendingTeamBundle
+    var teamImportStatus by expertWorkspaceUiState.teamImportStatus
+    var teamExportStatus by expertWorkspaceUiState.teamExportStatus
+    var teamExportJson by expertWorkspaceUiState.teamExportJson
+    var teamRunStatus by expertWorkspaceUiState.teamRunStatus
+    val expertTeamPauseController = remember { ExpertTeamPauseController() }
+    var teamExecutionPaused by remember { mutableStateOf(false) }
+    var expertTeamRunHistory by expertWorkspaceUiState.expertTeamRunHistory
+    var expertTeamEvents by remember(prefs, activeProjectId) {
         mutableStateOf(
-            listOf(
-                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "分析需求", instruction = "拆解用户目标，列出关键事实、约束和待解决问题。"),
-                WorkflowStep(kind = WorkflowStepKind.PROMPT, title = "形成结果", instruction = "根据上一步分析，形成可直接交付的结果，并检查完整性。")
-            )
+            app.nestro.data.ExpertTeamCollaborationEventCodec.decode(
+                prefs.getString("expert_team_events_v1", "[]") ?: "[]"
+            ).filter { it.projectId == activeProjectId }.takeLast(100)
         )
     }
-    var workflowTargetPickerIndex by remember { mutableIntStateOf(-1) }
-    var showWorkflowTargetPicker by remember { mutableStateOf(false) }
-    var workflowInputDraft by remember { mutableStateOf("") }
-    var workflowRunStatus by remember { mutableStateOf("") }
-    var runningWorkflowId by remember { mutableStateOf("") }
-    var workflowPaused by remember { mutableStateOf(false) }
-    var workflowPauseGate by remember { mutableStateOf<CompletableDeferred<Unit>?>(null) }
-    var backupStatus by remember { mutableStateOf("备份不包含 API Key，恢复后仍需在本机配置模型。") }
-    var pendingBackupUri by remember { mutableStateOf<Uri?>(null) }
-    var showBackupRestoreConfirm by remember { mutableStateOf(false) }
-    var voiceStatus by remember { mutableStateOf("语音由系统识别服务转写后发送；API Key 与对话记录保存在本机。") }
+    var teamEventVisibleCount by remember(activeProjectId) {
+        mutableStateOf(EXPERT_TEAM_EVENT_PAGE_SIZE)
+    }
+    var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+
+    fun toggleExpertTeamPause() {
+        if (expertTeamPauseController.isPaused()) {
+            expertTeamPauseController.resume()
+            teamExecutionPaused = false
+            teamRunStatus = "专家团已恢复执行"
+        } else {
+            expertTeamPauseController.pause()
+            teamExecutionPaused = expertTeamPauseController.isPaused()
+            if (teamExecutionPaused) {
+                teamRunStatus = "暂停请求已提交，将在当前执行批次完成后暂停"
+            }
+        }
+    }
+
+    fun applyConversationContext(conversationId: String, projectId: String) {
+        val team = expertTeams.firstOrNull {
+            expertTeamConversationId(it.id, projectId) == conversationId
+        }
+        val expert = experts.firstOrNull {
+            expertConversationId(it, projectId) == conversationId
+        }
+        selectedTeamId = team?.id.orEmpty()
+        when {
+            team != null -> {
+                selectedExpert = "通用助手"
+                taskModeEnabled = true
+            }
+            expert != null -> {
+                selectedExpert = expert
+                taskModeEnabled = true
+            }
+            else -> {
+                selectedExpert = "通用助手"
+            }
+        }
+        prefs.edit()
+            .putString("selected_team_id", selectedTeamId)
+            .putString("selected_expert", selectedExpert)
+            .putBoolean("chat_task_mode_enabled", taskModeEnabled)
+            .apply()
+    }
+
+    fun removeExpertTeam(teamId: String, deleteChats: Boolean) {
+        if (!canWriteProjectResource(ProjectResourceKind.TEAM, teamId)) return
+        val teamChatIds = projects.map { expertTeamConversationId(teamId, it.id) }.toSet()
+        val nextTeams = expertTeams.filterNot { it.id == teamId }
+        val nextScopes = ProjectResourceScopeStore.removeResourceScope(
+            projectResourceScopes, ProjectResourceKind.TEAM, teamId
+        )
+        val nextSelectedTeamId = if (selectedTeamId == teamId) "" else selectedTeamId
+        val persisted = prefs.edit()
+            .putString("expert_teams_v1", expertTeamsToJson(nextTeams))
+            .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(nextScopes))
+            .putString("selected_team_id", nextSelectedTeamId)
+            .commit()
+        if (!persisted) {
+            status = "专家团变更未能确认写入。"
+            return
+        }
+        expertTeams = nextTeams
+        selectedTeamId = nextSelectedTeamId
+        projectResourceScopes = nextScopes
+        if (!deleteChats && activeConversationId in teamChatIds) {
+            applyConversationContext(activeConversationId, activeProjectId)
+        }
+        if (deleteChats) {
+            val remaining = conversations.filterNot { it.id in teamChatIds }
+            prefs.edit().also { editor -> teamChatIds.forEach { editor.remove("draft_$it") } }.apply()
+            conversationPageItems = conversationPageItems.filterNot { it.id in teamChatIds }
+            conversationPageRefreshKey++
+            val activeWasDeleted = activeConversationId in teamChatIds
+            conversations = remaining
+            scope.launch {
+                if (activeWasDeleted) {
+                    val next = remaining.firstOrNull { it.projectId == activeProjectId }
+                        ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
+                    if (remaining.none { it.id == next.id }) {
+                        conversations = listOf(next) + conversations
+                    }
+                    val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                        withContext(Dispatchers.IO) {
+                            appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
+                        }
+                    } else next.messages
+                    activeConversationId = next.id
+                    applyConversationContext(next.id, next.projectId)
+                    messages = nextMessages
+                    prefs.edit().putString("active_conversation_id", next.id)
+                        .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
+                }
+                val conversationSnapshot = conversations.toList()
+                val projectSnapshot = projects.toList()
+                val versionSnapshot = persistedConversationVersions.toMap()
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persist(
+                            prefs = prefs,
+                            conversations = conversationSnapshot,
+                            projects = projectSnapshot,
+                            knownVersions = versionSnapshot,
+                            snapshotTimestamp = System.currentTimeMillis()
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversationSnapshot)
+                }
+            }
+        }
+        status = if (deleteChats) "专家团及其群聊已删除。" else "专家团已解散，原群聊记录已保留。"
+    }
+
+    fun openExpertTeamChat(teamId: String, teamName: String) {
+        val conversationId = expertTeamConversationId(teamId, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, teamName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = teamName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            applyConversationContext(conversationId, activeProjectId)
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_team_id", teamId)
+                .apply()
+            page = "home"
+        }
+    }
+
+    fun openExpertChat(expertName: String) {
+        val conversationId = expertConversationId(expertName, activeProjectId)
+        scope.launch {
+            val existing = conversations.firstOrNull { it.id == conversationId }
+            val record = existing ?: ConversationRecord(
+                conversationId, expertName, System.currentTimeMillis(), emptyList(), activeProjectId
+            )
+            if (existing == null) {
+                conversations = listOf(record) + conversations
+                if (databaseReady) {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.conversationPersistenceService.persistConversationMessages(
+                            conversationId = conversationId,
+                            projectId = activeProjectId,
+                            messages = emptyList(),
+                            initialTitle = expertName
+                        )
+                    }
+                } else {
+                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                }
+            }
+            val loadedMessages = if (existing != null && databaseReady) {
+                withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(conversationId).orEmpty()
+                }
+            } else existing?.messages.orEmpty()
+            activeConversationId = conversationId
+            applyConversationContext(conversationId, activeProjectId)
+            messages = loadedMessages
+            conversations = conversations.map { item ->
+                if (item.id == conversationId) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+            }
+            prefs.edit()
+                .putString("active_conversation_id", conversationId)
+                .putString("active_project_id", activeProjectId)
+                .putString("selected_expert", expertName)
+                .remove("selected_team_id")
+                .putBoolean("chat_task_mode_enabled", true)
+                .apply()
+            page = "home"
+        }
+    }
+    val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
+
+    DisposableEffect(appRuntime, workflowUiState) {
+        appRuntime.agentApprovalCoordinator.setHandler { request ->
+            withContext(Dispatchers.Main.immediate) {
+                workflowUiState.enqueueApproval(request)
+                workflowUiState.workflowApprovalVisible.value = true
+            }
+        }
+        onDispose { appRuntime.agentApprovalCoordinator.setHandler(null) }
+    }
+    suspend fun refreshApprovalQueue(showNext: Boolean) {
+        val pending = withContext(Dispatchers.IO) {
+            appRuntime.agentApprovalCoordinator.pendingRequests()
+        }
+        withContext(Dispatchers.Main.immediate) {
+            workflowUiState.setPendingApprovals(pending)
+            workflowUiState.workflowApprovalVisible.value = showNext && pending.isNotEmpty()
+        }
+    }
+    LaunchedEffect(appRuntime, workflowUiState) {
+        refreshApprovalQueue(showNext = false)
+    }
+    var workflowHistory by workflowUiState.workflowHistory
+    var workflows by workflowUiState.workflows
+    var showWorkflowDialog by workflowUiState.showWorkflowDialog
+    var editingWorkflowId by workflowUiState.editingWorkflowId
+    var workflowDraftName by workflowUiState.workflowDraftName
+    var workflowDraftDescription by workflowUiState.workflowDraftDescription
+    var workflowDraftSteps by workflowUiState.workflowDraftSteps
+    var workflowTargetPickerIndex by workflowUiState.workflowTargetPickerIndex
+    var showWorkflowTargetPicker by workflowUiState.showWorkflowTargetPicker
+    var workflowInputDraft by workflowUiState.workflowInputDraft
+    var workflowRunStatus by workflowUiState.workflowRunStatus
+    var runningWorkflowId by workflowUiState.runningWorkflowId
+    var workflowPaused by workflowUiState.workflowPaused
+    var workflowPauseGate by workflowUiState.workflowPauseGate
+    var agentApprovalPrompt by workflowUiState.agentApprovalPrompt
+    var workflowApprovalVisible by workflowUiState.workflowApprovalVisible
+    var savedWorkflowTaskState by remember { mutableStateOf<app.nestro.agent.AgentTaskState?>(null) }
+    LaunchedEffect(page, runningWorkflowId, workflowInputDraft) {
+        if (page == "workflows") {
+            while (true) {
+                val savedTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                savedWorkflowTaskState = if (savedTaskId.isBlank()) null else withContext(Dispatchers.IO) {
+                    appRuntime.agentTaskCoordinator.state(savedTaskId)
+                }
+                delay(1_500)
+            }
+        } else {
+            savedWorkflowTaskState = null
+        }
+    }
+    val dataTransferUiState = remember { DataTransferUiState() }
+    var backupStatus by dataTransferUiState.backupStatus
+    var pendingBackupUri by dataTransferUiState.pendingBackupUri
+    var showBackupRestoreConfirm by dataTransferUiState.showBackupRestoreConfirm
+    var projectPackageExportProjectId by remember { mutableStateOf("") }
+    var pendingProjectPackageUri by remember { mutableStateOf<Uri?>(null) }
+    var showProjectPackageImportConfirm by remember { mutableStateOf(false) }
+    var projectPackageStatus by remember { mutableStateOf("") }
+    var voiceStatus by dataTransferUiState.voiceStatus
+    var chatMediaStatus by remember { mutableStateOf("") }
+    fun canWriteExpertDependents(expertName: String): Boolean {
+        val teamsAllowed = expertTeams.filter { expertName in it.members }
+            .all { canWriteProjectResource(ProjectResourceKind.TEAM, it.id) }
+        val workflowsAllowed = workflows.filter { workflow ->
+            workflow.steps.any { it.kind == WorkflowStepKind.EXPERT && it.targetId.ifBlank { it.title } == expertName }
+        }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
+        return teamsAllowed && workflowsAllowed
+    }
+    fun canWriteSkillDependents(skillName: String): Boolean {
+        val expertsAllowed = expertProfiles.filterValues { skillName in it.skillNames }.keys
+            .all { canWriteProjectResource(ProjectResourceKind.EXPERT, it) }
+        val workflowsAllowed = workflows.filter { workflow ->
+            workflow.steps.any { it.kind == WorkflowStepKind.SKILL && it.targetId.ifBlank { it.title } == skillName }
+        }.all { canWriteProjectResource(ProjectResourceKind.WORKFLOW, it.id) }
+        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skillName)
+        val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
+        if (!templatesAllowed) status = "该技能被全局专家模板引用，不能在项目空间内单独重命名或删除。"
+        return expertsAllowed && workflowsAllowed && templatesAllowed
+    }
     val chatListState = rememberLazyListState()
+    val conversationHistoryListState = rememberLazyListState()
+    var initialChatPositionRestored by remember { mutableStateOf(false) }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -320,7 +730,7 @@ fun NestroApp() {
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val json = buildLocalBackup(prefs, database)
+                        val json = appRuntime.localBackupRepository.createBackup(prefs)
                         context.contentResolver.openOutputStream(uri)?.use {
                             it.write(json.toByteArray(Charsets.UTF_8))
                         } ?: error("无法创建备份文件")
@@ -338,32 +748,106 @@ fun NestroApp() {
             showBackupRestoreConfirm = true
         }
     }
+    val exportProjectPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null && projectPackageExportProjectId.isNotBlank()) {
+            val exportProjectId = projectPackageExportProjectId
+            val availableProjectIds = projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
+            projectPackageStatus = "正在导出项目包…"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val readable = ProjectAccessControlStore.readableSourceProjects(prefs, exportProjectId, availableProjectIds)
+                        val json = appRuntime.localBackupRepository.createProjectPackage(prefs, exportProjectId, readable)
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                            ?: error("无法创建项目包文件")
+                    }
+                }
+                projectPackageStatus = result.fold({ "项目包已导出" }, { "导出失败：" + (it.message ?: "未知错误") })
+            }
+        }
+    }
+    val importProjectPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pendingProjectPackageUri = uri
+            showProjectPackageImportConfirm = true
+        }
+    }
+    val chatMediaImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val importProjectId = activeProjectId
+            val importConversationId = activeConversationId
+            if (projectStorageReadOnly || importProjectId.isBlank()) {
+                chatMediaStatus = "当前项目不可写，未导入媒体素材。"
+            } else {
+                chatMediaStatus = "正在导入媒体素材…"
+                scope.launch {
+                    val selectedUris = uris.take(10)
+                    val results = withContext(Dispatchers.IO) {
+                        selectedUris.map { uri ->
+                            runCatching {
+                                app.nestro.media.MediaProjectStore.importAsset(context, importProjectId, uri)
+                            }
+                        }
+                    }
+                    val imported = results.mapNotNull { it.getOrNull() }
+                    val failedCount = results.count { it.isFailure } + (uris.size - selectedUris.size)
+                    val attachedToCurrentDraft = imported.isNotEmpty() &&
+                        activeProjectId == importProjectId && activeConversationId == importConversationId
+                    if (attachedToCurrentDraft) {
+                        val attachmentNote = buildString {
+                            append("已附加到当前项目素材库的媒体素材，请按需理解和分析：")
+                            imported.forEach { asset ->
+                                append("\n- asset_id=").append(asset.id)
+                                    .append("; name=").append(asset.displayName)
+                                    .append("; kind=").append(asset.kind)
+                                    .append("; mime=").append(asset.mimeType)
+                            }
+                        }
+                        draft = listOf(draft.trim(), if (draft.isBlank()) "请理解并分析我附加的媒体素材。" else "")
+                            .filter { it.isNotBlank() }.joinToString("\n\n") + "\n\n" + attachmentNote
+                        prefs.edit().putString("draft_$importConversationId", draft).apply()
+                    }
+                    chatMediaStatus = when {
+                        imported.isEmpty() -> "媒体导入失败：未能导入所选文件。"
+                        failedCount > 0 && attachedToCurrentDraft -> "已导入并附加 ${imported.size} 个素材，另有 ${failedCount} 个文件导入失败或超出 10 个文件限制。"
+                        failedCount > 0 -> "已导入 ${imported.size} 个素材，但当前会话已切换，未附加到输入框；另有 ${failedCount} 个文件导入失败或超出限制。"
+                        attachedToCurrentDraft -> "已导入 ${imported.size} 个素材，已附加到输入框。"
+                        else -> "已导入 ${imported.size} 个素材到原项目，但当前会话已切换，未附加到输入框。"
+                    }
+                }
+            }
+        }
+    }
     val performBackupRestore: (Uri) -> Unit = { uri ->
         backupStatus = "正在恢复本机数据…"
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val raw = readBackupText(context, uri)
-                    restoreLocalBackup(context, prefs, raw, database)
+                    val raw = appRuntime.localBackupRepository.readText(uri)
+                    appRuntime.localBackupRepository.restoreBackup(prefs, raw)
                 }
             }
             if (result.isSuccess) {
                 automaticMemoryEnabled = prefs.getBoolean("automatic_memory_enabled", false)
-                speechRate = prefsRate(context)
-                modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-                activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
-                modelUsage = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}") ?: "{}")
-                modelFailoverEnabled = prefs.getBoolean("model_failover_enabled", false)
-                val restoredActiveProfile = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-                config = if (restoredActiveProfile != null) {
-                    ModelConfig(restoredActiveProfile.baseUrl, restoredActiveProfile.model, LocalVault.readProfile(context, restoredActiveProfile.id))
-                } else LocalVault.read(context)
+                // Re-resolve below after the restored active project ID is applied.
+                reasoningEffort = prefs.getString("reasoning_effort_v1", "low") ?: "low"
+                modelUiState.initialize()
                 persistedConversationVersions.clear()
-                conversations = loadConversations(prefs)
-                projects = loadProjects(prefs)
+                conversations = ConversationPreferencesStore.loadConversations(prefs)
+                projects = ProjectPreferencesStore.loadProjects(prefs)
+                projectStorageReadOnly = false
+                projectResourceScopes = ProjectResourceScopeStore.load(prefs)
+                projectResourceScopesReadOnly = false
                 activeProjectId = (prefs.getString("active_project_id", "default") ?: "default").takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
+                automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
                 activeConversationId = (prefs.getString("active_conversation_id", "") ?: "").takeIf { id -> conversations.any { it.id == id } } ?: conversations.firstOrNull()?.id.orEmpty()
-                messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: loadMessages(prefs)
+                messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: ConversationPreferencesStore.loadMessages(prefs)
                 draft = prefs.getString("draft_$activeConversationId", "") ?: ""
                 globalMemory = prefs.getString("global_memory_v1", "") ?: ""
                 memoryDraft = globalMemory
@@ -375,7 +859,7 @@ fun NestroApp() {
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 prefs.edit().putString("selected_expert", selectedExpert).apply()
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } } ?: ""
+                applyConversationContext(activeConversationId, activeProjectId)
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -383,9 +867,94 @@ fun NestroApp() {
                 workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
                 workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
                 expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
             }
             backupStatus = result.fold({ "恢复完成。备份不含 API Key；仅保留本机地址与型号匹配的密钥。" }, { "恢复失败：${it.message ?: "文件格式无效"}" })
+        }
+    }
+
+    val performProjectPackageImport: (Uri) -> Unit = { uri ->
+        projectPackageStatus = "正在导入项目包…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = appRuntime.localBackupRepository.readText(uri)
+                    appRuntime.localBackupRepository.importProjectPackage(prefs, raw)
+                }
+            }
+            if (result.isSuccess) {
+                val importedProjectId = result.getOrThrow()
+                persistedConversationVersions.clear()
+                conversations = ConversationPreferencesStore.loadConversations(prefs)
+                projects = ProjectPreferencesStore.loadProjects(prefs)
+                projectStorageReadOnly = false
+                projectResourceScopes = ProjectResourceScopeStore.load(prefs)
+                projectResourceScopesReadOnly = false
+                activeProjectId = importedProjectId
+                prefs.edit().putLong("project_last_opened_$importedProjectId", System.currentTimeMillis()).apply()
+                readableProjectIds = readableSourcesFor(activeProjectId)
+                writableProjectIds = writableSourcesFor(activeProjectId)
+                automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
+                activeConversationId = (prefs.getString("active_conversation_id", "") ?: "")
+                    .takeIf { id -> conversations.any { it.id == id } }
+                    ?: conversations.firstOrNull { it.projectId == importedProjectId }?.id.orEmpty()
+                messages = if (activeConversationId.isBlank()) emptyList() else withContext(Dispatchers.IO) {
+                    appRuntime.conversationPersistenceService.loadMessages(activeConversationId).orEmpty()
+                }
+                conversations = conversations.map { row ->
+                    if (row.id == activeConversationId) row.copy(messages = messages, messagesLoaded = true) else row
+                }
+                draft = prefs.getString("draft_" + activeConversationId, "") ?: ""
+                experts = loadExperts(prefs)
+                expertPrompts = loadExpertPrompts(prefs)
+                expertProfiles = ExpertProfileCodec.decode(prefs.getString("expert_profiles_v1", "{}") ?: "{}")
+                expertRevisions = ExpertRevisionCodec.decode(prefs.getString("expert_versions_v1", "{}") ?: "{}")
+                expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
+                selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
+                expertTeams = loadExpertTeams(prefs)
+                applyConversationContext(activeConversationId, activeProjectId)
+                skills = loadSkills(prefs)
+                skillMetadata = loadSkillMetadata(prefs)
+                disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
+                selectedSkill = ""
+                workflows = WorkflowDefinitionCodec.decode(prefs.getString("workflows_v1", "[]") ?: "[]")
+                workflowHistory = WorkflowRunHistoryCodec.decode(prefs.getString("workflow_runs_v1", "[]") ?: "[]")
+                expertTeamRunHistory = ExpertTeamRunHistoryCodec.decode(prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                page = "spaces"
+            }
+            projectPackageStatus = result.fold(
+                { "项目包已导入：" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: "新项目") },
+                { "导入失败：" + (it.message ?: "项目包格式无效") }
+            )
+        }
+    }
+
+    val importMemoryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            memoryStatus = "正在导入单条记忆…"
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val raw = context.contentResolver.openInputStream(uri)?.use { input ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(4096)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            require(output.size() + count <= 32_768) { "记忆文件超过 32 KB，拒绝导入" }
+                            output.write(buffer, 0, count)
+                        }
+                        String(output.toByteArray(), Charsets.UTF_8)
+                    } ?: error("无法读取记忆文件")
+                    appRuntime.userMemoryRepository.importOne(activeProjectId, raw)
+                }
+            }
+            if (result.isSuccess) {
+                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                memoryStatus = if (result.getOrThrow()) "单条记忆已导入当前项目。" else "当前项目已存在相同记忆，未重复导入。"
+            } else {
+                memoryStatus = "导入失败：${result.exceptionOrNull()?.message ?: "文件格式无效"}"
+            }
         }
     }
 
@@ -426,6 +995,39 @@ fun NestroApp() {
                 context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) } ?: error("无法创建专家文件")
             } }
             expertExportStatus=result.fold({ "专家配置已导出。" },{ "导出失败：${it.message ?: "未知错误"}" })
+        }
+    }
+
+    val importTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val raw = context.contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8_192)
+                    var totalBytes = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        totalBytes += count
+                        require(totalBytes <= 300_000) { "模板文件超过 300 KB" }
+                        output.write(buffer, 0, count)
+                    }
+                    String(output.toByteArray(), Charsets.UTF_8)
+                } ?: error("无法读取模板文件")
+                ExpertTemplateBundleCodec.decode(raw)
+            } }
+            result.fold({ pendingTemplateBundle = it; templateStatus = "" }, { templateStatus = "模板导入失败：" + (it.message ?: "文件格式无效") })
+        }
+    }
+    val exportTemplateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri == null) templateStatus = "已取消模板导出。"
+        else scope.launch {
+            val content = templateExportJson
+            val result = withContext(Dispatchers.IO) { runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                    ?: error("无法创建模板文件")
+            } }
+            templateStatus = result.fold({ "专家模板已导出。" }, { "模板导出失败：" + (it.message ?: "未知错误") })
         }
     }
 
@@ -472,239 +1074,179 @@ fun NestroApp() {
         }
     }
 
-    LaunchedEffect(page, activeProjectId) {
-        if (page == "memory") {
-            automaticMemories = withContext(Dispatchers.IO) {
-                runCatching { UserMemoryStore.list(database.dao(), activeProjectId) }.getOrDefault(emptyList())
+    MemoryPageLoadEffect(
+        page = page,
+        activeProjectId = activeProjectId,
+        loadMemories = { projectId ->
+            withContext(Dispatchers.IO) {
+                runCatchingCancellable { appRuntime.userMemoryRepository.list(projectId) }.getOrDefault(emptyList())
             }
-            memoryEdits = emptyMap()
-        }
-    }
+        },
+        onMemoriesLoaded = { automaticMemories = it },
+        onResetEdits = { memoryEdits = emptyMap() }
+    )
 
     LaunchedEffect(activeConversationId) {
         recallSources = emptyList()
         draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
     }
 
-    LaunchedEffect(Unit) {
-        config = LocalVault.read(context)
-        modelProfiles = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-        activeModelProfileId = prefs.getString("active_model_profile_id", "") ?: ""
-        if (modelProfiles.isEmpty() && config.baseUrl.isNotBlank() && config.model.isNotBlank()) {
-            val migrated = ModelProfileMetadata("legacy-default", "默认模型", config.baseUrl, config.model)
-            modelProfiles = listOf(migrated)
-            activeModelProfileId = migrated.id
-            LocalVault.writeProfile(context, migrated.id, config.apiKey)
-            prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles))
-                .putString("active_model_profile_id", activeModelProfileId).apply()
-        }
-        val activeMetadata = modelProfiles.firstOrNull { it.id == activeModelProfileId }
-        if (activeMetadata != null) {
-            config = ModelConfig(activeMetadata.baseUrl, activeMetadata.model, LocalVault.readProfile(context, activeMetadata.id))
-        }
-        val loaded = runCatching {
+    ConversationPageLoadEffect(
+        page = page,
+        activeProjectId = activeProjectId,
+        query = conversationSearch,
+        refreshKey = conversationPageRefreshKey,
+        listState = conversationHistoryListState,
+        onLoadingChanged = { conversationPageLoading = it },
+        onItemsLoaded = { conversationPageItems = it },
+        onHasMoreChanged = { conversationPageHasMore = it },
+        onLoadFailure = { status = "会话历史加载失败：${it.message ?: "未知错误"}" },
+        loadPage = { projectId, query, limit, offset ->
             withContext(Dispatchers.IO) {
-                val dao = database.dao()
-                val pendingProjectDeleteId = prefs.getString("pending_project_delete_id", "").orEmpty()
-                if (pendingProjectDeleteId.isNotBlank()) {
-                    val localRecords = loadConversations(prefs)
-                    val roomConversationIds = dao.projectConversationIds(pendingProjectDeleteId)
-                    val activeId = prefs.getString("active_project_id", "default") ?: "default"
-                    val pendingRequest = runCatching {
-                        JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}")
-                    }.getOrNull()
-                    val hasRunningRequest = pendingRequest?.optString("status") == "running" &&
-                        pendingRequest?.optString("project_id") == pendingProjectDeleteId
-                    val pendingConversationIds = (
-                        roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id }
-                    ).toSet()
-                    val hasDraft = pendingConversationIds.any { id ->
-                        (prefs.getString("draft_$id", "") ?: "").isNotBlank()
-                    }
-                    val hasLocalConversationData = localRecords.any {
-                        it.projectId == pendingProjectDeleteId && (it.messages.isNotEmpty() || it.title != "新对话")
-                    }
-                    val projectExists = dao.projectExists(pendingProjectDeleteId)
-                    val hasLinkedData = dao.projectHasLinkedData(pendingProjectDeleteId)
-                    val canRecover = ProjectSpaceRules.canRecoverPendingDeletion(
-                        projectId = pendingProjectDeleteId,
-                        activeProjectId = activeId,
-                        hasRunningRequest = hasRunningRequest,
-                        hasDraft = hasDraft,
-                        hasLocalConversationData = hasLocalConversationData,
-                        hasLinkedData = hasLinkedData
-                    )
-                    val deleted = canRecover &&
-                        dao.recoverPendingProjectDeletionIfEmpty(pendingProjectDeleteId, activeId)
-                    if (deleted) {
-                        saveConversationList(
-                            prefs,
-                            localRecords.filterNot { it.projectId == pendingProjectDeleteId },
-                            markDirty = false
-                        )
-                        saveProjects(
-                            prefs,
-                            loadProjects(prefs).filterNot { it.id == pendingProjectDeleteId },
-                            markDirty = false
-                        )
-                        val editor = prefs.edit()
-                        (roomConversationIds + localRecords.filter { it.projectId == pendingProjectDeleteId }.map { it.id })
-                            .distinct().forEach { editor.remove("draft_$it") }
-                        editor.remove("pending_project_delete_id").commit()
-                    } else {
-                        prefs.edit().remove("pending_project_delete_id").commit()
-                    }
-                }
-                val stored = dao.loadConversations()
-                val hasPendingLocalSnapshot = prefs.getLong("local_snapshot_saved_at", 0L) >
-                    prefs.getLong("room_synced_at", 0L)
-                if (stored.isEmpty() || hasPendingLocalSnapshot) {
-                    val legacyConversations = loadConversations(prefs)
-                    val legacyProjects = loadProjects(prefs)
-                    database.withTransaction {
-                        val conversationIds = legacyConversations.map { it.id }
-                        val staleConversationIds = dao.conversationIds().filterNot { it in conversationIds }
-                        if (staleConversationIds.isNotEmpty()) dao.deleteConversations(staleConversationIds)
-                        legacyConversations.forEach { record ->
-                            dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
-                            dao.clearMessages(record.id)
-                            val rows = record.messages.mapIndexed { index, message ->
-                                MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
-                            }
-                            if (rows.isNotEmpty()) dao.putMessages(rows)
-                        }
-                        dao.putProjects(legacyProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                        val projectIds = legacyProjects.map { it.id }
-                        val staleProjectIds = dao.projectIds().filterNot { it in projectIds }
-                        if (staleProjectIds.isNotEmpty()) {
-                            staleProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
-                        }
-                    }
-                    prefs.edit().putLong("room_synced_at", prefs.getLong("local_snapshot_saved_at", 0L)).apply()
-                    legacyConversations to legacyProjects
-                } else {
-                    val restoredConversations = stored.map { row ->
-                        val entity = row.conversation
-                        ConversationRecord(
-                            entity.id, entity.title, entity.updatedAt,
-                            row.messages.sortedBy { it.position }.map { message ->
-                                ChatMessage(message.id, message.role, message.content, jsonStringList(JSONArray(message.versionsJson)), message.activeVersion)
-                            },
-                            entity.projectId
-                        )
-                    }
-                    val storedProjects = dao.loadProjects().map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-                    val restoredProjects = if (storedProjects.isEmpty()) loadProjects(prefs) else storedProjects
-                    if (storedProjects.isEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                    restoredConversations to restoredProjects
-                }
+                appRuntime.conversationPersistenceService.loadConversationPage(
+                    projectId = projectId,
+                    query = query,
+                    limit = limit,
+                    offset = offset
+                )
             }
         }
-        if (loaded.isSuccess) {
-            val data = loaded.getOrThrow()
-            conversations = data.first
-            projects = data.second
-            persistedConversationVersions.clear()
-            data.first.forEach { persistedConversationVersions[it.id] = it.hashCode() }
-            databaseReady = true
-        } else {
-            conversations = loadConversations(prefs)
-            projects = loadProjects(prefs)
-            status = "本地数据库暂不可用，已回退到本机旧存储"
+    )
+
+    LaunchedEffect(Unit) {
+        try {
+            appRuntime.ensureBackupRestoreRecovered()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            status = "检测到未完成的备份恢复，自动回滚失败：" + (error.message ?: "未知错误")
+            return@LaunchedEffect
         }
-        val savedProjectId = prefs.getString("active_project_id", "default") ?: "default"
-        activeProjectId = savedProjectId.takeIf { id -> projects.any { it.id == id && it.archivedAt == 0L } } ?: "default"
-        val savedConversationId = prefs.getString("active_conversation_id", "") ?: ""
-        activeConversationId = conversations.firstOrNull {
-            it.id == savedConversationId && it.projectId == activeProjectId
-        }?.id ?: conversations.firstOrNull { it.projectId == activeProjectId }?.id.orEmpty()
-        messages = conversations.firstOrNull { it.id == activeConversationId }?.messages ?: emptyList()
-        prefs.edit().putString("active_project_id", activeProjectId).putString("active_conversation_id", activeConversationId).apply()
+        modelUiState.initialize()
+        val startup = appRuntime.conversationStartupCoordinator.restore(prefs)
+        conversations = startup.conversations
+        projects = startup.projects
+        projectStorageReadOnly = startup.projectStorageReadOnly
+        activeProjectId = startup.activeProjectId
+        automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
+        activeConversationId = startup.activeConversationId
+        applyConversationContext(activeConversationId, activeProjectId)
+        messages = startup.messages
+        persistedConversationVersions.clear()
+        persistedConversationVersions.putAll(startup.persistedConversationVersions)
+        databaseReady = startup.databaseReady
+        startup.statusMessage?.let { status = it }
         globalMemory = prefs.getString("global_memory_v1", "") ?: ""
         memoryDraft = globalMemory
         experts = loadExperts(prefs)
+        applyConversationContext(activeConversationId, activeProjectId)
         expertPrompts = loadExpertPrompts(prefs)
-        val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
-        if (pendingRequest?.optString("status") == "running") {
-            val requestId = pendingRequest.optString("request_id")
-            val conversationId = pendingRequest.optString("conversation_id")
-            val projectId = pendingRequest.optString("project_id", "default")
-            val restoredPrompt = pendingRequest.optString("prompt")
-            val partial = pendingRequest.optString("partial_answer")
-            val record = conversations.firstOrNull { it.id == conversationId }
-            if (record != null && record.messages.none { it.id == requestId }) {
-                val content = if (partial.isBlank()) "请求在应用重建时中断，原始输入已恢复，可重新发送。" else partial + "\\n\\n[请求中断，已保留已接收内容]"
-                val recovered = record.messages + ChatMessage(requestId, "assistant", content)
-                conversations = saveConversationMessages(prefs, conversationId, recovered, projectId)
-                if (activeConversationId == conversationId) messages = recovered
-            }
-            if (restoredPrompt.isNotBlank() && activeConversationId == conversationId) {
-                draft = restoredPrompt
-                prefs.edit().putString("draft_$conversationId", restoredPrompt).apply()
-            }
+        val recoveredChat = withContext(Dispatchers.IO) {
+            appRuntime.chatRequestRecoveryCoordinator.recover(
+                preferences = prefs,
+                conversations = conversations,
+                databaseReady = databaseReady,
+                activeConversationId = activeConversationId
+            )
+        }
+        conversations = recoveredChat.conversations
+        recoveredChat.activeMessages?.let { messages = it }
+        recoveredChat.restoredPrompt?.let { draft = it }
+        if (recoveredChat.interrupted) {
             status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
         }
-        prefs.edit().remove("chat_request_state_v1").apply()
+        // Process-level AgentTaskCoordinator recovery is owned by NestroApplication.onCreate().
         if (config.apiKey.isNotBlank() && config.model.isNotBlank() && status == "尚未配置模型") status = "模型已就绪"
     }
 
-    LaunchedEffect(conversations, projects, databaseReady) {
-        if (!databaseReady) return@LaunchedEffect
-        val conversationSnapshot = conversations.toList()
-        val projectSnapshot = projects.toList()
-        val knownVersions = persistedConversationVersions.toMap()
-        val snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
-        runCatching {
-            withContext(Dispatchers.IO) {
-                val dao = database.dao()
-                database.withTransaction {
-                    val currentIds = conversationSnapshot.map { it.id }
-                    val removedIds = dao.conversationIds().filterNot { it in currentIds }
-                    if (removedIds.isNotEmpty()) dao.deleteConversations(removedIds)
-                    conversationSnapshot.filter { knownVersions[it.id] != it.hashCode() }.forEach { record ->
-                        dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
-                        dao.clearMessages(record.id)
-                        val rows = record.messages.mapIndexed { index, message ->
-                            MessageEntity(message.id, record.id, index, message.role, message.content, JSONArray(message.versions.take(20)).toString(), message.activeVersion)
-                        }
-                        if (rows.isNotEmpty()) dao.putMessages(rows)
-                    }
-                    dao.putProjects(projectSnapshot.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-                    val currentProjectIds = projectSnapshot.map { it.id }
-                    val removedProjectIds = dao.projectIds().filterNot { it in currentProjectIds }
-                    if (removedProjectIds.isNotEmpty()) {
-                        removedProjectIds.forEach { dao.deleteProjectAndKnowledge(it) }
-                    }
-                }
-            }
-            persistedConversationVersions.clear()
+    ConversationSnapshotPersistenceEffect(
+        databaseReady = databaseReady,
+        conversations = conversations,
+        projects = projects,
+        persistSnapshot = { conversationSnapshot, projectSnapshot ->
+            appRuntime.conversationPersistenceService.persist(
+                prefs = prefs,
+                conversations = conversationSnapshot,
+                projects = projectSnapshot,
+                knownVersions = persistedConversationVersions.toMap(),
+                snapshotTimestamp = prefs.getLong("local_snapshot_saved_at", 0L)
+            )
+            val persistedIds = conversationSnapshot.mapTo(mutableSetOf()) { it.id }
+            persistedConversationVersions.keys.toList().filterNot { it in persistedIds }
+                .forEach { persistedConversationVersions.remove(it) }
             conversationSnapshot.forEach { persistedConversationVersions[it.id] = it.hashCode() }
-            saveConversationList(prefs, conversationSnapshot, markDirty = false)
-            saveProjects(prefs, projectSnapshot, markDirty = false)
-            prefs.edit().putLong("room_synced_at", snapshotTimestamp).apply()
-        }.onFailure {
-            status = "本地数据保存失败：${it.message ?: "未知错误"}"
+        },
+        onFailure = { status = "本地数据保存失败：${it.message ?: "未知错误"}" }
+    )
+
+
+    fun refreshActiveRegistryConfig(updatedRegistry: ModelRegistry) {
+        if (activeRegistryModelId.isBlank()) return
+        val activeConfig = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry = updatedRegistry,
+            activeModelId = activeRegistryModelId,
+            failoverEnabled = false,
+            readKey = modelRepository::readApiKey
+        ).firstOrNull()
+        if (activeConfig != null) {
+            config = activeConfig
+            modelRepository.writeActiveConfig(config)
+        } else {
+            activeRegistryModelId = ""
+            activeModelProfileId = ""
+            config = ModelConfig("", "", "")
+            modelRepository.clearActiveConfig()
+            prefs.edit().remove("active_model_registry_id").remove("active_model_profile_id").remove("base_url").remove("model").apply()
         }
     }
 
+    val selectableModelProfileIds =
+        ModelRequestConfigurationSelector.selectableLegacyProfileIds(modelRegistry)
+    val activeReasoningModelId = activeRegistryModelId.ifBlank {
+        activeModelProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
+    }
+    val activeModelSupportsReasoningEffort = modelRegistry.models
+        .firstOrNull { it.id == activeReasoningModelId }?.supportsReasoningEffort == true
+    val requestModelConfigs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+        registry = modelRegistry,
+        activeModelId = activeReasoningModelId,
+        failoverEnabled = modelFailoverEnabled,
+        reasoningEffort = reasoningEffort,
+        readKey = modelRepository::readApiKey
+    )
 
-    val requestModelConfigs = buildList {
-        if (config.baseUrl.isNotBlank() && config.model.isNotBlank() && config.apiKey.isNotBlank()) add(config)
-        if (modelFailoverEnabled) modelProfiles.filterNot { it.id == activeModelProfileId }.forEach { profile ->
-            val key = LocalVault.readProfile(context, profile.id)
-            if (key.isNotBlank()) add(ModelConfig(profile.baseUrl, profile.model, key))
-        }
-    }.distinctBy { "${it.baseUrl}|${it.model}" }
+    val requestUsageModelIds = requestModelConfigs.associateWith { usedConfig ->
+        ModelRequestConfigurationSelector.usageStatsId(modelRegistry, usedConfig)
+    }
 
-    val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputChars, outputChars ->
-        scope.launch {
-            val profileId = modelProfiles.firstOrNull {
-                it.baseUrl == usedConfig.baseUrl && it.model == usedConfig.model &&
-                    LocalVault.readProfile(context, it.id) == usedConfig.apiKey
+    fun usageProfileId(usedConfig: ModelConfig): String? =
+        requestUsageModelIds[usedConfig]
+            ?: modelProfiles.firstOrNull { profile ->
+                profile.baseUrl == usedConfig.baseUrl && profile.model == usedConfig.model &&
+                    modelRepository.readProfileKey(profile.id) == usedConfig.apiKey
             }?.id
-                ?: activeModelProfileId.takeIf { it.isNotBlank() }
-            if (profileId != null) {
-                modelUsage = ModelUsageStatsCodec.record(modelUsage, profileId, inputChars, outputChars)
+
+    val recordModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
+        scope.launch {
+            val usageId = usageProfileId(usedConfig)
+            if (usageId != null) {
+                val latest = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}").orEmpty())
+                modelUsage = ModelUsageStatsCodec.recordEstimatedTokens(
+                    latest, usageId, inputTokens, outputTokens
+                )
+                prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
+            }
+        }
+    }
+
+    val recordProviderModelUsage: (ModelConfig, Int, Int) -> Unit = { usedConfig, inputTokens, outputTokens ->
+        scope.launch {
+            val usageId = usageProfileId(usedConfig)
+            if (usageId != null) {
+                val latest = ModelUsageStatsCodec.decode(prefs.getString("model_usage_v1", "{}").orEmpty())
+                modelUsage = ModelUsageStatsCodec.recordProviderUsage(
+                    latest, usageId, inputTokens, outputTokens
+                )
                 prefs.edit().putString("model_usage_v1", ModelUsageStatsCodec.encode(modelUsage)).apply()
             }
         }
@@ -713,12 +1255,14 @@ fun NestroApp() {
     val sendPrompt: (String) -> Unit = send@{ rawPrompt ->
         val prompt = rawPrompt.trim()
         if (prompt.isBlank() || busy) return@send
+        val isCoworkbenchRequest = pendingCoworkbenchPrompt.isNotBlank() && prompt.startsWith(pendingCoworkbenchPrompt)
+        pendingCoworkbenchPrompt = ""
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
         val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
         reuseLastUserOnSend = false
         if (messages.lastOrNull()?.id != user.id) messages = messages + user
-        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+        conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
         val creationKind = when {
             isCreationIntent(prompt, "专家") -> "expert"
             isCreationIntent(prompt, "技能") -> "skill"
@@ -732,23 +1276,17 @@ fun NestroApp() {
             val requestProjectId = activeProjectId
             val requestHistory = messages.toList()
             val existingNames = if (creationKind == "expert") experts.joinToString("、") else skills.keys.joinToString("、")
-            val generatorPrompt = buildString {
-                append("你是 Nestro 的能力设计器。根据用户需求设计一个可直接使用的")
-                append(if (creationKind == "expert") "AI 专家" else "工作技能")
-                append("。只返回一个 JSON 对象，不要 Markdown 代码围栏或解释。字段必须是 name 和 prompt。name 是简短中文名称，prompt 是完整、具体、可执行的角色指令。不要要求扩大手机权限，不要包含可执行代码，不要虚构外部工具。现有名称：")
-                append(existingNames.ifBlank { "无" })
-                append("。名称必须与现有名称不同。")
-            }
             scope.launch {
-                val generated = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val raw = OpenAiClient.completeWithFallback(
-                            requestModelConfigs,
-                            listOf(ChatMessage(UUID.randomUUID().toString(), "user", prompt)),
-                            generatorPrompt,
+                try {
+                val generated = runCatchingCancellable {
+                    withContext(Dispatchers.IO) {
+                        appRuntime.capabilityDraftCoordinator.generate(
+                            kind = creationKind,
+                            prompt = prompt,
+                            existingNames = existingNames,
+                            modelConfigs = requestModelConfigs,
                             onUsage = recordModelUsage
                         )
-                        parseGeneratedDefinition(raw)
                     }
                 }
                 val assistantText = when {
@@ -757,7 +1295,7 @@ fun NestroApp() {
                     else -> "生成失败：${generated.exceptionOrNull()?.message ?: "请检查模型是否支持正常文本回复"}"
                 }
                 val completedHistory = requestHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 if (activeConversationId == requestConversationId) messages = completedHistory
                 if (!stopRequested && generated.isSuccess) {
                     val definition = generated.getOrThrow()
@@ -776,224 +1314,554 @@ fun NestroApp() {
                 }
                 busy = false
                 stopRequested = false
+                } finally {
+                    busy = false
+                    stopRequested = false
+                }
             }
             return@send
         }
         if (config.apiKey.isBlank() || config.model.isBlank()) {
             status = "请先配置模型 API"
             messages = messages + ChatMessage(UUID.randomUUID().toString(), "assistant", "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。")
-            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+            conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
         } else {
             busy = true
             stopRequested = false
             teamRunStatus = ""
             teamMemberStatuses = emptyMap()
             val requestConversationId = activeConversationId
+            val requestProjectId = activeProjectId
             val requestHistory = messages.toList()
             val previousAssistant = pendingAssistantRevision
             pendingAssistantRevision = null
-            val assistantId = previousAssistant?.id ?: UUID.randomUUID().toString()
+            val restoredRequest = ChatRequestStateStore.load(prefs)?.takeIf { it.status == "restored" }
+            val resumableRequest = restoredRequest?.takeIf {
+                previousAssistant == null &&
+                    it.conversationId == requestConversationId &&
+                    it.projectId == requestProjectId &&
+                    it.prompt.trim() == prompt
+            }
+            val assistantId = previousAssistant?.id ?: resumableRequest?.requestId ?: UUID.randomUUID().toString()
+            if (restoredRequest != null && resumableRequest == null) {
+                scope.launch(Dispatchers.IO) {
+                    appRuntime.agentApprovalCoordinator.endScopeAndAudit(restoredRequest.requestId, "CANCELLED")
+                }
+            }
             activeRequestId = assistantId
-            val requestProjectId = activeProjectId
-            prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
-                .put("request_id", assistantId).put("conversation_id", requestConversationId)
-                .put("project_id", requestProjectId).put("prompt", prompt).put("partial_answer", "")
-                .put("started_at", System.currentTimeMillis()).toString()).apply()
-            val requestExpertProfile = expertProfiles[selectedExpert]?.takeIf { it.enabled && selectedTeamId.isBlank() }
+            activeRequestConversationId = requestConversationId
+            val requestReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+                prefs, requestProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
+            ) else emptySet()
+            val requestSelectedTeamId = selectedTeamId.takeIf { teamId ->
+                val team = expertTeams.firstOrNull { it.id == teamId }
+                !projectResourceScopesReadOnly && team != null &&
+                    ProjectResourceScopeStore.isTeamVisibleFromProjects(
+                        projectResourceScopes, teamId, team.members, requestProjectId, requestReadableProjectIds
+                    )
+            }.orEmpty()
+            val requestSelectedExpert = selectedExpert.takeIf {
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds)
+            } ?: "通用助手"
+            val requestSelectedSkill = selectedSkill.takeIf {
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
+            }.orEmpty()
+            val requestExecutionAuthorization = ChatExecutionAuthorization(taskModeEnabled, requestSelectedTeamId)
+            val requestExpertTeams = expertTeams.filter { team ->
+                !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isTeamVisibleFromProjects(
+                        projectResourceScopes, team.id, team.members, requestProjectId, requestReadableProjectIds
+                    )
+            }
+            val requestTeamMemberNames = requestExpertTeams.flatMap { it.members }.toSet()
+            val requestExpertProfiles = expertProfiles.filterKeys {
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
+            }
+            val requestExpertPrompts = expertPrompts.filterKeys {
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
+            }
+            val visibleRequestSkills = skills.filterKeys {
+                !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, it, requestProjectId, requestReadableProjectIds)
+            }
+            val requestSkills = SkillDependencyResolver.filterSatisfiedSkills(
+                visibleRequestSkills, skillMetadata, disabledSkills
+            )
+            val requestDisabledSkills = disabledSkills.toSet() + (visibleRequestSkills.keys - requestSkills.keys)
+            val requestExperts = experts.filter {
+                !projectResourceScopesReadOnly && (it in requestTeamMemberNames ||
+                    ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, requestProjectId, requestReadableProjectIds))
+            }.toSet()
+            val requestProjectInstructions = projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty()
+            val requestAutomaticMemoryEnabled = automaticMemoryEnabled
+            val requestStartedAt = System.currentTimeMillis()
+            ChatRequestStateStore.save(prefs, assistantId, requestConversationId, requestProjectId, prompt, "", requestStartedAt)
+            val requestExpertProfile = requestExpertProfiles[requestSelectedExpert]?.takeIf { requestExecutionAuthorization.taskModeEnabled && it.enabled && requestExecutionAuthorization.selectedTeamId.isBlank() }
             val baseSystemContext = listOf(
-                "全局记忆（跨会话共享，仅作为用户背景参考）：\n" + globalMemory,
-                if (selectedTeamId.isBlank() && expertProfiles[selectedExpert]?.enabled != false) expertPrompts[selectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
-                if (selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(expertProfiles[selectedExpert], skills, disabledSkills) else "",
-                projects.firstOrNull { it.id == requestProjectId }?.instructions.orEmpty(),
-                skills[selectedSkill].orEmpty().takeIf { selectedSkill !in disabledSkills }.orEmpty()
+                if (ChatContextRetrievalPolicy.shouldRetrieveUserMemory(prompt)) "全局记忆（按需召回，仅作为用户背景参考）：\n" + globalMemory.take(1600) else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank() && requestExpertProfiles[requestSelectedExpert]?.enabled != false) requestExpertPrompts[requestSelectedExpert].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(selectedExpert) } else "",
+                if (requestExecutionAuthorization.taskModeEnabled && requestExecutionAuthorization.selectedTeamId.isBlank()) ExpertProfileCodec.skillContext(requestExpertProfiles[requestSelectedExpert], requestSkills, requestDisabledSkills, skillMetadata) else "",
+                requestProjectInstructions,
+                if (manualExpertSelection.size in 2..4) {
+                    "用户已在专家中心主动选择以下专家，本轮若任务需要专家协作，应优先使用这些成员：" + manualExpertSelection.filter { it in requestExperts }.joinToString("、")
+                } else "",
+                if (requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2) {
+                    "当前项目可用专家目录（主模型可按任务需要自动组队）：\\n" + requestExperts
+                        .filter { requestExpertProfiles[it]?.enabled != false }
+                        .sorted()
+                        .take(24)
+                        .joinToString("\\n") { name ->
+                            val role = requestExpertPrompts[name].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(name) }
+                            val skillContext = ExpertProfileCodec.skillContext(requestExpertProfiles[name], requestSkills, requestDisabledSkills, skillMetadata)
+                            "- 专家：$name\\n  角色：${role.take(900)}\\n  专属技能：${skillContext.take(700)}"
+                        }.take(8_000)
+                } else "",
+                requestSkills[requestSelectedSkill].orEmpty().takeIf { requestExecutionAuthorization.taskModeEnabled && requestSelectedSkill !in requestDisabledSkills }.orEmpty()
             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12000)
             scope.launch {
-                val phonePlan = PhoneAgentPlanner.plan(prompt)
+                try {
                 if (stopRequested) {
                     val stoppedHistory = requestHistory + ChatMessage(assistantId, "assistant", "已停止生成。")
-                    conversations = saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId)
+                    conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, stoppedHistory, requestProjectId, conversations)
                     if (activeConversationId == requestConversationId) messages = stoppedHistory
+                    ChatRequestStateStore.clear(prefs)
                     status = "已停止生成"
                     busy = false
                     activeRequestId = ""
+                    activeRequestConversationId = ""
                     stopRequested = false
                     return@launch
                 }
-                if (phonePlan.category != PhoneAgentPlanner.Category.GENERAL) {
-                    runCatching {
-                        withContext(Dispatchers.IO) {
-                            val task = PhoneAgentTaskStore.create(database.dao(), requestProjectId, requestConversationId, phonePlan)
-                            if (PhoneAgentService.activeService?.hasValidGrant() == true) {
-                                PhoneAgentWorkScheduler.enqueue(context, task.id)
+                val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                    request = ChatRequestExecutionRequest(
+                        requestId = assistantId,
+                        conversationId = requestConversationId,
+                        projectId = requestProjectId,
+                        prompt = prompt,
+                        startedAt = requestStartedAt,
+                        history = requestHistory,
+                        modelConfigs = requestModelConfigs,
+                        baseSystemContext = baseSystemContext,
+                        taskModeEnabled = requestExecutionAuthorization.taskModeEnabled,
+                        expertTeamEnabled = requestExperts.count { name -> requestExpertProfiles[name]?.enabled != false } >= 2,
+                        temperature = requestExpertProfile?.temperature,
+                        maxTokens = requestExpertProfile?.maxTokens,
+                        previousAssistant = previousAssistant,
+                        shouldStop = { stopRequested }
+                    ),
+                    onUsage = recordModelUsage,
+                    onProviderUsage = recordProviderModelUsage,
+                    planPhoneAgent = { toolArguments ->
+                        if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                            app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
+                        } else {
+                            val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: prompt
+                            val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
+                            if (!PhoneAgentPlanner.shouldCreateTask(requestExecutionAuthorization.taskModeEnabled, phonePlan)) {
+                                app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                            } else {
+                                val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
+                                val created = withContext(Dispatchers.IO) {
+                                    appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                        requestProjectId,
+                                        requestConversationId,
+                                        phonePlan
+                                    )
+                                }
+                                val message = if (canSchedule) {
+                                    "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。实际设备操作仍按任务权限与风险步骤执行。"
+                                } else {
+                                    "已创建 Phone Agent 任务（${created.id}），但设备服务尚未处于有效授权状态，暂未加入队列；实际设备操作尚未开始。"
+                                }
+                                app.nestro.agent.AgentToolResult(true, output = message)
                             }
                         }
-                    }.onFailure { status = "任务计划保存失败：${it.message ?: "未知错误"}" }
-                }
-                val partialAnswer = StringBuilder()
-                var recalledCount = 0
-                val result = runCatching {
-                    val recallQuery = requestHistory.takeLast(8)
-                        .joinToString("\n") { it.content.take(500) }.take(2400)
-                    val recall = ConversationMemoryStore.retrieve(database.dao(), requestProjectId, requestConversationId, recallQuery)
-                    recalledCount = recall.hitCount
-                    if (activeConversationId == requestConversationId) recallSources = recall.sources
-                    val knowledgeContext = KnowledgeStore.retrieve(database.dao(), requestProjectId, prompt)
-                    val memoryContext = UserMemoryStore.recall(database.dao(), requestProjectId, prompt).context
-                    val requestSystemContext = listOf(baseSystemContext, PhoneAgentPlanner.contextFor(prompt), recall.context, knowledgeContext, memoryContext)
-                        .filter { it.isNotBlank() }.joinToString("\n\n").take(16000)
-                    val selectedTeam = expertTeams.firstOrNull { it.id == selectedTeamId }
-                    val teamContext = if (selectedTeam != null) {
-                        teamRunStatus = "专家团“${selectedTeam.name}”正在启动…"
-                        teamMemberStatuses = selectedTeam.members.associateWith { "waiting" }
-                        val memberTasks = selectedTeam.members.filter { it in experts && expertProfiles[it]?.enabled != false }.take(4).map { member ->
-                            val role = expertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
-                            val attached = ExpertProfileCodec.skillContext(expertProfiles[member], skills, disabledSkills)
-                            ExpertTeamMemberTask(member, listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"))
+                    },
+                    onTaskPlanningFailure = { status = "任务计划保存失败：${it.message ?: "未知错误"}" },
+                    runExpertTeam = { requestSystemContext, toolArguments ->
+                    val selectedTeam = requestExpertTeams.firstOrNull {
+                        it.id == requestExecutionAuthorization.selectedTeamId
+                    }
+                    val memberSelection = toolArguments["member_names"].orEmpty()
+                    val requestedMembers = runCatching {
+                        val array = JSONArray(memberSelection)
+                        (0 until array.length()).map { array.getString(it).trim() }.filter { it.isNotBlank() }
+                    }.getOrElse {
+                        memberSelection.split(Regex("[,，、;；]")).map { it.trim() }.filter { it.isNotBlank() }
+                    }
+                    val chosenNames = (selectedTeam?.members
+                        ?: manualExpertSelection.takeIf { it.size in 2..4 }?.toList()
+                        ?: requestedMembers)
+                        .distinct()
+                        .filter { it in requestExperts && requestExpertProfiles[it]?.enabled != false }
+                        .take(4)
+                    check(chosenNames.size in 2..4) {
+                        if (selectedTeam != null) "当前专家团队至少需要 2 位已启用专家。"
+                        else "主模型没有从当前项目的专家目录中选出至少 2 位可用专家，已阻止启动空团队。"
+                    }
+                    val teamId = selectedTeam?.id ?: "auto-" + assistantId.take(48)
+                    val teamName = selectedTeam?.name ?: toolArguments["team_name"]?.take(40)?.ifBlank { null } ?: "临时专家团"
+                    val teamDescription = selectedTeam?.description
+                        ?: toolArguments["team_description"]?.take(300)?.ifBlank { null }
+                        ?: prompt.take(300)
+                    val assignmentJson = runCatching { JSONObject(toolArguments["assignments"].orEmpty()) }.getOrNull()
+                    val memberTasks = chosenNames.associateWith { member ->
+                        val role = requestExpertPrompts[member].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(member) }
+                        val attached = ExpertProfileCodec.skillContext(requestExpertProfiles[member], requestSkills, requestDisabledSkills, skillMetadata)
+                        ExpertTeamMemberTask(
+                            name = member,
+                            rolePrompt = listOf(role, attached).filter { it.isNotBlank() }.joinToString("\n\n"),
+                            assignedTask = assignmentJson?.optString(member).orEmpty().take(8_000)
+                        )
+                    }
+                    val plan = runCatching {
+                        val json = JSONObject(toolArguments["plan"] ?: error("模型未提供项目工作包计划"))
+                        val packageArray = json.getJSONArray("packages")
+                        val packages = (0 until packageArray.length()).map { index ->
+                            val item = packageArray.getJSONObject(index)
+                            val dependencyArray = item.optJSONArray("depends_on") ?: JSONArray()
+                            ExpertWorkPackage(
+                                id = item.optString("id"),
+                                memberName = item.optString("member_name"),
+                                instruction = item.optString("instruction"),
+                                dependsOn = (0 until dependencyArray.length()).map { dependencyArray.getString(it) },
+                                acceptanceCriteria = item.optString("acceptance_criteria")
+                            )
                         }
-                        check(memberTasks.size in 2..4) { "专家团至少需要 2 位已启用专家，请检查团队成员状态。" }
-                        val teamRun = ExpertTeamEngine.run(
-                            teamName = selectedTeam.name,
-                            teamDescription = selectedTeam.description,
-                            task = prompt,
-                            members = memberTasks,
-                            maxRetries = 1,
-                            timeoutMillis = 45_000,
-                            maxParallel = 4,
-                            shouldStop = { stopRequested },
-                            onMember = { member, state ->
+                        ExpertProjectPlan(
+                            projectGoal = json.optString("project_goal", prompt),
+                            packages = packages,
+                            finalAcceptanceCriteria = json.optString("final_acceptance_criteria", "所有工作包完成，主模型完成交叉审查并整合交付。")
+                        )
+                    }.getOrElse {
+                        ExpertProjectPlan(
+                            projectGoal = prompt,
+                            packages = chosenNames.mapIndexed { index, member ->
+                                ExpertWorkPackage(
+                                    id = "work-${index + 1}",
+                                    memberName = member,
+                                    instruction = memberTasks.getValue(member).assignedTask.ifBlank { prompt },
+                                    acceptanceCriteria = "提交可核验的工作成果、依据、风险和未解决项。"
+                                )
+                            },
+                            finalAcceptanceCriteria = "所有工作包完成，主模型完成交叉审查并整合交付。"
+                        )
+                    }
+                    teamRunStatus = "专家团“$teamName”正在拆解并执行项目…"
+                    teamMemberStatuses = plan.packages.associate { it.id to "waiting" }
+                    val eventPrefsKey = "expert_team_events_v1"
+                    expertTeamPauseController.resume()
+                    teamExecutionPaused = false
+                    val projectPlanResult = try {
+                        appRuntime.expertTeamExecutionCoordinator.executeProjectPlan(
+                        teamId = teamId,
+                        teamName = teamName,
+                        teamDescription = teamDescription,
+                        plan = plan,
+                        members = memberTasks,
+                        projectId = requestProjectId,
+                        conversationId = requestConversationId,
+                        taskId = assistantId + "-team-project",
+                        shouldStop = { stopRequested },
+                        eventSink = app.nestro.data.ExpertTeamEventSink { event ->
+                            withContext(Dispatchers.IO) {
+                                val existing = app.nestro.data.ExpertTeamCollaborationEventCodec.decode(
+                                    prefs.getString(eventPrefsKey, "[]") ?: "[]"
+                                )
+                                check(prefs.edit().putString(
+                                    eventPrefsKey,
+                                    app.nestro.data.ExpertTeamCollaborationEventCodec.encode(existing + event)
+                                ).commit()) { "专家协作事件保存失败" }
                                 withContext(Dispatchers.Main) {
-                                    teamMemberStatuses = teamMemberStatuses + (member to state)
-                                    teamRunStatus = when(state) {
-                                        "running" -> "专家团执行中：$member 正在分析"
-                                        "retrying" -> "专家团执行中：$member 正在重试"
-                                        "success" -> "专家团执行中：$member 已完成"
-                                        "failed" -> "专家团执行中：$member 调用失败"
-                                        else -> teamRunStatus
+                                    if (activeProjectId == requestProjectId) {
+                                        expertTeamEvents = (expertTeamEvents + event).takeLast(100)
                                     }
                                 }
                             }
-                        ) { member, memberPrompt ->
+                        },
+                        onPackage = { packageId, state, detail ->
+                            withContext(Dispatchers.Main) {
+                                teamMemberStatuses = teamMemberStatuses + (packageId to state)
+                                teamRunStatus = when (state) {
+                                    "running" -> "专家团执行中：$packageId 正在执行"
+                                    "success" -> "专家团执行中：$packageId 已提交成果"
+                                    "failed" -> "专家团执行中：$packageId 执行失败"
+                                    "blocked" -> "专家团执行中：$packageId 等待依赖"
+                                    else -> teamRunStatus
+                                }
+                            }
+                        },
+                        invokeMember = { member, memberPrompt ->
                             withContext(Dispatchers.IO) {
-                                OpenAiClient.completeWithFallback(
+                                val memberSystemContext = listOf(requestSystemContext, memberPrompt)
+                                    .filter { it.isNotBlank() }.joinToString("\n\n").take(18_000)
+                                appRuntime.chatExecutionService.completeWithFallback(
                                     requestModelConfigs,
-                                    requestHistory,
-                                    listOf(requestSystemContext,memberPrompt).filter { it.isNotBlank() }
-                                        .joinToString("\n\n").take(18000),
+                                    ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
+                                    memberSystemContext,
                                     connectTimeoutMillis = 15_000,
                                     readTimeoutMillis = 25_000,
-                                    temperature = expertProfiles[member.name]?.temperature,
-                                    maxTokens = expertProfiles[member.name]?.maxTokens,
-                                    onUsage = recordModelUsage
-                                ).take(2200)
+                                    temperature = requestExpertProfiles[member.name]?.temperature,
+                                    maxTokens = requestExpertProfiles[member.name]?.maxTokens,
+                                    onUsage = recordModelUsage,
+                                    onProviderUsage = recordProviderModelUsage
+                                ).take(12_000)
                             }
+                        },
+                        invokeMemberWithTools = { member, memberPrompt, discovery ->
+                            withContext(Dispatchers.IO) {
+                                val memberSystemContext = listOf(requestSystemContext, memberPrompt)
+                                    .filter { it.isNotBlank() }.joinToString("\n\n").take(18_000)
+                                val parentTaskId = assistantId + "-team-project"
+                                val scopedRequestId = UUID.nameUUIDFromBytes(
+                                    "expert-member-tools:$parentTaskId:${member.name}:$memberPrompt".toByteArray(Charsets.UTF_8)
+                                ).toString()
+                                val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                                    request = ChatRequestExecutionRequest(
+                                        requestId = scopedRequestId,
+                                        conversationId = requestConversationId,
+                                        projectId = requestProjectId,
+                                        prompt = memberPrompt,
+                                        startedAt = System.currentTimeMillis(),
+                                        history = ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
+                                        modelConfigs = requestModelConfigs,
+                                        baseSystemContext = memberSystemContext,
+                                        taskModeEnabled = true,
+                                        expertTeamEnabled = false,
+                                        parentTaskId = parentTaskId,
+                                        temperature = requestExpertProfiles[member.name]?.temperature,
+                                        maxTokens = requestExpertProfiles[member.name]?.maxTokens,
+                                        previousAssistant = null,
+                                        shouldStop = { stopRequested },
+                                        allowedToolIds = discovery.list().map { it.id }.toSet(),
+                                                                             taskToolAccess = discovery
+                                    ),
+                                    onUsage = recordModelUsage,
+                                    onProviderUsage = recordProviderModelUsage,
+                                    planPhoneAgent = { toolArguments ->
+                                        if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                                            app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
+                                        } else {
+                                            val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: memberPrompt
+                                            val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
+                                            if (!PhoneAgentPlanner.shouldCreateTask(true, phonePlan)) {
+                                                app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                                            } else {
+                                                val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
+                                                val created = appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                                    requestProjectId,
+                                                    requestConversationId,
+                                                    phonePlan
+                                                )
+                                                app.nestro.agent.AgentToolResult(
+                                                    true,
+                                                    output = if (canSchedule) {
+                                                        "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。"
+                                                    } else {
+                                                        "已创建 Phone Agent 任务（${created.id}），但设备服务尚未获得有效授权，实际设备操作尚未开始。"
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onPartialAnswer = {}
+                                )
+                                execution.finalization.finalText.take(12_000)
+                            }
+                        },
+                            shouldPause = { expertTeamPauseController.isPaused() },
+                            awaitResume = { expertTeamPauseController.awaitResume { stopRequested } },
+                            toolCatalog = appRuntime.agentToolCatalog
+                        )
+                    } finally {
+                        expertTeamPauseController.resume()
+                        withContext(Dispatchers.Main) { teamExecutionPaused = false }
+                    }
+                    val projectResultContext = buildString {
+                        append("专家项目：").append(plan.projectGoal).append("\n")
+                        append("最终验收标准：").append(plan.finalAcceptanceCriteria).append("\n\n")
+                        projectPlanResult.packageResults.forEach { item ->
+                            append("【").append(item.memberName).append(" / ").append(item.packageId).append(" / ").append(item.status).append("】\n")
+                            append(item.output.ifBlank { item.error }.take(5_000)).append("\n\n")
                         }
-                        expertTeamRunHistory = (listOf(teamRun) + expertTeamRunHistory).take(30)
-                        prefs.edit().putString("expert_team_runs_v1",ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory)).apply()
-                        teamRunStatus = "专家团完成：成功 ${teamRun.successfulMembers}/${teamRun.members.size}，失败 ${teamRun.failedMembers}"
-                        if (!teamRun.isUsable) {
-                            throw IllegalStateException("专家团所有成员均未能完成分析，请检查模型配置、网络和成员角色指令。")
-                        }
-                        teamRun.toContext(10_000)
-                    } else ""
-                    val finalSystemContext = listOf(requestSystemContext, teamContext)
-                        .filter { it.isNotBlank() }.joinToString("\n\n").take(24000)
-                    if (stopRequested) throw java.util.concurrent.CancellationException("用户停止生成")
-                    OpenAiClient.streamWithFallback(requestModelConfigs, requestHistory, finalSystemContext, requestExpertProfile?.temperature, requestExpertProfile?.maxTokens, onUsage = recordModelUsage, requestId = assistantId) { chunk ->
-                        partialAnswer.append(chunk)
-                        prefs.edit().putString("chat_request_state_v1", JSONObject().put("status", "running")
-                            .put("request_id", assistantId).put("conversation_id", requestConversationId)
-                            .put("project_id", requestProjectId).put("prompt", prompt)
-                            .put("partial_answer", partialAnswer.toString().take(24000))
-                            .put("started_at", System.currentTimeMillis()).toString()).apply()
+                        append("项目执行状态：").append(if (projectPlanResult.isSuccessful) "全部工作包成功" else "存在失败或阻塞工作包")
+                    }.take(18_000)
+                    teamRunStatus = if (projectPlanResult.isSuccessful) "专家项目已完成，等待主模型审核" else "专家项目部分工作包未完成，交由主模型检查"
+                    projectResultContext
+                    },
+
+                    onPartialAnswer = { partial ->
                         withContext(Dispatchers.Main) {
                             if (activeConversationId == requestConversationId) {
-                                messages = requestHistory + ChatMessage(assistantId, "assistant", partialAnswer.toString(), previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
+                                messages = requestHistory + ChatMessage(assistantId, "assistant", partial, previousAssistant?.versions.orEmpty(), previousAssistant?.activeVersion ?: 0)
                             }
                         }
                     }
-                }
-                val finalText = when {
-                    result.isSuccess -> result.getOrThrow()
-                    partialAnswer.isNotEmpty() -> partialAnswer.toString()
-                    stopRequested -> "已停止生成。"
-                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
-                    result.exceptionOrNull() is kotlinx.coroutines.TimeoutCancellationException -> "请求失败：本次请求超时，请重试或缩短内容。"
-                    else -> "请求失败：${result.exceptionOrNull()?.message ?: "请检查网络、地址和 Key"}"
-                }
-                val priorVersions = previousAssistant?.allVersions().orEmpty()
-                val nextVersions = (priorVersions + finalText).filter(String::isNotBlank).distinct().takeLast(20)
-                val completedHistory = requestHistory + ChatMessage(assistantId, "assistant", finalText, nextVersions, nextVersions.lastIndex)
-                conversations = saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId)
+                )
+                val recalledCount = execution.recalledCount
+                if (activeConversationId == requestConversationId) recallSources = execution.recallSources
+                val finalized = execution.finalization
+                val finalText = finalized.finalText
+                val completedHistory = finalized.completedHistory
+                conversations = ConversationPreferencesStore.saveConversationMessages(prefs, requestConversationId, completedHistory, requestProjectId, conversations)
                 prefs.edit().remove("chat_request_state_v1").apply()
                 if (activeConversationId == requestConversationId) messages = completedHistory
-                status = when {
-                    stopRequested -> "已停止生成"
-                    result.isSuccess -> if (recalledCount > 0) "已连接 · 参考历史 ${recalledCount} 条 · 本地保存" else "已连接 · 本地保存"
-                    else -> "连接失败"
+                if (isCoworkbenchRequest && finalized.status == ChatResponseStatus.SUCCESS && !stopRequested && activeConversationId == requestConversationId) {
+                    coworkbenchGeneratedPatch = finalText
+                    page = "coworkbench"
+                }
+                status = when (finalized.status) {
+                    ChatResponseStatus.STOPPED -> "已停止生成"
+                    ChatResponseStatus.SUCCESS -> when {
+                        execution.taskPlanningFailure != null -> "已连接 · 任务计划保存失败：${execution.taskPlanningFailure.message ?: "未知错误"}"
+                        recalledCount > 0 -> "已连接 · 参考历史 ${recalledCount} 条 · 本地保存"
+                        else -> "已连接 · 本地保存"
+                    }
+                    ChatResponseStatus.FAILURE -> "连接失败"
                 }
                 busy = false
                 activeRequestId = ""
-                if (result.isSuccess && !stopRequested && automaticMemoryEnabled &&
-                    shouldExtractAutomaticMemory(prompt) && UserMemoryStore.isSafeContent(prompt)
-                ) {
-                    val userFacts = listOf(prompt)
+                activeRequestConversationId = ""
+                if (finalized.status == ChatResponseStatus.SUCCESS && !stopRequested) {
+                    // Capture Compose state on the main thread; the IO coroutine must not read
+                    // the mutable snapshot while the user may switch or edit conversations.
+                    val completedConversationVersion = conversations.firstOrNull {
+                        it.id == requestConversationId
+                    }?.hashCode()
                     scope.launch(Dispatchers.IO) {
-                        val candidates = runCatching { extractMemoryCandidates(config, userFacts) }.getOrDefault(emptyList())
-                        if (candidates.isNotEmpty()) {
-                            runCatching {
-                                UserMemoryStore.saveCandidates(
-                                    database.dao(), requestProjectId, requestConversationId, user.id, candidates
+                        val memoryEnabled = requestAutomaticMemoryEnabled &&
+                            CapabilityRegistryStore.authorize(prefs, requestProjectId, "memory")
+                        if (memoryEnabled) {
+                            try {
+                                appRuntime.conversationPersistenceService.persistConversationMessages(
+                                    conversationId = requestConversationId,
+                                    projectId = requestProjectId,
+                                    messages = completedHistory
                                 )
+                                if (completedConversationVersion != null) {
+                                    withContext(Dispatchers.Main) {
+                                        val currentVersion = conversations.firstOrNull {
+                                            it.id == requestConversationId
+                                        }?.hashCode()
+                                        if (currentVersion == completedConversationVersion) {
+                                            persistedConversationVersions[requestConversationId] = completedConversationVersion
+                                        }
+                                    }
+                                }
+                            } catch (error: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    if (activeConversationId == requestConversationId) {
+                                        memoryStatus = "自动记忆提取已跳过：来源会话尚未安全持久化（${error.message ?: "未知错误"}）"
+                                    }
+                                }
+                                return@launch
                             }
                         }
+                        appRuntime.automaticMemoryExtractionCoordinator.extractAndSave(
+                            enabled = memoryEnabled,
+                            prompt = prompt,
+                            modelConfigs = requestModelConfigs,
+                            projectId = requestProjectId,
+                            conversationId = requestConversationId,
+                            messageId = requestHistory.lastOrNull { it.role == "user" }?.id.orEmpty(),
+                            recentUserMessages = requestHistory.filter { it.role == "user" }.takeLast(5).map { it.content }
+                        )
                     }
                 }
                 stopRequested = false
+                } finally {
+                    if (activeRequestId == assistantId) {
+                        busy = false
+                        activeRequestId = ""
+                        activeRequestConversationId = ""
+                        stopRequested = false
+                    }
+                }
             }
         }
     }
 
-        LaunchedEffect(messages.size, busy) {
+    LaunchedEffect(messages.size, busy, activeConversationId) {
+        if (page != "home" && page != "chat") return@LaunchedEffect
         val lastIndex = messages.lastIndex + if (busy) 1 else 0
-        if (lastIndex >= 0) chatListState.animateScrollToItem(lastIndex)
+        if (lastIndex >= 0) {
+            if (!initialChatPositionRestored) {
+                chatListState.scrollToItem(lastIndex)
+                initialChatPositionRestored = true
+            } else {
+                chatListState.animateScrollToItem(lastIndex)
+            }
+        }
     }
 
+    LaunchedEffect(page) {
+        if (page == "home" || page == "chat") {
+            val lastIndex = messages.lastIndex + if (busy) 1 else 0
+            if (lastIndex >= 0) chatListState.scrollToItem(lastIndex)
+        }
+    }
+
+    val darkAppearance = appearanceMode == "dark" ||
+        (appearanceMode == "system" && androidx.compose.foundation.isSystemInDarkTheme())
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = Bg, surface = Card, primary = Mint, onPrimary = Bg,
-            onBackground = Ink, onSurface = Ink, secondary = Muted
+        colorScheme = if (darkAppearance) darkColorScheme(
+            primary = androidx.compose.ui.graphics.Color.White,
+            onPrimary = androidx.compose.ui.graphics.Color.Black,
+            background = androidx.compose.ui.graphics.Color.Black,
+            onBackground = androidx.compose.ui.graphics.Color.White,
+            surface = androidx.compose.ui.graphics.Color(0xFF111111),
+            onSurface = androidx.compose.ui.graphics.Color.White,
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFF1A1A1A),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFAAAAAA),
+            outline = androidx.compose.ui.graphics.Color(0xFF303030),
+            error = androidx.compose.ui.graphics.Color.White
+        ) else lightColorScheme(
+            primary = androidx.compose.ui.graphics.Color(0xFF111111),
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            background = androidx.compose.ui.graphics.Color.White,
+            onBackground = androidx.compose.ui.graphics.Color(0xFF111111),
+            surface = androidx.compose.ui.graphics.Color.White,
+            onSurface = androidx.compose.ui.graphics.Color(0xFF111111),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF5F5F5),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF6B6B6B),
+            outline = androidx.compose.ui.graphics.Color(0xFFE5E5E7),
+            error = androidx.compose.ui.graphics.Color(0xFF111111)
         )
     ) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
-            Row(Modifier.fillMaxSize()) {
-                if (showDrawer) {
-                    Column(
-                        Modifier.width(286.dp).fillMaxHeight().background(Card).padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+            Box(Modifier.fillMaxSize()) {
+                if (drawerMounted && screenWidthDp < 600) {
+                    AnimatedVisibility(
+                        visible = showDrawer,
+                        enter = slideInHorizontally(animationSpec = tween(NestroMotion.DRAWER_IN)) { -it } + fadeIn(tween(NestroMotion.FADE_IN)),
+                        exit = slideOutHorizontally(animationSpec = tween(NestroMotion.DRAWER_OUT)) { -it } + fadeOut(tween(NestroMotion.STANDARD_OUT))
                     ) {
-                        Text("Nestro", style = MaterialTheme.typography.headlineSmall, color = Mint)
-                        Text("你的本机 AI 工作站", color = Muted, style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(12.dp))
-                        DrawerItem("⌂", "工作台") { page = "home"; showDrawer = false }
-                        DrawerItem("☷", "对话历史") { page = "conversations"; showDrawer = false }
-                        DrawerItem("✧", "全局记忆") { page = "memory"; showDrawer = false }
-                        DrawerItem("▧", "本地知识库") { page = "knowledge"; showDrawer = false }
-                         DrawerItem("⇢", "工作流") { page = "workflows"; showDrawer = false }
-                        DrawerItem("▦", "项目空间") { page = "spaces"; showDrawer = false }
-                        DrawerItem("⌁", "手机自动化") { page = "phone"; showDrawer = false }
-                        DrawerItem("♫", "语音设置") { page = "voice"; showDrawer = false }
-                        DrawerItem("✦", "我的专家") { page = "experts"; showDrawer = false }
-                        DrawerItem("♧", "专家团队") { page = "teams"; showDrawer = false }
-                        DrawerItem("◇", "能力中心") { page = "skills"; showDrawer = false }
-                        DrawerItem("⚙", "模型管理") { page = "models"; showDrawer = false }
-                        DrawerItem("▤", "数据与设置") { page = "settings"; showDrawer = false }
-                        Spacer(Modifier.weight(1f))
-                        Text("数据保存在本机", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        NavigationDrawerContent(
+                            modifier = Modifier.fillMaxSize(),
+                            onNavigate = { destination -> page = destination; showDrawer = false },
+                            onClose = { showDrawer = false }
+                        )
                     }
-                }
-                Column(Modifier.weight(1f).fillMaxHeight()) {
+                } else {
+                Row(Modifier.fillMaxSize()) {
+                    if (drawerMounted && screenWidthDp >= 600) {
+                        AnimatedVisibility(
+                            visible = showDrawer,
+                            enter = expandHorizontally(animationSpec = tween(NestroMotion.DRAWER_IN), expandFrom = Alignment.Start) + fadeIn(tween(NestroMotion.FADE_IN)),
+                            exit = shrinkHorizontally(animationSpec = tween(NestroMotion.DRAWER_OUT), shrinkTowards = Alignment.Start) + fadeOut(tween(NestroMotion.STANDARD_OUT))
+                        ) {
+                            NavigationDrawerContent(
+                                modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                                onNavigate = { destination -> page = destination; showDrawer = false },
+                                onClose = { showDrawer = false }
+                            )
+                        }
+                    }
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = adaptiveContentPadding, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1002,9 +1870,14 @@ fun NestroApp() {
                                 Icon(Icons.Outlined.Menu, contentDescription = "菜单", tint = Ink)
                             }
                             Column {
-                                Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                Text(status, color = Muted, style = MaterialTheme.typography.labelSmall)
-                                if (busy && teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.labelSmall,maxLines=1)
+                                Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
+                                AnimatedStatusText(status, color = Muted, style = MaterialTheme.typography.labelSmall)
+                                if (busy && teamRunStatus.isNotBlank()) {
+                                    AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                        Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
                                 if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
                                     TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
                                         Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
@@ -1012,12 +1885,22 @@ fun NestroApp() {
                                 }
                             }
                         }
-                        IconButton(onClick = { page = "models" }) {
-                            Icon(Icons.Outlined.Tune, contentDescription = "模型设置", tint = Mint)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { page = "tools" }) {
+                                Icon(Icons.Outlined.Extension, contentDescription = "工具与扩展", tint = Ink)
+                            }
+                            IconButton(onClick = { page = "settings" }) {
+                                Icon(Icons.Outlined.Settings, contentDescription = "设置", tint = Ink)
+                            }
                         }
                     }
 
-                    when (page) {
+                    Crossfade(
+                        targetState = if (page == "teams") "experts" else page,
+                        animationSpec = tween(NestroMotion.STANDARD),
+                        label = "page-transition"
+                    ) { targetPage ->
+                    when (targetPage) {
                         "home", "chat" -> {
                             if (messages.isEmpty()) {
                                 Column(
@@ -1025,24 +1908,10 @@ fun NestroApp() {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Box(
-                                        Modifier.size(76.dp).background(Mint, RoundedCornerShape(24.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) { Text("✦", color = Bg, style = MaterialTheme.typography.headlineLarge) }
                                     Spacer(Modifier.height(20.dp))
-                                    Text("今天想创造点什么？", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                    Text("有什么可以帮忙？", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                     Spacer(Modifier.height(8.dp))
-                                    Text("连接自己的模型，组合专家、技能与知识", color = Muted)
-                                    Spacer(Modifier.height(24.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Suggestion("写作创作") { draft = "帮我完成一项写作任务" }
-                                        Suggestion("分析资料") { draft = "帮我分析这份资料" }
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Suggestion("开发代码") { draft = "帮我规划并编写代码" }
-                                        Suggestion("创建专家") { showExpertDialog = true }
-                                    }
+                                    Text("直接描述目标，Nost 会判断并调度所需能力。", color = Muted)
                                 }
                             } else {
                                 LazyColumn(
@@ -1053,8 +1922,15 @@ fun NestroApp() {
                                     items(messages, key = { it.id }) { msg ->
                                         MessageBubble(
                     msg,
-                    onSpeak = speakMessage,
-                    onStopSpeak = stopSpeaking,
+                    onSaveArtifact = { text ->
+                        scope.launch {
+                            val title = text.lineSequence().firstOrNull()?.trim()?.take(60).orEmpty().ifBlank { "对话产物" }
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { app.nestro.data.ArtifactStore.save(context, activeProjectId, title, text) }
+                            }
+                            status = result.fold({ "已保存到产物库：${it.title} v${it.version}" }, { "产物保存失败：${it.message ?: "未知错误"}" })
+                        }
+                    },
                     onEdit = if (msg.role == "user") ({
                         editMessageId = msg.id
                         editMessageDraft = msg.content
@@ -1068,7 +1944,7 @@ fun NestroApp() {
                             pendingAssistantRevision = msg
                             reuseLastUserOnSend = true
                             messages = messages.take(userIndex + 1)
-                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                            conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                             sendPrompt(retryPrompt)
                         }
                     }) else null,
@@ -1078,8 +1954,16 @@ fun NestroApp() {
                             val allVersions = msg.allVersions()
                             val chosen = version.coerceIn(0, allVersions.lastIndex)
                             messages = messages.toMutableList().also { it[index] = msg.copy(content = allVersions[chosen], versions = allVersions, activeVersion = chosen) }
-                            conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                            conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                         }
+                    },
+                    onOpenVideo = { assetId ->
+                        pendingOpenMediaAssetId = assetId
+                        page = "media-editor"
+                    },
+                    onOpenMediaSetup = {
+                        pendingOpenMediaAssetId = ""
+                        page = "media-editor"
                     },
                     onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
@@ -1087,29 +1971,55 @@ fun NestroApp() {
                                                 if (lastUserIndex >= 0) {
                                                     val retryPrompt = messages[lastUserIndex].content
                                                     messages = messages.take(lastUserIndex)
-                                                    conversations = saveConversationMessages(
-                                                        prefs, activeConversationId, messages, activeProjectId
+                                                    conversations = ConversationPreferencesStore.saveConversationMessages(
+                                                        prefs, activeConversationId, messages, activeProjectId, conversations
                                                     )
                                                     sendPrompt(retryPrompt)
                                                 }
                                             }
-                                        })
+                                        },
+                                            modifier = Modifier.animateItem(
+                                                fadeInSpec = tween(NestroMotion.STANDARD),
+                                                placementSpec = spring(stiffness = Spring.StiffnessLow),
+                                                fadeOutSpec = tween(NestroMotion.STANDARD_OUT)
+                                            )
+                                        )
                                     }
-                                    if (busy) item { Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp)) }
+                                    item {
+                                        AnimatedVisibility(
+                                            visible = busy,
+                                            enter = fadeIn(tween(NestroMotion.FADE_IN)) + expandVertically(animationSpec = tween(NestroMotion.FADE_IN)),
+                                            exit = fadeOut(tween(NestroMotion.FAST_OUT)) + shrinkVertically(animationSpec = tween(NestroMotion.FAST_OUT))
+                                        ) {
+                                            Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp))
+                                        }
+                                    }
                                 }
                             }
-                            Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            Column(Modifier.fillMaxWidth().animateContentSize().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
                                 Row(
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
                                     AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
-                                    AssistChip(onClick = { page = "experts" }, label = { Text(selectedExpert) })
-                                    AssistChip(onClick = { page = "teams" }, label = { Text(expertTeams.firstOrNull { it.id == selectedTeamId }?.name ?: "专家团队") })
-                                    AssistChip(onClick = { page = "skills" }, label = { Text(selectedSkill.ifBlank { "选择技能" }) })
+                                    Box {
+                                        AssistChip(onClick = { showReasoningMenu = true }, label = { Text("思考：${when (reasoningEffort) { "none" -> "关闭"; "low" -> "轻量"; "medium" -> "中度"; else -> "重度" }}${if (activeModelSupportsReasoningEffort) "" else "（当前模型不支持）"}") })
+                                        DropdownMenu(expanded = showReasoningMenu, onDismissRequest = { showReasoningMenu = false }) {
+                                            listOf("none" to "关闭思考", "low" to "轻量思考", "medium" to "中度思考", "high" to "重度思考").forEach { (value, label) ->
+                                                DropdownMenuItem(text = { Text(label) }, onClick = { reasoningEffort = value; prefs.edit().putString("reasoning_effort_v1", value).apply(); showReasoningMenu = false })
+                                            }
+                                        }
+                                    }
+                                }
+                                if (chatMediaStatus.isNotBlank()) {
+                                    AnimatedStatusText(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        enabled = !busy,
+                                        onClick = { chatMediaImportLauncher.launch(arrayOf("image/*", "audio/*", "video/*")) }
+                                    ) { Text("添加素材") }
                                     VoiceInputButton(
                                         enabled = !busy,
                                         onPartialResult = { spoken ->
@@ -1127,17 +2037,19 @@ fun NestroApp() {
                                         modifier = Modifier.weight(1f),
                                         placeholder = { Text("输入或按住说话…", color = Muted) },
                                         trailingIcon = {
-                                            if (busy) {
-                                                IconButton(onClick = {
-                                                    stopRequested = true
-                                                    status = "正在停止…"
-                                                    OpenAiClient.cancel(activeRequestId)
-                                                }) {
-                                                    Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
-                                                }
-                                            } else {
-                                                IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
-                                                    Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                            Crossfade(targetState = busy, animationSpec = tween(NestroMotion.FAST), label = "send-stop-transition") { isBusy ->
+                                                if (isBusy) {
+                                                    IconButton(onClick = {
+                                                        stopRequested = true
+                                                        status = "正在停止…"
+                                                        appRuntime.chatExecutionService.cancel(activeRequestId)
+                                                    }) {
+                                                        Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
+                                                    }
+                                                } else {
+                                                    IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
+                                                        Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                                    }
                                                 }
                                             }
                                         },
@@ -1149,12 +2061,21 @@ fun NestroApp() {
                                         )
                                     )
                                 }
-                                Text(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
                             }
                         }
+                        "tools" -> ToolsDirectoryPage(onNavigate = { destination -> page = destination })
+                        "comparison" -> ModelComparisonPage(
+                            registry = modelRegistry,
+                            repository = modelRepository,
+                            reasoningEffort = reasoningEffort,
+                            onBack = { page = "home" },
+                            onManageModels = { page = "models" }
+                        )
                         "models" -> ModelManager(
                             profiles = modelProfiles,
                             activeProfileId = activeModelProfileId,
+                            selectableProfileIds = selectableModelProfileIds,
                             activeConfig = config,
                             usage = modelUsage,
                             failoverEnabled = modelFailoverEnabled,
@@ -1162,17 +2083,19 @@ fun NestroApp() {
                                 modelFailoverEnabled = enabled
                                 prefs.edit().putBoolean("model_failover_enabled", enabled).apply()
                             },
-                            loadKey = { id -> LocalVault.readProfile(context, id) },
+                            loadKey = { id -> modelRepository.readProfileKey(id) },
                             onActivate = { id ->
                                 val metadata = modelProfiles.firstOrNull { it.id == id }
                                 if (metadata != null) {
-                                    val key = LocalVault.readProfile(context, id)
-                                    if (key.isNotBlank()) {
+                                    val key = modelRepository.readProfileKey(id)
+                                    if (key.isNotBlank() && modelRegistry.selectableModels().any { it.id == "legacy-model-$id" }) {
                                         activeModelProfileId = id
+                                        activeRegistryModelId = "legacy-model-" + id
+                                        prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
                                         config = ModelConfig(metadata.baseUrl, metadata.model, key)
                                         prefs.edit().putString("active_model_profile_id", id)
                                             .putString("base_url", metadata.baseUrl).putString("model", metadata.model).apply()
-                                        LocalVault.write(context, config)
+                                        modelRepository.writeActiveConfig(config)
                                         status = "已切换模型：${metadata.name}"
                                     } else status = "该配置尚未填写 API Key"
                                 }
@@ -1184,36 +2107,196 @@ fun NestroApp() {
                                 if (error != null) {
                                     status = error
                                 } else {
-                                    modelProfiles = (modelProfiles.filterNot { it.id == metadata.id } + metadata)
-                                    LocalVault.writeProfile(context, metadata.id, apiKey)
+                                    modelProfiles = ModelProfileLifecycle.selectable(modelProfiles.filterNot { it.id == metadata.id } + metadata)
+                                    val existingKey = modelRepository.readProfileKey(metadata.id)
+                                    val effectiveKey = apiKey.trim().ifBlank { existingKey }
+                                    if (apiKey.isNotBlank()) modelRepository.writeProfileKey(metadata.id, effectiveKey)
+                                    modelRegistry = modelRegistry.upsertLegacyProfile(
+                                        metadata,
+                                        keyAvailable = effectiveKey.isNotBlank(),
+                                        enableKey = apiKey.isNotBlank()
+                                    )
+                                    modelRepository.saveRegistry(modelRegistry)
                                     prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
-                                    if (activate || metadata.id == activeModelProfileId) {
+                                    if ((activate || metadata.id == activeModelProfileId) && effectiveKey.isNotBlank()) {
                                         activeModelProfileId = metadata.id
-                                        config = ModelConfig(metadata.baseUrl, metadata.model, apiKey)
-                                        LocalVault.write(context, config)
+                                        activeRegistryModelId = "legacy-model-" + metadata.id
+                                        prefs.edit().putString("active_model_registry_id", activeRegistryModelId).apply()
+                                        config = ModelConfig(metadata.baseUrl, metadata.model, effectiveKey)
+                                        modelRepository.writeActiveConfig(config)
                                         prefs.edit().putString("active_model_profile_id", metadata.id).apply()
                                         status = "模型配置已保存并启用：${metadata.name}"
-                                    } else status = "模型配置已保存：${metadata.name}"
+                                    } else {
+                                        if (metadata.id == activeModelProfileId && effectiveKey.isBlank()) {
+                                            activeModelProfileId = ""
+                                            config = ModelConfig("", "", "")
+                                            modelRepository.clearActiveConfig()
+                                        }
+                                        status = if (effectiveKey.isBlank()) "模型配置已保存；请填写 API Key 后再启用" else "模型配置已保存：${metadata.name}"
+                                    }
                                 }
                             },
+                            registry = modelRegistry,
+                            activeRegistryModelId = activeRegistryModelId,
+                            loadApiKey = { id -> modelRepository.readApiKey(id) },
+                            onSaveProvider = { provider ->
+                                runCatching {
+                                    if (provider.id.startsWith("legacy-provider-")) {
+                                        val existing = modelRegistry.providers.firstOrNull { it.id == provider.id }
+                                        require(existing?.baseUrl == provider.baseUrl && existing.name == provider.name) {
+                                            "旧版服务商信息由 Profile 迁移生成，请在下方旧模型配置中管理"
+                                        }
+                                    }
+                                    val updated = modelRegistry.upsertProvider(provider)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    refreshActiveRegistryConfig(updated)
+                                    status = "服务商已保存"
+                                }.onFailure { status = "服务商保存失败：" + (it.message ?: "未知错误") }
+                            },
+                            onDeleteProvider = { providerId ->
+                                runCatching {
+                                    val keyIds = modelRegistry.apiKeys.filter { it.providerId == providerId }.map { it.id }
+                                    val legacyProfileIds = modelProfiles
+                                        .filter { ModelRegistryCodec.legacyProviderId(it.baseUrl) == providerId }
+                                        .map { it.id }
+                                    val updated = modelRegistry.deleteProvider(providerId)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    if (legacyProfileIds.isNotEmpty()) {
+                                        modelProfiles = modelProfiles.filterNot { it.id in legacyProfileIds }
+                                        prefs.edit().putString(
+                                            "model_profiles_v1",
+                                            ModelProfileCatalogCodec.encode(modelProfiles)
+                                        ).apply()
+                                    }
+                                    // Remove legacy profile ownership as well; otherwise startup migration
+                                    // would recreate a provider that the user explicitly deleted.
+                                    if (activeModelProfileId in legacyProfileIds) {
+                                        activeModelProfileId = ""
+                                        activeRegistryModelId = ""
+                                        config = ModelConfig("", "", "")
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit()
+                                            .remove("active_model_profile_id")
+                                            .remove("active_model_registry_id")
+                                            .remove("base_url")
+                                            .remove("model")
+                                            .apply()
+                                    } else {
+                                        // Clear a removed active model before secret cleanup can fail.
+                                        refreshActiveRegistryConfig(updated)
+                                    }
+                                    legacyProfileIds.forEach(modelRepository::deleteProfileKey)
+                                    keyIds.forEach(modelRepository::deleteApiKey)
+                                    status = "服务商、关联模型及 API Key 已删除"
+                                }.onFailure { status = "服务商删除失败：" + (it.message ?: "未知错误") }
+                            },
+                            onSaveApiKey = { item, secret ->
+                                val keyAlreadyExists = modelRegistry.apiKeys.any { it.id == item.id }
+                                runCatching {
+                                    modelRepository.writeApiKey(item.id, secret)
+                                    val updated = modelRegistry.upsertApiKey(item)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    refreshActiveRegistryConfig(updated)
+                                    status = "API Key 已加密保存"
+                                }.onFailure {
+                                    if (!keyAlreadyExists) modelRepository.deleteApiKey(item.id)
+                                    status = "API Key 保存失败：" + (it.message ?: "未知错误")
+                                }
+                            },
+                            onSaveRegistryModel = { item ->
+                                runCatching {
+                                    val updated = modelRegistry.upsertModel(item)
+                                    modelRepository.saveRegistry(updated)
+                                    modelRegistry = updated
+                                    refreshActiveRegistryConfig(updated)
+                                    status = "模型已保存：" + item.name
+                                }.onFailure { status = "模型保存失败：" + (it.message ?: "未知错误") }
+                            },
+                            onDeleteRegistryApiKey = { id ->
+                                modelRepository.deleteApiKey(id)
+                                val updated = modelRegistry.deleteApiKey(id)
+                                modelRepository.saveRegistry(updated)
+                                modelRegistry = updated
+                                refreshActiveRegistryConfig(updated)
+                                status = "API Key 已删除，关联模型已重新计算可用性"
+                            },
+                            onDeleteRegistryModel = { id ->
+                                val updated = modelRegistry.deleteModel(id)
+                                modelRepository.saveRegistry(updated)
+                                modelRegistry = updated
+                                refreshActiveRegistryConfig(updated)
+                                status = "模型已删除"
+                            },
+                            onActivateRegistryModel = { id ->
+                                val candidate = modelRegistry.models.firstOrNull { it.id == id }
+                                val selectedConfig = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+                                    registry = modelRegistry,
+                                    activeModelId = id,
+                                    failoverEnabled = false,
+                                    readKey = modelRepository::readApiKey
+                                ).firstOrNull()
+                                if (candidate != null && selectedConfig != null) {
+                                    activeRegistryModelId = id
+                                    activeModelProfileId = ""
+                                    config = selectedConfig
+                                    modelRepository.writeActiveConfig(config)
+                                    prefs.edit().putString("active_model_registry_id", id).remove("active_model_profile_id").apply()
+                                    status = "已切换模型：" + candidate.name
+                                } else status = "该模型没有可用的 API Key，无法启用"
+                            },
+                            onTestConnection = { candidate -> appRuntime.modelConnectionService.test(candidate) },
+                            onDiscoverModels = { provider, apiKey ->
+                                app.nestro.model.ModelDiscoveryService().discover(provider, apiKey)
+                            },
+                            onDeleteKey = { id ->
+                                modelRepository.deleteProfileKey(id)
+                                modelRegistry = modelRegistry.deleteApiKey("legacy-key-$id")
+                                modelRepository.saveRegistry(modelRegistry)
+                                if (activeModelProfileId == id || activeRegistryModelId == "legacy-model-$id") {
+                                    activeModelProfileId = ""
+                                    activeRegistryModelId = ""
+                                    config = ModelConfig("", "", "")
+                                    modelRepository.clearActiveConfig()
+                                    prefs.edit().remove("active_model_profile_id").remove("active_model_registry_id")
+                                        .remove("base_url").remove("model").apply()
+                                }
+                                status = "API Key 已删除；对应模型已从可用模型中排除"
+                            },
                             onDelete = { id ->
+                                val wasActive = activeModelProfileId == id || activeRegistryModelId == "legacy-model-$id"
                                 modelProfiles = modelProfiles.filterNot { it.id == id }
-                                LocalVault.deleteProfile(context, id)
+                                val updatedRegistry = modelRegistry.deleteLegacyProfile(id)
+                                modelRegistry = updatedRegistry
+                                modelRepository.saveRegistry(updatedRegistry)
+                                modelRepository.deleteProfileKey(id)
                                 prefs.edit().putString("model_profiles_v1", ModelProfileCatalogCodec.encode(modelProfiles)).apply()
-                                if (activeModelProfileId == id) {
-                                    val next = modelProfiles.firstOrNull()
+                                if (wasActive) {
+                                    val availableIds = updatedRegistry.selectableModels()
+                                        .mapNotNull { model -> model.id.removePrefix("legacy-model-").takeIf { model.id.startsWith("legacy-model-") } }
+                                        .toSet()
+                                    val next = modelProfiles.firstOrNull {
+                                        it.id in availableIds && modelRepository.readProfileKey(it.id).isNotBlank()
+                                    }
                                     if (next != null) {
-                                        val key = LocalVault.readProfile(context, next.id)
+                                        val key = modelRepository.readProfileKey(next.id)
                                         activeModelProfileId = next.id
+                                        activeRegistryModelId = "legacy-model-" + next.id
                                         config = ModelConfig(next.baseUrl, next.model, key)
-                                        LocalVault.write(context, config)
-                                        prefs.edit().putString("active_model_profile_id", next.id).apply()
-                                        status = if (key.isBlank()) "已切换到备用配置，请补充 API Key" else "已切换到：${next.name}"
+                                        modelRepository.writeActiveConfig(config)
+                                        prefs.edit().putString("active_model_profile_id", next.id)
+                                            .putString("active_model_registry_id", activeRegistryModelId).apply()
+                                        status = "已切换到：${next.name}"
                                     } else {
                                         activeModelProfileId = ""
+                                        activeRegistryModelId = ""
                                         config = ModelConfig("", "", "")
-                                        prefs.edit().remove("active_model_profile_id").putString("base_url", "").putString("model", "").remove("api_key_enc").apply()
-                                        status = "尚未配置模型"
+                                        modelRepository.clearActiveConfig()
+                                        prefs.edit().remove("active_model_profile_id").remove("active_model_registry_id")
+                                            .remove("base_url").remove("model").apply()
+                                        status = "尚未配置可用模型"
                                     }
                                 }
                             }
@@ -1223,7 +2306,7 @@ fun NestroApp() {
                                  Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                  Text("把复杂任务拆成连续步骤。每一步接收上一步结果，支持提示词、专家角色和技能指令。", color = Muted)
                                  OutlinedTextField(value = workflowInputDraft, onValueChange = { workflowInputDraft = it.take(12000) }, label = { Text("本次运行目标") }, placeholder = { Text("例如：研究一个市场，最后形成可执行分析。") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                                 if (workflowRunStatus.isNotBlank()) Text(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                 if (workflowRunStatus.isNotBlank()) AnimatedStatusText(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
                                  if (runningWorkflowId.isNotBlank()) {
                                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                          OutlinedButton(
@@ -1245,22 +2328,79 @@ fun NestroApp() {
                                              stopRequested = true
                                              workflowPauseGate?.complete(Unit)
                                              workflowPauseGate = null
-                                             OpenAiClient.cancel()
+                                             val approval = agentApprovalPrompt
+                                             val activeWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                             if (approval != null && approval.request.scopeId == activeWorkflowTaskId && activeWorkflowTaskId.isNotBlank()) {
+                                                 scope.launch {
+                                                     withContext(Dispatchers.IO) {
+                                                         appRuntime.agentApprovalCoordinator.respond(
+                                                             approval.request.id,
+                                                             app.nestro.agent.AgentApprovalDecision.REJECT,
+                                                             resumeTaskIfInactive = false
+                                                         )
+                                                         appRuntime.agentTaskCoordinator.cancel(activeWorkflowTaskId)
+                                                     }
+                                                     refreshApprovalQueue(showNext = false)
+                                                 }
+                                             }
+                                             appRuntime.chatExecutionService.cancel()
                                              workflowRunStatus = "正在停止工作流…"
                                          }) { Text("停止", color = ColorStop) }
                                      }
                                  }
-                                 workflows.forEach { workflow ->
+                                 workflows.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.WORKFLOW, it.id, activeProjectId, readableProjectIds) }.forEach { workflow ->
                                      Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                          Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                              Text(workflow.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                                              Text(workflow.description, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                             val workflowIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.WORKFLOW, workflow.id)]?.contains("*") ?: true
+                                             TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id, workflowIsGlobal.not()) }) {
+                                                 Text(if (workflowIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                             }
                                              workflow.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.title} · ${when (step.kind) { WorkflowStepKind.PROMPT -> "提示词"; WorkflowStepKind.EXPERT -> "专家"; WorkflowStepKind.SKILL -> "技能" }}", color = Mint, style = MaterialTheme.typography.bodySmall) }
+                                             val savedWorkflowTaskIdForCard = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                             val savedWorkflowInputForCard = prefs.getString("workflow_resume_input_v1", "").orEmpty()
+                                             val hasPendingSavedWorkflow = savedWorkflowTaskState?.let { task ->
+                                                 task.taskId == savedWorkflowTaskIdForCard &&
+                                                     prefs.getString("workflow_task_workflow_id_v1", "").orEmpty() == workflow.id &&
+                                                     task.capabilityId == workflow.id &&
+                                                     task.status in setOf(
+                                                         app.nestro.agent.AgentTaskStatus.CREATED,
+                                                         app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                                                         app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                                                         app.nestro.agent.AgentTaskStatus.PAUSED
+                                                     )
+                                             } == true
+                                             val canResumeSavedWorkflow = hasPendingSavedWorkflow &&
+                                                 savedWorkflowInputForCard == workflowInputDraft.trim() &&
+                                                 (prefs.getString("workflow_resume_definition_v1", "").orEmpty().isBlank() ||
+                                                     prefs.getString("workflow_resume_definition_v1", "").orEmpty() == WorkflowDefinitionCodec.encode(listOf(workflow)))
+                                             val workflowTaskBusy = savedWorkflowTaskState?.let { task ->
+                                                 task.taskId == savedWorkflowTaskIdForCard &&
+                                                     task.status in setOf(
+                                                         app.nestro.agent.AgentTaskStatus.QUEUED,
+                                                         app.nestro.agent.AgentTaskStatus.RUNNING,
+                                                         app.nestro.agent.AgentTaskStatus.RETRY_WAIT
+                                                     )
+                                             } == true
+                                             if (hasPendingSavedWorkflow && !canResumeSavedWorkflow) {
+                                                 Text("上次输入或工作流定义已变化，不能安全续跑原任务；可取消旧任务后重新运行。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                             }
                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
+                                                 Button(enabled = runningWorkflowId.isBlank() && !busy && !workflowTaskBusy && !(hasPendingSavedWorkflow && !canResumeSavedWorkflow) && workflowInputDraft.isNotBlank() && config.apiKey.isNotBlank(), onClick = {
                                                      val input = workflowInputDraft.trim()
+                                                     val savedWorkflowTaskId = prefs.getString("workflow_task_id_v1", "").orEmpty()
+                                                     val currentWorkflowDefinition = WorkflowDefinitionCodec.encode(listOf(workflow))
+                                                     val workflowTaskId = if (canResumeSavedWorkflow) {
+                                                         savedWorkflowTaskId
+                                                     } else {
+                                                         UUID.randomUUID().toString()
+                                                     }
                                                      val conversationId = activeConversationId
                                                      val projectId = activeProjectId
+                                                     val workflowReadableProjectIds = if (!projectResourceScopesReadOnly) ProjectAccessControlStore.readableSourceProjects(
+                                                         prefs, projectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet()
+                                                     ) else emptySet()
                                                      val runHistory = messages.toList() + ChatMessage(UUID.randomUUID().toString(), "user", input)
                                                      val startedAt = System.currentTimeMillis()
                                                      runningWorkflowId = workflow.id
@@ -1270,39 +2410,181 @@ fun NestroApp() {
                                                      stopRequested = false
                                                      workflowRunStatus = "正在启动工作流…"
                                                      scope.launch {
-                                                         val result = runCatching {
-                                                             WorkflowEngine.run(workflow, input, invokeModel = { step, stepPrompt ->
-                                                                 val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
-                                                                 val roleContext = when (step.kind) {
-                                                                     WorkflowStepKind.EXPERT -> {
-                                                                          val expertName = step.targetId.ifBlank { step.title }
-                                                                          val profile = expertProfiles[expertName]
-                                                                          check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
-                                                                          listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, skills, disabledSkills)).filter { it.isNotBlank() }.joinToString("\n\n")
-                                                                      }
-                                                                      WorkflowStepKind.SKILL -> {
-                                                                          val skillName = step.targetId.ifBlank { step.title }
-                                                                          check(skillName !in disabledSkills) { "工作流引用的技能「$skillName」已停用" }
-                                                                          skills[skillName]?.takeIf { it.isNotBlank() } ?: error("工作流引用的技能「$skillName」不存在")
-                                                                      }
-                                                                     WorkflowStepKind.PROMPT -> ""
+                                                         val existingWorkflowTask = appRuntime.agentTaskCoordinator.state(workflowTaskId)
+                                                         val effectiveWorkflowTaskId = if (
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.COMPLETED ||
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.CANCELLED ||
+                                                             existingWorkflowTask?.status == app.nestro.agent.AgentTaskStatus.FAILED
+                                                         ) UUID.randomUUID().toString() else workflowTaskId
+                                                         prefs.edit()
+                                                             .putString("workflow_task_id_v1", effectiveWorkflowTaskId)
+                                                             .putString("workflow_task_workflow_id_v1", workflow.id)
+                                                             .putString("workflow_resume_input_v1", input)
+                                                             .putString("workflow_resume_definition_v1", currentWorkflowDefinition)
+                                                             .apply()
+                                                         suspend fun invokeWorkflowStep(
+                                                             step: WorkflowStep,
+                                                             stepPrompt: String,
+                                                             discovery: app.nestro.agent.AgentToolAccess? = null
+                                                         ): String {
+                                                             val expertOptions = if (step.kind == WorkflowStepKind.EXPERT) expertProfiles[step.targetId.ifBlank { step.title }] else null
+                                                             val roleContext = when (step.kind) {
+                                                                 WorkflowStepKind.EXPERT -> {
+                                                                     val expertName = step.targetId.ifBlank { step.title }
+                                                                     check(!projectResourceScopesReadOnly &&
+                                                                         ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, expertName, projectId, workflowReadableProjectIds)) {
+                                                                         "工作流引用的专家「$expertName」不属于当前项目，已阻止跨项目调用"
+                                                                     }
+                                                                     val profile = expertProfiles[expertName]
+                                                                     check(profile?.enabled != false) { "工作流引用的专家「$expertName」已停用" }
+                                                                     val workflowSkills = skills.filterKeys { skillName ->
+                                                                         !projectResourceScopesReadOnly &&
+                                                                             ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)
+                                                                     }
+                                                                     listOf(expertPrompts[expertName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(expertName) }, ExpertProfileCodec.skillContext(profile, workflowSkills, disabledSkills, skillMetadata)).filter { it.isNotBlank() }.joinToString("\n\n")
                                                                  }
-                                                                 withContext(Dispatchers.IO) {
-                                                                     OpenAiClient.completeWithFallback(requestModelConfigs, listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
-                                                                         listOf(roleContext, projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n").take(12000),
+                                                                 WorkflowStepKind.SKILL -> {
+                                                                     val skillName = step.targetId.ifBlank { step.title }
+                                                                     check(!projectResourceScopesReadOnly &&
+                                                                         ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, skillName, projectId, workflowReadableProjectIds)) {
+                                                                         "工作流引用的技能「$skillName」不属于当前项目，已阻止跨项目调用"
+                                                                     }
+                                                                     val workflowSkills = skills.filterKeys { candidate ->
+                                                                         !projectResourceScopesReadOnly &&
+                                                                             ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, candidate, projectId, workflowReadableProjectIds)
+                                                                     }
+                                                                     val prompt = workflowSkills[skillName]?.takeIf { it.isNotBlank() }
+                                                                         ?: error("工作流引用的技能「$skillName」不存在")
+                                                                     val dependencyIssues = SkillDependencyResolver.inspectInstalledSkill(
+                                                                         skillName, workflowSkills, skillMetadata, disabledSkills
+                                                                     )
+                                                                     check(dependencyIssues.isEmpty()) {
+                                                                         "工作流技能依赖未满足，已阻止执行：${dependencyIssues.joinToString("；")}"
+                                                                     }
+                                                                     prompt
+                                                                 }
+                                                                 WorkflowStepKind.PROMPT -> ""
+                                                             }
+                                                             val systemContext = listOf(
+                                                                 roleContext,
+                                                                 projects.firstOrNull { it.id == projectId }?.instructions.orEmpty()
+                                                             ).filter { it.isNotBlank() }.joinToString("\n\n").take(12_000)
+                                                             return withContext(Dispatchers.IO) {
+                                                                 if (discovery == null) {
+                                                                     appRuntime.chatExecutionService.completeWithFallback(
+                                                                         requestModelConfigs,
+                                                                         listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                         systemContext,
                                                                          temperature = expertOptions?.temperature,
                                                                          maxTokens = expertOptions?.maxTokens,
-                                                                         onUsage = recordModelUsage)
+                                                                         onUsage = recordModelUsage,
+                                                                         onProviderUsage = recordProviderModelUsage
+                                                                     )
+                                                                 } else {
+                                                                     val scopedRequestId = UUID.nameUUIDFromBytes(
+                                                                         "workflow-step-tools:$effectiveWorkflowTaskId:${step.id}:$stepPrompt".toByteArray(Charsets.UTF_8)
+                                                                     ).toString()
+                                                                     val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                                                                         request = ChatRequestExecutionRequest(
+                                                                             requestId = scopedRequestId,
+                                                                             conversationId = requestConversationId,
+                                                                             projectId = projectId,
+                                                                             prompt = stepPrompt,
+                                                                             startedAt = startedAt,
+                                                                             history = listOf(ChatMessage(UUID.randomUUID().toString(), "user", stepPrompt)),
+                                                                             modelConfigs = requestModelConfigs,
+                                                                             baseSystemContext = systemContext,
+                                                                             taskModeEnabled = true,
+                                                                             expertTeamEnabled = false,
+                                                                             parentTaskId = effectiveWorkflowTaskId,
+                                                                             temperature = expertOptions?.temperature,
+                                                                             maxTokens = expertOptions?.maxTokens,
+                                                                             previousAssistant = null,
+                                                                             shouldStop = { stopRequested },
+                                                                             allowedToolIds = discovery.list().map { it.id }.toSet(),
+                                                                             taskToolAccess = discovery
+                                                                         ),
+                                                                         onUsage = recordModelUsage,
+                                                                         onProviderUsage = recordProviderModelUsage,
+                                                                         planPhoneAgent = { toolArguments ->
+                                                                             if (!requestExecutionAuthorization.shouldExecutePhoneAgent()) {
+                                                                                 app.nestro.agent.AgentToolResult(false, error = "当前请求没有获得 Phone Agent 任务模式授权，未创建设备任务。")
+                                                                             } else {
+                                                                                 val phoneGoal = toolArguments["goal"]?.trim()?.takeIf(String::isNotBlank) ?: stepPrompt
+                                                                                 val phonePlan = PhoneAgentPlanner.plan(phoneGoal)
+                                                                                 if (!PhoneAgentPlanner.shouldCreateTask(true, phonePlan)) {
+                                                                                     app.nestro.agent.AgentToolResult(false, error = "当前目标不需要 Phone Agent 后台设备任务，未创建任务。")
+                                                                                 } else {
+                                                                                     val canSchedule = app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active?.hasValidGrant() == true
+                                                                                     val created = appRuntime.phoneAgentTaskService.createAndScheduleIfAuthorized(
+                                                                                         projectId,
+                                                                                         requestConversationId,
+                                                                                         phonePlan
+                                                                                     )
+                                                                                     app.nestro.agent.AgentToolResult(
+                                                                                         true,
+                                                                                         output = if (canSchedule) {
+                                                                                             "已创建并加入后台队列的 Phone Agent 任务（${created.id}），当前状态：${created.status}。"
+                                                                                         } else {
+                                                                                             "已创建 Phone Agent 任务（${created.id}），但设备服务尚未获得有效授权，实际设备操作尚未开始。"
+                                                                                         }
+                                                                                     )
+                                                                                 }
+                                                                             }
+                                                                         },
+                                                                         onPartialAnswer = {}
+                                                                     )
+                                                                     execution.finalization.finalText
                                                                  }
-                                                             }, onStep = { index, step ->
-                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
-                                                                 workflowPauseGate?.await()
-                                                                 if (stopRequested) throw java.util.concurrent.CancellationException("用户停止工作流")
-                                                                 workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
-                                                             })
+                                                             }
                                                          }
+
+                                                         try {
+                                                         val result = runCatchingCancellable {
+                                                             appRuntime.workflowExecutionCoordinator.execute(
+                                                                 workflow = workflow,
+                                                                 input = input,
+                                                                 taskId = effectiveWorkflowTaskId,
+                                                                 projectId = projectId,
+                                                                 conversationId = requestConversationId,
+                                                                 invokeModel = { step, stepPrompt ->
+                                                                     invokeWorkflowStep(step, stepPrompt)
+                                                                 },
+                                                                 invokeModelWithTools = { step, stepPrompt, discovery ->
+                                                                     invokeWorkflowStep(step, stepPrompt, discovery)
+                                                                 },
+                                                                 onStep = { index, step ->
+                                                                     if (stopRequested) throw IllegalStateException("用户停止工作流")
+                                                                     workflowPauseGate?.await()
+                                                                     if (stopRequested) throw IllegalStateException("用户停止工作流")
+                                                                     workflowRunStatus = if (workflowPaused) "已暂停，等待继续…" else "执行第 ${index}/${workflow.steps.count { it.enabled }} 步：${step.title}"
+                                                                 },
+                                                                 requestApproval = { step, previousOutput ->
+                                                                     when (appRuntime.agentApprovalCoordinator.authorize(
+                                                                         effectiveWorkflowTaskId,
+                                                                         "workflow.${step.id}",
+                                                                         "工作流步骤需要授权：${step.title}\n执行要求：${step.instruction.take(2_000)}\n前序结果：${previousOutput.take(1_000)}"
+                                                                     )) {
+                                                                         app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE,
+                                                                         app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK -> true
+                                                                         app.nestro.agent.AgentApprovalDecision.REJECT -> false
+                                                                         null -> throw app.nestro.agent.AgentApprovalPendingException(
+                                                                             "工作流步骤等待用户审批：${step.title}"
+                                                                         )
+                                                                     }
+                                                                 },
+                                                                 toolCatalog = appRuntime.agentToolCatalog
+                                                             )
+                                                         }
+                                                         val approvalTaskState = appRuntime.agentTaskCoordinator.state(effectiveWorkflowTaskId)
+                                                         val waitingForApproval = approvalTaskState?.status in setOf(
+                                                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_USER,
+                                                             app.nestro.agent.AgentTaskStatus.WAITING_FOR_TASK,
+                                                             app.nestro.agent.AgentTaskStatus.PAUSED
+                                                         )
                                                          val assistantText = when {
                                                              stopRequested -> "工作流已停止。"
+                                                             waitingForApproval -> "工作流已保存当前检查点，正在等待用户审批或任务恢复。"
                                                              result.isSuccess -> {
                                                                  val completed = result.getOrThrow()
                                                                  "工作流「${workflow.name}」已完成（${completed.completedSteps} 步成功）。\n" +
@@ -1312,6 +2594,9 @@ fun NestroApp() {
                                                              }
                                                              else -> "工作流执行失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
                                                          }
+                                                         if (!waitingForApproval) {
+                                                             appRuntime.agentApprovalCoordinator.endScopeAndAudit(effectiveWorkflowTaskId, if (stopRequested) "CANCELLED" else "CLOSED")
+                                                         }
                                                          val runRecord = WorkflowRunRecord(
                                                              workflowId = workflow.id,
                                                              workflowName = workflow.name,
@@ -1319,48 +2604,118 @@ fun NestroApp() {
                                                              startedAt = startedAt,
                                                              status = when {
                                                                  stopRequested -> "stopped"
+                                                                 waitingForApproval -> "waiting"
                                                                  result.isSuccess -> "success"
                                                                  else -> "failed"
                                                              },
                                                              output = assistantText.take(20000),
                                                              stepRuns = result.getOrNull()?.stepRuns
                                                                  ?: (result.exceptionOrNull() as? WorkflowExecutionException)?.stepRuns
-                                                                 ?: emptyList()
+                                                                 ?: emptyList(),
+                                                             projectId = projectId
                                                          )
-                                                         workflowHistory = (listOf(runRecord) + workflowHistory).take(50)
+                                                         workflowHistory = (
+                                                             listOf(runRecord) +
+                                                                 workflowHistory.filter { it.projectId == projectId }.take(49) +
+                                                                 workflowHistory.filterNot { it.projectId == projectId }
+                                                             ).take(200)
                                                          prefs.edit().putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory)).apply()
                                                          val completed = runHistory + ChatMessage(UUID.randomUUID().toString(), "assistant", assistantText)
-                                                         conversations = saveConversationMessages(prefs, conversationId, completed, projectId)
+                                                         conversations = ConversationPreferencesStore.saveConversationMessages(prefs, conversationId, completed, projectId, conversations)
                                                          if (activeConversationId == conversationId) messages = completed
-                                                         workflowRunStatus = if (stopRequested) "工作流已停止。" else if (result.isSuccess) "工作流已完成，结果已写入当前对话。" else assistantText
+                                                         workflowRunStatus = when {
+                                                             stopRequested -> "工作流已停止。"
+                                                             waitingForApproval -> assistantText
+                                                             result.isSuccess -> "工作流已完成，结果已写入当前对话。"
+                                                             else -> assistantText
+                                                         }
                                                          workflowPauseGate?.complete(Unit)
                                                          workflowPauseGate = null
                                                          workflowPaused = false
                                                          runningWorkflowId = ""
                                                          busy = false
                                                          stopRequested = false
-                                                         workflowInputDraft = ""
+                                                         if (result.isSuccess) {
+                                                             workflowInputDraft = ""
+                                                             prefs.edit()
+                                                                 .remove("workflow_task_id_v1")
+                                                                 .remove("workflow_task_workflow_id_v1")
+                                                                 .remove("workflow_resume_input_v1")
+                                                                 .remove("workflow_resume_definition_v1")
+                                                                 .apply()
+                                                         }
                                                          page = "home"
+                                                         } finally {
+                                                             workflowPauseGate?.complete(Unit)
+                                                             workflowPauseGate = null
+                                                             workflowPaused = false
+                                                             runningWorkflowId = ""
+                                                             busy = false
+                                                             stopRequested = false
+                                                         }
                                                      }
-                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (runningWorkflowId == workflow.id) "执行中…" else "运行") }
+                                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                                     Text(
+                                                         when {
+                                                             runningWorkflowId == workflow.id -> "执行中…"
+                                                             workflowTaskBusy -> "任务正在执行/排程"
+                                                             canResumeSavedWorkflow -> "继续未完成工作流"
+                                                             else -> "运行工作流"
+                                                         }
+                                                     )
+                                                 }
+                                                 if (hasPendingSavedWorkflow) {
+                                                     TextButton(onClick = {
+                                                         scope.launch {
+                                                             val result = withContext(Dispatchers.IO) {
+                                                                 runCatching {
+                                                                     appRuntime.agentTaskCoordinator.cancel(savedWorkflowTaskIdForCard)
+                                                                     appRuntime.agentApprovalCoordinator.endScopeAndAudit(savedWorkflowTaskIdForCard, "CANCELLED")
+                                                                 }
+                                                             }
+                                                             if (result.isSuccess) {
+                                                                 prefs.edit()
+                                                                     .remove("workflow_task_id_v1")
+                                                                     .remove("workflow_task_workflow_id_v1")
+                                                                     .remove("workflow_resume_input_v1")
+                                                                     .remove("workflow_resume_definition_v1")
+                                                                     .apply()
+                                                                 workflowInputDraft = ""
+                                                                 savedWorkflowTaskState = null
+                                                                 workflowRunStatus = "未完成工作流已取消。"
+                                                             } else {
+                                                                 workflowRunStatus = "取消工作流失败：" + (result.exceptionOrNull()?.message ?: "未知错误")
+                                                             }
+                                                         }
+                                                     }) { Text("取消待恢复任务", color = ColorStop) }
+                                                 }
                                                  TextButton(onClick = {
-                                                     editingWorkflowId = workflow.id
+                                                     if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
+                                                      editingWorkflowId = workflow.id
                                                      workflowDraftName = workflow.name
                                                      workflowDraftDescription = workflow.description
                                                      workflowDraftSteps = workflow.steps.toList()
                                                      showWorkflowDialog = true
                                                  }) { Text("编辑", color = Mint) }
                                                  TextButton(onClick = {
-                                                     workflows = workflows.filterNot { it.id == workflow.id }
-                                                     prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
-                                                 }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                     if (!canWriteProjectResource(ProjectResourceKind.WORKFLOW, workflow.id)) return@TextButton
+                                                      workflows = workflows.filterNot { it.id == workflow.id }
+                                                     val remainingWorkflowScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                         projectResourceScopes, ProjectResourceKind.WORKFLOW, workflow.id
+                                                     )
+                                                     check(prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
+                                                         .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingWorkflowScopes))
+                                                         .commit()) { "工作流及项目范围删除失败" }
+                                                     projectResourceScopes = remainingWorkflowScopes
+                                                 }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                              }
                                          }
                                      }
                                  }
-                                 if (workflowHistory.isNotEmpty()) {
+                                 val activeWorkflowHistory = workflowHistory.filter { it.projectId == activeProjectId }
+                                 if (activeWorkflowHistory.isNotEmpty()) {
                                      Text("最近运行记录", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                     workflowHistory.take(5).forEach { record ->
+                                     activeWorkflowHistory.take(5).forEach { record ->
                                          Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                                              Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                  Text(record.workflowName, color = Ink)
@@ -1395,37 +2750,73 @@ fun NestroApp() {
                          }
                          "experts" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("我的专家", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("专家角色与工作要求保存在本机。可以编辑自定义专家，或删除不再使用的配置。", color = Muted)
+                                Text("专家与专家团", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("单个专家可以独立聊天；专家团由多个专家组成，可以在群聊上下文中协作。", color = Muted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importExpertLauncher.launch(arrayOf("application/json", "text/plain")) }) { Text("导入专家") }
-                                     OutlinedButton(onClick = { templateNameDraft = selectedExpert.takeIf { it != "通用助手" } ?: ""; showExpertTemplatesDialog = true }) { Text("模板库") }
+                                     OutlinedButton(onClick = {
+                                        templateNameDraft = selectedExpert.takeIf { it != "通用助手" } ?: ""
+                                        templateSearchDraft = ""
+                                        templateCategoryFilter = "全部"
+                                        templateStatus = ""
+                                        showExpertTemplatesDialog = true
+                                    }) { Text("模板库") }
                                 }
+                                Text("已选专家：${manualExpertSelection.size}/4。可直接临时组队，不必先创建固定团队。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    enabled = manualExpertSelection.size in 2..4,
+                                    onClick = {
+                                        selectedTeamId = ""
+                                        prefs.edit().remove("selected_team_id").apply()
+                                        page = "home"
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("用所选专家开始协作（${manualExpertSelection.size}）") }
                                 if (expertImportStatus.isNotBlank()) Text(expertImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (expertExportStatus.isNotBlank()) Text(expertExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
 
-                                experts.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
+                                experts.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, it, activeProjectId, readableProjectIds) }.sortedWith(compareBy<String> { expertProfiles[it]?.group ?: "默认" }.thenBy { experts.indexOf(it) }).forEach { name ->
                                     Surface(color = if (selectedExpert == name) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = name in manualExpertSelection,
+                                                enabled = expertProfiles[name]?.enabled != false,
+                                                onCheckedChange = { checked ->
+                                                    manualExpertSelection = if (checked) {
+                                                        (manualExpertSelection + name).take(4).toSet()
+                                                    } else {
+                                                        manualExpertSelection - name
+                                                    }
+                                                }
+                                            )
                                             Column(Modifier.weight(1f).clickable(enabled = expertProfiles[name]?.enabled != false) {
-                                                selectedExpert = name
-                                                prefs.edit().putString("selected_expert", name).apply()
-                                                page = "home"
+                                                openExpertChat(name)
                                             }) {
                                                 Text("${expertProfiles[name]?.avatar ?: "✦"}  $name", color = if (selectedExpert == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                 Text("分组：${expertProfiles[name]?.group ?: "默认"} · ${if (expertProfiles[name]?.enabled == false) "已停用" else "已启用"}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 expertProfiles[name]?.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                                                val expertIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.EXPERT, name)]?.contains("*") ?: true
+                                                TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.EXPERT, name, expertIsGlobal.not()) }) {
+                                                    Text(if (expertIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                                }
                                                 Text(expertPrompts[name]?.take(100)?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(name).ifBlank { "尚未设置角色指令" }.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
                                             }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 editingExpertName = name
                                                 expertDraft = name
                                                 expertPromptDraft = expertPrompts[name].orEmpty()
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertGroupDraft = profile.group
                                                 expertAvatarDraft = profile.avatar
                                                 expertEnabledDraft = profile.enabled
-                                                expertSkillDraft = profile.skillNames.toSet()
+                                                expertSkillDraft = profile.skillNames.filter { skillName ->
+                                                    !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                                                        projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                                                    )
+                                                }.toSet()
                                                 expertTemperatureDraft = profile.temperature?.toString().orEmpty()
                                                 expertMaxTokensDraft = profile.maxTokens?.toString().orEmpty()
                                                 expertDescriptionDraft = profile.description
@@ -1433,6 +2824,7 @@ fun NestroApp() {
                                                 showExpertDialog = true
                                             }) { Text("编辑", color = Mint) }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertProfiles = expertProfiles + (name to profile.copy(enabled = !profile.enabled))
                                                 prefs.edit().putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles)).apply()
@@ -1442,7 +2834,8 @@ fun NestroApp() {
                                                 }
                                             }) { Text(if (expertProfiles[name]?.enabled == false) "启用" else "停用", color = if (expertProfiles[name]?.enabled == false) Mint else Muted) }
                                             TextButton(onClick = {
-                                                val index = experts.indexOf(name)
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
+                                                 val index = experts.indexOf(name)
                                                 if (index > 0) {
                                                     val reordered = experts.toMutableList()
                                                     val item = reordered.removeAt(index)
@@ -1452,6 +2845,7 @@ fun NestroApp() {
                                                 }
                                             }) { Text("↑", color = Mint) }
                                             TextButton(onClick = {
+                                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                                 val index = experts.indexOf(name)
                                                 if (index >= 0 && index < experts.lastIndex) {
                                                     val reordered = experts.toMutableList()
@@ -1469,25 +2863,36 @@ fun NestroApp() {
                                                  exportExpertLauncher.launch("$safeName.nestro-expert.json")
                                              }) { Text("导出", color = Mint) }
                                              TextButton(onClick = {
-                                                    experts = experts - name
+                                                    if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
+                                                     if (!canWriteExpertDependents(name)) return@TextButton
+                                                     experts = experts - name
                                                     expertPrompts = expertPrompts - name
                                                     expertProfiles = expertProfiles - name
                                                      workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.EXPERT && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
+                                                    val previousTeamIds = expertTeams.map { it.id }.toSet()
                                                     expertTeams = expertTeams.map { it.copy(members = it.members.filterNot { member -> member == name }) }.filter { it.members.size >= 2 }
+                                                    val removedTeamIds = previousTeamIds - expertTeams.map { it.id }.toSet()
                                                     if (expertTeams.none { it.id == selectedTeamId }) selectedTeamId = ""
+                                                    val remainingExpertScopes = removedTeamIds.fold(
+                                                        ProjectResourceScopeStore.removeResourceScope(projectResourceScopes, ProjectResourceKind.EXPERT, name)
+                                                    ) { scopes, teamId ->
+                                                        ProjectResourceScopeStore.removeResourceScope(scopes, ProjectResourceKind.TEAM, teamId)
+                                                    }
                                                     prefs.edit().putString("experts", JSONArray(experts).toString())
+                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingExpertScopes))
                                                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                                                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                                                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                                                          .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
-                                                        .putString("selected_team_id", selectedTeamId).apply()
+                                                        .putString("selected_team_id", selectedTeamId).commit()
+                                                    projectResourceScopes = remainingExpertScopes
                                                     if (selectedExpert == name) {
                                                         selectedExpert = "通用助手"
                                                         prefs.edit().putString("selected_expert", selectedExpert).apply()
                                                     }
                                                     expertRevisions = expertRevisions - name
                                                     prefs.edit().putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
                                     }
@@ -1508,15 +2913,13 @@ fun NestroApp() {
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
                                 }
-                            }
-                        }
-                        "teams" -> {
-                            Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("专家团队", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("把多个专家组合成协作组。成员并行分析，单成员失败隔离并有限重试，最后由主模型识别分歧并汇总。", color = Muted)
-                                if (teamRunStatus.isNotBlank()) Text(teamRunStatus,color=Mint,style=MaterialTheme.typography.bodySmall)
-                                if (expertTeamRunHistory.isNotEmpty()) {
-                                    val latestTeamRun=expertTeamRunHistory.first()
+                                Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
+                                if (teamRunStatus.isNotBlank()) {
+                                    AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
+                                }
+                                val activeTeamRunHistory = expertTeamRunHistory.filter { it.projectId == activeProjectId }
+                                if (activeTeamRunHistory.isNotEmpty()) {
+                                    val latestTeamRun=activeTeamRunHistory.first()
                                     Surface(color=Card,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                             Text("最近一次协作 · ${latestTeamRun.teamName}",color=Ink,style=MaterialTheme.typography.titleSmall)
@@ -1531,17 +2934,50 @@ fun NestroApp() {
                                         }
                                     }
                                 }
+                                if (expertTeamEvents.isNotEmpty()) {
+                                    Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text("最近协作过程", color = Ink, style = MaterialTheme.typography.titleSmall)
+                                            val visibleEvents = visibleExpertTeamEvents(expertTeamEvents, teamEventVisibleCount)
+                                            visibleEvents.forEach { event ->
+                                                val who = listOf(event.memberName, event.relatedMemberName).filter { it.isNotBlank() }.joinToString(" → ")
+                                                Text(
+                                                    "${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(event.createdAt))} · ${event.type} · $who · ${event.status}",
+                                                    color = Mint, style = MaterialTheme.typography.labelSmall
+                                                )
+                                                if (event.message.isNotBlank()) {
+                                                    Text(event.message.take(240), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                            if (visibleEvents.size < expertTeamEvents.size) {
+                                                TextButton(
+                                                    onClick = {
+                                                        teamEventVisibleCount = (teamEventVisibleCount + EXPERT_TEAM_EVENT_PAGE_SIZE)
+                                                            .coerceAtMost(EXPERT_TEAM_EVENT_MAX_VISIBLE)
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("加载更早记录（${visibleEvents.size}/${expertTeamEvents.size}）", color = Mint)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(onClick = { importTeamLauncher.launch(arrayOf("application/json")) }) { Text("导入团队") }
                                 }
                                 if (teamImportStatus.isNotBlank()) Text(teamImportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (teamExportStatus.isNotBlank()) Text(teamExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                expertTeams.forEach { team ->
+                                expertTeams.filter { !projectResourceScopesReadOnly && ProjectResourceScopeStore.isTeamVisibleFromProjects(projectResourceScopes, it.id, it.members, activeProjectId, readableProjectIds) }.forEach { team ->
                                     Surface(color = if (team.id == selectedTeamId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Text(team.name, color = if (team.id == selectedTeamId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                             Text(team.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                                             Text("成员：${team.members.joinToString("、")}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            val teamIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.TEAM, team.id)]?.contains("*") ?: true
+                                            TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.TEAM, team.id, teamIsGlobal.not()) }) {
+                                                Text(if (teamIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                            }
                                             TextButton(onClick = {
                                                 val memberBundles = team.members.mapNotNull { member ->
                                                     (expertPrompts[member]?.takeIf { it.isNotBlank() } ?: ExpertTeamDefaults.rolePrompt(member))
@@ -1554,24 +2990,19 @@ fun NestroApp() {
                                                 } else teamExportStatus = "团队成员缺少角色指令，无法完整导出。"
                                             }) { Text("导出团队", color = Mint) }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(onClick = {
-                                                    selectedTeamId = team.id
-                                                    prefs.edit().putString("selected_team_id", team.id).apply()
-                                                    page = "home"
-                                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text(if (selectedTeamId == team.id) "当前团队" else "使用团队") }
+                                                Button(onClick = { openExpertTeamChat(team.id, team.name) }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("进入群聊") }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.TEAM, team.id)) return@TextButton
                                                     editingTeamId = team.id
                                                     teamDraftName = team.name
                                                     teamDraftDescription = team.description
                                                     teamDraftMembers = team.members.toSet()
                                                     showTeamDialog = true
                                                 }) { Text("编辑", color = Mint) }
-                                                TextButton(onClick = {
-                                                    expertTeams = expertTeams.filterNot { it.id == team.id }
-                                                    if (selectedTeamId == team.id) selectedTeamId = ""
-                                                    prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams))
-                                                        .putString("selected_team_id", selectedTeamId).apply()
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                TextButton(onClick = { removeExpertTeam(team.id, deleteChats = false) }) { Text("解散", color = Muted) }
+                                                TextButton(onClick = { removeExpertTeam(team.id, deleteChats = true) }) {
+                                                    Text("删除群", color = MaterialTheme.colorScheme.error)
+                                                }
                                             }
                                         }
                                     }
@@ -1589,18 +3020,40 @@ fun NestroApp() {
                                         prefs.edit().remove("selected_team_id").apply()
                                     }, modifier = Modifier.fillMaxWidth()) { Text("本轮不使用团队") }
                                 }
+
                             }
                         }
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Text("数据与设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nost 账号。", color = Muted)
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = appearanceMode == "system",
+                                            onClick = { appearanceMode = "system"; prefs.edit().putString("appearance_mode_v1", "system").apply() },
+                                            label = { Text("跟随系统") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "light",
+                                            onClick = { appearanceMode = "light"; prefs.edit().putString("appearance_mode_v1", "light").apply() },
+                                            label = { Text("纯白") }
+                                        )
+                                        FilterChip(
+                                            selected = appearanceMode == "dark",
+                                            onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
+                                            label = { Text("纯黑") }
+                                        )
+                                    }
+                                }
                                 Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
                                         Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
-                                            val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+                                            val name = "Nost-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
                                         }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                             Text("导出本地备份")
@@ -1608,13 +3061,38 @@ fun NestroApp() {
                                         OutlinedButton(onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
                                             Text("从备份恢复")
                                         }
-                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) androidx.compose.ui.graphics.Color(0xFFF87171) else Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) MaterialTheme.colorScheme.error else Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("系统默认助手", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                        val assistantAvailable = app.nestro.phone.AndroidAssistantRoleSupport.isAvailable(context)
+                                        val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
+                                        Text(
+                                            when {
+                                                assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
+                                                else -> "当前系统未开放系统助手角色，仍可通过 Nost 应用内聊天入口使用。"
+                                            },
+                                            color = Muted, style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Button(
+                                            enabled = assistantAvailable && !assistantHeld,
+                                            onClick = {
+                                                val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
+                                                if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
+                                                else status = "当前设备不支持申请系统助手角色，或 Nost 已经是默认助手。"
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                        ) { Text(if (assistantHeld) "已设为系统助手" else "设为系统默认助手") }
                                     }
                                 }
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("隐私与安全", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nestro 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nost 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
@@ -1632,29 +3110,41 @@ fun NestroApp() {
                                     val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
                                     conversations = listOf(record) + conversations
                                     activeConversationId = id
+                                    applyConversationContext(id, activeProjectId)
                                     messages = emptyList()
-                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).apply()
-                                    saveConversationList(prefs, conversations)
+                                    prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).remove("selected_team_id").apply()
+                                    ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                     page = "home"
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg), modifier = Modifier.fillMaxWidth()) {
                                     Text("＋ 新建对话")
                                 }
-                                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(conversations.filter { record ->
-                                        record.projectId == activeProjectId && (conversationSearch.isBlank() || record.title.contains(conversationSearch, true) ||
-                                            record.messages.any { it.content.contains(conversationSearch, true) })
-                                    }, key = { it.id }) { record ->
+                                LazyColumn(
+                                    state = conversationHistoryListState,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(conversationPageItems, key = { it.id }) { record ->
                                         Surface(color = if (record.id == activeConversationId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f).clickable {
-                                                    activeConversationId = record.id
-                                                    activeProjectId = record.projectId
-                                                    messages = record.messages
-                                                    prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId).apply()
-                                                    page = "home"
+                                                    scope.launch {
+                                                        val loadedMessages = appRuntime.conversationPersistenceService.loadMessages(record.id)
+                                                            ?: conversations.firstOrNull { it.id == record.id }?.messages.orEmpty()
+                                                        activeConversationId = record.id
+                                                        activeProjectId = record.projectId
+                                                        applyConversationContext(record.id, record.projectId)
+                                                        messages = loadedMessages
+                                                        conversations = conversations.map { item ->
+                                                            if (item.id == record.id) item.copy(messages = loadedMessages, messagesLoaded = true) else item
+                                                        }
+                                                        conversations.firstOrNull { it.id == record.id }?.let { persistedConversationVersions[record.id] = it.hashCode() }
+                                                        prefs.edit().putString("active_conversation_id", record.id).putString("active_project_id", record.projectId)
+                                                            .putString("selected_team_id", selectedTeamId).apply()
+                                                        page = "home"
+                                                    }
                                                 }) {
                                                     Text(record.title, color = if (record.id == activeConversationId) Mint else Ink)
-                                                    Text(record.messages.lastOrNull()?.content?.take(72) ?: "空白对话", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    Text(record.lastMessagePreview.take(72).ifBlank { "空白对话" }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    Text("${record.messageCount} 条消息", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 }
                                                 TextButton(onClick = {
                                                     renameConversationId = record.id
@@ -1662,22 +3152,73 @@ fun NestroApp() {
                                                     showRenameConversation = true
                                                 }) { Text("重命名", color = Mint) }
                                                 TextButton(onClick = {
-                                                    val remaining = conversations.filterNot { it.id == record.id }
-                                                    if (activeConversationId == record.id) {
-                                                        val next = remaining.firstOrNull { it.projectId == record.projectId }
-                                                            ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
-                                                        conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
-                                                        activeConversationId = next.id
-                                                        activeProjectId = record.projectId
-                                                        messages = next.messages
-                                                        prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId).apply()
-                                                    } else {
-                                                        conversations = remaining
+                                                    scope.launch {
+                                                        if (!canDeleteConversation(record.id, activeRequestConversationId, busy)) {
+                                                            status = "该会话正在生成，请先停止生成后再删除"
+                                                            return@launch
+                                                        }
+                                                        val remaining = conversations.filterNot { it.id == record.id }
+                                                        if (activeConversationId == record.id) {
+                                                            val next = remaining.firstOrNull { it.projectId == record.projectId }
+                                                                ?: ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), record.projectId)
+                                                            conversations = if (remaining.any { it.id == next.id }) remaining else listOf(next) + remaining
+                                                            activeConversationId = next.id
+                                                            activeProjectId = record.projectId
+                                                            applyConversationContext(next.id, record.projectId)
+                                                            val nextMessages = if (databaseReady && remaining.any { it.id == next.id }) {
+                                                                withContext(Dispatchers.IO) {
+                                                                    appRuntime.conversationPersistenceService.loadMessages(next.id).orEmpty()
+                                                                }
+                                                            } else next.messages
+                                                            messages = nextMessages
+                                                            conversations = conversations.map { item ->
+                                                                if (item.id == next.id) item.copy(messages = nextMessages, messagesLoaded = true) else item
+                                                            }
+                                                            if (remaining.any { it.id == next.id }) {
+                                                                conversations.firstOrNull { it.id == next.id }?.let { persistedConversationVersions[next.id] = it.hashCode() }
+                                                            }
+                                                            prefs.edit().putString("active_conversation_id", next.id).putString("active_project_id", record.projectId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
+                                                        } else {
+                                                            conversations = remaining
+                                                        }
+                                                        ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                                                        conversationPageItems = conversationPageItems.filterNot { it.id == record.id }
+                                                        conversationPageRefreshKey++
                                                     }
-                                                    saveConversationList(prefs, conversations)
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
+                                    }
+                                    if (conversationPageLoading) {
+                                        item { Text("正在加载会话…", color = Muted, modifier = Modifier.padding(12.dp)) }
+                                    }
+                                    if (conversationPageHasMore) {
+                                        item {
+                                            TextButton(
+                                                enabled = !conversationPageLoading,
+                                                onClick = {
+                                                    scope.launch {
+                                                        conversationPageLoading = true
+                                                        val nextPage = withContext(Dispatchers.IO) {
+                                                            appRuntime.conversationPersistenceService.loadConversationPage(
+                                                                projectId = activeProjectId,
+                                                                query = conversationSearch.trim().take(120),
+                                                                limit = 30,
+                                                                offset = conversationPageItems.size
+                                                            )
+                                                        }
+                                                        val existingIds = conversationPageItems.mapTo(mutableSetOf()) { it.id }
+                                                        conversationPageItems = conversationPageItems + nextPage.filterNot { it.id in existingIds }
+                                                        conversationPageHasMore = nextPage.size == 30
+                                                        conversationPageLoading = false
+                                                    }
+                                                }
+                                            ) { Text("加载更多会话") }
+                                        }
+                                    }
+                                    if (conversationPageItems.isEmpty() && !conversationPageLoading) {
+                                        item { Text("暂无匹配的对话", color = Muted, modifier = Modifier.padding(12.dp)) }
                                     }
                                 }
                             }
@@ -1699,7 +3240,90 @@ fun NestroApp() {
                                 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("保存全局记忆")
                                 }
-                                Text("自动记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                TextButton(
+                                    onClick = {
+                                        globalMemory = ""
+                                        memoryDraft = ""
+                                        check(prefs.edit().remove("global_memory_v1").commit())
+                                        memoryStatus = "全局记忆已清空"
+                                    },
+                                    enabled = globalMemory.isNotBlank() || memoryDraft.isNotBlank()
+                                ) { Text("清空全局记忆", color = ColorStop) }
+                                Text("项目记忆 · 手动添加", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                OutlinedTextField(
+                                    value = manualMemoryDraft,
+                                    onValueChange = { manualMemoryDraft = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("例如：这个项目默认使用 Kotlin + Jetpack Compose…") },
+                                    minLines = 2,
+                                    supportingText = { Text("8–180 字；只保存当前项目，不会自动共享到其他项目。敏感信息不允许保存。") }
+                                )
+                                Box {
+                                    OutlinedButton(onClick = { manualMemoryCategoryExpanded = true }) {
+                                        Text("记忆分类：" + when (manualMemoryCategory) {
+                                            "workflow" -> "工作方式"
+                                            "project" -> "项目信息"
+                                            "constraint" -> "执行约束"
+                                            else -> "长期偏好"
+                                        })
+                                    }
+                                    DropdownMenu(
+                                        expanded = manualMemoryCategoryExpanded,
+                                        onDismissRequest = { manualMemoryCategoryExpanded = false }
+                                    ) {
+                                        listOf(
+                                            "preference" to "长期偏好",
+                                            "workflow" to "工作方式",
+                                            "project" to "项目信息",
+                                            "constraint" to "执行约束"
+                                        ).forEach { (value, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                onClick = {
+                                                    manualMemoryCategory = value
+                                                    manualMemoryCategoryExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                runCatching {
+                                                    appRuntime.userMemoryRepository.saveManual(
+                                                        activeProjectId, manualMemoryDraft, manualMemoryCategory
+                                                    )
+                                                }
+                                            }
+                                            memoryStatus = result.fold(
+                                                { saved -> if (saved) "项目记忆已添加" else "这条记忆已存在，无需重复添加" },
+                                                { "添加失败：" + (it.message ?: "内容无效") }
+                                            )
+                                            if (result.getOrNull() == true) {
+                                                automaticMemories = withContext(Dispatchers.IO) {
+                                                    appRuntime.userMemoryRepository.list(activeProjectId)
+                                                }
+                                                manualMemoryDraft = ""
+                                            }
+                                        }
+                                    },
+                                    enabled = manualMemoryDraft.trim().length in 8..180,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                ) { Text("添加到当前项目") }
+                                Text("项目记忆 · 当前项目", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { importMemoryLauncher.launch(arrayOf("application/json", "text/plain")) },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("导入单条记忆 JSON") }
+                                    TextButton(
+                                        onClick = { showClearAutomaticMemoryConfirm = true },
+                                        enabled = automaticMemories.isNotEmpty()
+                                    ) { Text("清空本项目", color = ColorStop) }
+                                }
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.weight(1f)) {
                                         Text("允许自动提取记忆", color = Ink)
@@ -1709,126 +3333,435 @@ fun NestroApp() {
                                         checked = automaticMemoryEnabled,
                                         onCheckedChange = { enabled ->
                                             automaticMemoryEnabled = enabled
-                                            prefs.edit().putBoolean("automatic_memory_enabled", enabled).apply()
+                                            val memoryProjectId = activeProjectId
+                                            ProjectMemorySettingsStore.setEnabled(prefs, memoryProjectId, enabled)
+                                            if (!enabled) {
+                                                scope.launch {
+                                                    appRuntime.userMemoryRepository.invalidatePendingExtractions(memoryProjectId)
+                                                }
+                                            }
                                         }
                                     )
                                 }
                                 Text("自动记忆仅保存在本机。敏感内容会在本地进行基础规则预检，但规则无法保证识别所有敏感信息。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text("本地语义检索", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "可选下载 BGE-small-zh-v1.5 量化模型（下载文件限制 35 MB）到本机。安装后，向量在本机生成和缓存，不会单独上传；被召回的记忆文本会随聊天请求发送给当前配置的模型。不安装时仍可使用关键词检索。",
+                                    color = Muted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                embeddingModelInstalling = true
+                                                embeddingModelStatus = "正在下载并校验本地语义模型…"
+                                                try {
+                                                    val result = runCatchingCancellable {
+                                                        withContext(Dispatchers.IO) {
+                                                            KnowledgeEmbeddingModelManager.install(context)
+                                                        }
+                                                    }
+                                                    embeddingModelInstalled = withContext(Dispatchers.IO) {
+                                                        KnowledgeEmbeddingModelManager.isInstalled(context)
+                                                    }
+                                                    embeddingModelStatus = result.fold(
+                                                        { "模型安装完成，语义检索已启用。" },
+                                                        { "模型安装失败：${it.message ?: "未知错误"}；关键词检索仍可使用。" }
+                                                    )
+                                                } finally {
+                                                    embeddingModelInstalling = false
+                                                }
+                                            }
+                                        },
+                                        enabled = !embeddingModelInstalling && !embeddingModelInstalled,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                    ) {
+                                        Text(if (embeddingModelInstalling) "正在安装…" else if (embeddingModelInstalled) "已安装" else "下载并安装模型")
+                                    }
+                                    if (embeddingModelInstalling) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    }
+                                }
+                                Text(embeddingModelStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 if (automaticMemories.isEmpty()) {
-                                    Text("当前项目还没有自动记忆。明确表达长期偏好或项目约束后，会在后台尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    Text("当前项目还没有记忆。你可以手动添加，也可以明确表达长期偏好或项目约束后让系统尝试提取。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                 } else {
                                     automaticMemories.forEach { memory ->
                                         Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Text("${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                val sourceConversation = conversations.firstOrNull { it.id == memory.sourceConversationId }
+                                                val canOpenSource = sourceConversation != null &&
+                                                    (sourceConversation.projectId == activeProjectId || sourceConversation.projectId in readableProjectIds)
+                                                var categoryMenuExpanded by remember(memory.id) { mutableStateOf(false) }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text((if (memory.sourceConversationId.isBlank()) "手动添加" else "自动提取") + " · 分类：${memory.category} · 置信度 ${"%.0f".format(memory.confidence * 100)}%", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                    Spacer(Modifier.weight(1f))
+                                                    TextButton(onClick = { categoryMenuExpanded = true }) { Text("修改分类") }
+                                                    DropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                                                        listOf("preference", "workflow", "project", "constraint").forEach { categoryOption ->
+                                                            DropdownMenuItem(
+                                                                text = { Text(categoryOption) },
+                                                                onClick = {
+                                                                    categoryMenuExpanded = false
+                                                                    scope.launch {
+                                                                        val result = withContext(Dispatchers.IO) {
+                                                                            runCatching {
+                                                                                appRuntime.userMemoryRepository.edit(
+                                                                                    memory.id, activeProjectId,
+                                                                                    memoryEdits[memory.id] ?: memory.content, categoryOption
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                        if (result.isSuccess) {
+                                                                            automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
+                                                                            memoryEdits = memoryEdits - memory.id
+                                                                            memoryStatus = "记忆分类已更新"
+                                                                        } else {
+                                                                            memoryStatus = "分类更新失败：${result.exceptionOrNull()?.message ?: "分类无效"}"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 OutlinedTextField(
                                                     value = memoryEdits[memory.id] ?: memory.content,
                                                     onValueChange = { memoryEdits = memoryEdits + (memory.id to it) },
                                                     modifier = Modifier.fillMaxWidth(),
                                                     minLines = 2
                                                 )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text("跨项目共享", color = Ink, style = MaterialTheme.typography.labelMedium)
+                                                        Text(
+                                                            "开启后，已获得本项目读取授权的其他项目可以召回这条记忆；关闭会撤销共享。",
+                                                            color = Muted,
+                                                            style = MaterialTheme.typography.bodySmall
+                                                        )
+                                                    }
+                                                    Switch(
+                                                        checked = memory.shareAcrossProjects,
+                                                        onCheckedChange = { enabled ->
+                                                            scope.launch {
+                                                                val result = withContext(Dispatchers.IO) {
+                                                                    runCatching {
+                                                                        appRuntime.userMemoryRepository.setShareAcrossProjects(
+                                                                            memory.id, memory.projectId, enabled
+                                                                        )
+                                                                    }
+                                                                }
+                                                                if (result.getOrDefault(false)) {
+                                                                    automaticMemories = withContext(Dispatchers.IO) {
+                                                                        appRuntime.userMemoryRepository.list(activeProjectId)
+                                                                    }
+                                                                    memoryStatus = if (enabled) "已允许其他项目召回这条记忆" else "已撤销跨项目共享"
+                                                                } else {
+                                                                    memoryStatus = "共享设置失败：${result.exceptionOrNull()?.message ?: "记忆不存在"}"
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
                                                 Text("来源会话：${memory.sourceConversationId.take(8)} · 消息：${memory.sourceMessageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                                Text("创建：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.createdAt))} · 更新：${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(memory.updatedAt))}", color = Muted, style = MaterialTheme.typography.labelSmall)
                                                 TextButton(
                                                     onClick = {
                                                         val source = conversations.firstOrNull { it.id == memory.sourceConversationId }
+                                                            ?.takeIf { it.projectId == activeProjectId || it.projectId in readableProjectIds }
                                                         if (source != null) {
-                                                            activeConversationId = source.id
-                                                            messages = source.messages
-                                                            page = "home"
+                                                            scope.launch {
+                                                                val sourceMessages = if (databaseReady) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        appRuntime.conversationPersistenceService.loadMessages(source.id).orEmpty()
+                                                                    }
+                                                                } else source.messages
+                                                                activeConversationId = source.id
+                                                                messages = sourceMessages
+                                                                conversations = conversations.map { record ->
+                                                                    if (record.id == source.id) record.copy(messages = sourceMessages, messagesLoaded = true) else record
+                                                                }
+                                                                conversations.firstOrNull { it.id == source.id }?.let { persistedConversationVersions[source.id] = it.hashCode() }
+                                                                page = "home"
+                                                            }
                                                         }
                                                     },
-                                                    enabled = conversations.any { it.id == memory.sourceConversationId }
+                                                    enabled = canOpenSource
                                                 ) { Text("打开来源会话", color = Mint) }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Button(onClick = {
                                                         scope.launch {
                                                             val result = withContext(Dispatchers.IO) {
                                                                 runCatching {
-                                                                    UserMemoryStore.edit(
-                                                                        database.dao(), memory.id, activeProjectId,
+                                                                    appRuntime.userMemoryRepository.edit(
+                                                                        memory.id, activeProjectId,
                                                                         memoryEdits[memory.id] ?: memory.content, memory.category
                                                                     )
                                                                 }
                                                             }
                                                             memoryStatus = result.fold({ "记忆已更新" }, { "更新失败：${it.message ?: "内容无效"}" })
                                                             if (result.isSuccess) {
-                                                                automaticMemories = withContext(Dispatchers.IO) { UserMemoryStore.list(database.dao(), activeProjectId) }
+                                                                automaticMemories = withContext(Dispatchers.IO) { appRuntime.userMemoryRepository.list(activeProjectId) }
                                                                 memoryEdits = memoryEdits - memory.id
                                                             }
                                                         }
                                                     }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存修改") }
                                                     TextButton(onClick = {
+                                                        runCatching {
+                                                            val send = Intent(Intent.ACTION_SEND).apply {
+                                                                type = "application/json"
+                                                                putExtra(Intent.EXTRA_TEXT, UserMemoryExportCodec.encode(memory))
+                                                            }
+                                                            context.startActivity(Intent.createChooser(send, "导出单条记忆"))
+                                                        }.onFailure { memoryStatus = "导出失败：${it.message ?: "数据无效"}" }
+                                                    }) { Text("导出", color = Mint) }
+                                                    TextButton(onClick = {
                                                         scope.launch {
-                                                            withContext(Dispatchers.IO) { UserMemoryStore.delete(database.dao(), memory.id, activeProjectId) }
-                                                            automaticMemories = automaticMemories.filterNot { it.id == memory.id }
-                                                            memoryEdits = memoryEdits - memory.id
-                                                            memoryStatus = "记忆已删除"
+                                                            val result = runCatchingCancellable {
+                                                                withContext(Dispatchers.IO) {
+                                                                    appRuntime.userMemoryRepository.delete(memory.id, activeProjectId)
+                                                                }
+                                                            }
+                                                            if (result.isSuccess) {
+                                                                automaticMemories = automaticMemories.filterNot { it.id == memory.id }
+                                                                memoryEdits = memoryEdits - memory.id
+                                                                memoryStatus = "记忆已删除"
+                                                            } else {
+                                                                memoryStatus = "删除失败：${result.exceptionOrNull()?.message ?: "记忆可能已被删除"}"
+                                                            }
                                                         }
-                                                    }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                                 }
                                             }
                                         }
                                     }
                                 }
                                 if (memoryStatus.isNotBlank()) Text(memoryStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                if (showClearAutomaticMemoryConfirm) {
+                                    AlertDialog(
+                                        onDismissRequest = { showClearAutomaticMemoryConfirm = false },
+                                        title = { Text("清空当前项目自动记忆？") },
+                                        text = { Text("这会删除当前项目的全部自动记忆，不影响其他项目和手动全局记忆。此操作无法撤销。") },
+                                        confirmButton = {
+                                            TextButton(onClick = {
+                                                showClearAutomaticMemoryConfirm = false
+                                                scope.launch {
+                                                    val result = withContext(Dispatchers.IO) {
+                                                        runCatching { appRuntime.userMemoryRepository.clearProject(activeProjectId) }
+                                                    }
+                                                    if (result.isSuccess) {
+                                                        automaticMemories = emptyList()
+                                                        memoryEdits = emptyMap()
+                                                        memoryStatus = "当前项目自动记忆已全部清空"
+                                                    } else {
+                                                        memoryStatus = "清空失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+                                                    }
+                                                }
+                                            }) { Text("确认清空", color = ColorStop) }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showClearAutomaticMemoryConfirm = false }) { Text("取消") }
+                                        }
+                                    )
+                                }
                             }
                         }
                         "spaces" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("项目空间", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("每个空间拥有独立会话与项目指令。切换空间不会把其他项目的聊天记录注入当前请求。", color = Muted)
-                                Button(enabled = deletingProjectId.isBlank(), onClick = {
-                                    editingProjectId = ""
-                                    projectDraftName = ""
-                                    projectDraftInstructions = ""
-                                    showProjectDialog = true
-                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
-                                    Text("＋ 创建项目空间")
+                                if (projectStorageReadOnly) {
+                                    Text("项目空间数据校验失败：原始数据已保留，当前仅允许查看和切换默认空间。请先导出备份并修复数据。", color = ColorStop)
                                 }
+                                if (projectResourceScopesReadOnly) {
+                                    Text("专家、团队、技能和工作流的项目归属数据校验失败，已停止加载这些资源以防跨项目泄漏。请恢复有效备份后再使用。", color = ColorStop)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
+                                        editingProjectId = ""
+                                        projectDraftName = ""
+                                        projectDraftInstructions = ""
+                                        showProjectDialog = true
+                                    }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                        Text("＋ 创建项目")
+                                    }
+                                    OutlinedButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                        importProjectPackageLauncher.launch(arrayOf("application/json", "application/octet-stream"))
+                                    }, modifier = Modifier.weight(1f)) { Text("导入项目包") }
+                                }
+                                if (projectPackageStatus.isNotBlank()) Text(projectPackageStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(projects.filter { it.archivedAt == 0L }, key = { it.id }) { project ->
+                                    items(projects.filter { it.archivedAt == 0L }.sortedByDescending { prefs.getLong("project_last_opened_${it.id}", it.createdAt) }, key = { it.id }) { project ->
                                         val count = conversations.count { it.projectId == project.id }
                                         Surface(color = if (project.id == activeProjectId) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Column(Modifier.weight(1f).clickable(enabled = deletingProjectId.isBlank()) {
-                                                        activeProjectId = project.id
-                                                        prefs.edit().putString("active_project_id", project.id).apply()
-                                                        val target = conversations.firstOrNull { it.projectId == project.id }
-                                                        if (target == null) {
-                                                            val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
-                                                            conversations = listOf(created) + conversations
-                                                            saveConversationList(prefs, conversations)
-                                                            activeConversationId = created.id
-                                                            messages = emptyList()
-                                                        } else {
-                                                            activeConversationId = target.id
-                                                            messages = target.messages
+                                                        scope.launch {
+                                                            activeProjectId = project.id
+                                                            readableProjectIds = readableSourcesFor(project.id)
+                                                            writableProjectIds = writableSourcesFor(project.id)
+                                                            automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.EXPERT, selectedExpert, project.id, readableProjectIds)) {
+                                                                selectedExpert = "通用助手"
+                                                                prefs.edit().putString("selected_expert", selectedExpert).apply()
+                                                            }
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isTeamVisibleFromProjects(projectResourceScopes, selectedTeamId,
+                                                                    expertTeams.firstOrNull { it.id == selectedTeamId }?.members.orEmpty(), project.id, readableProjectIds)) {
+                                                                selectedTeamId = ""
+                                                                prefs.edit().putString("selected_team_id", "").apply()
+                                                            }
+                                                            if (!projectResourceScopesReadOnly &&
+                                                                !ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, selectedSkill, project.id, readableProjectIds)) {
+                                                                selectedSkill = ""
+                                                            }
+                                                            prefs.edit().putString("active_project_id", project.id)
+                                                                .putLong("project_last_opened_${project.id}", System.currentTimeMillis())
+                                                                .putString("selected_team_id", selectedTeamId).apply()
+                                                            val target = conversations.firstOrNull { it.projectId == project.id }
+                                                            if (target == null) {
+                                                                val created = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
+                                                                conversations = listOf(created) + conversations
+                                                                ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                                                                activeConversationId = created.id
+                                                                applyConversationContext(created.id, project.id)
+                                                                messages = emptyList()
+                                                            } else {
+                                                                activeConversationId = target.id
+                                                                applyConversationContext(target.id, project.id)
+                                                                val targetMessages = if (databaseReady) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
+                                                                    }
+                                                                } else target.messages
+                                                                messages = targetMessages
+                                                                conversations = conversations.map { item ->
+                                                                    if (item.id == target.id) item.copy(messages = targetMessages, messagesLoaded = true) else item
+                                                                }
+                                                                conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
+                                                            }
+                                                            prefs.edit().putString("active_conversation_id", activeConversationId)
+                                                                .putString("selected_team_id", selectedTeamId).apply()
+                                                            page = "home"
                                                         }
-                                                        prefs.edit().putString("active_conversation_id", activeConversationId).apply()
-                                                        page = "home"
                                                     }) {
                                                         Text(project.name, color = if (project.id == activeProjectId) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                         Text("$count 个对话 · 点击切换", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
-                                                    TextButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                                    TextButton(enabled = deletingProjectId.isBlank() && !projectStorageReadOnly, onClick = {
                                                         editingProjectId = project.id
                                                         projectDraftName = project.name
                                                         projectDraftInstructions = project.instructions
                                                         showProjectDialog = true
                                                     }) { Text("编辑", color = Mint) }
+                                                    TextButton(enabled = deletingProjectId.isBlank(), onClick = {
+                                                        projectPackageExportProjectId = project.id
+                                                        val safeName = project.name.replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40).ifBlank { "project" }
+                                                        exportProjectPackageLauncher.launch(safeName + ".nestro-project.json")
+                                                    }) { Text("导出项目包", color = Mint) }
+                                                    TextButton(
+                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly && projects.size < 100,
+                                                        onClick = {
+                                                            val baseName = "${project.name} 副本".take(40)
+                                                            val existingNames = projects.map { it.name.trim().lowercase() }.toSet()
+                                                            var copyName = baseName
+                                                            var suffix = 2
+                                                            while (copyName.trim().lowercase() in existingNames && suffix <= 100) {
+                                                                val tail = " 副本$suffix"
+                                                                copyName = project.name.take((40 - tail.length).coerceAtLeast(1)) + tail
+                                                                suffix++
+                                                            }
+                                                            val copyId = UUID.randomUUID().toString()
+                                                            scope.launch {
+                                                                val artifactCopy = runCatching {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        ArtifactStore.duplicateProject(context, project.id, copyId)
+                                                                        MediaProjectStore.duplicateProject(context, project.id, copyId)
+                                                                    }
+                                                                }
+                                                                if (artifactCopy.isFailure) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                        runCatching { MediaProjectStore.deleteProject(context, copyId) }
+                                                                    }
+                                                                    status = "项目复制中止：项目产物或媒体素材复制失败，未创建新项目。"
+                                                                    return@launch
+                                                                }
+                                                                val copyAttempt = runCatching {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        appRuntime.projectSpaceRepository.duplicate(
+                                                                            project.id, copyId, copyName, System.currentTimeMillis()
+                                                                        )
+                                                                    }
+                                                                }
+                                                                val copied = copyAttempt.getOrDefault(false)
+                                                                if (!copied) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                        runCatching { MediaProjectStore.deleteProject(context, copyId) }
+                                                                    }
+                                                                }
+                                                                if (copied) {
+                                                                    val originalScopes = projectResourceScopes
+                                                                    val finalizeCopy = runCatching {
+                                                                        val copiedScopes = ProjectResourceScopeStore.duplicateProjectScope(
+                                                                            originalScopes, project.id, copyId
+                                                                        )
+                                                                        ProjectResourceScopeStore.save(prefs, copiedScopes)
+                                                                        projectResourceScopes = copiedScopes
+                                                                        ProjectMemorySettingsStore.duplicateProject(prefs, project.id, copyId)
+                                                                        val restored = withContext(Dispatchers.IO) {
+                                                                            appRuntime.conversationPersistenceService.restore(prefs)
+                                                                        }
+                                                                        restored
+                                                                    }
+                                                                    finalizeCopy.onSuccess { restored ->
+                                                                        projects = restored.projects
+                                                                        conversations = restored.conversations
+                                                                        status = "已复制「${project.name}」及其会话、知识库、项目记忆和媒体素材。"
+                                                                    }.onFailure { error ->
+                                                                        withContext(Dispatchers.IO) {
+                                                                            runCatching { appRuntime.projectSpaceRepository.rollbackDuplicate(copyId) }
+                                                                            runCatching { ArtifactStore.deleteProject(context, copyId) }
+                                                                            runCatching { MediaProjectStore.deleteProject(context, copyId) }
+                                                                        }
+                                                                        runCatching { ProjectResourceScopeStore.save(prefs, originalScopes) }
+                                                                        projectResourceScopes = originalScopes
+                                                                        runCatching { ProjectMemorySettingsStore.removeProject(prefs, copyId) }
+                                                                        status = "项目复制后续保存失败，已执行回滚：" + (error.message ?: "未知错误")
+                                                                    }
+                                                                } else {
+                                                                    status = "复制失败：项目不存在、名称重复或项目空间数量已达上限。"
+                                                                }
+                                                            }
+                                                        }
+                                                    ) { Text("复制", color = Mint) }
                                                     if (project.id != "default") {
                                                         TextButton(
-                                                            enabled = deletingProjectId.isBlank() && ProjectSpaceRules.canArchive(project.id, activeProjectId),
+                                                            enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && ProjectSpaceRules.canArchive(project.id, activeProjectId),
                                                             onClick = {
                                                                 val archivedAt = System.currentTimeMillis()
                                                                 projects = projects.map { if (it.id == project.id) it.copy(archivedAt = archivedAt) else it }
-                                                                saveProjects(prefs, projects)
+                                                                ProjectPreferencesStore.saveProjects(prefs, projects)
                                                                 status = "项目已归档，原有会话、知识库、记忆和任务均保留；恢复后可继续使用。"
                                                             }
                                                         ) { Text("归档", color = Muted) }
-                                                        TextButton(onClick = {
-                                                            if (project.id == activeProjectId) {
+                                                        TextButton(
+                                                            enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && !projectResourceScopesReadOnly,
+                                                            onClick = {
+                                                            if (projectStorageReadOnly || projectResourceScopesReadOnly) {
+                                                                status = "项目数据或资源范围校验失败，已锁定删除操作。"
+                                                            } else if (project.id == activeProjectId) {
                                                                 status = "当前空间正在使用，请先切换到其他空间再删除"
                                                             } else if (!prefs.edit().putString("pending_project_delete_id", project.id).commit()) {
                                                                 status = "删除保护标记写入失败，未执行删除"
@@ -1838,15 +3771,23 @@ fun NestroApp() {
                                                                     var projectConversationIds = emptySet<String>()
                                                                     runCatching {
                                                                         withContext(Dispatchers.IO) {
-                                                                            val dao = database.dao()
                                                                             projectConversationIds = (conversations.filter { it.projectId == project.id }.map { it.id } +
-                                                                                dao.projectConversationIds(project.id)).toSet()
+                                                                                appRuntime.projectSpaceRepository.conversationIds(project.id)).toSet()
                                                                             val latestActiveProjectId = prefs.getString("active_project_id", activeProjectId) ?: activeProjectId
                                                                             val hasDraft = projectConversationIds.any { id -> (prefs.getString("draft_$id", "") ?: "").isNotBlank() }
                                                                             val hasLocalConversationData = conversations.any {
                                                                                 it.projectId == project.id && (it.messages.isNotEmpty() || it.title != "新对话")
                                                                             }
-                                                                            val hasLinkedData = dao.projectHasLinkedData(project.id)
+                                                                            check(ArtifactStore.deleteProjectIfEmpty(context, project.id)) {
+                                                                                "该空间还有项目产物或未登记文件，请先导出、清理后再删除项目"
+                                                                            }
+                                                                            check(!MediaProjectStore.hasProjectMedia(context, project.id)) {
+                                                                                "该空间还有媒体素材、时间线或导出文件，请先导出并清理媒体项目后再删除"
+                                                                            }
+                                                                            check(ProjectResourceScopeStore.resourcesOwnedOnlyByProject(projectResourceScopes, project.id).isEmpty()) {
+                                                                                "该空间仍有专属专家、团队、技能或工作流，请先转为全局共享或删除这些资源"
+                                                                            }
+                                                                            val hasLinkedData = appRuntime.projectSpaceRepository.hasLinkedData(project.id)
                                                                             val pendingRequest = runCatching { JSONObject(prefs.getString("chat_request_state_v1", "{}") ?: "{}") }.getOrNull()
                                                                             check(!hasDraft) { "该空间还有未保存的对话草稿，请先处理草稿后再删除" }
                                                                             check(!hasLocalConversationData) { "该空间还有尚未同步的会话内容，请等待保存完成后再删除" }
@@ -1857,7 +3798,8 @@ fun NestroApp() {
                                                                                 project.id, latestActiveProjectId,
                                                                                 if (hasLinkedData) setOf(project.id) else emptySet()
                                                                             )) { "默认空间、当前空间或含有关联数据的空间不可删除" }
-                                                                            check(dao.deleteProjectIfEmpty(project.id, latestActiveProjectId)) {
+                                                                            MediaProjectStore.deleteProject(context, project.id)
+                                                                            check(appRuntime.projectSpaceRepository.deleteIfEmpty(project.id, latestActiveProjectId)) {
                                                                                 "该空间仍有关联数据（有效会话、知识文档、记忆或 Agent 任务），或空间状态已变化，请先处理后再删除"
                                                                             }
                                                                         }
@@ -1868,28 +3810,63 @@ fun NestroApp() {
                                                                         if (removedPlaceholderIds.isNotEmpty()) {
                                                                             conversations = conversations.filterNot { it.id in removedPlaceholderIds }
                                                                         }
-                                                                        saveConversationList(prefs, conversations)
+                                                                        ConversationPreferencesStore.saveConversationList(prefs, conversations)
                                                                         projects = projects.filterNot { it.id == project.id }
-                                                                        saveProjects(prefs, projects)
+                                                                        ProjectPreferencesStore.saveProjects(prefs, projects)
+                                                                        val remainingScopes = ProjectResourceScopeStore.removeProjectScope(projectResourceScopes, project.id)
+                                                                        ProjectResourceScopeStore.save(prefs, remainingScopes)
+                                                                        projectResourceScopes = remainingScopes
+                                                                        ProjectMemorySettingsStore.removeProject(prefs, project.id)
+                                                                        ProjectAccessControlStore.removeProject(prefs, project.id)
+                                                                        workflowHistory = workflowHistory.filterNot { it.projectId == project.id }
+                                                                        expertTeamRunHistory = expertTeamRunHistory.filterNot { it.projectId == project.id }
                                                                         val editor = prefs.edit()
                                                                         projectConversationIds.forEach { id -> editor.remove("draft_$id") }
+                                                                        editor.putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(workflowHistory))
+                                                                            .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(expertTeamRunHistory))
+                                                                        editor.remove("project_last_opened_${project.id}")
                                                                         val markerCleared = editor.remove("pending_project_delete_id").commit()
                                                                         status = if (markerCleared) "空项目空间已删除" else "项目已删除，启动时会自动清理残留标记"
                                                                     }.onFailure {
                                                                         if (it is java.util.concurrent.CancellationException) {
                                                                             status = "删除操作中断，下次启动会自动核对删除状态"
                                                                         } else {
-                                                                            prefs.edit().remove("pending_project_delete_id").commit()
-                                                                            status = it.message ?: "删除失败，项目空间已保留"
+                                                                            val projectStillExists = withContext(Dispatchers.IO) {
+                                                                                appRuntime.projectSpaceRepository.exists(project.id)
+                                                                            }
+                                                                            if (projectStillExists) {
+                                                                                prefs.edit().remove("pending_project_delete_id").commit()
+                                                                                status = it.message ?: "删除失败，项目空间已保留"
+                                                                            } else {
+                                                                                status = "项目主体已删除，剩余设置清理未完成；启动时会继续清理"
+                                                                            }
                                                                         }
                                                                     }.also {
                                                                         deletingProjectId = ""
                                                                     }
                                                                 }
                                                             }
-                                                        }, enabled = deletingProjectId.isBlank()) {
+                                                        }) {
                                                             Text(if (deletingProjectId == project.id) "删除中…" else "删除", color = ColorStop)
                                                         }
+                                                    }
+                                                }
+                                                if (project.id != activeProjectId) {
+                                                    val currentGrant = runCatching {
+                                                        ProjectAccessControlStore.loadGrants(prefs).firstOrNull {
+                                                            it.sourceProjectId == project.id && it.targetProjectId == activeProjectId
+                                                        }
+                                                    }.getOrNull()
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text(
+                                                            if (currentGrant == null) "当前项目尚未获得此空间的访问权限"
+                                                            else "当前项目权限：" + currentGrant.access.joinToString("、") { if (it == ProjectAccessControlStore.Access.READ) "读取" else "写入" },
+                                                            color = Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)
+                                                        )
+                                                        TextButton(enabled = !projectResourceScopesReadOnly, onClick = {
+                                                            pendingAccessSourceProjectId = project.id
+                                                            showProjectAccessDialog = true
+                                                        }) { Text("管理授权", color = Mint) }
                                                     }
                                                 }
                                                 Text(project.instructions.ifBlank { "尚未设置项目指令" }.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -1906,10 +3883,10 @@ fun NestroApp() {
                                                         Text("已归档 · ${conversations.count { it.projectId == project.id }} 个对话 · 数据保留在本机", color = Muted, style = MaterialTheme.typography.bodySmall)
                                                     }
                                                     TextButton(
-                                                        enabled = deletingProjectId.isBlank() && ProjectSpaceRules.canRestore(project.id),
+                                                        enabled = deletingProjectId.isBlank() && !projectStorageReadOnly && ProjectSpaceRules.canRestore(project.id),
                                                         onClick = {
                                                             projects = projects.map { if (it.id == project.id) it.copy(archivedAt = 0L) else it }
-                                                            saveProjects(prefs, projects)
+                                                            ProjectPreferencesStore.saveProjects(prefs, projects)
                                                             status = "项目已恢复，可以切换进入。"
                                                         }
                                                     ) { Text("恢复", color = Mint) }
@@ -1920,37 +3897,34 @@ fun NestroApp() {
                                 }
                             }
                         }
-                        "phone" -> PhoneAgentPage(context, database, activeProjectId)
-                        "voice" -> {
-                            Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Text("语音设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text(if (ttsReady) "系统中文语音引擎已就绪" else "系统语音引擎正在初始化或不可用", color = if (ttsReady) Mint else Muted)
-                                Text("朗读速度：${"%.1f".format(speechRate)}×", color = Ink)
-                                Slider(
-                                    value = speechRate,
-                                    onValueChange = {
-                                        speechRate = it
-                                        prefs.edit().putFloat("tts_speech_rate", it).apply()
-                                    },
-                                    valueRange = 0.7f..1.3f,
-                                    steps = 5
-                                )
-                                Text("朗读使用 Android 系统 TTS，不会把文字发送到额外的语音服务。可在系统设置中安装或切换中文语音引擎。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                Button(
-                                    onClick = { speakMessage("Nestro 语音朗读测试。你可以在这里调整朗读速度。") },
-                                    enabled = ttsReady,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text("试听中文朗读") }
-                                OutlinedButton(onClick = { stopSpeaking() }, modifier = Modifier.fillMaxWidth()) { Text("停止朗读") }
-                            }
+                        "artifacts" -> ArtifactLibraryPage(activeProjectId)
+                        "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
+                            draft = prompt
+                            page = "home"
                         }
-                        "knowledge" -> KnowledgePage(database, activeProjectId)
+                        "capabilities" -> CapabilityDirectoryPage(activeProjectId)
+                        "mcp" -> McpToolCenterPage(appRuntime)
+                        "plugins" -> GeneratedPluginCenterPage(
+                            application = appRuntime,
+                            configs = requestModelConfigs,
+                            onUsage = recordModelUsage,
+                            onProviderUsage = recordProviderModelUsage,
+                            onChanged = { }
+                        )
+                        "git" -> GitWorkbenchPage(context)
+                        "coworkbench" -> AiCoworkbenchPage(
+                            onBack = { page = "home" },
+                            initialPatchJson = coworkbenchGeneratedPatch,
+                            onPatchConsumed = { coworkbenchGeneratedPatch = "" },
+                            onUseChatPrompt = { prompt -> pendingCoworkbenchPrompt = prompt; draft = prompt; page = "home" }
+                        )
+                        "voice" -> VoiceSystemPage()
+                        "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本地技能库", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("技能是可复用的工作指令。导入包只读取文本和元数据，不执行其中代码，也不会自动授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                skills.forEach { (name, prompt) ->
+                                skills.filter { (name, _) -> !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(projectResourceScopes, ProjectResourceKind.SKILL, name, activeProjectId, readableProjectIds) }.forEach { (name, prompt) ->
                                     val isDisabled = name in disabledSkills
                                     Surface(color = if (selectedSkill == name && !isDisabled) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1958,6 +3932,10 @@ fun NestroApp() {
                                                 Column(Modifier.weight(1f)) {
                                                     Text(name, color = if (isDisabled) Muted else if (selectedSkill == name) Mint else Ink, style = MaterialTheme.typography.titleMedium)
                                                     Text(prompt.take(100), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                    val skillIsGlobal = projectResourceScopes[ProjectResourceScopeStore.resourceKey(ProjectResourceKind.SKILL, name)]?.contains("*") ?: true
+                                                    TextButton(onClick = { updateProjectResourceScope(ProjectResourceKind.SKILL, name, skillIsGlobal.not()) }) {
+                                                        Text(if (skillIsGlobal) "限定到当前项目" else "设为全局共享", color = Mint)
+                                                    }
                                                     skillMetadata[name]?.let { raw ->
                                                         val metadata = runCatching { JSONObject(raw) }.getOrNull()
                                                         if (metadata != null) Text("v${metadata.optString("version")} · ${metadata.optString("source")}", color = Muted, style = MaterialTheme.typography.labelSmall)
@@ -1972,6 +3950,7 @@ fun NestroApp() {
                                                     if(draft.isBlank()) draft = "请使用「$name」处理：\n"
                                                 }) { Text("试用", color = if(isDisabled) Muted else Mint) }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
                                                     editingSkillName = name
                                                     skillDraftName = name
                                                     skillDraftPrompt = prompt
@@ -1979,6 +3958,7 @@ fun NestroApp() {
                                                     showSkillDialog = true
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
                                                     disabledSkills = if(isDisabled) disabledSkills - name else disabledSkills + name
                                                     if(!isDisabled && selectedSkill==name) selectedSkill = ""
                                                     prefs.edit().putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills)).apply()
@@ -1989,22 +3969,29 @@ fun NestroApp() {
                                                     exportSkillLauncher.launch("$safeName.nestro-skill.json")
                                                 }) { Text("导出", color = Mint) }
                                                 if(name !in DEFAULT_SKILLS.keys) TextButton(onClick = {
-                                                    skills = skills - name
+                                                    if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
+                                                     if (!canWriteSkillDependents(name)) return@TextButton
+                                                     skills = skills - name
                                                     skillMetadata = skillMetadata - name
                                                     disabledSkills = disabledSkills - name
                                                     expertProfiles = expertProfiles.mapValues { (_, profile) -> profile.copy(skillNames = profile.skillNames - name) }
                                                     expertRevisions = expertRevisions.mapValues { (_, rows) -> rows.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) } }
                                                     expertTemplates = expertTemplates.map { it.copy(profile = it.profile.copy(skillNames = it.profile.skillNames - name)) }
                                                     workflows = workflows.map { workflow -> workflow.copy(steps = workflow.steps.map { step -> if (step.kind == WorkflowStepKind.SKILL && step.targetId.ifBlank { step.title } == name) step.copy(enabled = false) else step }) }
+                                                    val remainingSkillScopes = ProjectResourceScopeStore.removeResourceScope(
+                                                        projectResourceScopes, ProjectResourceKind.SKILL, name
+                                                    )
                                                     prefs.edit().putString("skills",skillMapToJson(skills))
+                                                        .putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(remainingSkillScopes))
                                                         .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
                                                         .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
                                                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                                                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                                                         .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
-                                                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                                                        .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).commit()
+                                                    projectResourceScopes = remainingSkillScopes
                                                     if(selectedSkill==name) selectedSkill=""
-                                                }) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
                                             }
                                         }
                                     }
@@ -2028,12 +4015,14 @@ fun NestroApp() {
                                  if (skillExportStatus.isNotBlank()) Text(skillExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        else -> SimplePage("Nestro", "本地优先的开放式 AI 工作站")
+                        else -> SimplePage("Nost", "本地优先的 AI 助手")
                     }
+                    }
+                }
+                }
                 }
             }
         }
-    }
 
     if (showBackupRestoreConfirm && pendingBackupUri != null) {
         AlertDialog(
@@ -2046,9 +4035,90 @@ fun NestroApp() {
                     showBackupRestoreConfirm = false
                     pendingBackupUri = null
                     if (uri != null) performBackupRestore(uri)
-                }) { Text("覆盖并恢复", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                }) { Text("覆盖并恢复", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showBackupRestoreConfirm = false; pendingBackupUri = null }) { Text("取消") } }
+        )
+    }
+
+    if (showProjectPackageImportConfirm && pendingProjectPackageUri != null) {
+        AlertDialog(
+            onDismissRequest = { showProjectPackageImportConfirm = false; pendingProjectPackageUri = null },
+            title = { Text("导入项目包？") },
+            text = { Text("导入会新建一个独立项目，不覆盖现有项目。会复制项目会话、知识、记忆、产物和项目资源；本机模型/API 设置与跨项目授权保持不变，不随项目包导入。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingProjectPackageUri
+                    showProjectPackageImportConfirm = false
+                    pendingProjectPackageUri = null
+                    if (uri != null) performProjectPackageImport(uri)
+                }) { Text("导入项目", color = Mint) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProjectPackageImportConfirm = false; pendingProjectPackageUri = null }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showProjectAccessDialog && pendingAccessSourceProjectId.isNotBlank()) {
+        val sourceProject = projects.firstOrNull { it.id == pendingAccessSourceProjectId }
+        AlertDialog(
+            onDismissRequest = { showProjectAccessDialog = false; pendingAccessSourceProjectId = "" },
+            title = { Text("跨项目访问授权") },
+            text = {
+                Text(
+                    "允许当前项目「" + (projects.firstOrNull { it.id == activeProjectId }?.name ?: activeProjectId) +
+                        "」访问「" + (sourceProject?.name ?: pendingAccessSourceProjectId) +
+                        "」中的资源。读取权限用于检索该项目的知识、记忆及调用可见专家/技能/工作流；写入权限用于管理该项目知识文档，并允许修改由该项目拥有的共享资源。授权仅对这两个项目生效。",
+                    color = Muted
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        runCatching {
+                            ProjectAccessControlStore.grant(
+                                prefs, pendingAccessSourceProjectId, activeProjectId,
+                                setOf(ProjectAccessControlStore.Access.READ)
+                            )
+                            readableProjectIds = readableSourcesFor(activeProjectId)
+                            writableProjectIds = writableSourcesFor(activeProjectId)
+                            status = "已授权当前项目读取「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」的资源"
+                        }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("仅读取", color = Mint) }
+                    TextButton(onClick = {
+                        runCatching {
+                            ProjectAccessControlStore.grant(
+                                prefs, pendingAccessSourceProjectId, activeProjectId,
+                                setOf(ProjectAccessControlStore.Access.READ, ProjectAccessControlStore.Access.WRITE)
+                            )
+                            readableProjectIds = readableSourcesFor(activeProjectId)
+                            writableProjectIds = writableSourcesFor(activeProjectId)
+                            status = "已授权当前项目读取和写入「" + (sourceProject?.name ?: pendingAccessSourceProjectId) + "」"
+                        }.onFailure { status = "授权失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("读取和写入", color = Mint) }
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        runCatching { ProjectAccessControlStore.revoke(prefs, pendingAccessSourceProjectId, activeProjectId) }
+                            .onSuccess {
+                                readableProjectIds = readableSourcesFor(activeProjectId)
+                                writableProjectIds = writableSourcesFor(activeProjectId)
+                                status = "已撤销跨项目授权"
+                            }
+                            .onFailure { status = "撤销失败：" + (it.message ?: "数据无效") }
+                        showProjectAccessDialog = false
+                        pendingAccessSourceProjectId = ""
+                    }) { Text("撤销授权", color = ColorStop) }
+                    TextButton(onClick = { showProjectAccessDialog = false; pendingAccessSourceProjectId = "" }) { Text("取消") }
+                }
+            }
         )
     }
 
@@ -2061,7 +4131,11 @@ fun NestroApp() {
                     OutlinedTextField(teamDraftName, { teamDraftName = it }, label = { Text("团队名称") }, singleLine = true)
                     OutlinedTextField(teamDraftDescription, { teamDraftDescription = it }, label = { Text("团队分工") }, minLines = 2)
                     Text("选择成员，至少 2 位", color = Ink, style = MaterialTheme.typography.labelLarge)
-                    experts.forEach { expert ->
+                    experts.filter { expert ->
+                        !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.EXPERT, expert, activeProjectId, readableProjectIds
+                        )
+                    }.forEach { expert ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = expert in teamDraftMembers, enabled = expertProfiles[expert]?.enabled != false, onCheckedChange = { checked ->
                                 teamDraftMembers = if (checked) teamDraftMembers + expert else teamDraftMembers - expert
@@ -2073,6 +4147,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        status = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = teamDraftName.trim()
                     if (name.isNotBlank() && name.length <= 40 && teamDraftDescription.length <= 300 && teamDraftMembers.size in 2..4 &&
                         expertTeams.none { it.name == name && it.id != editingTeamId }
@@ -2083,9 +4161,11 @@ fun NestroApp() {
                             description = teamDraftDescription.trim().take(300),
                             members = teamDraftMembers.filter { it in experts }.take(4)
                         )
-                        if (team.members.size >= 2) {
+                        if (team.members.size in 2..4 && team.members.distinct().size == team.members.size) {
+                            if (editingTeamId.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.TEAM, team.id)) return@TextButton
+                            if (editingTeamId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.TEAM, editingTeamId)) return@TextButton
                             expertTeams = if (editingTeamId.isBlank()) expertTeams + team else expertTeams.map { if (it.id == editingTeamId) team else it }
-                            prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).apply()
+                            check(prefs.edit().putString("expert_teams_v1", expertTeamsToJson(expertTeams)).commit()) { "专家团队保存失败" }
                         }
                         showTeamDialog = false
                     }
@@ -2114,7 +4194,7 @@ fun NestroApp() {
                     val index = messages.indexOfFirst { it.id == editMessageId }
                     if (edited.isNotBlank() && index >= 0) {
                         messages = messages.take(index)
-                        conversations = saveConversationMessages(prefs, activeConversationId, messages, activeProjectId)
+                        conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
                         sendPrompt(edited)
                     }
                     showEditMessageDialog = false
@@ -2134,7 +4214,7 @@ fun NestroApp() {
                     Text(bundle.name, color = Ink, style = MaterialTheme.typography.titleMedium)
                     Text("版本：${bundle.version} · 来源：${bundle.source}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     if (bundle.description.isNotBlank()) Text(bundle.description, color = Muted)
-                    Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else androidx.compose.ui.graphics.Color(0xFFFBBF24))
+                    Text("声明权限：${bundle.permissions.joinToString().ifBlank { "无" }}", color = if (bundle.permissions.isEmpty()) Muted else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("依赖：${bundle.dependencies.joinToString { it.name + "@" + it.version }.ifBlank { "无" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     Text("指令预览", color = Ink, style = MaterialTheme.typography.labelLarge)
                     Text(bundle.prompt.take(900), color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -2143,7 +4223,13 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        skillImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                        return@TextButton
+                    }
                     val replacing = bundle.name in skills
+                    if (replacing && !canWriteProjectResource(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
+                    if (!replacing && !assignNewProjectResourceScope(ProjectResourceKind.SKILL, bundle.name)) return@TextButton
                     skills = skills + (bundle.name to bundle.prompt)
                     skillMetadata = skillMetadata + (bundle.name to SkillBundleParser.metadataJson(bundle))
                     disabledSkills = disabledSkills - bundle.name
@@ -2188,17 +4274,20 @@ fun NestroApp() {
                             val project = ProjectRecord(UUID.randomUUID().toString(), name, projectDraftInstructions.trim(), System.currentTimeMillis())
                             projects = listOf(project) + projects
                             activeProjectId = project.id
+                            automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, project.id)
+                            prefs.edit().putLong("project_last_opened_${project.id}", System.currentTimeMillis()).apply()
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
                             activeConversationId = conversation.id
+                            applyConversationContext(conversation.id, project.id)
                             messages = emptyList()
-                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).apply()
-                            saveConversationList(prefs, conversations)
+                            prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).remove("selected_team_id").apply()
+                            ConversationPreferencesStore.saveConversationList(prefs, conversations)
                             page = "home"
                         } else {
                             projects = projects.map { if (it.id == editingProjectId) it.copy(name = name, instructions = projectDraftInstructions.trim()) else it }
                         }
-                        saveProjects(prefs, projects)
+                        ProjectPreferencesStore.saveProjects(prefs, projects)
                         showProjectDialog = false
                     }
                 }) { Text("保存", color = Mint) }
@@ -2217,16 +4306,29 @@ fun NestroApp() {
                         Column(Modifier.fillMaxWidth().clickable {
                             val target = conversations.firstOrNull { it.id == source.conversationId }
                             if (target != null) {
-                                activeConversationId = target.id
-                                activeProjectId = target.projectId
-                                messages = target.messages
-                                prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId).apply()
-                                page = "home"
+                                scope.launch {
+                                    val targetMessages = if (databaseReady) {
+                                        withContext(Dispatchers.IO) {
+                                            appRuntime.conversationPersistenceService.loadMessages(target.id).orEmpty()
+                                        }
+                                    } else target.messages
+                                    activeConversationId = target.id
+                                    activeProjectId = target.projectId
+                                    applyConversationContext(target.id, target.projectId)
+                                    messages = targetMessages
+                                    conversations = conversations.map { record ->
+                                        if (record.id == target.id) record.copy(messages = targetMessages, messagesLoaded = true) else record
+                                    }
+                                    conversations.firstOrNull { it.id == target.id }?.let { persistedConversationVersions[target.id] = it.hashCode() }
+                                    prefs.edit().putString("active_conversation_id", target.id).putString("active_project_id", target.projectId)
+                                        .putString("selected_team_id", selectedTeamId).apply()
+                                    page = "home"
+                                }
                             }
                             showRecallDialog = false
                         }.padding(vertical = 9.dp)) {
                             Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
-                            Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Text("${if (source.role == "user") "用户" else "Nost"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                             Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                         }
                         HorizontalDivider(color = Line)
@@ -2256,7 +4358,11 @@ fun NestroApp() {
                         conversations = conversations.map { record ->
                             if (record.id == renameConversationId) record.copy(title = title, updatedAt = System.currentTimeMillis()) else record
                         }
-                        saveConversationList(prefs, conversations)
+                        ConversationPreferencesStore.saveConversationList(prefs, conversations)
+                        conversationPageItems = conversationPageItems.map { item ->
+                            if (item.id == renameConversationId) item.copy(title = title) else item
+                        }
+                        conversationPageRefreshKey++
                     }
                     showRenameConversation = false
                 }) { Text("保存", color = Mint) }
@@ -2274,11 +4380,15 @@ fun NestroApp() {
                     OutlinedTextField(value = skillDraftName, onValueChange = { skillDraftName = it.take(40) }, label = { Text("技能名称") }, singleLine = true, enabled = editingSkillName !in DEFAULT_SKILLS.keys)
                     Spacer(Modifier.height(10.dp))
                     OutlinedTextField(value = skillDraftPrompt, onValueChange = { skillDraftPrompt = it.take(8000) }, label = { Text("工作指令") }, placeholder = { Text("描述技能要如何处理任务、输出格式和注意事项。") }, minLines = 4)
-                    if(skillDialogError.isNotBlank()) Text(skillDialogError,color=androidx.compose.ui.graphics.Color(0xFFF87171),style=MaterialTheme.typography.bodySmall)
+                    if(skillDialogError.isNotBlank()) Text(skillDialogError,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        skillDialogError = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = skillDraftName.trim()
                     val prompt = skillDraftPrompt.trim()
                     val duplicate = name in skills && name != editingSkillName
@@ -2290,6 +4400,9 @@ fun NestroApp() {
                         skillDialogError = "已有同名技能，请更换名称。"
                     } else {
                         val oldName = editingSkillName
+                        if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.SKILL, oldName)) return@TextButton
+                        if (oldName.isNotBlank() && oldName != name && !canWriteSkillDependents(oldName)) return@TextButton
+                        if (oldName.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.SKILL, name)) return@TextButton
                         val updated = if(oldName.isNotBlank() && oldName!=name) skills - oldName else skills
                         skills = updated + (name to prompt)
                         if(oldName.isNotBlank() && oldName!=name) {
@@ -2304,13 +4417,23 @@ fun NestroApp() {
                             if(wasDisabled) disabledSkills = (disabledSkills - oldName) + name
                             if(selectedSkill==oldName) selectedSkill=if(wasDisabled) "" else name
                         }
-                        prefs.edit().putString("skills",skillMapToJson(skills))
+                        val renamedSkillScopes = if (oldName.isNotBlank() && oldName != name) {
+                            ProjectResourceScopeStore.renameResourceScope(
+                                projectResourceScopes, ProjectResourceKind.SKILL, oldName, name
+                            )
+                        } else null
+                        val skillEditor = prefs.edit().putString("skills",skillMapToJson(skills))
                             .putString("skill_metadata_v1",skillMetadataToJson(skillMetadata))
                             .putString("disabled_skills_v1",disabledSkillsToJson(disabledSkills))
                             .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                              .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                              .putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates))
-                             .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
+                             .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
+                        if (renamedSkillScopes != null) {
+                            skillEditor.putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(renamedSkillScopes))
+                        }
+                        check(skillEditor.commit()) { "技能及项目范围保存失败" }
+                        if (renamedSkillScopes != null) projectResourceScopes = renamedSkillScopes
                         if(name !in disabledSkills) selectedSkill=name
                         skillDraftName = ""
                         skillDraftPrompt = ""
@@ -2336,19 +4459,35 @@ fun NestroApp() {
                 Text("导入后会一并安装成员专家配置；同名专家的角色指令将被更新。", color = Muted)
             } },
             confirmButton = { TextButton(onClick = {
+                if (projectResourceScopesReadOnly) {
+                    teamImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                    return@TextButton
+                }
+                if (bundle.members.size !in 2..4 || bundle.members.map { it.name }.distinct().size != bundle.members.size) {
+                    teamImportStatus = "团队成员必须为 2–4 位且不能重复。"
+                    pendingTeamBundle = null
+                    return@TextButton
+                }
+                val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
+                if (previousTeam != null && !canWriteProjectResource(ProjectResourceKind.TEAM, previousTeam.id)) return@TextButton
+                val existingExpertNames = experts.toSet()
+                if (bundle.members.any { it.name in experts && !canWriteProjectResource(ProjectResourceKind.EXPERT, it.name) }) return@TextButton
+                val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
+                bundle.members.filter { it.name !in existingExpertNames }.forEach { member ->
+                    if (!assignNewProjectResourceScope(ProjectResourceKind.EXPERT, member.name)) return@TextButton
+                }
+                if (previousTeam == null && !assignNewProjectResourceScope(ProjectResourceKind.TEAM, team.id)) return@TextButton
                 bundle.members.forEach { member ->
                     if (member.name !in experts) experts = experts + member.name
                     expertPrompts = expertPrompts + (member.name to member.prompt)
                 }
-                val previousTeam=expertTeams.firstOrNull { it.name==bundle.name }
-                val team = ExpertTeam(previousTeam?.id ?: UUID.randomUUID().toString(), bundle.name, bundle.description, bundle.members.map { it.name })
                 expertTeams = expertTeams.filterNot { it.name == bundle.name } + team
                 if(selectedTeamId==previousTeam?.id) selectedTeamId=team.id
                 prefs.edit().putString("experts", JSONArray(experts).toString())
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                     .putString("selected_team_id",selectedTeamId).apply()
-                teamImportStatus = "已导入团队：${bundle.name}"
+                teamImportStatus = "已导入团队：" + bundle.name
                 pendingTeamBundle = null
             }) { Text("导入团队", color = Mint) } },
             dismissButton = { TextButton(onClick = { pendingTeamBundle = null }) { Text("取消") } }
@@ -2368,12 +4507,24 @@ fun NestroApp() {
                 Text("状态：${if (bundle.enabled) "启用" else "停用"} · Temperature：${bundle.temperature ?: "模型默认"} · Max tokens：${bundle.maxTokens ?: "模型默认"}", color = Muted)
                 Text("角色指令", color = Mint)
                 Text(bundle.prompt, color = Ink)
-                if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = androidx.compose.ui.graphics.Color(0xFFFBBF24))
+                if (bundle.name in experts) Text("同名专家已存在，导入将更新角色指令。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } },
             confirmButton = { TextButton(onClick = {
-                val missingSkills = bundle.skillNames.filter { it !in skills || it in disabledSkills }
+                if (projectResourceScopesReadOnly) {
+                    expertImportStatus = "项目资源范围数据校验失败，已锁定资源导入。"
+                    return@TextButton
+                }
+                val isNewExpert = bundle.name !in experts
+                if (!isNewExpert && !canWriteProjectResource(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
+                if (isNewExpert && !assignNewProjectResourceScope(ProjectResourceKind.EXPERT, bundle.name)) return@TextButton
+                val missingSkills = bundle.skillNames.filter { skillName ->
+                    skillName !in skills || skillName in disabledSkills || projectResourceScopesReadOnly ||
+                        !ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                        )
+                }
                 if (missingSkills.isNotEmpty()) {
-                    expertImportStatus = "导入未完成，以下挂载技能不存在或已停用：${missingSkills.joinToString()}"
+                    expertImportStatus = "导入未完成，以下挂载技能不存在、已停用或当前项目无读取权限：${missingSkills.joinToString()}"
                     return@TextButton
                 }
                 val previousProfile = expertProfiles[bundle.name] ?: if (bundle.name in experts) ExpertProfile() else null
@@ -2391,7 +4542,7 @@ fun NestroApp() {
                     .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                     .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                     .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions)).apply()
-                expertImportStatus = "已导入专家：${bundle.name}"
+                expertImportStatus = "已导入专家：" + bundle.name
                 pendingExpertBundle = null
             }) { Text("导入", color = Mint) } },
             dismissButton = { TextButton(onClick = { pendingExpertBundle = null }) { Text("取消") } }
@@ -2400,9 +4551,20 @@ fun NestroApp() {
 
     if (showWorkflowTargetPicker && workflowTargetPickerIndex in workflowDraftSteps.indices) {
         val targetStep = workflowDraftSteps[workflowTargetPickerIndex]
+        val workflowReadableProjectIds = if (projectResourceScopesReadOnly) emptySet() else
+            ProjectAccessControlStore.readableSourceProjects(prefs, activeProjectId, projects.filter { it.archivedAt == 0L }.map { it.id }.toSet())
         val targets = when (targetStep.kind) {
-            WorkflowStepKind.EXPERT -> experts
-            WorkflowStepKind.SKILL -> skills.keys.filterNot { it in disabledSkills }
+            WorkflowStepKind.EXPERT -> experts.filter { expert ->
+                !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                    projectResourceScopes, ProjectResourceKind.EXPERT, expert, activeProjectId, workflowReadableProjectIds
+                )
+            }
+            WorkflowStepKind.SKILL -> skills.keys.filter { skill ->
+                skill !in disabledSkills && !projectResourceScopesReadOnly &&
+                    ProjectResourceScopeStore.isVisibleFromProjects(
+                        projectResourceScopes, ProjectResourceKind.SKILL, skill, activeProjectId, workflowReadableProjectIds
+                    )
+            }
             WorkflowStepKind.PROMPT -> emptyList()
         }
         AlertDialog(
@@ -2477,7 +4639,7 @@ fun NestroApp() {
                                     onClick = {
                                         workflowDraftSteps = workflowDraftSteps.filterIndexed { stepIndex, _ -> stepIndex != index }
                                     }
-                                ) { Text("删除", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
+                                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
                             }
                             OutlinedTextField(
                                 value = step.title,
@@ -2572,6 +4734,35 @@ fun NestroApp() {
                                     if (stepIndex == index) item.copy(repeatCount = item.repeatCount % 3 + 1) else item
                                 }
                             }) { Text("本步骤循环：${step.repeatCount} 次", color = Mint) }
+                            OutlinedTextField(
+                                value = step.condition,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(condition = value.take(200)) else item
+                                    }
+                                },
+                                label = { Text("执行条件：always / nonblank / contains:关键词 / not_contains:关键词") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = step.parallelGroup,
+                                onValueChange = { value ->
+                                    workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                        if (stepIndex == index) item.copy(parallelGroup = value.trim().take(40)) else item
+                                    }
+                                },
+                                label = { Text("并行组名称（连续相同步骤并行；留空为顺序执行）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            TextButton(onClick = {
+                                workflowDraftSteps = workflowDraftSteps.mapIndexed { stepIndex, item ->
+                                    if (stepIndex == index) item.copy(approvalRequired = !item.approvalRequired) else item
+                                }
+                            }) {
+                                Text(if (step.approvalRequired) "执行前审批：开启" else "执行前审批：关闭", color = if (step.approvalRequired) Mint else Muted)
+                            }
                         }
                     }
                     OutlinedButton(
@@ -2589,6 +4780,10 @@ fun NestroApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        workflowRunStatus = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val workflow = WorkflowDefinition(
                         id = editingWorkflowId.ifBlank { UUID.randomUUID().toString() },
                         name = workflowDraftName.trim(),
@@ -2597,7 +4792,9 @@ fun NestroApp() {
                             step.copy(title = step.title.trim(), instruction = step.instruction.trim())
                         }
                     )
+                    if (editingWorkflowId.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.WORKFLOW, editingWorkflowId)) return@TextButton
                     runCatching { WorkflowDefinitionCodec.validate(workflow) }.onSuccess {
+                        if (editingWorkflowId.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.WORKFLOW, workflow.id)) return@onSuccess
                         workflows = if (editingWorkflowId.isBlank()) workflows + workflow else workflows.map { if (it.id == editingWorkflowId) workflow else it }
                         prefs.edit().putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows)).apply()
                         showWorkflowDialog = false
@@ -2605,6 +4802,109 @@ fun NestroApp() {
                 }) { Text("保存工作流", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showWorkflowDialog = false }) { Text("取消") } }
+        )
+    }
+
+    if (agentApprovalPrompt != null && !workflowApprovalVisible) {
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (workflowUiState.agentApprovalRequests.value.size > 1)
+                        "有 ${workflowUiState.agentApprovalRequests.value.size} 项任务操作等待授权"
+                    else "有一项任务操作等待授权",
+                    color = Ink,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { workflowApprovalVisible = true }) { Text("查看审批", color = Mint) }
+            }
+        }
+    }
+
+    if (agentApprovalPrompt != null && workflowApprovalVisible) {
+        val approval = requireNotNull(agentApprovalPrompt)
+        AlertDialog(
+            onDismissRequest = { workflowApprovalVisible = false },
+            title = { Text("任务操作需要授权", color = Ink) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("能力：${approval.request.toolId}", color = Ink)
+                    Text(approval.request.reason, color = Muted)
+                    Text("授权一次只允许当前操作；当前任务全部授权仅在本次任务中有效。未选择前，任务会保持等待。", color = Muted)
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_ONCE
+                                )
+                            }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "授权已记录，重新发送恢复的原请求即可继续。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "授权已记录，点击“继续未完成工作流”即可恢复。"
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
+                    }) { Text("授权一次", color = Mint) }
+                    TextButton(onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.AUTHORIZE_TASK
+                                )
+                            }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "当前请求已授权，重新发送恢复的原请求即可继续。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "当前工作流已授权，点击“继续未完成工作流”即可恢复。"
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
+                    }) { Text("当前任务全部授权", color = Mint) }
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        workflowUiState.deferCurrentApproval()
+                        workflowApprovalVisible = workflowUiState.agentApprovalRequests.value.size > 1
+                    }) { Text("稍后处理", color = Muted) }
+                    TextButton(onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                appRuntime.agentApprovalCoordinator.respond(
+                                    approval.request.id,
+                                    app.nestro.agent.AgentApprovalDecision.REJECT
+                                )
+                            }
+                            val restoredRequest = ChatRequestStateStore.load(prefs)
+                            if (restoredRequest?.status == "restored" && restoredRequest.requestId == approval.request.scopeId) {
+                                status = "已拒绝，重新发送恢复的原请求后将按拒绝结果处理。"
+                            }
+                            if (prefs.getString("workflow_task_id_v1", "").orEmpty() == approval.request.scopeId) {
+                                workflowRunStatus = "该操作已拒绝，继续工作流时将按拒绝结果处理。"
+                            }
+                            refreshApprovalQueue(showNext = true)
+                        }
+                    }) { Text("拒绝", color = Muted) }
+                }
+            }
         )
     }
 
@@ -2622,7 +4922,11 @@ fun NestroApp() {
                     OutlinedTextField(value = expertDescriptionDraft, onValueChange = { expertDescriptionDraft = it.take(300) }, label = { Text("专家简介") }, singleLine = false, minLines = 2)
                     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = expertEnabledDraft, onCheckedChange = { expertEnabledDraft = it }); Text("启用此专家", color = Ink) }
                     Text("挂载技能（仅启用技能可新挂载）", color = Mint, style = MaterialTheme.typography.titleSmall)
-                    skills.forEach { (skillName, _) ->
+                    skills.filterKeys { skillName ->
+                        !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
+                            projectResourceScopes, ProjectResourceKind.SKILL, skillName, activeProjectId, readableProjectIds
+                        )
+                    }.forEach { (skillName, _) ->
                         val attached = skillName in expertSkillDraft
                         val disabled = skillName in disabledSkills
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2632,16 +4936,28 @@ fun NestroApp() {
                     }
                     OutlinedTextField(value = expertTemperatureDraft, onValueChange = { expertTemperatureDraft = it.take(8) }, label = { Text("Temperature（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                     OutlinedTextField(value = expertMaxTokensDraft, onValueChange = { expertMaxTokensDraft = it.filter(Char::isDigit).take(5) }, label = { Text("最大输出 Token（留空使用模型默认）") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    if (expertDialogError.isNotBlank()) Text(expertDialogError, color = androidx.compose.ui.graphics.Color(0xFFF87171), style = MaterialTheme.typography.bodySmall)
+                    if (expertDialogError.isNotBlank()) Text(expertDialogError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        expertDialogError = "项目资源范围数据校验失败，已锁定资源创建与修改。"
+                        return@TextButton
+                    }
                     val name = expertDraft.trim()
                     val oldName = editingExpertName
                     val validationError = ExpertCatalogRules.validateDefinition(name, expertPromptDraft, oldName, experts)
                     if (validationError != null) {
                         expertDialogError = validationError
+                        return@TextButton
+                    }
+                    if (oldName.isNotBlank() && !canWriteProjectResource(ProjectResourceKind.EXPERT, oldName)) {
+                        expertDialogError = "当前项目没有该专家的写入权限。"
+                        return@TextButton
+                    }
+                    if (oldName.isNotBlank() && oldName != name && !canWriteExpertDependents(oldName)) {
+                        expertDialogError = "该专家被其他只读团队或工作流引用，不能在当前项目重命名。"
                         return@TextButton
                     }
                     val temperature = expertTemperatureDraft.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
@@ -2659,13 +4975,14 @@ fun NestroApp() {
                         maxTokens = maxTokens,
                         description = expertDescriptionDraft.trim(),
                         version = expertProfiles[oldName]?.version ?: "1.0.0",
-                        source = expertProfiles[oldName]?.source ?: "Nestro 本地专家"
+                        source = expertProfiles[oldName]?.source ?: "Nost 本地专家"
                     )
                     val profileError = ExpertProfileCodec.validate(profile, skills.keys)
                     if (profileError != null) {
                         expertDialogError = profileError
                         return@TextButton
                     }
+                    if (oldName.isBlank() && !assignNewProjectResourceScope(ProjectResourceKind.EXPERT, name)) return@TextButton
                     val previousProfile = expertProfiles[oldName] ?: if (oldName in experts) ExpertProfile() else null
                     val previousPrompt = expertPrompts[oldName].orEmpty()
                     if (oldName.isNotBlank() && previousProfile != null && (previousPrompt != expertPromptDraft.trim() || previousProfile.copy(version = profile.version) != profile)) {
@@ -2682,13 +4999,23 @@ fun NestroApp() {
                         expertTeams = expertTeams.map { team -> team.copy(members = team.members.map { if (it == oldName) name else it }) }
                         workflows = ExpertCatalogRules.renameWorkflowReferences(workflows, oldName, name)
                     }
-                    prefs.edit().putString("experts", JSONArray(experts).toString())
+                    val renamedExpertScopes = if (oldName.isNotBlank() && oldName != name) {
+                        ProjectResourceScopeStore.renameResourceScope(
+                            projectResourceScopes, ProjectResourceKind.EXPERT, oldName, name
+                        )
+                    } else null
+                    val expertEditor = prefs.edit().putString("experts", JSONArray(experts).toString())
                         .putString("expert_prompts", expertPromptsToJson(expertPrompts))
                         .putString("expert_profiles_v1", ExpertProfileCodec.encode(expertProfiles))
                         .putString("expert_versions_v1", ExpertRevisionCodec.encode(expertRevisions))
                         .putString("expert_teams_v1", expertTeamsToJson(expertTeams))
                         .putString("workflows_v1", WorkflowDefinitionCodec.encode(workflows))
-                        .putString("selected_expert", selectedExpert).apply()
+                        .putString("selected_expert", selectedExpert)
+                    if (renamedExpertScopes != null) {
+                        expertEditor.putString("project_resource_scopes_v1", ProjectResourceScopeStore.encode(renamedExpertScopes))
+                    }
+                    check(expertEditor.commit()) { "专家及项目范围保存失败" }
+                    if (renamedExpertScopes != null) projectResourceScopes = renamedExpertScopes
                     if (selectedExpert == oldName || selectedExpert == name) {
                         selectedExpert = if (profile.enabled) name else "通用助手"
                     }
@@ -2723,6 +5050,7 @@ fun NestroApp() {
                             }
                             TextButton(onClick = { historyCompareVersion = revision.version }) { Text("对比", color = Mint) }
                             TextButton(onClick = {
+                                if (!canWriteProjectResource(ProjectResourceKind.EXPERT, name)) return@TextButton
                                 val currentProfile = expertProfiles[name] ?: ExpertProfile()
                                 expertRevisions = expertRevisions + (name to (expertRevisions[name].orEmpty() + ExpertRevision(currentProfile.version, expertPrompts[name].orEmpty(), currentProfile, System.currentTimeMillis())).takeLast(20))
                                 expertPrompts = expertPrompts + (name to revision.prompt)
@@ -2755,34 +5083,108 @@ fun NestroApp() {
     }
 
     if (showExpertTemplatesDialog) {
+        val builtInTemplates = ExpertTemplateCatalog.builtIns()
+        val allTemplates = builtInTemplates + expertTemplates
+        val templateCategories = listOf("全部") + allTemplates.map { it.category }.distinct().sorted()
+        val visibleTemplates = allTemplates.filter { template ->
+            (templateCategoryFilter == "全部" || template.category == templateCategoryFilter) &&
+                (templateSearchDraft.isBlank() || listOf(template.name, template.description, template.prompt, template.category)
+                    .any { it.contains(templateSearchDraft, ignoreCase = true) })
+        }
         AlertDialog(
             onDismissRequest = { showExpertTemplatesDialog = false },
             title = { Text("专家模板库") },
             text = {
-                Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = templateNameDraft, onValueChange = { templateNameDraft = it.take(40) }, label = { Text("模板名称") }, singleLine = true)
                     Button(onClick = {
                         val name = templateNameDraft.trim()
                         val sourceName = selectedExpert
                         val prompt = expertPrompts[sourceName].orEmpty().ifBlank { ExpertTeamDefaults.rolePrompt(sourceName) }
                         val profile = expertProfiles[sourceName] ?: ExpertProfile()
-                        if (name.isBlank() || prompt.isBlank()) {
-                            expertImportStatus = "模板名称或当前专家指令为空，无法保存。"
-                        } else if (name !in expertTemplates.map { it.name } && expertTemplates.size >= 100) {
-                            expertImportStatus = "模板库已达到 100 个上限。"
+                        val builtInName = builtInTemplates.any { it.name.equals(name, ignoreCase = true) }
+                        val expertOwners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.EXPERT, sourceName)
+                        val projectOnlyExpert = expertOwners != null && "*" !in expertOwners
+                        val projectOnlySkills = profile.skillNames.filter { skill ->
+                            val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
+                            owners != null && "*" !in owners
+                        }
+                        if (projectResourceScopesReadOnly) {
+                            templateStatus = "项目资源范围数据校验失败，已锁定全局模板创建。"
+                        } else if (projectOnlyExpert) {
+                            templateStatus = "项目专属专家不能直接保存为全局模板，请先将专家设为全局共享。"
+                        } else if (projectOnlySkills.isNotEmpty()) {
+                            templateStatus = "全局专家模板不能引用项目专属技能：" + projectOnlySkills.joinToString("、")
+                        } else if (name.isBlank() || prompt.isBlank()) {
+                            templateStatus = "模板名称或当前专家指令为空，无法保存。"
+                        } else if (builtInName) {
+                            templateStatus = "该名称属于内置模板，请换一个名称保存自定义副本。"
+                        } else if (ExpertProfileCodec.validate(profile, skills.keys) != null) {
+                            templateStatus = "当前专家配置无效：" + (ExpertProfileCodec.validate(profile, skills.keys) ?: "")
                         } else {
-                            val template = ExpertTemplate(name = name, description = profile.description, prompt = prompt, profile = profile)
-                            expertTemplates = expertTemplates.filterNot { it.name == name } + template
-                            prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
-                            expertImportStatus = "模板「$name」已保存。"
+                            val existing = expertTemplates.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                            if (existing == null && expertTemplates.size >= 100) {
+                                templateStatus = "自定义模板库已达到 100 个上限。"
+                            } else {
+                                val template = existing?.copy(
+                                    name = name,
+                                    description = profile.description,
+                                    prompt = prompt,
+                                    profile = profile,
+                                    category = profile.group.ifBlank { "自定义" }
+                                ) ?: ExpertTemplate(
+                                    name = name,
+                                    description = profile.description,
+                                    prompt = prompt,
+                                    profile = profile,
+                                    category = profile.group.ifBlank { "自定义" }
+                                )
+                                val next = expertTemplates.filterNot { it.id == template.id } + template
+                                if (runCatching {
+                                    prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(next)).commit()
+                                }.getOrDefault(false)) {
+                                    expertTemplates = next
+                                    templateStatus = "模板「$name」已保存。"
+                                } else {
+                                    templateStatus = "模板保存失败：本机存储未确认写入。"
+                                }
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("保存当前专家为模板") }
-                    if (expertTemplates.isEmpty()) Text("还没有模板。可以先选中一个专家，再保存为模板。", color = Muted)
-                    expertTemplates.forEach { template ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { importTemplateLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.weight(1f)) { Text("导入模板") }
+                        OutlinedButton(
+                            enabled = expertTemplates.isNotEmpty(),
+                            onClick = {
+                                runCatching { ExpertTemplateBundleCodec.encode(expertTemplates) }
+                                    .onSuccess { encoded ->
+                                        templateExportJson = encoded
+                                        exportTemplateLauncher.launch("nestro-expert-templates.json")
+                                    }
+                                    .onFailure { error ->
+                                        templateStatus = "模板导出失败：" + (error.message ?: "模板数据无效")
+                                    }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("导出自定义模板") }
+                    }
+                    OutlinedTextField(value = templateSearchDraft, onValueChange = { templateSearchDraft = it }, label = { Text("搜索模板名称、说明或指令") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        templateCategories.forEach { category ->
+                            FilterChip(selected = templateCategoryFilter == category, onClick = { templateCategoryFilter = category }, label = { Text(category) })
+                        }
+                    }
+                    Text("内置模板 ${builtInTemplates.size} 个 · 自定义模板 ${expertTemplates.size} 个", color = Muted, style = MaterialTheme.typography.labelSmall)
+                    if (visibleTemplates.isEmpty()) Text("没有匹配的模板。", color = Muted)
+                    visibleTemplates.forEach { template ->
                         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall)
-                                Text(template.description.ifBlank { "无描述" }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                    Text(if (template.builtIn) "内置" else "自定义", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                }
+                                Text("${template.category} · ${template.description.ifBlank { "无描述" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                Text(template.prompt.take(180), color = Muted, style = MaterialTheme.typography.bodySmall)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     TextButton(onClick = {
                                         editingExpertName = template.name.takeIf { it in experts }.orEmpty()
@@ -2798,1489 +5200,197 @@ fun NestroApp() {
                                         expertDialogError = ""
                                         showExpertTemplatesDialog = false
                                         showExpertDialog = true
-                                    }) { Text("应用", color = Mint) }
+                                    }) { Text("使用模板", color = Mint) }
                                     TextButton(onClick = {
-                                        expertTemplates = expertTemplates.filterNot { it.id == template.id }
-                                        prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(expertTemplates)).apply()
+                                        editingTemplate = template
+                                        templateEditName = if (template.builtIn) template.name.take(35) + "副本" else template.name
+                                        templateEditDescription = template.description
+                                        templateEditCategory = template.category
+                                        templateEditPrompt = template.prompt
+                                        templateEditorStatus = ""
+                                        showExpertTemplatesDialog = false
+                                    }) { Text(if (template.builtIn) "复制为自定义" else "编辑", color = Mint) }
+                                    if (!template.builtIn) TextButton(onClick = {
+                                        templateToDelete = template
                                     }) { Text("删除", color = ColorStop) }
                                 }
                             }
                         }
                     }
+                    if (templateStatus.isNotBlank()) Text(templateStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = { TextButton(onClick = { showExpertTemplatesDialog = false }) { Text("关闭") } }
         )
     }
-}
 
-@Composable
-private fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
-    Surface(color = Card2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Text("$icon   $label", color = Ink, modifier = Modifier.padding(14.dp))
-    }
-}
-
-@Composable
-private fun Suggestion(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = Card, shape = RoundedCornerShape(50)) {
-        Text(label, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = Ink)
-    }
-}
-
-@Composable
-private fun MessageBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, onStopSpeak: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null) {
-    val user = message.role == "user"
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
-        Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-            Surface(
-                color = if (user) androidx.compose.ui.graphics.Color(0xFF173B30) else Card,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.widthIn(max = 320.dp)
-            ) {
-                Text(message.content, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
-            }
-            if (!user && message.content.isNotBlank() && onSpeak != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onSpeak.invoke(message.content) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                        Icon(Icons.Outlined.VolumeUp, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text("朗读", color = Mint, style = MaterialTheme.typography.labelMedium)
+    templateToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { templateToDelete = null },
+            title = { Text("删除自定义模板？") },
+            text = { Text("将删除模板「${target.name}」。已创建的专家不会受到影响，此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val next = expertTemplates.filterNot { it.id == target.id }
+                    val persisted = runCatching {
+                        prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(next)).commit()
+                    }.getOrDefault(false)
+                    if (persisted) {
+                        expertTemplates = next
+                        templateStatus = "已删除模板「${target.name}」。"
+                    } else {
+                        templateStatus = "删除失败：本机存储未确认写入。"
                     }
-                    TextButton(onClick = { onStopSpeak?.invoke() }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                        Icon(Icons.Outlined.Stop, contentDescription = null, tint = Muted, modifier = Modifier.size(16.dp))
-                        Text("停止", color = Muted, style = MaterialTheme.typography.labelMedium)
+                    templateToDelete = null
+                }) { Text("确认删除", color = ColorStop) }
+            },
+            dismissButton = { TextButton(onClick = { templateToDelete = null }) { Text("取消") } }
+        )
+    }
+    editingTemplate?.let { source ->
+        AlertDialog(
+            onDismissRequest = {
+                editingTemplate = null
+                templateEditorStatus = ""
+                showExpertTemplatesDialog = true
+            },
+            title = { Text(if (source.builtIn) "复制内置模板" else "编辑专家模板") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(value = templateEditName, onValueChange = { templateEditName = it.take(40) }, label = { Text("模板名称") }, singleLine = true)
+                    OutlinedTextField(value = templateEditCategory, onValueChange = { templateEditCategory = it.take(30) }, label = { Text("分类") }, singleLine = true)
+                    OutlinedTextField(value = templateEditDescription, onValueChange = { templateEditDescription = it.take(300) }, label = { Text("模板说明") }, minLines = 2)
+                    OutlinedTextField(value = templateEditPrompt, onValueChange = { templateEditPrompt = it.take(8000) }, label = { Text("角色指令") }, minLines = 6)
+                    if (templateEditorStatus.isNotBlank()) Text(templateEditorStatus, color = ColorStop, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = templateEditName.trim()
+                    val category = templateEditCategory.trim()
+                    val description = templateEditDescription.trim()
+                    val prompt = templateEditPrompt.trim()
+                    val builtInConflict = ExpertTemplateCatalog.builtIns().any { it.name.equals(name, ignoreCase = true) }
+                    val existingConflict = expertTemplates.firstOrNull {
+                        it.name.equals(name, ignoreCase = true) && it.id != source.id
                     }
-                }
-            }
-            if (!user && message.content.startsWith("请求失败：") && onRetry != null) {
-                TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Mint, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("重试这条消息", color = Mint, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            if (user && onEdit != null) {
-                TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = Muted, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("编辑", color = Muted, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            if (!user && message.versions.isNotEmpty() && onVersionChange != null) {
-                val versionCount = message.allVersions().size
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = message.activeVersion > 0, onClick = { onVersionChange(message.activeVersion - 1) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("‹", color = Mint) }
-                    Text("版本 ${message.activeVersion + 1}/$versionCount", color = Muted, style = MaterialTheme.typography.labelSmall)
-                    TextButton(enabled = message.activeVersion < versionCount - 1, onClick = { onVersionChange(message.activeVersion + 1) }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("›", color = Mint) }
-                }
-            }
-            if (!user && onRegenerate != null) {
-                TextButton(onClick = onRegenerate, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Muted, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("重新生成", color = Muted, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModelManager(
-    profiles: List<ModelProfileMetadata>,
-    activeProfileId: String,
-    activeConfig: ModelConfig,
-    usage: Map<String, ModelUsageStats>,
-    failoverEnabled: Boolean,
-    onFailoverChange: (Boolean) -> Unit,
-    loadKey: (String) -> String,
-    onActivate: (String) -> Unit,
-    onSave: (ModelProfileMetadata, String, Boolean) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var editingId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
-    var name by remember { mutableStateOf("") }
-    var endpoint by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
-    var key by remember { mutableStateOf("") }
-    var activateAfterSave by remember { mutableStateOf(true) }
-    var testing by remember { mutableStateOf(false) }
-    var testStatus by remember { mutableStateOf("") }
-    var formError by remember { mutableStateOf("") }
-
-    fun beginNew() {
-        editingId = java.util.UUID.randomUUID().toString()
-        name = ""
-        endpoint = "https://"
-        model = ""
-        key = ""
-        activateAfterSave = true
-        testStatus = ""
-        formError = ""
-    }
-    fun edit(profile: ModelProfileMetadata) {
-        editingId = profile.id
-        name = profile.name
-        endpoint = profile.baseUrl
-        model = profile.model
-        key = loadKey(profile.id)
-        activateAfterSave = profile.id == activeProfileId
-        testStatus = ""
-        formError = ""
-    }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text("最多保存 20 组模型配置，支持不同服务商与模型切换。所有配置共用 OpenAI Chat Completions 兼容协议。", color = Muted)
-        Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("自动故障切换", color = Ink)
-                    Text("主模型连接失败时，按配置列表顺序尝试其他已保存 Key。开启后可能产生备用服务商费用。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = failoverEnabled, onCheckedChange = onFailoverChange)
-            }
-        }
-        if (profiles.isEmpty()) {
-            Text("还没有模型配置。先添加一组 API 地址、模型名称和 Key。", color = Muted)
-        } else {
-            profiles.forEach { profile ->
-                val active = profile.id == activeProfileId
-                Surface(color = if (active) Card2 else Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(profile.name + if (active) " · 当前使用" else "", color = if (active) Mint else Ink, style = MaterialTheme.typography.titleMedium)
-                                Text("${profile.model} · ${profile.baseUrl}", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                Text(if (loadKey(profile.id).isNotBlank()) "API Key 已加密保存" else "缺少 API Key", color = if (loadKey(profile.id).isNotBlank()) Mint else ColorStop, style = MaterialTheme.typography.labelSmall)
-                                usage[profile.id]?.let { stats ->
-                                    Text("成功请求 ${stats.requests} 次 · 估算 Token：输入 ${stats.estimatedInputTokens} / 输出 ${stats.estimatedOutputTokens}", color = Muted, style = MaterialTheme.typography.labelSmall)
-                                }
+                    val invalidSkills = source.profile.skillNames.filter { skill ->
+                        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
+                        skill !in skills || (owners != null && "*" !in owners)
+                    }
+                    val profileError = ExpertProfileCodec.validate(source.profile, skills.keys)
+                    when {
+                        projectResourceScopesReadOnly -> templateEditorStatus = "项目资源范围数据校验失败，已锁定模板修改。"
+                        name.isBlank() || name.length > 40 -> templateEditorStatus = "模板名称必须为 1 到 40 个字符。"
+                        category.isBlank() || category.length > 30 -> templateEditorStatus = "模板分类必须为 1 到 30 个字符。"
+                        description.length > 300 -> templateEditorStatus = "模板说明不能超过 300 个字符。"
+                        prompt.isBlank() || prompt.length > 8000 -> templateEditorStatus = "角色指令必须为 1 到 8000 个字符。"
+                        builtInConflict -> templateEditorStatus = "该名称属于内置模板，请更换名称。"
+                        existingConflict != null -> templateEditorStatus = "已存在同名自定义模板，请更换名称。"
+                        invalidSkills.isNotEmpty() -> templateEditorStatus = "模板引用了不存在或项目专属技能：" + invalidSkills.joinToString("、")
+                        profileError != null -> templateEditorStatus = "模板专家配置无效：" + profileError
+                        source.builtIn && expertTemplates.size >= 100 -> templateEditorStatus = "自定义模板库已达到 100 个上限。"
+                        else -> {
+                            val updated = if (source.builtIn) {
+                                ExpertTemplate(
+                                    name = name, description = description, prompt = prompt,
+                                    profile = source.profile, category = category
+                                )
+                            } else {
+                                source.copy(name = name, description = description, prompt = prompt, category = category, builtIn = false)
+                            }
+                            val next = if (source.builtIn) expertTemplates + updated
+                                else expertTemplates.filterNot { it.id == source.id } + updated
+                            val persisted = runCatching {
+                                prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(next)).commit()
+                            }.getOrDefault(false)
+                            if (persisted) {
+                                expertTemplates = next
+                                templateStatus = if (source.builtIn) "已复制为自定义模板：$name" else "模板已更新：$name"
+                                editingTemplate = null
+                                templateEditorStatus = ""
+                                showExpertTemplatesDialog = true
+                            } else {
+                                templateEditorStatus = "保存失败：本机存储未确认写入。"
                             }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = { edit(profile) }) { Text("编辑", color = Mint) }
-                            TextButton(onClick = { onActivate(profile.id) }, enabled = !active && loadKey(profile.id).isNotBlank()) { Text("启用", color = Mint) }
-                            TextButton(onClick = { onDelete(profile.id); if (editingId == profile.id) beginNew() }) { Text("删除", color = ColorStop) }
-                        }
                     }
-                }
-            }
-        }
-        Text(if (editingId in profiles.map { it.id }) "编辑模型配置" else "新增模型配置", color = Ink, style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(name, { name = it.take(40) }, modifier = Modifier.fillMaxWidth(), label = { Text("配置名称") }, singleLine = true)
-        OutlinedTextField(endpoint, { endpoint = it.take(2048) }, modifier = Modifier.fillMaxWidth(), label = { Text("API 地址") }, placeholder = { Text("https://api.example.com/v1") }, singleLine = true)
-        OutlinedTextField(model, { model = it.take(200) }, modifier = Modifier.fillMaxWidth(), label = { Text("模型名称") }, placeholder = { Text("例如 deepseek-chat") }, singleLine = true)
-        OutlinedTextField(key, { key = it.take(4096) }, modifier = Modifier.fillMaxWidth(), label = { Text("API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
-        Text("每组 Key 独立使用 Android Keystore AES-GCM 加密。备份只包含配置名称、地址和模型名，不包含 Key。", color = Muted, style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = activateAfterSave, onCheckedChange = { activateAfterSave = it })
-            Text("保存后立即设为当前模型", color = Ink)
-        }
-        Button(
-            onClick = {
-                val candidate = ModelProfileMetadata(editingId, name.trim(), endpoint.trim().trimEnd('/'), model.trim())
-                formError = ModelProfileCatalogCodec.validate(candidate)
-                    ?: ModelProfileCatalogCodec.validateCatalog(profiles.filterNot { it.id == editingId } + candidate).orEmpty()
-                if (formError.isBlank() && key.isBlank() && editingId !in profiles.map { it.id }) formError = "新配置必须填写 API Key"
-                if (formError.isBlank()) onSave(candidate, key.trim(), activateAfterSave)
+                }) { Text("保存模板") }
             },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-        ) { Text("保存模型配置") }
-        OutlinedButton(
-            onClick = {
-                val candidate = ModelConfig(endpoint.trim().trimEnd('/'), model.trim(), key.trim())
-                testing = true
-                testStatus = "正在测试连接…"
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            require(candidate.baseUrl.startsWith("https://") && candidate.model.isNotBlank() && candidate.apiKey.isNotBlank()) { "请填写 HTTPS 地址、模型名称和 API Key" }
-                            OpenAiClient.complete(candidate, listOf(ChatMessage(UUID.randomUUID().toString(), "user", "Reply with OK.")), "")
-                        }
-                    }
-                    testStatus = result.fold({ response ->
-                        if (response.isBlank()) "连接成功，但模型返回了空内容。" else "连接成功：模型已返回内容。"
-                    }, { "连接失败：${it.message ?: "请检查地址、Key 与网络"}" })
-                    testing = false
-                }
-            },
-            enabled = !testing && endpoint.startsWith("https://") && model.isNotBlank() && key.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(if (testing) "测试中…" else "测试当前编辑配置") }
-        if (formError.isNotBlank()) Text(formError, color = ColorStop, style = MaterialTheme.typography.bodySmall)
-        if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) ColorStop else Muted, style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = { beginNew() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建另一组配置", color = Mint) }
-        Text("当前实际调用的模型：${activeConfig.model.ifBlank { "未配置" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun SimplePage(title: String, description: String) {
-    Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text(description, color = Muted, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-private fun loadSkillMetadata(prefs: android.content.SharedPreferences): Map<String, String> {
-    val raw = prefs.getString("skill_metadata_v1", "{}") ?: "{}"
-    return runCatching {
-        val json = JSONObject(raw)
-        val result = linkedMapOf<String, String>()
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val value = json.optString(key)
-            if (key.length <= 40 && value.length <= 4000) result[key] = value
-        }
-        result
-    }.getOrDefault(emptyMap())
-}
-
-private fun skillMetadataToJson(metadata: Map<String, String>): String =
-    JSONObject().apply { metadata.forEach { (name, value) -> put(name, value) } }.toString()
-
-private fun loadDisabledSkills(prefs: android.content.SharedPreferences): Set<String> =
-    runCatching {
-        val array=JSONArray(prefs.getString("disabled_skills_v1","[]") ?: "[]")
-        (0 until array.length()).map { array.getString(it) }.filter { it.length<=40 }.toSet()
-    }.getOrDefault(emptySet())
-
-private fun disabledSkillsToJson(names:Set<String>):String = JSONArray(names.sorted()).toString()
-
-private fun prefsRate(context: Context): Float = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).getFloat("tts_speech_rate", 1.0f).coerceIn(0.7f, 1.3f)
-
-private fun shouldExtractAutomaticMemory(prompt: String): Boolean {
-    val signals = listOf("记住", "以后", "长期", "我喜欢", "我不喜欢", "我偏好", "我习惯", "我的工作", "我负责", "我正在做", "这个项目", "不要再", "我希望你", "我更倾向", "默认")
-    return prompt.length in 8..4000 && signals.any { prompt.contains(it) }
-}
-
-private fun extractMemoryCandidates(config: ModelConfig, userMessages: List<String>): List<MemoryCandidate> {
-    val system = """
-你是本地记忆候选提取器。只返回 JSON 对象：{"memories":[{"category":"preference","content":"...","confidence":0.9}]}。
-只从用户消息中提取明确陈述、可长期复用的偏好、工作方式、项目事实或约束。
-category 只能是 preference、workflow、project、constraint。
-禁止推断；禁止提取助手说过但用户未确认的内容；不要把提问、一次性任务、假设当作长期事实。
-绝不提取或复述健康、医疗、财务/债务、政治、宗教、种族、性取向、身份凭据、精确住址、电话号码、邮箱、证件或银行卡等敏感信息。
-置信度低于 0.8 的内容不要返回。最多 5 条，每条 8 到 180 个字符。
-没有合格内容时返回 {"memories":[]}。
-""".trimIndent()
-    val user = userMessages.takeLast(6).joinToString("\n").take(6000)
-    val raw = OpenAiClient.complete(
-        config,
-        listOf(ChatMessage(UUID.randomUUID().toString(), "user", user)),
-        system
-    )
-    val start = raw.indexOf('{')
-    val end = raw.lastIndexOf('}')
-    if (start < 0 || end <= start) return emptyList()
-    val rows = JSONObject(raw.substring(start, end + 1)).optJSONArray("memories") ?: return emptyList()
-    return (0 until rows.length()).mapNotNull { index ->
-        val item = rows.optJSONObject(index) ?: return@mapNotNull null
-        MemoryCandidate(
-            category = item.optString("category"),
-            content = item.optString("content"),
-            confidence = item.optDouble("confidence", 0.0)
-        )
-    }.take(5)
-}
-
-private fun isCreationIntent(prompt: String, target: String): Boolean {
-    val text = prompt.trim()
-    val hasCreationVerb = listOf("创建", "新建", "设计", "生成", "做一个", "帮我做").any { text.contains(it) }
-    val hasNegation = listOf("不要", "不需要", "取消", "别创建").any { text.contains(it) }
-    return text.contains(target) && hasCreationVerb && !hasNegation
-}
-
-private fun parseGeneratedDefinition(raw: String): Pair<String, String> {
-    val start = raw.indexOf('{')
-    val end = raw.lastIndexOf('}')
-    require(start >= 0 && end > start) { "模型没有返回有效 JSON" }
-    val json = JSONObject(raw.substring(start, end + 1))
-    val name = json.optString("name").trim()
-    val prompt = json.optString("prompt").trim()
-    require(name.isNotBlank() && name.length <= 40) { "能力名称为空或过长" }
-    require(prompt.length in 80..8000) { "能力指令长度不符合要求" }
-    return name to prompt
-}
-
-private fun boundedRequestHistory(history: List<ChatMessage>, systemPrompt: String = "", maxTokens: Int = 2048): List<ChatMessage> {
-    val source = history.takeLast(40)
-    val bounded = ChatRequestPolicy.boundedHistory(source.map { ChatHistoryItem(it.role, it.content) }, systemPrompt, outputReserveTokens = maxTokens)
-    return bounded.mapIndexed { index, item -> source[source.size - bounded.size + index].copy(content = item.content) }
-}
-
-private object OpenAiClient {
-    private val activeConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
-    private val requestConnections = java.util.concurrent.ConcurrentHashMap<String, HttpURLConnection>()
-
-    fun cancel(requestId: String? = null) {
-        val targets = if (requestId.isNullOrBlank()) activeConnections.toList() else listOfNotNull(requestConnections[requestId])
-        targets.forEach { connection -> runCatching { connection.disconnect() } }
-    }
-
-    fun completeWithFallback(
-        configs: List<ModelConfig>,
-        history: List<ChatMessage>,
-        systemPrompt: String,
-        connectTimeoutMillis: Int = 20000,
-        readTimeoutMillis: Int = 90000,
-        temperature: Double? = null,
-        maxTokens: Int? = null,
-        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> }
-    ): String {
-        require(configs.isNotEmpty()) { "没有可用的模型配置" }
-        var lastError: Throwable? = null
-        configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
-            try {
-                val response = complete(candidate, history, systemPrompt, connectTimeoutMillis, readTimeoutMillis, temperature, maxTokens)
-                onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
-                return response
-            } catch (error: Throwable) {
-                if (error is kotlinx.coroutines.CancellationException) throw error
-                lastError = error
+            dismissButton = {
+                TextButton(onClick = {
+                    editingTemplate = null
+                    templateEditorStatus = ""
+                    showExpertTemplatesDialog = true
+                }) { Text("取消") }
             }
-        }
-        throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
-    }
-
-    suspend fun streamWithFallback(
-        configs: List<ModelConfig>,
-        history: List<ChatMessage>,
-        systemPrompt: String,
-        temperature: Double? = null,
-        maxTokens: Int? = null,
-        onUsage: (ModelConfig, Int, Int) -> Unit = { _, _, _ -> },
-        requestId: String = UUID.randomUUID().toString(),
-        timeoutMillis: Long = 180_000,
-        onChunk: suspend (String) -> Unit
-    ): String {
-        require(configs.isNotEmpty()) { "没有可用的模型配置" }
-        var lastError: Throwable? = null
-        return try {
-            withTimeout(timeoutMillis.coerceIn(15_000, 300_000)) {
-            configs.distinctBy { "${it.baseUrl}|${it.model}|${it.apiKey}" }.forEach { candidate ->
-                var attempt = 0
-                while (attempt < 2) {
-                    var emitted = false
-                    try {
-                        val response = stream(candidate, history, systemPrompt, temperature, maxTokens, requestId) { chunk ->
-                            emitted = true
-                            onChunk(chunk)
-                        }
-                        onUsage(candidate, systemPrompt.length + history.sumOf { it.content.length }, response.length)
-                        return@withTimeout response
-                    } catch (error: Throwable) {
-                        if (error is kotlinx.coroutines.CancellationException || emitted) throw error
-                        lastError = error
-                        if (attempt == 0 && ChatRequestPolicy.shouldRetry(error)) {
-                            attempt++
-                            delay(600)
-                            continue
-                        }
-                        break
-                    }
-                }
-            }
-            throw IllegalStateException("主模型与备用模型均调用失败：${lastError?.message ?: "未知错误"}", lastError)
-            }
-        } finally {
-            cancel(requestId)
-        }
-    }
-
-    fun complete(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, connectTimeoutMillis:Int=20000, readTimeoutMillis:Int=90000, temperature:Double?=null, maxTokens:Int?=null): String {
-        val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = connectTimeoutMillis.coerceIn(5000,60000)
-            readTimeout = readTimeoutMillis.coerceIn(5000,120000)
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer " + config.apiKey)
-        }
-        activeConnections.add(connection)
-        try {
-            val body = JSONObject().apply {
-                put("model", config.model)
-                if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
-                if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
-                put("messages", JSONArray().apply {
-                    if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg ->
-                        put(JSONObject().put("role", msg.role).put("content", msg.content))
-                    }
-                })
-                put("stream", false)
-            }
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            if (code !in 200..299) {
-                val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "HTTP " + code)
-            }
-            return JSONObject(response).getJSONArray("choices").getJSONObject(0)
-                .getJSONObject("message").getString("content")
-        } finally {
-            activeConnections.remove(connection)
-            connection.disconnect()
-        }
-    }
-
-    suspend fun stream(config: ModelConfig, history: List<ChatMessage>, systemPrompt: String, temperature: Double? = null, maxTokens: Int? = null, requestId: String = UUID.randomUUID().toString(), onChunk: suspend (String) -> Unit): String = withContext(Dispatchers.IO) {
-        val url = URL(config.baseUrl.trimEnd('/') + "/chat/completions")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 90000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer " + config.apiKey)
-            setRequestProperty("Accept", "text/event-stream")
-        }
-        activeConnections.add(connection)
-        requestConnections[requestId] = connection
-        val answer = StringBuilder()
-        val pending = StringBuilder()
-        try {
-            val body = JSONObject().apply {
-                put("model", config.model)
-                if (temperature != null) put("temperature", temperature.coerceIn(0.0, 2.0))
-                if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
-                put("messages", JSONArray().apply {
-                    if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(JSONObject().put("role", msg.role).put("content", msg.content)) }
-                })
-                put("stream", true)
-            }
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                val response = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException("HTTP $code: " + (detail?.takeIf { it.isNotBlank() } ?: response.take(300)))
-            }
-            val decoder = app.nestro.data.OpenAiSseDecoder()
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    val delta = decoder.acceptLine(line)
-                    if (!delta.isNullOrEmpty()) {
-                        answer.append(delta)
-                        pending.append(delta)
-                        if (pending.length >= 24) {
-                            val chunk = pending.toString()
-                            pending.setLength(0)
-                            onChunk(chunk)
-                        }
-                    }
-                    if (decoder.isDone) break
-                    // Compatibility with providers that return a single JSON object instead of SSE.
-                    if (line.trimStart().startsWith("{")) {
-                        val fallback = runCatching {
-                            JSONObject(line).getJSONArray("choices").getJSONObject(0)
-                                .getJSONObject("message").getString("content")
-                        }.getOrNull()
-                        if (!fallback.isNullOrEmpty()) {
-                            answer.append(fallback)
-                            pending.append(fallback)
-                        }
-                    }
-                }
-            }
-            decoder.finish()?.let { delta ->
-                answer.append(delta)
-                pending.append(delta)
-            }
-            if (pending.isNotEmpty()) onChunk(pending.toString())
-            answer.toString()
-        } finally {
-            activeConnections.remove(connection)
-            requestConnections.remove(requestId, connection)
-            connection.disconnect()
-        }
-    }
-}
-internal object LocalVault {
-    private const val ALIAS = "nestro_api_key_v1"
-    fun write(context: Context, config: ModelConfig) {
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getKey())
-        val encrypted = cipher.doFinal(config.apiKey.toByteArray(Charsets.UTF_8))
-        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
-            Base64.encodeToString(encrypted, Base64.NO_WRAP)
-        prefs.edit().putString("base_url", config.baseUrl).putString("model", config.model)
-            .putString("api_key_enc", packed).apply()
-    }
-    fun read(context: Context): ModelConfig {
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val packed = prefs.getString("api_key_enc", null)
-        val key = runCatching {
-            if (packed.isNullOrBlank()) "" else {
-                val parts = packed.split(":")
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
-                String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
-            }
-        }.getOrDefault("")
-        return ModelConfig(prefs.getString("base_url", "") ?: "", prefs.getString("model", "") ?: "", key)
-    }
-    fun writeProfile(context: Context, id: String, apiKey: String) {
-        require(id.isNotBlank() && id.length <= 80)
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        if (apiKey.isBlank()) {
-            prefs.edit().remove("model_api_key_enc_$id").apply()
-            return
-        }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getKey())
-        val encrypted = cipher.doFinal(apiKey.toByteArray(Charsets.UTF_8))
-        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
-            Base64.encodeToString(encrypted, Base64.NO_WRAP)
-        prefs.edit().putString("model_api_key_enc_$id", packed).apply()
-    }
-
-    fun readProfile(context: Context, id: String): String {
-        val prefs = context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-        val packed = prefs.getString("model_api_key_enc_$id", null) ?: return ""
-        return runCatching {
-            val parts = packed.split(":")
-            require(parts.size == 2)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
-            String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
-        }.getOrDefault("")
-    }
-
-    fun deleteProfile(context: Context, id: String) {
-        context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE)
-            .edit().remove("model_api_key_enc_$id").apply()
-    }
-
-    private fun getKey(): SecretKey {
-        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(KeyGenParameterSpec.Builder(
-            ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setRandomizedEncryptionRequired(true).build())
-        return generator.generateKey()
-    }
-}
-
-private fun loadConversations(prefs: android.content.SharedPreferences): List<ConversationRecord> {
-    val stored = runCatching {
-        val array = JSONArray(prefs.getString("conversations_v1", "[]"))
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            val messagesJson = item.optJSONArray("messages") ?: JSONArray()
-            val parsed = (0 until messagesJson.length()).map { i ->
-                val message = messagesJson.getJSONObject(i)
-                ChatMessage(message.getString("id"), message.getString("role"), message.getString("content"), jsonStringList(message.optJSONArray("versions")), message.optInt("active_version", 0))
-            }
-            ConversationRecord(
-                item.getString("id"), item.optString("title", "对话"),
-                item.optLong("updated_at", System.currentTimeMillis()), parsed, item.optString("project_id", "default").ifBlank { "default" }
-            )
-        }
-    }.getOrDefault(emptyList())
-    if (stored.isNotEmpty()) return stored
-    val legacy = loadMessages(prefs)
-    val migrated = ConversationRecord(
-        UUID.randomUUID().toString(),
-        legacy.firstOrNull { it.role == "user" }?.content?.take(24)?.ifBlank { "旧对话" } ?: "旧对话",
-        System.currentTimeMillis(), legacy
-    )
-    val result = listOf(migrated)
-    saveConversationList(prefs, result)
-    prefs.edit().putString("active_conversation_id", migrated.id).apply()
-    return result
-}
-
-private fun saveConversationList(prefs: android.content.SharedPreferences, conversations: List<ConversationRecord>, markDirty: Boolean = true) {
-    val array = JSONArray()
-    conversations.take(100).forEach { conversation ->
-        val messages = JSONArray()
-        conversation.messages.takeLast(500).forEach { message ->
-            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", JSONArray(message.versions.take(20))).put("active_version", message.activeVersion.coerceAtLeast(0)))
-        }
-        array.put(JSONObject().put("id", conversation.id).put("title", conversation.title.take(80))
-            .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messages))
-    }
-    val editor = prefs.edit().putString("conversations_v1", array.toString())
-    if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
-    editor.apply()
-}
-
-private fun saveConversationMessages(prefs: android.content.SharedPreferences, activeId: String, messages: List<ChatMessage>, projectId: String = "default"): List<ConversationRecord> {
-    val existing = loadConversations(prefs)
-    val record = existing.firstOrNull { it.id == activeId }
-        ?: ConversationRecord(activeId.ifBlank { UUID.randomUUID().toString() }, "新对话", System.currentTimeMillis(), emptyList(), projectId)
-    val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)?.ifBlank { "新对话" } ?: record.title
-    val updated = record.copy(title = if (record.title == "新对话" || record.title == "旧对话") firstPrompt else record.title,
-        updatedAt = System.currentTimeMillis(), messages = messages.takeLast(500))
-    val next = listOf(updated) + existing.filterNot { it.id == updated.id }
-    saveConversationList(prefs, next)
-    prefs.edit().putString("active_conversation_id", updated.id).apply()
-    return next
-}
-
-
-private fun loadProjects(prefs: android.content.SharedPreferences): List<ProjectRecord> {
-    val parsed = runCatching {
-        val array = JSONArray(prefs.getString("projects", "[]"))
-        (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ProjectRecord(item.getString("id"), item.optString("name", "项目").take(40),
-                item.optString("instructions", "").take(4000), item.optLong("created_at", System.currentTimeMillis()), item.optLong("archived_at", 0L).coerceAtLeast(0L))
-        }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
-    }.getOrDefault(emptyList())
-    val all = if (parsed.any { it.id == "default" }) parsed else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    return all.distinctBy { it.id }.take(100)
-}
-
-private fun parseProjects(array: JSONArray?): List<ProjectRecord> {
-    val parsed = if (array == null) emptyList() else (0 until array.length()).map { index ->
-        val item = array.getJSONObject(index)
-        ProjectRecord(
-            item.getString("id"),
-            item.optString("name", "项目"),
-            item.optString("instructions", ""),
-            item.optLong("created_at", System.currentTimeMillis()),
-            item.optLong("archived_at", 0L).coerceAtLeast(0L)
         )
     }
-    val withDefault = if (parsed.any { it.id == "default" }) parsed
-        else listOf(ProjectRecord("default", "默认空间", "", System.currentTimeMillis())) + parsed
-    require(withDefault.all { it.instructions.length <= 4000 }) { "项目空间指令过长" }
-    require(ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) == null) {
-        ProjectSpaceRules.validateCollection(withDefault.map { ProjectSpaceRules.Entry(it.id, it.name) }) ?: "项目空间数据无效"
+    pendingTemplateBundle?.let { importedTemplates ->
+        AlertDialog(
+            onDismissRequest = { pendingTemplateBundle = null },
+            title = { Text("导入专家模板") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("共 ${importedTemplates.size} 个模板")
+                    importedTemplates.take(8).forEach { Text("• ${it.name} · ${it.category}") }
+                    if (importedTemplates.size > 8) Text("另有 ${importedTemplates.size - 8} 个模板")
+                    Text("同名自定义模板将被更新；内置模板不会被覆盖。", color = Muted)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (projectResourceScopesReadOnly) {
+                        templateStatus = "项目资源范围数据校验失败，已锁定模板导入。"
+                        pendingTemplateBundle = null
+                        return@TextButton
+                    }
+                    val builtInNames = ExpertTemplateCatalog.builtIns().map { it.name.lowercase() }.toSet()
+                    val conflicts = importedTemplates.filter { it.name.lowercase() in builtInNames }
+                    val unavailableSkills = importedTemplates.flatMap { it.profile.skillNames }.distinct().filter { skill ->
+                        val owners = ProjectResourceScopeStore.ownerProjectIds(projectResourceScopes, ProjectResourceKind.SKILL, skill)
+                        skill !in skills || (owners != null && "*" !in owners)
+                    }
+                    val mergedCount = expertTemplates.count { existing ->
+                        importedTemplates.none { it.name.equals(existing.name, ignoreCase = true) }
+                    } + importedTemplates.size
+                    if (unavailableSkills.isNotEmpty()) {
+                        templateStatus = "导入失败：模板引用了不存在或项目专属技能：" + unavailableSkills.joinToString("、")
+                    } else if (conflicts.isNotEmpty()) {
+                        templateStatus = "导入失败：模板名称与内置模板冲突，请先修改文件名称。"
+                    } else if (mergedCount > 100) {
+                        templateStatus = "导入失败：自定义模板总数不能超过 100 个。"
+                    } else {
+                        val next = expertTemplates.filterNot { old ->
+                            importedTemplates.any { it.name.equals(old.name, ignoreCase = true) }
+                        } + importedTemplates.map { incoming ->
+                            val existing = expertTemplates.firstOrNull { it.name.equals(incoming.name, ignoreCase = true) }
+                            incoming.copy(
+                                id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+                                builtIn = false
+                            )
+                        }
+                        val persisted = runCatching {
+                            prefs.edit().putString("expert_templates_v1", ExpertTemplateCodec.encode(next)).commit()
+                        }.getOrDefault(false)
+                        if (persisted) {
+                            expertTemplates = next
+                            templateStatus = "已导入 ${importedTemplates.size} 个专家模板。"
+                        } else {
+                            templateStatus = "导入失败：本机存储未确认写入。"
+                        }
+                    }
+                    pendingTemplateBundle = null
+                }) { Text("确认导入") }
+            },
+            dismissButton = { TextButton(onClick = { pendingTemplateBundle = null }) { Text("取消") } }
+        )
     }
-    return withDefault
 }
-
-private fun projectsToJson(projects: List<ProjectRecord>): String {
-    val array = JSONArray()
-    projects.take(100).forEach { project ->
-        array.put(JSONObject().put("id", project.id).put("name", project.name.take(40))
-            .put("instructions", project.instructions.take(4000)).put("created_at", project.createdAt)
-            .put("archived_at", project.archivedAt.coerceAtLeast(0L)))
-    }
-    return array.toString()
-}
-
-private fun saveProjects(prefs: android.content.SharedPreferences, projects: List<ProjectRecord>, markDirty: Boolean = true) {
-    val editor = prefs.edit().putString("projects", projectsToJson(projects))
-    if (markDirty) editor.putLong("local_snapshot_saved_at", System.currentTimeMillis())
-    editor.apply()
 }
 
 private fun jsonStringList(array: JSONArray?): List<String> = array?.let { value -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }.take(20) }.orEmpty()
 
-private fun loadMessages(prefs: android.content.SharedPreferences): List<ChatMessage> = runCatching {
-    val array = JSONArray(prefs.getString("messages", "[]"))
-    (0 until array.length()).map { i ->
-        val item = array.getJSONObject(i)
-        ChatMessage(item.getString("id"), item.getString("role"), item.getString("content"), jsonStringList(item.optJSONArray("versions")), item.optInt("active_version", 0))
-    }
-}.getOrDefault(emptyList())
-
-private fun saveMessages(prefs: android.content.SharedPreferences, messages: List<ChatMessage>) {
-    val array = JSONArray()
-    messages.takeLast(200).forEach { msg ->
-        array.put(JSONObject().put("id", msg.id).put("role", msg.role).put("content", msg.content).put("versions", JSONArray(msg.versions.take(20))).put("active_version", msg.activeVersion.coerceAtLeast(0)))
-    }
-    prefs.edit().putString("messages", array.toString()).apply()
-}
-
-private fun loadExpertTeams(prefs: android.content.SharedPreferences): List<ExpertTeam> = runCatching {
-    val array = JSONArray(prefs.getString("expert_teams_v1", "[]"))
-    (0 until array.length()).mapNotNull { index ->
-        val item = array.optJSONObject(index) ?: return@mapNotNull null
-        val members = item.optJSONArray("members") ?: JSONArray()
-        ExpertTeam(
-            id = item.optString("id"),
-            name = item.optString("name"),
-            description = item.optString("description"),
-            members = (0 until members.length()).map { members.getString(it) }.distinct()
-        ).takeIf { it.id.isNotBlank() && it.name.isNotBlank() && it.members.size >= 2 }
-    }
-}.getOrDefault(emptyList())
-
-private fun expertTeamsToJson(teams: List<ExpertTeam>): String =
-    JSONArray().apply {
-        teams.forEach { team ->
-            put(JSONObject().put("id", team.id).put("name", team.name).put("description", team.description)
-                .put("members", JSONArray(team.members)))
-        }
-    }.toString()
-
-private fun loadExperts(prefs: android.content.SharedPreferences): List<String> = runCatching {
-    val array = JSONArray(prefs.getString("experts", """["文案官","选题狐","代码佬"]"""))
-    (0 until array.length()).map { array.getString(it) }
-}.getOrDefault(listOf("文案官", "选题狐", "代码佬"))
-
-
-private fun loadExpertPrompts(prefs: android.content.SharedPreferences): Map<String, String> = runCatching {
-    val raw = prefs.getString("expert_prompts", "{}") ?: "{}"
-    val json = JSONObject(raw)
-    buildMap { val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, json.optString(key)) } }
-}.getOrDefault(emptyMap())
-
-
-private fun expertPromptsToJson(prompts: Map<String, String>): String {
-    val json = JSONObject()
-    prompts.forEach { (name, prompt) -> json.put(name, prompt) }
-    return json.toString()
-}
-
-private fun readBackupText(context: Context, uri: Uri): String {
-    val input = context.contentResolver.openInputStream(uri) ?: error("无法读取文件")
-    val output = java.io.ByteArrayOutputStream()
-    input.use { stream ->
-        val buffer = ByteArray(8192)
-        var total = 0
-        while (true) {
-            val count = stream.read(buffer)
-            if (count < 0) break
-            total += count
-            require(total <= 10_000_000) { "备份文件超过 10 MB" }
-            output.write(buffer, 0, count)
-        }
-    }
-    return output.toByteArray().toString(Charsets.UTF_8)
-}
-
-private data class LocalBackupDatabaseSnapshot(
-    val projects: List<ProjectEntity>,
-    val conversations: List<app.nestro.data.ConversationWithMessages>,
-    val documents: List<KnowledgeDocumentEntity>,
-    val chunks: List<KnowledgeChunkEntity>,
-    val memories: List<UserMemoryEntity>,
-    val tasks: List<PhoneAgentTaskEntity>,
-    val taskLogs: List<PhoneAgentTaskLogEntity>
-)
-
-internal suspend fun buildLocalBackup(prefs: android.content.SharedPreferences, database: NestroDatabase): String {
-    val dao = database.dao()
-    val snapshot = database.withTransaction {
-        val tasks = dao.allPhoneAgentTasks()
-        LocalBackupDatabaseSnapshot(
-            projects = dao.loadProjects(), conversations = dao.loadConversations(),
-            documents = dao.allKnowledgeDocuments(), chunks = dao.allKnowledgeChunks(),
-            memories = dao.allUserMemories(), tasks = tasks,
-            taskLogs = tasks.flatMap { dao.allPhoneAgentTaskLogs(it.id) }
-        )
-    }
-    val root = JSONObject()
-    root.put("format", "nestro-local-backup")
-    root.put("version", LocalBackupCompatibility.CURRENT_VERSION)
-    root.put("created_at", System.currentTimeMillis())
-    root.put("base_url", prefs.getString("base_url", "") ?: "")
-    root.put("model", prefs.getString("model", "") ?: "")
-    root.put("model_profiles_v1", prefs.getString("model_profiles_v1", "[]") ?: "[]")
-    root.put("active_model_profile_id", prefs.getString("active_model_profile_id", "") ?: "")
-    root.put("model_usage_v1", prefs.getString("model_usage_v1", "{}") ?: "{}")
-    root.put("model_failover_enabled", prefs.getBoolean("model_failover_enabled", false))
-    root.put("automatic_memory_enabled", prefs.getBoolean("automatic_memory_enabled", false))
-    root.put("tts_speech_rate", prefs.getFloat("tts_speech_rate", 1.0f).toDouble())
-    val phoneAudit = runCatching { JSONArray(prefs.getString("phone_audit", "[]") ?: "[]") }.getOrDefault(JSONArray())
-    val auditSnapshot = JSONArray()
-    for (index in (phoneAudit.length() - 100).coerceAtLeast(0) until phoneAudit.length()) {
-        val item = phoneAudit.optJSONObject(index) ?: continue
-        auditSnapshot.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", item.optString("action").take(60)).put("detail", item.optString("detail").take(180)))
-    }
-    root.put("phone_audit_v1", auditSnapshot)
-    root.put("messages", if (snapshot.conversations.isEmpty()) prefs.getString("messages", "[]") ?: "[]" else "[]")
-    root.put("conversations_v1", prefs.getString("conversations_v1", "[]") ?: "[]")
-    root.put("active_conversation_id", prefs.getString("active_conversation_id", "") ?: "")
-    root.put("global_memory_v1", prefs.getString("global_memory_v1", "") ?: "")
-    root.put("experts", prefs.getString("experts", """["文案官","选题狐","代码佬"]""") ?: "[]")
-    root.put("expert_prompts", prefs.getString("expert_prompts", "{}") ?: "{}")
-    root.put("selected_expert", prefs.getString("selected_expert", "通用助手") ?: "通用助手")
-    root.put("expert_profiles_v1", prefs.getString("expert_profiles_v1", "{}") ?: "{}")
-    root.put("expert_versions_v1", prefs.getString("expert_versions_v1", "{}") ?: "{}")
-    root.put("expert_templates_v1", prefs.getString("expert_templates_v1", "[]") ?: "[]")
-    root.put("expert_teams_v1", prefs.getString("expert_teams_v1", "[]") ?: "[]")
-    root.put("selected_team_id", prefs.getString("selected_team_id", "") ?: "")
-    root.put("skills", prefs.getString("skills", "{}") ?: "{}")
-    root.put("skill_metadata_v1", prefs.getString("skill_metadata_v1", "{}") ?: "{}")
-    root.put("disabled_skills_v1", prefs.getString("disabled_skills_v1", "[]") ?: "[]")
-    root.put("workflows_v1", prefs.getString("workflows_v1", "[]") ?: "[]")
-    root.put("workflow_runs_v1", prefs.getString("workflow_runs_v1", "[]") ?: "[]")
-    root.put("expert_team_runs_v1", prefs.getString("expert_team_runs_v1", "[]") ?: "[]")
-    val roomProjects = snapshot.projects.map { ProjectRecord(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) }
-    val backupProjects = if (roomProjects.isEmpty()) loadProjects(prefs) else roomProjects
-    root.put("projects", projectsToJson(backupProjects))
-    root.put("active_project_id", prefs.getString("active_project_id", "default") ?: "default")
-    val roomConversationRows = snapshot.conversations
-    require(roomConversationRows.size <= 200) { "会话数量超过备份上限 200，请先清理旧会话" }
-    val conversationPayloadChars = roomConversationRows.sumOf { row ->
-        row.conversation.title.length.toLong() + row.messages.sumOf { message ->
-            message.content.length.toLong() + message.versionsJson.length.toLong()
-        }
-    }
-    require(conversationPayloadChars <= 3_500_000L) { "会话历史内容超过备份安全容量，请先清理旧会话" }
-    roomConversationRows.forEach { row -> require(row.messages.size <= 500) { "单个会话消息超过备份上限 500" } }
-    val conversationArray = JSONArray()
-    roomConversationRows.forEach { row ->
-        val messages = JSONArray()
-        row.messages.sortedBy { it.position }.forEach { message ->
-            val versions = runCatching { JSONArray(message.versionsJson) }.getOrDefault(JSONArray())
-            messages.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", versions).put("active_version", message.activeVersion.coerceAtLeast(0)))
-        }
-        conversationArray.put(JSONObject().put("id", row.conversation.id).put("title", row.conversation.title.take(80))
-            .put("updated_at", row.conversation.updatedAt).put("project_id", row.conversation.projectId).put("messages", messages))
-    }
-    root.put("conversations_v1", conversationArray)
-    val activeId = prefs.getString("active_conversation_id", "") ?: ""
-    root.put("active_conversation_id", activeId.takeIf { id -> (0 until conversationArray.length()).any { conversationArray.getJSONObject(it).optString("id") == id } } ?: conversationArray.optJSONObject(0)?.optString("id").orEmpty())
-    val drafts = JSONObject()
-    prefs.all.forEach { (key, value) -> if (key.startsWith("draft_") && value is String && value.isNotBlank()) drafts.put(key.removePrefix("draft_"), value.take(100_000)) }
-    root.put("conversation_drafts_v1", drafts)
-    val roomKnowledgeDocuments = snapshot.documents
-    val roomKnowledgeChunks = snapshot.chunks
-    require(roomKnowledgeDocuments.size <= 500 && roomKnowledgeChunks.size <= 50_000) { "知识库数据超过备份上限，请先清理文档" }
-    val knowledgePayloadChars = roomKnowledgeChunks.sumOf { it.content.length.toLong() } + roomKnowledgeDocuments.sumOf { it.name.length.toLong() }
-    require(knowledgePayloadChars <= 3_000_000L) { "知识库文本超过备份安全容量，请减少文档后重试" }
-    val docs = JSONArray()
-    roomKnowledgeDocuments.forEach { doc -> docs.put(JSONObject().put("id", doc.id).put("projectId", doc.projectId).put("name", doc.name).put("mimeType", doc.mimeType).put("sizeBytes", doc.sizeBytes).put("importedAt", doc.importedAt).put("contentHash", doc.contentHash)) }
-    val chunks = JSONArray()
-    roomKnowledgeChunks.forEach { chunk -> chunks.put(JSONObject().put("id", chunk.id).put("documentId", chunk.documentId).put("projectId", chunk.projectId).put("position", chunk.position).put("content", chunk.content)) }
-    root.put("knowledge_documents_v1", docs)
-    root.put("knowledge_chunks_v1", chunks)
-    val memories = JSONArray()
-    snapshot.memories.forEach { memory ->
-        memories.put(JSONObject().put("id", memory.id).put("projectId", memory.projectId).put("category", memory.category)
-            .put("content", memory.content).put("fingerprint", memory.fingerprint).put("sourceConversationId", memory.sourceConversationId)
-            .put("sourceMessageId", memory.sourceMessageId).put("confidence", memory.confidence)
-            .put("createdAt", memory.createdAt).put("updatedAt", memory.updatedAt))
-    }
-    root.put("user_memories", memories)
-    val taskArray = JSONArray()
-    val taskLogArray = JSONArray()
-    require(snapshot.tasks.size <= 500 && snapshot.taskLogs.size <= 5000) { "Phone Agent 任务或日志数量超过备份上限，未导出任何不完整备份" }
-    val taskPayloadChars = snapshot.tasks.sumOf { it.goal.length.toLong() + it.planJson.length.toLong() } + snapshot.taskLogs.sumOf { it.action.length.toLong() + it.detail.length.toLong() }
-    require(taskPayloadChars <= 500_000L) { "Phone Agent 任务与日志内容超过备份安全容量" }
-    snapshot.tasks.forEach { task ->
-        taskArray.put(JSONObject().put("id", task.id).put("projectId", task.projectId).put("conversationId", task.conversationId)
-            .put("goal", task.goal).put("category", task.category).put("status", task.status).put("planJson", task.planJson)
-            .put("currentStep", task.currentStep).put("createdAt", task.createdAt).put("updatedAt", task.updatedAt))
-    }
-    snapshot.taskLogs.forEach { log ->
-        taskLogArray.put(JSONObject().put("id", log.id).put("taskId", log.taskId).put("actionIndex", log.actionIndex)
-            .put("action", log.action).put("success", log.success).put("detail", log.detail).put("createdAt", log.createdAt))
-    }
-    root.put("phone_agent_tasks", taskArray)
-    root.put("phone_agent_task_logs", taskLogArray)
-    root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
-    val encoded = root.toString(2)
-    require(encoded.length <= 10_000_000) { "备份超过 10 MB，请减少历史数据或知识库文档后重试" }
-    return encoded
-}
-
-internal suspend fun restoreLocalBackup(context: Context, prefs: android.content.SharedPreferences, raw: String, database: NestroDatabase) {
-    require(raw.length <= 10_000_000) { "备份文件过大" }
-    val root = JSONObject(raw)
-    require(root.optString("format") == "nestro-local-backup") { "不是 Nestro 备份文件" }
-    require(LocalBackupCompatibility.isSupported(root.optInt("version"))) { "暂不支持此备份版本" }
-    require(LocalBackupCompatibility.verifyChecksum(root)) { "备份完整性校验失败，文件可能已损坏或被修改" }
-    val messages = JSONArray(root.getString("messages"))
-    require(messages.length() <= 200) { "对话记录数量超出限制" }
-    val conversationsRaw = root.optString("conversations_v1", "[]")
-    val conversations = JSONArray(conversationsRaw)
-    require(conversations.length() <= 200) { "会话数量超出限制" }
-    for (i in 0 until conversations.length()) {
-        val conversation = conversations.getJSONObject(i)
-        require(conversation.optString("id").isNotBlank()) { "会话 ID 缺失" }
-        require(conversation.optString("title").length <= 80) { "会话标题过长" }
-        val items = conversation.optJSONArray("messages") ?: JSONArray()
-        require(items.length() <= 500) { "单个会话消息数量超出限制" }
-        for (j in 0 until items.length()) {
-            val item = items.getJSONObject(j)
-            require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
-            require(item.has("id") && item.has("content")) { "消息字段缺失" }
-        }
-    }
-    val workflowRaw = root.optString("workflows_v1", "[]")
-    val workflowArray = JSONArray(workflowRaw)
-    require(workflowArray.length() <= 100) { "工作流数量超出限制" }
-    val restoredWorkflows = WorkflowDefinitionCodec.decode(workflowRaw)
-    require(restoredWorkflows.size == workflowArray.length()) { "工作流备份包含无效定义" }
-    restoredWorkflows.forEach { WorkflowDefinitionCodec.validate(it) }
-    val workflowHistoryRaw = root.optString("workflow_runs_v1", "[]")
-    val workflowHistoryArray = JSONArray(workflowHistoryRaw)
-    require(workflowHistoryArray.length() <= 50) { "工作流运行记录数量超出限制" }
-    val restoredWorkflowHistory = WorkflowRunHistoryCodec.decode(workflowHistoryRaw)
-    require(restoredWorkflowHistory.size == workflowHistoryArray.length()) { "工作流运行记录包含无效数据" }
-    val teamHistoryRaw = root.optString("expert_team_runs_v1", "[]")
-    require(teamHistoryRaw.length<=500_000) { "专家团队运行记录过大" }
-    val teamHistoryArray = JSONArray(teamHistoryRaw)
-    require(teamHistoryArray.length()<=30) { "专家团队运行记录数量超出限制" }
-    val restoredTeamHistory = ExpertTeamRunHistoryCodec.decode(teamHistoryRaw)
-    require(restoredTeamHistory.size==teamHistoryArray.length()) { "专家团队运行记录包含无效数据" }
-    val globalMemory = root.optString("global_memory_v1", "")
-    require(globalMemory.length <= 12000) { "全局记忆超出限制" }
-    val restoredSpeechRate = root.optDouble("tts_speech_rate", 1.0).toFloat()
-    require(restoredSpeechRate.isFinite() && restoredSpeechRate in 0.7f..1.3f) { "语音播放速度无效" }
-    val auditRows = root.optJSONArray("phone_audit_v1") ?: JSONArray()
-    require(auditRows.length() <= 100) { "Phone Agent 安全审计记录数量超出限制" }
-    val restoredPhoneAudit = JSONArray()
-    for (index in 0 until auditRows.length()) {
-        val item = auditRows.getJSONObject(index)
-        val action = item.optString("action")
-        val detail = item.optString("detail")
-        require(action.length in 1..60 && detail.length <= 180) { "Phone Agent 审计记录字段无效" }
-        restoredPhoneAudit.put(JSONObject().put("at", item.optLong("at", 0L)).put("action", action).put("detail", detail))
-    }
-    val memoryRows = root.optJSONArray("user_memories") ?: JSONArray()
-    require(memoryRows.length() <= 1000) { "自动记忆数量超出限制" }
-    val restoredProjects = when (val projectsValue = root.opt("projects")) {
-        is JSONArray -> parseProjects(projectsValue)
-        is String -> parseProjects(JSONArray(projectsValue))
-        else -> parseProjects(null)
-    }
-    require(restoredProjects.size <= 100 && restoredProjects.map { it.id }.distinct().size == restoredProjects.size) { "项目空间数据无效" }
-    val restoredProjectIds = (restoredProjects.map { it.id } + "default").toSet()
-    val conversationRows = root.optJSONArray("conversations_v1") ?: JSONArray()
-    require(conversationRows.length() <= 200) { "会话数量超出限制" }
-    val restoredConversations = (0 until conversationRows.length()).map { index ->
-        val item = conversationRows.getJSONObject(index)
-        val id = item.optString("id"); val projectId = item.optString("project_id", "default"); val title = item.optString("title", "新对话")
-        require(id.isNotBlank() && id.length <= 120 && projectId in restoredProjectIds && title.length <= 80) { "会话标识或项目归属无效" }
-        val rows = item.optJSONArray("messages") ?: JSONArray()
-        require(rows.length() <= 500) { "单个会话消息数量超出限制" }
-        val restoredMessages = (0 until rows.length()).map { messageIndex ->
-            val message = rows.getJSONObject(messageIndex); val messageId = message.optString("id"); val role = message.optString("role"); val content = message.optString("content")
-            val versions = message.optJSONArray("versions") ?: JSONArray()
-            require(messageId.isNotBlank() && role in setOf("user", "assistant") && content.length <= 200_000 && versions.length() <= 20) { "会话消息字段无效" }
-            val versionList = (0 until versions.length()).map { versions.getString(it) }
-            require(versionList.all { it.length <= 200_000 }) { "回答版本内容过长" }
-            val activeVersion = message.optInt("active_version", 0)
-            require(activeVersion >= 0 && (versionList.isEmpty() || activeVersion < versionList.size)) { "回答版本索引无效" }
-            MessageEntity(messageId, id, messageIndex, role, content, JSONArray(versionList).toString(), activeVersion)
-        }
-        ConversationEntity(id, title, item.optLong("updated_at", System.currentTimeMillis()), projectId) to restoredMessages
-    }
-    val completeRestoredConversations = if (restoredConversations.isNotEmpty()) restoredConversations else if (messages.length() > 0) {
-        val legacyMessages = (0 until messages.length()).mapIndexed { index, messageIndex ->
-            val item = messages.getJSONObject(messageIndex)
-            MessageEntity(item.getString("id"), "legacy-restored", index, item.getString("role"), item.getString("content"),
-                (item.optJSONArray("versions") ?: JSONArray()).toString(), item.optInt("active_version", 0))
-        }
-        listOf(ConversationEntity("legacy-restored", "恢复的旧对话", System.currentTimeMillis(), "default") to legacyMessages)
-    } else emptyList()
-    require(completeRestoredConversations.map { it.first.id }.distinct().size == completeRestoredConversations.size) { "备份中存在重复会话 ID" }
-    val conversationProjectById = completeRestoredConversations.associate { it.first.id to it.first.projectId }
-    val messageProjectById = completeRestoredConversations.flatMap { (conversation, rows) ->
-        rows.map { it.id to conversation.projectId }
-    }.toMap()
-    val messageIds = completeRestoredConversations.flatMap { it.second.map { row -> row.id } }
-    require(messageIds.distinct().size == messageIds.size) { "备份中存在重复消息 ID" }
-    val draftObject = root.optJSONObject("conversation_drafts_v1") ?: JSONObject()
-    require(draftObject.length() <= 200) { "草稿数量超出限制" }
-    val restoredDrafts = linkedMapOf<String, String>()
-    val draftKeys = draftObject.keys()
-    while (draftKeys.hasNext()) {
-        val id = draftKeys.next(); val value = draftObject.optString(id)
-        require(completeRestoredConversations.any { it.first.id == id } && value.length <= 100_000) { "会话草稿引用无效或内容过长" }
-        restoredDrafts[id] = value
-    }
-    val documentRows = root.optJSONArray("knowledge_documents_v1") ?: JSONArray()
-    val chunkRows = root.optJSONArray("knowledge_chunks_v1") ?: JSONArray()
-    require(documentRows.length() <= 500 && chunkRows.length() <= 50_000) { "知识库备份数量超出限制" }
-    val restoredKnowledgeDocuments = (0 until documentRows.length()).map { index ->
-        val item = documentRows.getJSONObject(index); val id = item.optString("id"); val projectId = item.optString("projectId")
-        val name = item.optString("name"); val hash = item.optString("contentHash"); val size = item.optLong("sizeBytes", 0L)
-        require(id.isNotBlank() && projectId in restoredProjectIds && name.isNotBlank() && name.length <= 180 && hash.matches(Regex("[a-fA-F0-9]{64}")) && size in 0..2_097_152) { "知识库文档元数据无效" }
-        KnowledgeDocumentEntity(id, projectId, name, item.optString("mimeType", "text/plain").take(120), size, item.optLong("importedAt", System.currentTimeMillis()), hash.lowercase())
-    }
-    require(restoredKnowledgeDocuments.map { it.id }.distinct().size == restoredKnowledgeDocuments.size && restoredKnowledgeDocuments.map { it.contentHash }.distinct().size == restoredKnowledgeDocuments.size) { "知识库文档 ID 或哈希重复" }
-    val docsById = restoredKnowledgeDocuments.associateBy { it.id }
-    val restoredKnowledgeChunks = (0 until chunkRows.length()).map { index ->
-        val item = chunkRows.getJSONObject(index); val id = item.optString("id"); val documentId = item.optString("documentId")
-        val projectId = item.optString("projectId"); val position = item.optInt("position", -1); val content = item.optString("content")
-        require(id.isNotBlank() && docsById[documentId]?.projectId == projectId && position >= 0 && content.isNotBlank() && content.length <= 6000) { "知识库文本片段无效或缺少所属文档" }
-        KnowledgeChunkEntity(id, documentId, projectId, position, content)
-    }
-    require(restoredKnowledgeChunks.map { it.id }.distinct().size == restoredKnowledgeChunks.size) { "知识库片段 ID 重复" }
-    val restoredMemories = (0 until memoryRows.length()).map { index ->
-        val item = memoryRows.getJSONObject(index)
-        val category = item.optString("category")
-        val content = item.optString("content")
-        val projectId = item.optString("projectId")
-        val sourceConversationId = item.optString("sourceConversationId")
-        val sourceMessageId = item.optString("sourceMessageId")
-        require(item.optString("id").isNotBlank() && projectId in restoredProjectIds) { "记忆标识或项目归属无效" }
-        require(conversationProjectById[sourceConversationId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的会话" }
-        require(messageProjectById[sourceMessageId]?.let { it == projectId } != false) { "记忆引用了其他项目空间的消息" }
-        require(category in setOf("preference", "workflow", "project", "constraint")) { "记忆分类无效" }
-        require(content.length in 8..180 && item.optString("fingerprint").isNotBlank() && UserMemoryStore.isSafeContent(content)) { "记忆内容无效或包含敏感信息" }
-        val confidence = item.optDouble("confidence", 0.0)
-        require(confidence in 0.8..1.0) { "记忆置信度无效" }
-        UserMemoryEntity(
-            id = item.getString("id"),
-            projectId = projectId,
-            category = category,
-            content = content,
-            fingerprint = item.getString("fingerprint"),
-            sourceConversationId = sourceConversationId,
-            sourceMessageId = sourceMessageId,
-            confidence = confidence,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
-        )
-    }
-    val taskRows = root.optJSONArray("phone_agent_tasks") ?: JSONArray()
-    require(taskRows.length() <= 500) { "Phone Agent 任务数量超出限制" }
-    val validTaskStatuses = setOf(
-        PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING,
-        PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED,
-        PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
-        PhoneAgentTaskStore.STATUS_CANCELLED
-    )
-    val validTaskCategories = PhoneAgentPlanner.Category.values().map { it.name }.toSet()
-    val restoredTasks = (0 until taskRows.length()).map { index ->
-        val item = taskRows.getJSONObject(index)
-        val id = item.optString("id")
-        val projectId = item.optString("projectId")
-        val conversationId = item.optString("conversationId").take(120)
-        val goal = item.optString("goal")
-        val category = item.optString("category")
-        val status = item.optString("status")
-        val planJson = item.optString("planJson", "[]")
-        val currentStep = item.optInt("currentStep", 0)
-        require(id.isNotBlank() && projectId in restoredProjectIds && goal.length in 1..2000) { "Phone Agent 任务字段无效" }
-        require(conversationProjectById[conversationId]?.let { it == projectId } != false) { "Phone Agent 任务引用了其他项目空间的会话" }
-        require(category in validTaskCategories && status in validTaskStatuses) { "Phone Agent 任务状态或类型无效" }
-        val planCount = PhoneAgentTaskStore.validatePlanJson(planJson)
-        require(currentStep in 0..planCount) { "Phone Agent 任务步骤位置无效" }
-        PhoneAgentTaskEntity(
-            id = id,
-            projectId = projectId,
-            conversationId = conversationId,
-            goal = goal,
-            category = category,
-            status = status,
-            planJson = planJson,
-            currentStep = currentStep,
-            createdAt = item.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
-        )
-    }
-    val restoredTaskIds = restoredTasks.map { it.id }.toSet()
-    require(restoredTaskIds.size == restoredTasks.size) { "Phone Agent 任务 ID 重复" }
-    val taskLogRows = root.optJSONArray("phone_agent_task_logs") ?: JSONArray()
-    require(taskLogRows.length() <= 5000) { "Phone Agent 审计记录数量超出限制" }
-    val restoredTaskLogs = (0 until taskLogRows.length()).map { index ->
-        val item = taskLogRows.getJSONObject(index)
-        val taskId = item.optString("taskId")
-        require(taskId in restoredTaskIds) { "任务审计记录缺少所属任务" }
-        PhoneAgentTaskLogEntity(
-            id = item.getString("id"),
-            taskId = taskId,
-            actionIndex = item.optInt("actionIndex", 0).coerceIn(0, 100),
-            action = item.optString("action").take(60),
-            success = item.optBoolean("success", false),
-            detail = item.optString("detail").take(240),
-            createdAt = item.optLong("createdAt", System.currentTimeMillis())
-        )
-    }
-    for (i in 0 until messages.length()) {
-        val item = messages.getJSONObject(i)
-        require(item.optString("role") in setOf("user", "assistant")) { "消息角色无效" }
-        require(item.has("content") && item.has("id") && item.optString("id").isNotBlank() && item.optString("content").length <= 200_000) { "消息字段缺失或内容过长" }
-    }
-    val experts = JSONArray(root.getString("experts"))
-    require(experts.length() <= 100) { "专家数量超出限制" }
-    for (i in 0 until experts.length()) require(experts.getString(i).length <= 40) { "专家名称过长" }
-    val expertNames = (0 until experts.length()).map { experts.getString(it) }.toSet()
-    require(expertNames.size == experts.length()) { "专家名称重复" }
-    val prompts = JSONObject(root.getString("expert_prompts"))
-    val profileRaw = root.optString("expert_profiles_v1", "{}")
-    require(profileRaw.length <= 100_000) { "专家配置元数据过大" }
-    val restoredExpertProfiles = ExpertProfileCodec.decode(profileRaw)
-    require(profileRaw == "{}" || restoredExpertProfiles.isNotEmpty()) { "专家配置元数据格式无效" }
-    require(restoredExpertProfiles.size <= 100 && restoredExpertProfiles.keys.all { it in expertNames }) { "专家配置元数据引用无效" }
-    val restoredSelectedExpertRaw = root.optString("selected_expert", "通用助手")
-    val revisionRaw = root.optString("expert_versions_v1", "{}")
-    require(revisionRaw.length <= 500_000) { "专家版本历史过大" }
-    val restoredExpertRevisions = ExpertRevisionCodec.decode(revisionRaw)
-    require(revisionRaw == "{}" || restoredExpertRevisions.isNotEmpty()) { "专家版本历史格式无效" }
-    require(restoredExpertRevisions.size <= 100 && restoredExpertRevisions.keys.all { it in expertNames }) { "专家版本历史引用无效" }
-    val templateRaw = root.optString("expert_templates_v1", "[]")
-    require(templateRaw.length <= 300_000) { "专家模板数据过大" }
-    val restoredExpertTemplates = ExpertTemplateCodec.decode(templateRaw)
-    require(templateRaw == "[]" || restoredExpertTemplates.isNotEmpty()) { "专家模板格式无效" }
-    require(restoredExpertTemplates.size <= 100) { "专家模板数量超出限制" }
-    val teamArray = JSONArray(root.optString("expert_teams_v1", "[]"))
-    require(teamArray.length() <= 50) { "专家团队数量超出限制" }
-    val cleanTeams = JSONArray()
-    for (i in 0 until teamArray.length()) {
-        val item = teamArray.getJSONObject(i)
-        val members = item.optJSONArray("members") ?: JSONArray()
-        val validMembers = (0 until members.length()).map { members.getString(it) }.filter { it in expertNames }.distinct().take(4)
-        require(item.optString("id").isNotBlank() && item.optString("name").isNotBlank() && validMembers.size >= 2) { "专家团队配置无效" }
-        cleanTeams.put(
-            JSONObject().put("id", item.getString("id")).put("name", item.getString("name").take(40))
-                .put("description", item.optString("description").take(300)).put("members", JSONArray(validMembers))
-        )
-    }
-    val selectedTeam = root.optString("selected_team_id", "")
-    val validSelectedTeam = selectedTeam.takeIf { id ->
-        (0 until cleanTeams.length()).any { cleanTeams.getJSONObject(it).optString("id") == id }
-    } ?: ""
-    val skills = JSONObject(root.optString("skills", "{}"))
-    require(skills.length() <= 100) { "技能数量超出限制" }
-    val skillMetadata = JSONObject(root.optString("skill_metadata_v1", "{}"))
-    require(skillMetadata.length() <= 100) { "技能元数据数量超出限制" }
-    val disabledSkillArray = JSONArray(root.optString("disabled_skills_v1", "[]"))
-    require(disabledSkillArray.length()<=100) { "停用技能数量超出限制" }
-    val disabledSkillNames = (0 until disabledSkillArray.length()).map { disabledSkillArray.getString(it) }.toSet()
-    val cleanSkillMetadata = JSONObject()
-    val metadataKeys = skillMetadata.keys()
-    while (metadataKeys.hasNext()) {
-        val name = metadataKeys.next()
-        val metadata = skillMetadata.optString(name)
-        require(name.length <= 40 && metadata.length <= 4000) { "技能元数据无效" }
-        runCatching { JSONObject(metadata) }.getOrElse { error("技能元数据格式无效") }
-        cleanSkillMetadata.put(name, metadata)
-    }
-    val cleanSkills = JSONObject()
-    val skillKeys = skills.keys()
-    while (skillKeys.hasNext()) {
-        val name = skillKeys.next()
-        val prompt = skills.optString(name)
-        require(name.length <= 40 && prompt.length <= 8000) { "技能内容超出限制" }
-        cleanSkills.put(name, prompt)
-    }
-    require(disabledSkillNames.all { cleanSkills.has(it) }) { "停用技能引用不存在的技能" }
-    val availableSkillNames = buildSet { val names = cleanSkills.keys(); while (names.hasNext()) add(names.next()) }
-    val restoredSelectedExpert = ExpertCatalogRules.resolveSelection(restoredSelectedExpertRaw, expertNames.toList(), restoredExpertProfiles)
-    restoredExpertProfiles.forEach { (name, profile) ->
-        val profileError = ExpertProfileCodec.validate(profile, availableSkillNames)
-        require(profileError == null) { "专家「$name」配置无效：$profileError" }
-    }
-    restoredExpertRevisions.values.flatten().forEach { revision ->
-        require(revision.prompt.length <= 8000) { "专家历史提示词过长" }
-        val revisionError = ExpertProfileCodec.validate(revision.profile, availableSkillNames)
-        require(revisionError == null) { "专家历史版本配置无效：$revisionError" }
-    }
-    restoredExpertTemplates.forEach { template ->
-        val templateError = ExpertProfileCodec.validate(template.profile, availableSkillNames)
-        require(templateError == null) { "专家模板「${template.name}」配置无效：$templateError" }
-    }
-    require(prompts.length() <= 100) { "专家提示词数量超出限制" }
-    val cleanPrompts = JSONObject()
-    val keys = prompts.keys()
-    while (keys.hasNext()) {
-        val name = keys.next()
-        val prompt = prompts.optString(name)
-        require(prompt.length <= 8_000) { "专家提示词过长" }
-        cleanPrompts.put(name, prompt)
-    }
-    val normalizedConversationBackup = JSONArray()
-    completeRestoredConversations.forEach { (conversation, rows) ->
-        val messageArray = JSONArray()
-        rows.forEach { message ->
-            messageArray.put(JSONObject().put("id", message.id).put("role", message.role).put("content", message.content)
-                .put("versions", JSONArray(message.versionsJson)).put("active_version", message.activeVersion))
-        }
-        normalizedConversationBackup.put(JSONObject().put("id", conversation.id).put("title", conversation.title)
-            .put("updated_at", conversation.updatedAt).put("project_id", conversation.projectId).put("messages", messageArray))
-    }
-    val restoreSyncTimestamp = System.currentTimeMillis()
-    val previousProfileMetadata = ModelProfileCatalogCodec.decode(prefs.getString("model_profiles_v1", "[]") ?: "[]")
-    var profileKeysToClear = emptyList<String>()
-    val editor = prefs.edit()
-        .putString("messages", messages.toString())
-        .putString("conversations_v1", normalizedConversationBackup.toString())
-        .putString("active_conversation_id", root.optString("active_conversation_id", "").takeIf { id -> completeRestoredConversations.any { it.first.id == id } } ?: completeRestoredConversations.firstOrNull()?.first?.id.orEmpty())
-        .putString("global_memory_v1", globalMemory)
-        .putBoolean("automatic_memory_enabled", root.optBoolean("automatic_memory_enabled", false))
-        .putFloat("tts_speech_rate", restoredSpeechRate)
-        .putString("phone_audit", restoredPhoneAudit.toString())
-        .putString("experts", experts.toString())
-        .putString("expert_prompts", cleanPrompts.toString())
-        .putString("selected_expert", restoredSelectedExpert)
-        .putString("expert_profiles_v1", ExpertProfileCodec.encode(restoredExpertProfiles))
-        .putString("expert_versions_v1", ExpertRevisionCodec.encode(restoredExpertRevisions))
-        .putString("expert_templates_v1", ExpertTemplateCodec.encode(restoredExpertTemplates))
-        .putString("expert_teams_v1", cleanTeams.toString())
-        .putString("selected_team_id", validSelectedTeam)
-        .putString("skills", cleanSkills.toString())
-        .putString("skill_metadata_v1", cleanSkillMetadata.toString())
-        .putString("disabled_skills_v1", JSONArray(disabledSkillNames).toString())
-        .putString("workflows_v1", WorkflowDefinitionCodec.encode(restoredWorkflows))
-        .putString("workflow_runs_v1", WorkflowRunHistoryCodec.encode(restoredWorkflowHistory))
-        .putString("expert_team_runs_v1", ExpertTeamRunHistoryCodec.encode(restoredTeamHistory))
-        .putString("projects", projectsToJson(restoredProjects))
-        .putString("active_project_id", root.optString("active_project_id", "default").takeIf { id -> restoredProjects.any { it.id == id && it.archivedAt == 0L } } ?: "default")
-        .putLong("local_snapshot_saved_at", restoreSyncTimestamp)
-        .putLong("room_synced_at", restoreSyncTimestamp)
-    if (root.has("base_url") && root.has("model")) {
-        val restoredBaseUrl = root.optString("base_url")
-        val restoredModel = root.optString("model")
-        require(restoredBaseUrl.length <= 2048 && restoredModel.length <= 200) { "模型配置字段过长" }
-        val restoredProfilesRaw = root.optString("model_profiles_v1", "[]")
-        val restoredProfiles = ModelProfileCatalogCodec.decode(restoredProfilesRaw)
-        require(restoredProfilesRaw.length <= 100_000 && (restoredProfilesRaw == "[]" || restoredProfiles.isNotEmpty())) { "模型配置清单无效" }
-        profileKeysToClear = previousProfileMetadata.filter { old -> restoredProfiles.none { it.id == old.id && it.baseUrl == old.baseUrl && it.model == old.model } }.map { it.id }
-        val restoredActiveProfileId = root.optString("active_model_profile_id", "")
-            .takeIf { id -> restoredProfiles.any { it.id == id } }.orEmpty()
-        val restoredModelUsageRaw = root.optString("model_usage_v1", "{}")
-        val restoredModelUsage = ModelUsageStatsCodec.decode(restoredModelUsageRaw)
-        require(restoredModelUsageRaw.length <= 100_000 && (restoredModelUsageRaw == "{}" || restoredModelUsage.isNotEmpty())) { "模型用量记录无效" }
-        val restoredFailoverEnabled = root.optBoolean("model_failover_enabled", false)
-        val previousBaseUrl = prefs.getString("base_url", "") ?: ""
-        val previousModel = prefs.getString("model", "") ?: ""
-        editor.putString("base_url", restoredBaseUrl).putString("model", restoredModel)
-            .putString("model_profiles_v1", ModelProfileCatalogCodec.encode(restoredProfiles))
-            .putString("active_model_profile_id", restoredActiveProfileId)
-            .putString("model_usage_v1", ModelUsageStatsCodec.encode(restoredModelUsage))
-            .putBoolean("model_failover_enabled", restoredFailoverEnabled)
-        if (previousBaseUrl != restoredBaseUrl || previousModel != restoredModel) {
-            editor.remove("api_key_enc")
-        }
-    }
-    val dao = database.dao()
-    database.withTransaction {
-        dao.deleteAllConversations()
-        dao.deleteAllKnowledgeDocuments()
-        dao.deleteAllUserMemories()
-        dao.deleteAllPhoneAgentTasks()
-        dao.deleteAllProjects()
-        if (restoredProjects.isNotEmpty()) dao.putProjects(restoredProjects.map { ProjectEntity(it.id, it.name, it.instructions, it.createdAt, it.archivedAt) })
-        completeRestoredConversations.forEach { (conversation, rows) ->
-            dao.putConversation(conversation)
-            if (rows.isNotEmpty()) dao.putMessages(rows)
-        }
-        if (restoredKnowledgeDocuments.isNotEmpty()) dao.insertKnowledgeDocuments(restoredKnowledgeDocuments)
-        if (restoredKnowledgeChunks.isNotEmpty()) dao.insertKnowledgeChunks(restoredKnowledgeChunks)
-        restoredMemories.forEach { dao.putUserMemory(it) }
-        restoredTasks.forEach { dao.putPhoneAgentTask(it) }
-        restoredTaskLogs.forEach { dao.insertPhoneAgentTaskLog(it) }
-        prefs.all.keys.filter { it.startsWith("draft_") }.forEach { editor.remove(it) }
-        restoredDrafts.forEach { (id, value) -> editor.putString("draft_$id", value) }
-        check(editor.commit()) { "本机设置写入失败，恢复未完成" }
-    }
-    profileKeysToClear.forEach { key -> runCatching { LocalVault.deleteProfile(context, key) } }
-}
-
-
-private val DEFAULT_SKILLS = linkedMapOf(
-    "结构化总结" to "请提炼核心结论、关键事实、行动项与未解决问题。区分原文事实和你的推断，避免遗漏重要限制。",
-    "精简改写" to "请在不改变原意的前提下压缩冗余表达。保留关键事实与语气，优先给出可直接使用的成稿。",
-    "代码审查" to "请从正确性、安全性、边界条件、性能和可维护性审查代码。先指出确定的问题，再给最小修复建议，不要臆测未提供的上下文。"
-)
-
-private fun loadSkills(prefs: android.content.SharedPreferences): Map<String, String> = runCatching {
-    val json = JSONObject(prefs.getString("skills", "{}") ?: "{}")
-    val loaded = linkedMapOf<String, String>()
-    val keys = json.keys()
-    while (keys.hasNext()) {
-        val name = keys.next()
-        loaded[name] = json.optString(name)
-    }
-    DEFAULT_SKILLS + loaded
-}.getOrDefault(DEFAULT_SKILLS)
-
-private fun skillMapToJson(skills: Map<String, String>): String {
-    val json = JSONObject()
-    skills.forEach { (name, prompt) -> json.put(name, prompt) }
-    return json.toString()
-}
-
-
-@Composable
-private fun PhoneAgentPage(context: Context, database: NestroDatabase, projectId: String) {
-    val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
-    val scope = rememberCoroutineScope()
-    var refresh by remember { mutableIntStateOf(0) }
-    var snapshot by remember { mutableStateOf("尚未读取手机界面") }
-    var tasks by remember { mutableStateOf(emptyList<app.nestro.data.PhoneAgentTaskEntity>()) }
-    var taskLogs by remember { mutableStateOf(emptyMap<String, List<app.nestro.data.PhoneAgentTaskLogEntity>>()) }
-    var taskClarifications by remember { mutableStateOf(emptyMap<String, String>()) }
-    var taskMessage by remember { mutableStateOf("") }
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-    ).orEmpty()
-    val serviceEnabled = enabledServices.contains(
-        context.packageName + "/app.nestro.phone.PhoneAgentService",
-        ignoreCase = true
-    )
-    val grantUntil = prefs.getLong("phone_task_grant_until", 0L)
-    val hasTaskGrant = grantUntil > System.currentTimeMillis()
-    val hasSingleGrant = prefs.getBoolean("phone_single_grant", false)
-
-    LaunchedEffect(refresh, projectId) {
-        tasks = withContext(Dispatchers.IO) {
-            runCatching { database.dao().phoneAgentTasks(projectId, 30) }.getOrDefault(emptyList())
-        }
-        taskLogs = withContext(Dispatchers.IO) {
-            tasks.associate { task ->
-                task.id to runCatching { PhoneAgentTaskStore.recentLogs(database.dao(), task.id, 12) }.getOrDefault(emptyList())
-            }
-        }
-    }
-
-    Column(
-        Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall)
-        Text("Phone Agent 会先建立任务计划，再在授权范围内执行可验证的低风险动作。支付、验证码和最终提交始终由你接手。", color = Muted)
-        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (serviceEnabled) "无障碍服务已开启" else "尚未开启无障碍服务", color = if (serviceEnabled) Mint else Ink)
-                Text("需要你在 Android 系统设置中手动开启。Nestro 不能代替你授予权限。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                Button(
-                    onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                ) { Text("前往系统无障碍设置") }
-            }
-        }
-        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("本次授权", color = Ink, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    when {
-                        hasTaskGrant -> "任务持续授权有效，剩余约 ${((grantUntil - System.currentTimeMillis()) / 60000).coerceAtLeast(1)} 分钟"
-                        hasSingleGrant -> "单次操作授权有效"
-                        else -> "当前没有操作授权"
-                    },
-                    color = if (hasTaskGrant || hasSingleGrant) Mint else Muted
-                )
-                Button(
-                    onClick = { prefs.edit().putBoolean("phone_single_grant", true).remove("phone_task_stop_requested").apply(); refresh++ },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("授予单次操作") }
-                OutlinedButton(
-                    onClick = { prefs.edit().putLong("phone_task_grant_until", System.currentTimeMillis() + 2 * 60 * 60 * 1000L).remove("phone_task_stop_requested").apply(); refresh++ },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("授予本次任务持续授权（最长 2 小时）") }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = {
-                            tasks.firstOrNull { it.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING) }?.let { PhoneAgentWorkScheduler.cancel(context, it.id) }
-                            PhoneAgentService.activeService?.requestTaskStop()
-                            taskMessage = "已请求停止当前任务"
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("停止当前任务") }
-                    TextButton(
-                        onClick = { prefs.edit().remove("phone_single_grant").remove("phone_task_grant_until").putBoolean("phone_task_stop_requested", true).apply(); refresh++ },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("撤销全部授权", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
-                }
-            }
-        }
-        OutlinedButton(
-            onClick = { snapshot = PhoneAgentService.activeService?.captureVisibleText() ?: "无障碍服务尚未连接，请先在系统设置中开启。" },
-            enabled = serviceEnabled,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("读取当前界面（仅本次主动触发）") }
-        Text(snapshot, color = Muted, style = MaterialTheme.typography.bodySmall)
-        if (taskMessage.isNotBlank()) Text(taskMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("任务记录", color = Ink, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { refresh++ }) { Text("刷新", color = Mint) }
-        }
-        if (tasks.isEmpty()) {
-            Text("当前项目还没有 Phone Agent 任务。", color = Muted, style = MaterialTheme.typography.bodySmall)
-        } else {
-            tasks.forEach { task ->
-                val canResume = runCatching { PhoneAgentTaskStore.decodeActions(task.planJson) }.isSuccess
-                val canStartAgent = !canResume && task.category != PhoneAgentPlanner.Category.GENERAL.name && task.status in setOf(PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_PAUSED, PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
-                Surface(color = Card, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text(task.goal, color = Ink, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "状态：${task.status} · 进度：${task.currentStep} · ${task.category}",
-                            color = Muted,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        if (task.status in setOf(PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED)) {
-                            OutlinedTextField(
-                                value = taskClarifications[task.id] ?: "",
-                                onValueChange = { taskClarifications = taskClarifications + (task.id to it) },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("补充预算、规格或其他非敏感要求…") },
-                                minLines = 2
-                            )
-                            TextButton(onClick = {
-                                scope.launch {
-                                    val clarification = taskClarifications[task.id].orEmpty()
-                                    val result = withContext(Dispatchers.IO) {
-                                        runCatching { PhoneAgentTaskStore.appendClarification(database.dao(), task.id, clarification) }
-                                    }
-                                    taskMessage = result.fold({ "补充信息已保存，任务已重新规划" }, { "补充失败：${it.message ?: "内容无效"}" })
-                                    if (result.isSuccess && PhoneAgentService.activeService?.hasValidGrant() == true) {
-                                        PhoneAgentWorkScheduler.enqueue(context, task.id)
-                                    }
-                                    if (result.isSuccess) taskClarifications = taskClarifications - task.id
-                                    refresh++
-                                }
-                            }) { Text("补充信息并重新规划", color = Mint) }
-                        }
-                        taskLogs[task.id].orEmpty().takeLast(3).forEach { log ->
-                            Text(
-                                "${if (log.success) "✓" else "!"} ${log.action} · ${log.detail}",
-                                color = if (log.success) Muted else androidx.compose.ui.graphics.Color(0xFFF87171),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if ((canResume && task.status in setOf(
-                                    PhoneAgentTaskStore.STATUS_PLANNED,
-                                    PhoneAgentTaskStore.STATUS_PAUSED,
-                                    PhoneAgentTaskStore.STATUS_RUNNING,
-                                    PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                    PhoneAgentTaskStore.STATUS_FAILED
-                                )) || canStartAgent
-                            ) {
-                                Button(
-                                    onClick = {
-                                        PhoneAgentWorkScheduler.enqueue(
-                                            context,
-                                            task.id,
-                                            afterUserHandoff = task.status == PhoneAgentTaskStore.STATUS_WAITING_USER,
-                                            allowRetryCurrentAction = task.status in setOf(PhoneAgentTaskStore.STATUS_RUNNING, PhoneAgentTaskStore.STATUS_FAILED)
-                                        )
-                                        taskMessage = "已提交后台任务，切换会话不会中断任务记录。"
-                                    },
-                                    enabled = serviceEnabled && (hasTaskGrant || hasSingleGrant),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                ) { Text(when { canStartAgent -> "启动 Phone Agent"; task.status == PhoneAgentTaskStore.STATUS_WAITING_USER -> "我已处理，继续"; task.status == PhoneAgentTaskStore.STATUS_RUNNING -> "核对页面后继续"; task.status == PhoneAgentTaskStore.STATUS_FAILED -> "核对页面后重试"; else -> "继续任务" }) }
-                            }
-                            if (task.status !in setOf(PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_CANCELLED)) {
-                                TextButton(onClick = {
-                                    PhoneAgentWorkScheduler.cancel(context, task.id)
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            PhoneAgentTaskStore.updateProgress(database.dao(), task.id, PhoneAgentTaskStore.STATUS_CANCELLED, task.currentStep)
-                                        }
-                                        refresh++
-                                    }
-                                }) { Text("取消任务", color = androidx.compose.ui.graphics.Color(0xFFF87171)) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
-    }
-}

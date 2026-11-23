@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -17,6 +18,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+
+internal fun String.stableFtsRowId(): Long = java.security.MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8)).take(8).fold(0L) { acc, byte -> (acc shl 8) or (byte.toLong() and 0xff) } and Long.MAX_VALUE
 
 @Entity(tableName = "conversations", indices = [Index(value = ["projectId", "updatedAt"])])
 data class ConversationEntity(
@@ -48,13 +51,43 @@ data class MessageEntity(
     val activeVersion: Int = 0
 )
 
-@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["contentHash"], unique = true)])
+@Entity(tableName = "knowledge_documents", indices = [Index(value = ["projectId"]), Index(value = ["projectId", "contentHash"], unique = true)])
 data class KnowledgeDocumentEntity(
     @PrimaryKey val id: String, val projectId: String, val name: String,
     val mimeType: String, val sizeBytes: Long, val importedAt: Long, val contentHash: String
 )
 @Entity(tableName = "knowledge_chunks", foreignKeys = [ForeignKey(entity = KnowledgeDocumentEntity::class, parentColumns = ["id"], childColumns = ["documentId"], onDelete = ForeignKey.CASCADE)], indices = [Index(value = ["documentId"]), Index(value = ["projectId"])])
 data class KnowledgeChunkEntity(@PrimaryKey val id: String, val documentId: String, val projectId: String, val position: Int, val content: String)
+
+@Entity(
+    tableName = "knowledge_chunk_embeddings",
+    primaryKeys = ["chunkId", "modelId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = KnowledgeChunkEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["chunkId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["modelId"])]
+)
+data class KnowledgeChunkEmbeddingEntity(
+    val chunkId: String,
+    val modelId: String,
+    val dimensions: Int,
+    val embedding: ByteArray
+)
+
+
+@Fts4(tokenizer = androidx.room.FtsOptions.TOKENIZER_UNICODE61)
+@Entity(tableName = "knowledge_chunks_fts")
+data class KnowledgeChunkFtsEntity(
+    @PrimaryKey @ColumnInfo(name = "rowid") val rowId: Long,
+    val chunkId: String,
+    val projectId: String,
+    val content: String
+)
 @Entity(
     tableName = "phone_agent_task_logs",
     foreignKeys = [ForeignKey(entity = PhoneAgentTaskEntity::class, parentColumns = ["id"], childColumns = ["taskId"], onDelete = ForeignKey.CASCADE)],
@@ -87,6 +120,57 @@ data class UserMemoryEntity(
     val sourceConversationId: String,
     val sourceMessageId: String,
     val confidence: Double,
+    val createdAt: Long,
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "0") val shareAcrossProjects: Boolean = false
+)
+
+@Entity(
+    tableName = "agent_task_traces",
+    indices = [Index(value = ["taskId", "createdAt"])]
+)
+data class AgentTaskTraceEntity(
+    @PrimaryKey val id: String,
+    val taskId: String,
+    val event: String,
+    val detail: String,
+    val createdAt: Long
+)
+
+@Entity(tableName = "agent_task_states", indices = [Index(value = ["idempotencyKey"], unique = true)])
+data class AgentTaskStateEntity(
+    @PrimaryKey val taskId: String,
+    val owner: String,
+    val status: String,
+    val currentStep: Int,
+    val checkpoint: String,
+    val lastError: String,
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "''") val projectId: String = "",
+    @ColumnInfo(defaultValue = "''") val conversationId: String = "",
+    @ColumnInfo(defaultValue = "''") val kind: String = "",
+    @ColumnInfo(defaultValue = "''") val capabilityId: String = "",
+    @ColumnInfo(defaultValue = "''") val title: String = "",
+    @ColumnInfo(defaultValue = "''") val input: String = "",
+    @ColumnInfo(defaultValue = "''") val resultSummary: String = "",
+    val idempotencyKey: String? = null,
+    @ColumnInfo(defaultValue = "0") val attempts: Int = 0,
+    @ColumnInfo(defaultValue = "2") val maxRetries: Int = 2,
+    @ColumnInfo(defaultValue = "0") val availableAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val startedAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val finishedAt: Long = 0L
+)
+
+@Entity(
+    tableName = "agent_approval_audits",
+    indices = [Index(value = ["scopeId", "updatedAt"]), Index(value = ["status", "updatedAt"])]
+)
+data class AgentApprovalAuditEntity(
+    @PrimaryKey val id: String,
+    val scopeId: String,
+    val toolId: String,
+    val reason: String,
+    val status: String,
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -129,12 +213,59 @@ data class ConversationMemoryHit(
     val updatedAt: Long
 )
 
+data class ConversationListItem(
+    val id: String,
+    val title: String,
+    val updatedAt: Long,
+    val projectId: String,
+    val lastMessagePreview: String,
+    val messageCount: Int
+)
+
 
 @Dao
 interface NestroDao {
     @Transaction
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
     suspend fun loadConversations(): List<ConversationWithMessages>
+
+    @Query("SELECT COUNT(*) FROM conversations")
+    suspend fun conversationCount(): Int
+
+    @Query("""
+        SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,
+               COALESCE((SELECT SUBSTR(m.content, 1, 240) FROM messages AS m WHERE m.conversationId = c.id
+                         ORDER BY m.position DESC LIMIT 1), '') AS lastMessagePreview,
+               (SELECT COUNT(*) FROM messages AS countMessage WHERE countMessage.conversationId = c.id) AS messageCount
+        FROM conversations AS c
+        ORDER BY c.updatedAt DESC, c.id DESC
+    """)
+    suspend fun allConversationSummaries(): List<ConversationListItem>
+
+    @Query("""
+        SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,
+               COALESCE((SELECT SUBSTR(m.content, 1, 240) FROM messages AS m WHERE m.conversationId = c.id
+                         ORDER BY m.position DESC LIMIT 1), '') AS lastMessagePreview,
+               (SELECT COUNT(*) FROM messages AS countMessage WHERE countMessage.conversationId = c.id) AS messageCount
+        FROM conversations AS c
+        WHERE c.projectId = :projectId
+          AND (:query = '' OR INSTR(LOWER(c.title), LOWER(:query)) > 0
+               OR EXISTS (SELECT 1 FROM messages AS searchMessage
+                          WHERE searchMessage.conversationId = c.id
+                            AND INSTR(LOWER(searchMessage.content), LOWER(:query)) > 0))
+        ORDER BY c.updatedAt DESC, c.id DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun conversationListPage(
+        projectId: String,
+        query: String,
+        limit: Int,
+        offset: Int
+    ): List<ConversationListItem>
+
+    @Transaction
+    @Query("SELECT * FROM conversations WHERE id = :conversationId LIMIT 1")
+    suspend fun conversationWithMessages(conversationId: String): ConversationWithMessages?
 
     @Query("""
         SELECT m.id AS messageId, m.conversationId AS conversationId,
@@ -212,26 +343,206 @@ interface NestroDao {
     ): List<ConversationMemoryHit>
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun userMemories(projectId: String, limit: Int = 200): List<UserMemoryEntity>
+
+    @Query("SELECT * FROM user_memories WHERE projectId = :projectId OR (shareAcrossProjects = 1 AND projectId IN (:readableSourceProjectIds)) ORDER BY CASE WHEN projectId = :projectId THEN 0 ELSE 1 END, updatedAt DESC LIMIT :limit")
+    suspend fun userMemoriesForRecall(projectId: String, readableSourceProjectIds: List<String>, limit: Int = 200): List<UserMemoryEntity>
+
+    @Query("UPDATE user_memories SET shareAcrossProjects = :enabled, updatedAt = :updatedAt WHERE id = :id AND projectId = :ownerProjectId")
+    suspend fun setUserMemoryShareAcrossProjects(id: String, ownerProjectId: String, enabled: Boolean, updatedAt: Long): Int
     @Query("SELECT * FROM user_memories ORDER BY projectId, updatedAt DESC")
     suspend fun allUserMemories(): List<UserMemoryEntity>
 
     @Query("SELECT * FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint LIMIT 1")
     suspend fun userMemoryByFingerprint(projectId: String, fingerprint: String): UserMemoryEntity?
 
+    @Query("SELECT * FROM user_memories WHERE id = :id AND projectId = :projectId LIMIT 1")
+    suspend fun userMemoryById(id: String, projectId: String): UserMemoryEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM user_memories WHERE projectId = :projectId AND fingerprint = :fingerprint AND id != :excludeId)")
+    suspend fun userMemoryFingerprintExists(projectId: String, fingerprint: String, excludeId: String): Boolean
+
+    @Query("UPDATE user_memories SET content = :content, fingerprint = :fingerprint, sourceConversationId = :conversationId, sourceMessageId = :messageId, confidence = :confidence, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId AND category = :category")
+    suspend fun replaceUserMemoryContent(
+        id: String, projectId: String, category: String, content: String, fingerprint: String,
+        conversationId: String, messageId: String, confidence: Double, updatedAt: Long
+    ): Int
+
+    @Transaction
+    suspend fun replaceUserMemoryIfUnconflicted(
+        id: String, projectId: String, category: String, content: String, fingerprint: String,
+        conversationId: String, messageId: String, confidence: Double, updatedAt: Long
+    ): Boolean {
+        val current = userMemoryById(id, projectId) ?: return false
+        if (current.category != category) return false
+        if (userMemoryFingerprintExists(projectId, fingerprint, id)) return false
+        return replaceUserMemoryContent(
+            id, projectId, category, content, fingerprint, conversationId, messageId, confidence, updatedAt
+        ) > 0
+    }
+
+    /**
+     * Validates the project, source conversation and user message in the same Room
+     * transaction that inserts or replaces the automatic memory. This prevents a
+     * source deletion/edit from slipping between an external preflight query and write.
+     */
+    @Transaction
+    suspend fun saveUserMemoryCandidateIfSourceValid(
+        memory: UserMemoryEntity,
+        supersedesId: String? = null
+    ): Boolean {
+        if (!projectExists(memory.projectId)) return false
+        val source = conversationWithMessages(memory.sourceConversationId) ?: return false
+        if (source.conversation.projectId != memory.projectId) return false
+        if (source.messages.none { it.id == memory.sourceMessageId && it.role == "user" }) return false
+
+        val replacementId = supersedesId?.trim().orEmpty()
+        if (replacementId.isNotBlank()) {
+            val current = userMemoryById(replacementId, memory.projectId) ?: return false
+            if (current.category != memory.category) return false
+            if (userMemoryFingerprintExists(memory.projectId, memory.fingerprint, replacementId)) return false
+            return replaceUserMemoryContent(
+                replacementId,
+                memory.projectId,
+                memory.category,
+                memory.content,
+                memory.fingerprint,
+                memory.sourceConversationId,
+                memory.sourceMessageId,
+                memory.confidence,
+                memory.updatedAt
+            ) > 0
+        }
+
+        upsertUserMemoryByFingerprint(memory)
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putUserMemory(memory: UserMemoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertUserMemoryIfAbsent(memory: UserMemoryEntity): Long
+
+    @Transaction
+    suspend fun upsertUserMemoryByFingerprint(memory: UserMemoryEntity): UserMemoryEntity {
+        val existing = userMemoryByFingerprint(memory.projectId, memory.fingerprint)
+        val updated = memory.copy(
+            id = existing?.id ?: memory.id,
+            createdAt = existing?.createdAt ?: memory.createdAt,
+            shareAcrossProjects = existing?.shareAcrossProjects ?: memory.shareAcrossProjects
+        )
+        putUserMemory(updated)
+        return updated
+    }
+
     @Query("UPDATE user_memories SET content = :content, category = :category, fingerprint = :fingerprint, updatedAt = :updatedAt WHERE id = :id AND projectId = :projectId")
-    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long)
+    suspend fun updateUserMemory(id: String, projectId: String, content: String, category: String, fingerprint: String, updatedAt: Long): Int
 
     @Query("DELETE FROM user_memories WHERE id = :id AND projectId = :projectId")
-    suspend fun deleteUserMemory(id: String, projectId: String)
+    suspend fun deleteUserMemory(id: String, projectId: String): Int
 
     @Query("DELETE FROM user_memories WHERE projectId = :projectId")
     suspend fun deleteUserMemoriesForProject(projectId: String)
 
+    @Transaction
+    suspend fun importUserMemoryIfAbsent(memory: UserMemoryEntity): Boolean {
+        if (userMemoryByFingerprint(memory.projectId, memory.fingerprint) != null) return false
+        putUserMemory(memory)
+        trimUserMemories(memory.projectId, 200)
+        return true
+    }
+
     @Query("DELETE FROM user_memories WHERE projectId = :projectId AND id NOT IN (SELECT id FROM user_memories WHERE projectId = :projectId ORDER BY updatedAt DESC LIMIT :keep)")
     suspend fun trimUserMemories(projectId: String, keep: Int = 200)
+
+    @Query("SELECT * FROM agent_task_states WHERE taskId = :taskId LIMIT 1")
+    suspend fun agentTaskState(taskId: String): AgentTaskStateEntity?
+
+    @Query("SELECT * FROM agent_task_states WHERE idempotencyKey = :key LIMIT 1")
+    suspend fun agentTaskStateByIdempotencyKey(key: String): AgentTaskStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAgentTaskStateIfAbsent(state: AgentTaskStateEntity): Long
+
+    @Transaction
+    suspend fun putAgentTaskStateIfAbsent(state: AgentTaskStateEntity): AgentTaskStateEntity {
+        if (state.idempotencyKey != null) {
+            agentTaskStateByIdempotencyKey(state.idempotencyKey)?.let { return it }
+        }
+        insertAgentTaskStateIfAbsent(state)
+        return if (state.idempotencyKey != null) {
+            agentTaskStateByIdempotencyKey(state.idempotencyKey) ?: agentTaskState(state.taskId)
+                ?: error("任务状态写入后无法回读")
+        } else {
+            agentTaskState(state.taskId) ?: error("任务状态写入后无法回读")
+        }
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAgentApprovalAudit(record: AgentApprovalAuditEntity)
+
+    @Query("SELECT * FROM agent_approval_audits ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recentAgentApprovalAudits(limit: Int = 100): List<AgentApprovalAuditEntity>
+
+    @Query("SELECT * FROM agent_approval_audits WHERE status = 'PENDING' ORDER BY createdAt ASC")
+    suspend fun pendingAgentApprovalAudits(): List<AgentApprovalAuditEntity>
+
+    @Query("SELECT * FROM agent_approval_audits WHERE id = :id LIMIT 1")
+    suspend fun agentApprovalAudit(id: String): AgentApprovalAuditEntity?
+
+    @Query("SELECT * FROM agent_approval_audits WHERE scopeId = :scopeId ORDER BY createdAt ASC")
+    suspend fun agentApprovalAuditsForScope(scopeId: String): List<AgentApprovalAuditEntity>
+
+    @Query("SELECT * FROM agent_approval_audits WHERE status IN ('AUTHORIZED_ONCE', 'AUTHORIZED_TASK', 'REJECTED') ORDER BY updatedAt ASC")
+    suspend fun resumableAgentApprovalAudits(): List<AgentApprovalAuditEntity>
+
+    @Query("UPDATE agent_approval_audits SET status = :status, updatedAt = :updatedAt WHERE scopeId = :scopeId AND status IN ('PENDING', 'AUTHORIZED_ONCE', 'AUTHORIZED_TASK', 'REJECTED')")
+    suspend fun closeActiveAgentApprovalAudits(scopeId: String, status: String, updatedAt: Long): Int
+
+    @Query("SELECT * FROM agent_task_states ORDER BY updatedAt DESC")
+    suspend fun allAgentTaskStates(): List<AgentTaskStateEntity>
+
+    @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recentGeneratedPluginTaskStates(limit: Int = 10): List<AgentTaskStateEntity>
+
+    @Query("SELECT * FROM agent_task_states WHERE owner LIKE 'generated-plugin:%' AND status IN ('WAITING_FOR_USER', 'WAITING_FOR_TASK', 'PAUSED') ORDER BY updatedAt ASC LIMIT :limit")
+    suspend fun recoverableGeneratedPluginTaskStates(limit: Int = 200): List<AgentTaskStateEntity>
+
+    @Query("SELECT * FROM agent_task_states WHERE status IN ('CREATED', 'QUEUED', 'RUNNING', 'WAITING_FOR_USER', 'WAITING_FOR_TASK', 'PAUSED', 'RETRY_WAIT', 'FAILED') ORDER BY updatedAt ASC")
+    suspend fun recoverableAgentTaskStates(): List<AgentTaskStateEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAgentTaskState(state: AgentTaskStateEntity)
+
+    @Transaction
+    suspend fun putAgentTaskStateChecked(state: AgentTaskStateEntity) {
+        if (state.idempotencyKey != null) {
+            val existing = agentTaskStateByIdempotencyKey(state.idempotencyKey)
+            require(existing == null || existing.taskId == state.taskId) { "幂等键已被其他任务占用" }
+        }
+        putAgentTaskState(state)
+    }
+
+    @Query("DELETE FROM agent_task_states WHERE taskId = :taskId")
+    suspend fun deleteAgentTaskState(taskId: String)
+
+    @Query("DELETE FROM agent_task_states")
+    suspend fun deleteAllAgentTaskStates()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAgentTaskTrace(trace: AgentTaskTraceEntity)
+
+    @Query("SELECT * FROM agent_task_traces ORDER BY createdAt ASC")
+    suspend fun allAgentTaskTraces(): List<AgentTaskTraceEntity>
+
+    @Query("DELETE FROM agent_task_traces")
+    suspend fun deleteAllAgentTaskTraces()
+
+    @Query("SELECT * FROM agent_task_traces WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentAgentTaskTraces(taskId: String, limit: Int = 100): List<AgentTaskTraceEntity>
+
+    @Query("DELETE FROM agent_task_traces WHERE taskId = :taskId AND id NOT IN (SELECT id FROM agent_task_traces WHERE taskId = :taskId ORDER BY createdAt DESC LIMIT :keep)")
+    suspend fun pruneAgentTaskTraces(taskId: String, keep: Int = 500)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putPhoneAgentTask(task: PhoneAgentTaskEntity)
@@ -260,10 +571,13 @@ interface NestroDao {
 
 
 
-    @Query("UPDATE phone_agent_tasks SET status = :status, currentStep = :currentStep, updatedAt = :updatedAt WHERE id = :taskId")
+    @Query("UPDATE phone_agent_tasks SET status = :status, currentStep = :currentStep, updatedAt = :updatedAt WHERE id = :taskId AND (status NOT IN ('completed', 'cancelled') OR status = :status)")
     suspend fun updatePhoneAgentTaskProgress(taskId: String, status: String, currentStep: Int, updatedAt: Long)
 
-    @Query("UPDATE phone_agent_tasks SET planJson = :planJson, status = 'planned', currentStep = 0, updatedAt = :updatedAt WHERE id = :taskId")
+    @Query("UPDATE phone_agent_tasks SET status = 'cancelled', updatedAt = :updatedAt WHERE id = :taskId AND status NOT IN ('completed', 'cancelled')")
+    suspend fun cancelPhoneAgentTaskIfActive(taskId: String, updatedAt: Long): Int
+
+    @Query("UPDATE phone_agent_tasks SET planJson = :planJson, status = 'planned', currentStep = 0, updatedAt = :updatedAt WHERE id = :taskId AND status NOT IN ('completed', 'cancelled')")
     suspend fun updatePhoneAgentTaskPlan(taskId: String, planJson: String, updatedAt: Long)
 
     @Query("UPDATE phone_agent_tasks SET goal = :goal, updatedAt = :updatedAt WHERE id = :taskId")
@@ -277,12 +591,32 @@ interface NestroDao {
     @Query("DELETE FROM user_memories") suspend fun deleteAllUserMemories()
     @Query("DELETE FROM phone_agent_tasks") suspend fun deleteAllPhoneAgentTasks()
     @Query("DELETE FROM knowledge_documents") suspend fun deleteAllKnowledgeDocuments()
+    @Query("DELETE FROM knowledge_chunks_fts") suspend fun deleteAllKnowledgeChunkFts()
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertKnowledgeDocuments(documents: List<KnowledgeDocumentEntity>)
     @Query("SELECT * FROM knowledge_documents ORDER BY projectId, importedAt DESC") suspend fun allKnowledgeDocuments(): List<KnowledgeDocumentEntity>
     @Query("SELECT * FROM knowledge_chunks ORDER BY projectId, documentId, position") suspend fun allKnowledgeChunks(): List<KnowledgeChunkEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putConversation(conversation: ConversationEntity)
+    @Query("UPDATE conversations SET title = :title, updatedAt = :updatedAt, projectId = :projectId WHERE id = :id")
+    suspend fun updateConversationMetadata(
+        id: String,
+        title: String,
+        updatedAt: Long,
+        projectId: String
+    ): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertConversation(conversation: ConversationEntity)
+
+    @Transaction
+    suspend fun putConversation(conversation: ConversationEntity) {
+        val updated = updateConversationMetadata(
+            conversation.id,
+            conversation.title,
+            conversation.updatedAt,
+            conversation.projectId
+        )
+        if (updated == 0) insertConversation(conversation)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putMessages(messages: List<MessageEntity>)
@@ -293,13 +627,18 @@ interface NestroDao {
     @Query("DELETE FROM conversations WHERE id IN (:ids)")
     suspend fun deleteConversationRows(ids: List<String>)
 
-    @Query("DELETE FROM user_memories WHERE sourceConversationId IN (:ids)")
-    suspend fun deleteUserMemoriesForConversations(ids: List<String>)
+    @Query("SELECT DISTINCT projectId FROM conversations WHERE id IN (:ids)")
+    suspend fun conversationProjectIds(ids: List<String>): List<String>
+
+    @Query("DELETE FROM user_memories WHERE projectId = :projectId AND sourceConversationId IN (:ids)")
+    suspend fun deleteUserMemoriesForConversations(ids: List<String>, projectId: String)
 
     @Transaction
     suspend fun deleteConversations(ids: List<String>) {
         if (ids.isEmpty()) return
-        deleteUserMemoriesForConversations(ids)
+        conversationProjectIds(ids).forEach { projectId ->
+            deleteUserMemoriesForConversations(ids, projectId)
+        }
         deleteConversationRows(ids)
     }
 
@@ -352,6 +691,91 @@ interface NestroDao {
         return true
     }
 
+    @Transaction
+    suspend fun duplicateProject(
+        sourceProjectId: String,
+        newProjectId: String,
+        newName: String,
+        createdAt: Long
+    ): Boolean {
+        if (sourceProjectId.isBlank() || newProjectId.isBlank() || sourceProjectId == newProjectId ||
+            createdAt < 0L || projectExists(newProjectId)) return false
+        val currentProjects = loadProjects()
+        val source = currentProjects.firstOrNull { it.id == sourceProjectId } ?: return false
+        val validation = ProjectSpaceRules.validate(
+            newName, "", currentProjects.map { ProjectSpaceRules.Entry(it.id, it.name) }
+        )
+        if (validation != null) return false
+
+        val sourceConversations = loadConversations().filter { it.conversation.projectId == sourceProjectId }
+        val conversationIds = sourceConversations.associate { it.conversation.id to java.util.UUID.randomUUID().toString() }
+        val messageIds = sourceConversations.flatMap { it.messages }.associate { it.id to java.util.UUID.randomUUID().toString() }
+
+        val sourceDocuments = knowledgeDocuments(sourceProjectId)
+        val documentIds = sourceDocuments.associate { it.id to java.util.UUID.randomUUID().toString() }
+        val sourceChunks = knowledgeChunksForProject(sourceProjectId)
+
+        putProjects(listOf(ProjectEntity(newProjectId, newName.trim(), source.instructions, createdAt, 0L)))
+        sourceConversations.forEach { row ->
+            val newConversationId = conversationIds.getValue(row.conversation.id)
+            putConversation(row.conversation.copy(id = newConversationId, projectId = newProjectId, updatedAt = createdAt))
+            val copiedMessages = row.messages.map { message ->
+                message.copy(
+                    id = messageIds.getValue(message.id),
+                    conversationId = newConversationId
+                )
+            }
+            if (copiedMessages.isNotEmpty()) putMessages(copiedMessages)
+        }
+
+        val copiedDocuments = sourceDocuments.map { document ->
+            document.copy(
+                id = documentIds.getValue(document.id),
+                projectId = newProjectId,
+                importedAt = createdAt
+            )
+        }
+        if (copiedDocuments.isNotEmpty()) insertKnowledgeDocuments(copiedDocuments)
+        val copiedChunks = sourceChunks.map { chunk ->
+            chunk.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                documentId = documentIds[chunk.documentId] ?: error("项目知识片段缺少所属文档"),
+                projectId = newProjectId
+            )
+        }
+        if (copiedChunks.isNotEmpty()) {
+            insertKnowledgeChunks(copiedChunks)
+            insertKnowledgeChunkFts(copiedChunks.map { chunk ->
+                KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, newProjectId, chunk.content)
+            })
+        }
+
+        userMemories(sourceProjectId)
+            .filter { memory ->
+                memory.sourceConversationId in conversationIds && memory.sourceMessageId in messageIds
+            }
+            .forEach { memory ->
+                putUserMemory(memory.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    projectId = newProjectId,
+                    sourceConversationId = conversationIds.getValue(memory.sourceConversationId),
+                    sourceMessageId = messageIds.getValue(memory.sourceMessageId),
+                    fingerprint = UserMemoryStore.fingerprint(memory.category + "|" + memory.content.lowercase()),
+                    createdAt = createdAt,
+                    updatedAt = createdAt
+                ))
+            }
+        return true
+    }
+
+    @Transaction
+    suspend fun rollbackProjectDuplicate(projectId: String) {
+        require(projectId.isNotBlank() && projectId != "default") { "复制回滚项目 ID 无效" }
+        val ids = projectConversationIds(projectId)
+        if (ids.isNotEmpty()) deleteConversations(ids)
+        deleteProjectAndKnowledge(projectId)
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putProjects(projects: List<ProjectEntity>)
 
@@ -359,49 +783,156 @@ interface NestroDao {
     suspend fun deleteProjects(ids: List<String>)
     @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId ORDER BY importedAt DESC")
     suspend fun knowledgeDocuments(projectId: String): List<KnowledgeDocumentEntity>
-    @Query("SELECT * FROM knowledge_documents WHERE contentHash = :hash LIMIT 1")
-    suspend fun knowledgeDocumentByHash(hash: String): KnowledgeDocumentEntity?
+    @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId ORDER BY documentId, position")
+    suspend fun knowledgeChunksForProject(projectId: String): List<KnowledgeChunkEntity>
+    @Query("SELECT * FROM knowledge_documents WHERE projectId = :projectId AND contentHash = :hash LIMIT 1")
+    suspend fun knowledgeDocumentByHash(projectId: String, hash: String): KnowledgeDocumentEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertKnowledgeDocument(document: KnowledgeDocumentEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKnowledgeChunks(chunks: List<KnowledgeChunkEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKnowledgeChunkFts(rows: List<KnowledgeChunkFtsEntity>)
+
+    @Query("DELETE FROM knowledge_chunks_fts WHERE chunkId IN (:chunkIds)")
+    suspend fun deleteKnowledgeChunkFts(chunkIds: List<String>)
+
+    @Query("SELECT c.* FROM knowledge_chunks c INNER JOIN knowledge_chunks_fts f ON f.chunkId = c.id WHERE c.projectId = :projectId AND knowledge_chunks_fts MATCH :query ORDER BY (c.position % 17) ASC, c.position DESC, c.documentId ASC LIMIT :limit")
+    suspend fun searchKnowledgeChunksFts(projectId: String, query: String, limit: Int = 12): List<KnowledgeChunkEntity>
+
     @Transaction
     suspend fun insertKnowledgeBundleIfAbsent(
         document: KnowledgeDocumentEntity,
         chunks: List<KnowledgeChunkEntity>
     ): KnowledgeDocumentEntity {
-        val existing = knowledgeDocumentByHash(document.contentHash)
+        val existing = knowledgeDocumentByHash(document.projectId, document.contentHash)
         if (existing != null) return existing
         insertKnowledgeDocument(document)
         insertKnowledgeChunks(chunks)
+        insertKnowledgeChunkFts(chunks.map { chunk -> KnowledgeChunkFtsEntity(chunk.id.stableFtsRowId(), chunk.id, chunk.projectId, chunk.content) })
         return document
     }
+    @Query("SELECT id FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId")
+    suspend fun knowledgeChunkIdsForDocument(documentId: String, projectId: String): List<String>
+
     @Query("DELETE FROM knowledge_documents WHERE id = :documentId AND projectId = :projectId")
     suspend fun deleteKnowledgeDocument(documentId: String, projectId: String)
+
+    @Transaction
+    suspend fun deleteKnowledgeDocumentAndIndex(documentId: String, projectId: String) {
+        val chunkIds = knowledgeChunkIdsForDocument(documentId, projectId)
+        if (chunkIds.isNotEmpty()) deleteKnowledgeChunkFts(chunkIds)
+        deleteKnowledgeDocument(documentId, projectId)
+    }
     @Query("DELETE FROM knowledge_documents WHERE projectId = :projectId")
     suspend fun deleteKnowledgeDocumentsForProject(projectId: String)
+    @Query("DELETE FROM knowledge_chunks_fts WHERE projectId = :projectId")
+    suspend fun deleteKnowledgeChunkFtsForProject(projectId: String)
     @Query("DELETE FROM phone_agent_tasks WHERE projectId = :projectId")
     suspend fun deletePhoneAgentTasksForProject(projectId: String)
     @Transaction
     suspend fun deleteProjectAndKnowledge(projectId: String) {
+        deleteKnowledgeChunkFtsForProject(projectId)
         deleteKnowledgeDocumentsForProject(projectId)
         deletePhoneAgentTasksForProject(projectId)
         deleteUserMemoriesForProject(projectId)
         deleteProjects(listOf(projectId))
     }
-        @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY position ASC LIMIT :limit")
+        @Query("SELECT * FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0 ORDER BY (position % 17) ASC, position DESC, documentId ASC LIMIT :limit")
     suspend fun searchKnowledgeChunks(projectId: String, term: String, limit: Int = 8): List<KnowledgeChunkEntity>
+    @Query("SELECT * FROM knowledge_chunks WHERE documentId = :documentId AND projectId = :projectId ORDER BY position ASC")
+    suspend fun knowledgeChunksForDocument(documentId: String, projectId: String): List<KnowledgeChunkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putKnowledgeChunkEmbeddings(embeddings: List<KnowledgeChunkEmbeddingEntity>)
+
+    @Query("SELECT e.* FROM knowledge_chunk_embeddings AS e INNER JOIN knowledge_chunks AS c ON c.id = e.chunkId WHERE c.projectId = :projectId AND e.modelId = :modelId ORDER BY c.documentId ASC, c.position ASC")
+    suspend fun knowledgeChunkEmbeddingsForProject(projectId: String, modelId: String): List<KnowledgeChunkEmbeddingEntity>
+
+    @Query("DELETE FROM knowledge_chunk_embeddings WHERE modelId = :modelId AND chunkId IN (SELECT id FROM knowledge_chunks WHERE projectId = :projectId)")
+    suspend fun deleteKnowledgeChunkEmbeddingsForProject(projectId: String, modelId: String)
+
+    @Query("SELECT COUNT(*) FROM knowledge_chunk_embeddings AS e INNER JOIN knowledge_chunks AS c ON c.id = e.chunkId WHERE c.projectId = :projectId AND e.modelId = :modelId")
+    suspend fun knowledgeChunkEmbeddingCount(projectId: String, modelId: String): Int
+    @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId")
+    suspend fun knowledgeChunkCount(projectId: String): Int
+    @Query("SELECT AVG(LENGTH(content)) FROM knowledge_chunks WHERE projectId = :projectId")
+    suspend fun knowledgeAverageChunkLength(projectId: String): Double?
+    @Query("SELECT COUNT(*) FROM knowledge_chunks WHERE projectId = :projectId AND INSTR(LOWER(content), LOWER(:term)) > 0")
+    suspend fun knowledgeChunkDocumentFrequency(projectId: String, term: String): Int
+    @Query("SELECT COUNT(*) FROM knowledge_chunks_fts JOIN knowledge_chunks AS kc ON kc.id = knowledge_chunks_fts.chunkId WHERE knowledge_chunks_fts MATCH :matchQuery AND kc.projectId = :projectId")
+    suspend fun knowledgeFtsDocumentFrequency(projectId: String, matchQuery: String): Int
+
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class],
-    version = 8,
+    entities = [ConversationEntity::class, MessageEntity::class, ProjectEntity::class, KnowledgeDocumentEntity::class, KnowledgeChunkEntity::class, KnowledgeChunkFtsEntity::class, KnowledgeChunkEmbeddingEntity::class, PhoneAgentTaskEntity::class, PhoneAgentTaskLogEntity::class, UserMemoryEntity::class, AgentTaskStateEntity::class, AgentTaskTraceEntity::class, AgentApprovalAuditEntity::class],
+    version = 16,
     exportSchema = false
 )
 abstract class NestroDatabase : RoomDatabase() {
     abstract fun dao(): NestroDao
 
     companion object {
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS knowledge_chunk_embeddings (chunkId TEXT NOT NULL, modelId TEXT NOT NULL, dimensions INTEGER NOT NULL, embedding BLOB NOT NULL, PRIMARY KEY(chunkId, modelId), FOREIGN KEY(chunkId) REFERENCES knowledge_chunks(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunk_embeddings_modelId ON knowledge_chunk_embeddings(modelId)")
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_memories ADD COLUMN shareAcrossProjects INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN projectId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN conversationId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN capabilityId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN input TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN resultSummary TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN idempotencyKey TEXT")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN maxRetries INTEGER NOT NULL DEFAULT 2")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN availableAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN startedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE agent_task_states ADD COLUMN finishedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_agent_task_states_idempotencyKey ON agent_task_states(idempotencyKey)")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_knowledge_documents_contentHash")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_knowledge_documents_projectId_contentHash ON knowledge_documents(projectId, contentHash)")
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts4(chunkId, projectId, content, tokenize=unicode61)")
+                db.execSQL("INSERT OR REPLACE INTO knowledge_chunks_fts(chunkId, projectId, content) SELECT id, projectId, content FROM knowledge_chunks")
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS agent_task_traces (id TEXT NOT NULL, taskId TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_task_traces_taskId_createdAt ON agent_task_traces(taskId, createdAt)")
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS agent_task_states (taskId TEXT NOT NULL, owner TEXT NOT NULL, status TEXT NOT NULL, currentStep INTEGER NOT NULL, checkpoint TEXT NOT NULL, lastError TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(taskId))")
+            }
+        }
+
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE projects ADD COLUMN archivedAt INTEGER NOT NULL DEFAULT 0")
@@ -457,7 +988,15 @@ abstract class NestroDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_chunks_projectId ON knowledge_chunks(projectId)")
             }
         }
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS agent_approval_audits (id TEXT NOT NULL, scopeId TEXT NOT NULL, toolId TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_approval_audits_scopeId_updatedAt ON agent_approval_audits(scopeId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_agent_approval_audits_status_updatedAt ON agent_approval_audits(status, updatedAt)")
+            }
+        }
+
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
         @Volatile private var instance: NestroDatabase? = null
 
         fun get(context: Context): NestroDatabase =

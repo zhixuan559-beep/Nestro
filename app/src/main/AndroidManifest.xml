@@ -1,17 +1,42 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
     <application
+        android:name=".NestroApplication"
         android:allowBackup="false"
-        android:label="Nestro"
+        android:label="Nost"
+        android:icon="@drawable/nost_launcher_icon"
+        android:roundIcon="@drawable/nost_launcher_icon"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <provider
+            android:name=".phone.virtualdisplay.mika.MikaHelperHandoffProvider"
+            android:authorities="${applicationId}.helper"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+        <receiver android:name=".phone.PhoneAgentNotificationReceiver" android:exported="false" />
+        <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="specialUse|mediaProcessing" tools:node="merge">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-initiated accessibility automation task" />
+        </service>
         <service
             android:name=".phone.PhoneAgentService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -25,11 +50,22 @@
         </service>
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTop"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nestro" android:host="oauth" android:path="/modelscope" />
             </intent-filter>
         </activity>
     </application>

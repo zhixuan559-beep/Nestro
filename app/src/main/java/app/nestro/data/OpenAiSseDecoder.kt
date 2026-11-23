@@ -9,8 +9,13 @@ import org.json.JSONObject
  * SSE data fields are dispatched at the blank line boundary, not individually.
  * This supports providers that split a JSON event over multiple data lines.
  */
+internal data class ProviderTokenUsage(val inputTokens: Int, val outputTokens: Int)
+
 internal class OpenAiSseDecoder {
     private val dataLines = mutableListOf<String>()
+
+    var providerUsage: ProviderTokenUsage? = null
+        private set
 
     var isDone: Boolean = false
         private set
@@ -38,7 +43,13 @@ internal class OpenAiSseDecoder {
             return null
         }
         return runCatching {
-            val choices = JSONObject(payload).optJSONArray("choices") ?: JSONArray()
+            val event = JSONObject(payload)
+            event.optJSONObject("usage")?.let { usage ->
+                val input = usage.optInt("prompt_tokens", -1)
+                val output = usage.optInt("completion_tokens", -1)
+                if (input >= 0 && output >= 0) providerUsage = ProviderTokenUsage(input, output)
+            }
+            val choices = event.optJSONArray("choices") ?: JSONArray()
             val choice = choices.optJSONObject(0) ?: return@runCatching null
             val delta = choice.optJSONObject("delta")
             val content = delta?.opt("content")

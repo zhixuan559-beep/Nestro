@@ -53,9 +53,39 @@ class LocalBackupCompatibilityTest {
         org.junit.Assert.assertFalse(LocalBackupCompatibility.verifyChecksum(backup))
     }
 
+    @Test fun enforcesBackupSizeByUtf8BytesRatherThanCharacterCount() {
+        LocalBackupCompatibility.requireUtf8SizeWithin("abcd", 4, "too large")
+        assertTrue(runCatching {
+            LocalBackupCompatibility.requireUtf8SizeWithin("中文", 4, "too large")
+        }.isFailure)
+    }
+
+    @Test fun requiresUniqueNonBlankRecordIds() {
+        LocalBackupCompatibility.requireUniqueIds(listOf("a", "b", "c"), "测试")
+        assertTrue(runCatching { LocalBackupCompatibility.requireUniqueIds(listOf("a", "a"), "测试") }.isFailure)
+        assertTrue(runCatching { LocalBackupCompatibility.requireUniqueIds(listOf("a", ""), "测试") }.isFailure)
+    }
+
     @Test fun acceptsLegacyBackupWithoutChecksumOnlyBeforeVersionTen() {
         assertTrue(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":9}""")))
         assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":10}""")))
         assertFalse(LocalBackupCompatibility.verifyChecksum(JSONObject("""{"version":11}""")))
+    }
+
+    @Test fun checksumSurvivesRoundTripWithIntegralDoubleValues() {
+        // Regression: buildLocalBackup stores the speech rate as a Double (default
+        // 1.0). org.json serialises an integral double as "1", so the re-parsed
+        // payload holds an integer; the checksum must still verify, otherwise the
+        // app rejects its own backups as corrupt.
+        val root = JSONObject()
+            .put("format", "nestro-local-backup")
+            .put("version", LocalBackupCompatibility.CURRENT_VERSION)
+            .put("tts_speech_rate", 1.0)
+            .put("confidence", 0.9)
+        root.put("checksum_sha256", LocalBackupCompatibility.sha256(LocalBackupCompatibility.canonicalJson(root)))
+        val reparsed = JSONObject(root.toString(2))
+        assertTrue(LocalBackupCompatibility.verifyChecksum(reparsed))
+        reparsed.put("tts_speech_rate", 1.1)
+        assertFalse(LocalBackupCompatibility.verifyChecksum(reparsed))
     }
 }

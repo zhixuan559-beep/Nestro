@@ -1,0 +1,128 @@
+package app.nestro.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URL
+import java.security.KeyFactory
+import java.security.MessageDigest
+import java.security.Signature
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
+
+data class SignedSkillRelease(
+    val name: String,
+    val version: String,
+    val description: String,
+    val bundleUrl: String,
+    val sha256: String,
+    val signerFingerprint: String = ""
+)
+
+/** Read-only community catalog. A user-pinned RSA key authenticates the catalog;
+ * the signed SHA-256 authenticates each downloaded bundle. This class never installs or grants permissions. */
+object SkillCommunityClient {
+    private const val MAX_CATALOG_BYTES = 512 * 1024
+    private const val MAX_BUNDLE_BYTES = 64 * 1024
+
+    fun verifyCatalogEnvelope(rawEnvelope: String, trustedPublicKeyBase64: String): List<SignedSkillRelease> {
+        require(rawEnvelope.toByteArray(Charsets.UTF_8).size in 1..MAX_CATALOG_BYTES) { "目录数据为空或超过 512 KB" }
+        val envelope = JSONObject(rawEnvelope)
+        val decoder = Base64.getDecoder()
+        val payload = decoder.decode(envelope.getString("payload"))
+        val signatureBytes = decoder.decode(envelope.getString("signature"))
+        require(payload.isNotEmpty() && payload.size <= MAX_CATALOG_BYTES) { "目录数据为空或超过 512 KB" }
+        val keyBytes = decoder.decode(trustedPublicKeyBase64.filterNot(Char::isWhitespace))
+        require(keyBytes.isNotEmpty() && keyBytes.size <= 8192) { "受信任公钥格式无效" }
+        val publicKey = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(keyBytes))
+        val verifier = Signature.getInstance("SHA256withRSA")
+        verifier.initVerify(publicKey)
+        verifier.update(payload)
+        require(verifier.verify(signatureBytes)) { "社区目录签名验证失败，已拒绝加载" }
+
+        val root = JSONObject(payload.toString(Charsets.UTF_8))
+        require(root.optInt("schema") == 1) { "不支持的社区目录格式" }
+        val rows = root.optJSONArray("releases") ?: JSONArray()
+        require(rows.length() <= 200) { "社区目录条目超过 200 项" }
+        val signerFingerprint = MessageDigest.getInstance("SHA-256").digest(keyBytes).joinToString("") { "%02x".format(it) }
+        val seen = mutableSetOf<String>()
+        return (0 until rows.length()).map { index ->
+            val row = rows.getJSONObject(index)
+            val name = row.optString("name").trim()
+            val version = row.optString("version").trim()
+            val description = row.optString("description").trim()
+            val bundleUrl = row.optString("bundle_url").trim()
+            val hash = row.optString("sha256").lowercase()
+            require(name.isNotBlank() && name.length <= 40) { "社区技能名称无效" }
+            require(runCatching { SkillSemVer.compare(version, version) }.isSuccess) { "社区技能版本无效（需要 SemVer 2.0）" }
+            require(description.length <= 300) { "社区技能描述过长" }
+            require(hash.matches(Regex("[a-f0-9]{64}"))) { "社区技能 SHA-256 无效" }
+            val bundleUri = runCatching { URI(bundleUrl) }.getOrNull()
+            require(bundleUri?.scheme.equals("https", ignoreCase = true) && !bundleUri?.host.isNullOrBlank() && bundleUri?.userInfo == null &&
+                bundleUri?.rawFragment == null && bundleUri?.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) {
+                "技能包必须使用不含凭据/片段/路径回退的 HTTPS 地址"
+            }
+            require(seen.add("$name@$version")) { "社区目录存在重复版本" }
+            SignedSkillRelease(name, version, description, bundleUrl, hash, signerFingerprint)
+        }
+    }
+
+    fun fetchCatalog(catalogUrl: String, trustedPublicKeyBase64: String): List<SignedSkillRelease> =
+        verifyCatalogEnvelope(requestHttps(catalogUrl, MAX_CATALOG_BYTES).toString(Charsets.UTF_8), trustedPublicKeyBase64)
+
+    fun downloadVerifiedBundle(release: SignedSkillRelease): SkillBundle {
+        require(release.bundleUrl.startsWith("https://", ignoreCase = true)) { "技能包必须使用 HTTPS" }
+        return verifyBundleBytes(release, requestHttps(release.bundleUrl, MAX_BUNDLE_BYTES))
+    }
+
+    fun verifyBundleBytes(release: SignedSkillRelease, bytes: ByteArray): SkillBundle {
+        require(bytes.isNotEmpty() && bytes.size <= MAX_BUNDLE_BYTES) { "技能包为空或超过大小限制" }
+        val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        require(actual == release.sha256) { "技能包 SHA-256 不匹配，已拒绝导入" }
+        val bundle = SkillBundleParser.parse(bytes.toString(Charsets.UTF_8), release.name)
+        require(bundle.name == release.name && bundle.version == release.version) { "技能包名称或版本与已签名目录不一致" }
+        return bundle.copy(description = release.description.ifBlank { bundle.description }, source = "已验证签名社区目录", signerFingerprint = release.signerFingerprint)
+    }
+
+    /** Returns true only when candidate has a strictly higher semantic version. */
+    fun isNewerVersion(candidate: String, installed: String): Boolean = SkillSemVer.compare(candidate, installed) > 0
+
+    fun fingerprint(trustedPublicKeyBase64: String): String {
+        val keyBytes = Base64.getDecoder().decode(trustedPublicKeyBase64.filterNot(Char::isWhitespace))
+        return MessageDigest.getInstance("SHA-256").digest(keyBytes).joinToString(":") { "%02X".format(it) }
+    }
+
+    private fun requestHttps(address: String, maxBytes: Int): ByteArray {
+        require(address.length <= 2048) { "远程地址过长" }
+        val uri = runCatching { URI(address) }.getOrNull() ?: error("远程地址格式无效")
+        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null) { "仅允许不包含 URL 凭据的 HTTPS 地址" }
+        require(uri.rawFragment == null && uri.rawPath.orEmpty().split('/').none { it == "." || it == ".." }) { "远程地址包含不允许的片段或路径回退" }
+        val connection = URL(uri.toASCIIString()).openConnection() as? HttpURLConnection ?: error("无法建立 HTTPS 连接")
+        try {
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 12_000
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/json, application/octet-stream")
+            val status = connection.responseCode
+            require(status in 200..299) { "远程服务器返回 HTTP $status" }
+            val declaredLength = connection.contentLengthLong
+            require(declaredLength < 0 || declaredLength <= maxBytes) { "远程文件超过大小限制" }
+            val output = ByteArrayOutputStream()
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    require(output.size() + count <= maxBytes) { "远程文件超过大小限制" }
+                    output.write(buffer, 0, count)
+                }
+            }
+            return output.toByteArray()
+        } finally {
+            connection.disconnect()
+        }
+    }
+}

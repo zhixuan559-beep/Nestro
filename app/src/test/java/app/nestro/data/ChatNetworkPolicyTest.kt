@@ -1,25 +1,37 @@
 package app.nestro.data
 
-import kotlinx.coroutines.CancellationException
-import org.junit.Assert.*
-import org.junit.Test
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class ChatNetworkPolicyTest {
-    @Test fun retryUsesBoundedBackoffAndStopsAfterMaxAttempts() {
-        assertEquals(800L, ChatNetworkPolicy.retryPlan(IOException("timeout"), 0)?.delayMs)
-        assertEquals(1600L, ChatNetworkPolicy.retryPlan(IOException("timeout"), 1)?.delayMs)
-        assertNull(ChatNetworkPolicy.retryPlan(IOException("timeout"), 2))
+    @Test
+    fun usesBoundedTimeoutDefaults() {
+        val policy = ChatNetworkPolicy.timeoutPolicy()
+        assertTrue(policy.connectMs in 1_000L..120_000L)
+        assertTrue(policy.readMs in 1_000L..300_000L)
+        assertTrue(policy.callMs >= policy.readMs)
     }
 
-    @Test fun cancellationNeverRetries() {
-        assertNull(ChatNetworkPolicy.retryPlan(CancellationException("cancel"), 0))
-        assertEquals("cancelled", ChatNetworkPolicy.classify(CancellationException("cancel")))
+    @Test
+    fun retryPlanUsesBoundedExponentialBackoff() {
+        assertEquals(ChatRetryPlan(1, 2, 800), ChatNetworkPolicy.retryPlan(IOException("connection reset"), 0))
+        assertEquals(ChatRetryPlan(2, 2, 1_600), ChatNetworkPolicy.retryPlan(IOException("connection reset"), 1))
+        assertNull(ChatNetworkPolicy.retryPlan(IOException("connection reset"), 2))
+        assertNull(ChatNetworkPolicy.retryPlan(IOException("connection reset"), -1))
+        assertNull(ChatNetworkPolicy.retryPlan(CancellationException("cancelled"), 0))
     }
 
-    @Test fun classifiesHttpFailures() {
+    @Test
+    fun classifiesNetworkFailuresWithoutRetryingPermanentErrors() {
         assertEquals("auth", ChatNetworkPolicy.classify(IllegalStateException("HTTP 401")))
         assertEquals("rate_limited", ChatNetworkPolicy.classify(IllegalStateException("HTTP 429")))
         assertEquals("server", ChatNetworkPolicy.classify(IllegalStateException("HTTP 503")))
+        assertEquals("transport", ChatNetworkPolicy.classify(IOException("socket timeout")))
+        assertEquals("cancelled", ChatNetworkPolicy.classify(CancellationException("cancelled")))
+        assertEquals("unknown", ChatNetworkPolicy.classify(IllegalStateException("bad request")))
     }
 }

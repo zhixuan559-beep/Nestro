@@ -1,0 +1,7 @@
+scrcpy
+Copyright (C) 2018 Genymobile
+Copyright (C) 2018-2026 Romain Vimont
+
+Portions of app/src/main/java/app/nestro/phone/virtualdisplay/mika/MikaShellContext.kt are adapted from scrcpy (https://github.com/Genymobile/scrcpy).
+
+The Nestro adaptation is identified in the source file. Licensed under the Apache License, Version 2.0; see LICENSE-SCRCPY-APACHE-2.0.txt.

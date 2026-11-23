@@ -12,7 +12,8 @@ data class SkillBundle(
     val prompt: String,
     val source: String,
     val permissions: List<String>,
-    val dependencies: List<SkillDependency>
+    val dependencies: List<SkillDependency>,
+    val signerFingerprint: String = ""
 )
 
 object SkillBundleParser {
@@ -37,7 +38,7 @@ object SkillBundleParser {
         val prompt = json.optString("prompt").trim()
         val source = json.optString("source", safeSource).take(200)
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
-        require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "技能版本必须使用语义版本格式" }
+        require(runCatching { SkillSemVer.compare(version, version) }.isSuccess) { "技能版本必须使用严格 SemVer 2.0 格式" }
         require(description.length <= 300) { "技能描述过长" }
         require(prompt.length in 1..8000) { "技能指令长度必须为 1 到 8000 个字符" }
 
@@ -53,8 +54,12 @@ object SkillBundleParser {
             val dependencyName = item.optString("name").trim()
             val dependencyVersion = item.optString("version", "*").trim()
             require(dependencyName.isNotBlank() && dependencyName.length <= 80 && dependencyVersion.length <= 40) { "技能依赖格式无效" }
+            val alternatives = dependencyVersion.split("||")
+            require(dependencyVersion == "*" || (alternatives.isNotEmpty() && alternatives.all { alternative -> alternative.isNotBlank() && alternative.trim().split(Regex("[ ,]+")).filter { it.isNotBlank() }.all { term -> runCatching { SkillSemVer.matches("1.0.0", term) }.isSuccess } })) { "技能依赖版本必须使用有效 SemVer 2.0 范围或 *" }
             SkillDependency(dependencyName, dependencyVersion)
         }
+        require(dependencies.map { it.name }.distinct().size == dependencies.size) { "技能依赖不能重复" }
+        require(dependencies.none { it.name == name }) { "技能不能依赖自身" }
         return SkillBundle(name, version, description, prompt, source, permissions, dependencies)
     }
 
@@ -63,6 +68,7 @@ object SkillBundleParser {
             .put("version", bundle.version)
             .put("description", bundle.description)
             .put("source", bundle.source)
+            .put("signerFingerprint", bundle.signerFingerprint)
             .put("permissions", JSONArray(bundle.permissions))
             .put("dependencies", JSONArray().apply {
                 bundle.dependencies.forEach { put(JSONObject().put("name", it.name).put("version", it.version)) }
@@ -78,7 +84,7 @@ object SkillBundleParser {
             .put("version", metadata.optString("version", "1.0.0"))
             .put("description", metadata.optString("description", ""))
             .put("prompt", prompt)
-            .put("source", metadata.optString("source", "Nestro 本地技能"))
+            .put("source", metadata.optString("source", "Nost 本地技能"))
             .put("permissions", metadata.optJSONArray("permissions") ?: JSONArray())
             .put("dependencies", metadata.optJSONArray("dependencies") ?: JSONArray())
             .toString(2)

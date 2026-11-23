@@ -52,6 +52,98 @@ class PhoneAgentActionParserTest {
     }
 
     @Test
+    fun webSearchBecomesEncodedHttpsSearchUrl() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"成都 咖啡 到手价"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://html.duckduckgo.com/html/?q="))
+        assertTrue(action.url.contains("%"))
+    }
+
+    @Test
+    fun searchWebCanUseAlternatePublicSearchEngines() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"coffee delivery fees","engine":"google"}]}"""
+        )
+        val action = plan.actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://www.google.com/search?q="))
+    }
+
+    @Test
+    fun rejectsUnknownSearchEngine() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":false,"actions":[{"type":"search_web","query":"coffee","engine":"unknown"}]}"""
+            )
+            fail("unknown search engine must be rejected")
+        } catch (_: IllegalStateException) {
+        }
+    }
+
+    @Test
+    fun sensitiveSearchTermsAndFieldLabelsBecomeUserHandoff() {
+        val search = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"search_web","query":"phone number: +1 202 555 0123"}]}"""
+        )
+        val field = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"enter_text","label":"test@example.com","value":"ordinary"}]}"""
+        )
+        assertTrue(search.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+        assertTrue(field.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun sensitivePostClickEvidenceBecomesUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click","text":"继续","expectedAfter":"test@example.com"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
+    fun completedPlanCannotAlsoRequestNewActions() {
+        try {
+            PhoneAgentActionParser.parse(
+                """{"done":true,"completionEvidence":"已完成","actions":[{"type":"wait","millis":1}]}"""
+            )
+            fail("a completed plan must not include executable actions")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun rejectsMissingOrWrongTypedActionEnvelope() {
+        listOf(
+            """{"done":false}""",
+            """{"done":"false","actions":[]}""",
+            """{"done":false,"actions":"wait"}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid action envelope should be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test
+    fun publicMediaDownloadIsParsedForProjectImport() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"download_asset","url":"https://cdn.example.com/night-city.mp4","name":"night-city.mp4","source_url":"https://example.com/license-page","license":"CC BY 4.0"}]}"""
+        ).actions.single()
+        assertEquals(PhoneAgentExecutor.Action.DownloadAsset("https://cdn.example.com/night-city.mp4", "night-city.mp4", "https://example.com/license-page", "CC BY 4.0"), action)
+    }
+
+    @Test
+    fun mediaDownloadWithCredentialUrlIsHandedBackToUser() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"download_asset","url":"https://cdn.example.com/night-city.mp4?access_token=secret","name":"night-city.mp4","source_url":"https://example.com/license-page","license":"CC BY 4.0"}]}"""
+        ).actions.single()
+        assertTrue(action is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
+    @Test
     fun safeWaitActionIsParsed() {
         val plan = PhoneAgentActionParser.parse(
             """{"done":false,"actions":[{"type":"wait","millis":500}]}"""
@@ -93,4 +185,29 @@ class PhoneAgentActionParserTest {
         } catch (_: RuntimeException) {
         }
     }
+    @Test
+    fun navigationActionBuildsEncodedGoogleMapsDirectionsUrl() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"open_navigation","origin":"成都天府广场","destination":"成都东站","mode":"driving"}]}"""
+        ).actions.single() as PhoneAgentExecutor.Action.OpenUrl
+        assertTrue(action.url.startsWith("https://www.google.com/maps/dir/?api=1&destination="))
+        assertTrue(action.url.contains("origin="))
+        assertTrue(action.url.endsWith("&travelmode=driving"))
+        assertTrue(action.url.contains("%"))
+    }
+
+    @Test
+    fun navigationActionRejectsUnsupportedModeAndEmptyDestination() {
+        listOf(
+            """{"done":false,"actions":[{"type":"open_navigation","destination":"成都东站","mode":"flying"}]}""",
+            """{"done":false,"actions":[{"type":"open_navigation","destination":"","mode":"walking"}]}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid navigation request must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
 }

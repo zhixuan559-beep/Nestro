@@ -57,7 +57,7 @@ object ExpertBundleParser {
             .put("version", profile.version)
             .put("description", description.ifBlank { profile.description })
             .put("prompt", prompt)
-            .put("source", profile.source.ifBlank { "Nestro 本地专家" })
+            .put("source", profile.source.ifBlank { "Nost 本地专家" })
             .put("group", profile.group)
             .put("avatar", profile.avatar)
             .put("enabled", profile.enabled)

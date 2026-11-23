@@ -42,4 +42,59 @@ class ModelProfileCatalogTest {
         assertEquals(200L, stats.lastUsedAt)
         assertEquals(second, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(second)))
     }
+
+
+    @Test fun recordsEstimatedTokenCountsWithoutTreatingThemAsCharacters() {
+        val stats = ModelUsageStatsCodec.recordEstimatedTokens(emptyMap(), "a", 123, 45, 300L)
+            .getValue("a")
+        assertEquals(123L, stats.estimatedInputTokens)
+        assertEquals(45L, stats.estimatedOutputTokens)
+        assertEquals(1L, stats.estimatedUsageRequests)
+    }
+
+    @Test fun recordsProviderReportedUsageSeparatelyFromEstimates() {
+        val estimated = ModelUsageStatsCodec.record(emptyMap(), "a", 40, 20, 100L)
+        val mixed = ModelUsageStatsCodec.recordProviderUsage(estimated, "a", 11, 7, 200L)
+        val value = mixed.getValue("a")
+        assertEquals(2L, value.requests)
+        assertEquals(10L, value.estimatedInputTokens)
+        assertEquals(5L, value.estimatedOutputTokens)
+        assertEquals(11L, value.providerInputTokens)
+        assertEquals(7L, value.providerOutputTokens)
+        assertEquals(1L, value.providerUsageRequests)
+        assertEquals(1L, value.estimatedUsageRequests)
+        assertEquals(mixed, ModelUsageStatsCodec.decode(ModelUsageStatsCodec.encode(mixed)))
+    }
+
+    @Test fun decodesLegacyUsageAsEstimatedOnly() {
+        val decoded = ModelUsageStatsCodec.decode("""{"a":{"requests":3,"input_tokens":12,"output_tokens":8,"last_used_at":99}}""")
+        val value = decoded.getValue("a")
+        assertEquals(12L, value.estimatedInputTokens)
+        assertEquals(8L, value.estimatedOutputTokens)
+        assertEquals(0L, value.providerInputTokens)
+        assertEquals(0L, value.providerUsageRequests)
+    }
+    @Test fun removingProfileAndSelectingActiveModelNeverLeavesStaleId() {
+        val profiles = listOf(profile(), profile("b", "备用模型").copy(model = "other-model"))
+        val remaining = ModelProfileCatalogCodec.removeProfile(profiles, "a")
+        assertEquals(listOf("b"), remaining.map { it.id })
+        assertEquals("b", ModelProfileCatalogCodec.setActiveProfileId(remaining, "a"))
+        assertEquals(null, ModelProfileCatalogCodec.setActiveProfileId(emptyList(), "a"))
+    }
+
+    @Test fun lifecycleHidesDisabledAndCanRemoveProfiles() {
+        val a = profile("a","A")
+        val b = profile("b","B").copy(enabled = false)
+        assertEquals(listOf("A"), ModelProfileLifecycle.selectable(listOf(a,b)).map { it.name })
+        assertEquals(listOf("a"), ModelProfileLifecycle.remove(listOf(a,b),"b").map { it.id })
+        assertTrue(ModelProfileLifecycle.enable(listOf(b),"b").single().enabled)
+    }
+
+    @Test fun disabledStateRoundTrips() {
+        val disabled = profile("x","Disabled").copy(enabled = false)
+        val decoded = ModelProfileCatalogCodec.decode(ModelProfileCatalogCodec.encode(listOf(disabled)))
+        assertFalse(decoded.single().enabled)
+        assertTrue(ModelProfileLifecycle.selectable(decoded).isEmpty())
+    }
+
 }

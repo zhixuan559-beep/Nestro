@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +34,18 @@ class KnowledgeChunkerTest {
     }
 
     @Test
+    fun reassemblesOverlappingChunksWithoutDuplicatingText() {
+        val source = "知识库内容。".repeat(700)
+        assertEquals(source, KnowledgeChunker.reassemble(KnowledgeChunker.split(source)))
+    }
+    @Test
+    fun neverSplitsUtf16SurrogatePairs() {
+        val source = "a".repeat(999) + "😀" + "b".repeat(1_500)
+        val chunks = KnowledgeChunker.split(source)
+        assertEquals(source, KnowledgeChunker.reassemble(chunks))
+        assertTrue(chunks.all { chunk -> chunk.zipWithNext().none { (left, right) -> left.isHighSurrogate() && !right.isLowSurrogate() } })
+    }
+    @Test
     fun refusesToSilentlyTruncateWhenChunkLimitIsReached() {
         val source = "x".repeat(5_000)
         val failure = runCatching {
@@ -45,5 +58,14 @@ class KnowledgeChunkerTest {
     @Test
     fun rejectsInvalidChunkConfiguration() {
         assertTrue(runCatching { KnowledgeChunker.split("abc", chunkSize = 10, overlap = 10) }.isFailure)
+    }
+
+    @Test fun chunkLengthNeverExceedsLimitAtSurrogateBoundary() {
+        val source = "a".repeat(9) + "😀" + "b".repeat(20)
+        val chunks = KnowledgeChunker.split(source, chunkSize = 10, overlap = 2)
+        assertTrue(chunks.all { it.length <= 10 })
+        assertFalse(chunks.any { it.lastOrNull()?.isHighSurrogate() == true })
+        assertFalse(chunks.any { it.firstOrNull()?.isLowSurrogate() == true })
+        assertEquals(source, KnowledgeChunker.reassemble(chunks, maxOverlap = 2))
     }
 }

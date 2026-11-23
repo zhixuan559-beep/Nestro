@@ -26,6 +26,27 @@ class ExpertTeamEngineTest {
         assertEquals(3,events.count { it.second=="success" })
     }
 
+    @Test fun manualAssignmentsGiveEachExpertItsOwnWorkPackage() = runBlocking {
+        val assigned = listOf(
+            members[0].copy(assignedTask = "只负责市场规模与证据"),
+            members[1].copy(assignedTask = "只负责风险与反例")
+        )
+        val prompts = mutableMapOf<String, String>()
+        val result = ExpertTeamEngine.run(
+            teamName = "项目组",
+            teamDescription = "独立分工",
+            task = "完成项目研究",
+            members = assigned
+        ) { member, prompt ->
+            prompts[member.name] = prompt
+            "已完成"
+        }
+        assertEquals(2, result.successfulMembers)
+        assertTrue(prompts.getValue("研究员").contains("只负责市场规模与证据"))
+        assertTrue(prompts.getValue("审校员").contains("只负责风险与反例"))
+        assertFalse(prompts.getValue("研究员").contains("只负责风险与反例"))
+    }
+
     @Test fun isolatesMemberFailureAndKeepsPartialResults()=runBlocking {
         val result=ExpertTeamEngine.run("分析组","分工明确","分析问题",members,maxRetries=0) { member,_ ->
             if(member.name=="审校员") error("模拟接口错误")
@@ -96,4 +117,79 @@ class ExpertTeamEngineTest {
         assertEquals(record,decoded.single())
         assertEquals(30,ExpertTeamRunHistoryCodec.decode(ExpertTeamRunHistoryCodec.encode(List(35){record})).size)
     }
+
+    @Test fun collaborativeRunInvokesOnlyDelegatedExperts() = runBlocking {
+        val calls = mutableListOf<String>()
+        val result = ExpertTeamEngine.runCollaborative(
+            teamName = "分析组",
+            teamDescription = "按需协作",
+            task = "研究这个问题",
+            members = members,
+            maxDelegations = 2,
+            onMember = { _, _ -> }
+        ) { member, prompt ->
+            calls += member.name
+            if (member.name == "研究员") {
+                assertTrue(prompt.contains("[[DELEGATE:"))
+                "初步研究结论 [[DELEGATE:审校员 | 检查研究结论中的逻辑漏洞]]"
+            } else {
+                assertTrue(prompt.contains("研究员交接"))
+                "审校完成"
+            }
+        }
+        assertEquals(listOf("研究员", "审校员"), calls)
+        assertEquals(2, result.successfulMembers)
+        assertEquals("初步研究结论", result.members.first().output)
+        assertTrue(result.toContext().contains("审校完成"))
+    }
+
+    @Test fun collaborativeRunDoesNotLoadUnusedExperts() = runBlocking {
+        val calls = mutableListOf<String>()
+        val result = ExpertTeamEngine.runCollaborative(
+            teamName = "分析组",
+            teamDescription = "按需协作",
+            task = "研究这个问题",
+            members = members
+        ) { member, _ ->
+            calls += member.name
+            "本专家已完成"
+        }
+        assertEquals(1, calls.size)
+        assertEquals(1, result.successfulMembers)
+    }
+    @Test fun plansPrimaryAndRelevantSecondaryExpertsWithinBound() {
+        val members = listOf(
+            ExpertTeamMemberTask("代码佬", "负责技术开发、接口和软件实现"),
+            ExpertTeamMemberTask("文案官", "负责内容写作与表达"),
+            ExpertTeamMemberTask("选题狐", "负责研究、选题和用户洞察"),
+            ExpertTeamMemberTask("空角色", "")
+        )
+        val plan = ExpertTeamEngine.planInitialTeam("分析安卓接口开发方案", members)
+        assertEquals("代码佬", plan.first().name)
+        assertTrue(plan.size <= 3)
+        assertTrue(plan.none { it.name == "空角色" })
+    }
+
+    @Test fun parallelTeamResumesOnlyUnfinishedMembersAndPersistsEachCompletion() = runBlocking {
+        val saved = mutableListOf<List<ExpertTeamMemberRun>>()
+        val calls = mutableListOf<String>()
+        val result = ExpertTeamEngine.run(
+            teamName = "恢复团队",
+            teamDescription = "独立分工",
+            task = "完成研究",
+            members = members,
+            resumeMembers = listOf(
+                ExpertTeamMemberRun("研究员", "success", 1, 10, output = "研究员已完成")
+            ),
+            onMemberResult = { rows -> synchronized(saved) { saved += rows } }
+        ) { member, _ ->
+            calls += member.name
+            "${member.name}完成"
+        }
+        assertEquals(listOf("审校员", "策略师").toSet(), calls.toSet())
+        assertEquals(3, result.successfulMembers)
+        assertTrue(saved.isNotEmpty())
+        assertTrue(saved.last().any { it.name == "研究员" && it.output == "研究员已完成" })
+    }
+
 }

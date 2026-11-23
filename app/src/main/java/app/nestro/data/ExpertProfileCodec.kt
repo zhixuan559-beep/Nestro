@@ -12,7 +12,7 @@ data class ExpertProfile(
     val maxTokens: Int? = null,
     val description: String = "",
     val version: String = "1.0.0",
-    val source: String = "Nestro 本地专家"
+    val source: String = "Nost 本地专家"
 )
 
 object ExpertProfileCodec {
@@ -67,10 +67,16 @@ object ExpertProfileCodec {
         return null
     }
 
-    fun skillContext(profile: ExpertProfile?, skills: Map<String, String>, disabledSkills: Set<String>): String {
+    fun skillContext(
+        profile: ExpertProfile?,
+        skills: Map<String, String>,
+        disabledSkills: Set<String>,
+        skillMetadata: Map<String, String> = emptyMap()
+    ): String {
         val activeProfile = profile?.takeIf { it.enabled } ?: return ""
-        return activeProfile.skillNames.filter { it !in disabledSkills }.mapNotNull { name ->
-            skills[name]?.takeIf { it.isNotBlank() }?.let { "专家挂载技能「$name」：\n$it" }
+        val runnableSkills = SkillDependencyResolver.filterSatisfiedSkills(skills, skillMetadata, disabledSkills)
+        return activeProfile.skillNames.mapNotNull { name ->
+            runnableSkills[name]?.takeIf { it.isNotBlank() }?.let { "专家挂载技能「$name」：\n$it" }
         }.joinToString("\n\n")
     }
 }
