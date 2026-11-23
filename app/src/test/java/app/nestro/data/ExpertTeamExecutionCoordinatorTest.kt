@@ -17,6 +17,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ExpertTeamExecutionCoordinatorTest {
     @Test
@@ -284,5 +285,72 @@ class ExpertTeamExecutionCoordinatorTest {
         assertEquals(AgentTaskStatus.COMPLETED, tasks.state("lead-handoff-resume-task")?.status)
         tasks.close()
     }
+
+    @Test
+    fun projectPlanPausesAtCompletedWaveAndContinuesFromCheckpoint() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val tasks = AgentTaskCoordinator(states, AgentTaskHandlerRegistry(), this)
+        val service = ExpertTeamExecutionCoordinator(tasks)
+        val plan = ExpertProjectPlan(
+            projectGoal = "完成项目研究",
+            packages = listOf(
+                ExpertWorkPackage("research", "研究员", "完成研究", acceptanceCriteria = "研究成果"),
+                ExpertWorkPackage("summary", "策略师", "汇总研究", listOf("research"), "汇总成果")
+            ),
+            finalAcceptanceCriteria = "研究与汇总均完成"
+        )
+        val members = mapOf(
+            "研究员" to ExpertTeamMemberTask("研究员", "负责研究"),
+            "策略师" to ExpertTeamMemberTask("策略师", "负责汇总")
+        )
+        val pauseRequested = AtomicBoolean(false)
+        val pauseReached = CompletableDeferred<Unit>()
+        val resumeGate = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        var result: ExpertProjectExecutionResult? = null
+
+        try {
+            val running = launch {
+                result = service.executeProjectPlan(
+                    teamId = "team-safe-pause",
+                    teamName = "安全暂停团队",
+                    teamDescription = "按依赖顺序执行",
+                    plan = plan,
+                    members = members,
+                    projectId = "project-safe-pause",
+                    taskId = "expert-project-safe-pause",
+                    shouldPause = { pauseRequested.get() },
+                    awaitResume = {
+                        pauseReached.complete(Unit)
+                        resumeGate.await()
+                    },
+                    invokeMember = { member, _ ->
+                        calls += member.name
+                        if (member.name == "研究员") {
+                            pauseRequested.set(true)
+                            "研究成果"
+                        } else {
+                            "汇总成果"
+                        }
+                    }
+                )
+            }
+
+            withTimeout(2_000) { pauseReached.await() }
+            assertEquals(AgentTaskStatus.PAUSED, tasks.state("expert-project-safe-pause")?.status)
+            assertEquals(listOf("研究员"), calls)
+
+            pauseRequested.set(false)
+            resumeGate.complete(Unit)
+            withTimeout(2_000) { running.join() }
+
+            assertTrue(result?.isSuccessful == true)
+            assertEquals(listOf("研究员", "策略师"), calls)
+            assertEquals(AgentTaskStatus.COMPLETED, tasks.state("expert-project-safe-pause")?.status)
+        } finally {
+            tasks.close()
+        }
+    }
+
 
 }
