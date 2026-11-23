@@ -20,7 +20,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 
 | 编号 | 模块 | 当前状态 |
 |---:|---|---|
-| 1 | 专家系统 | 主模型自动组队/DAG、并行依赖、checkpoint、历史分页及会话内批次暂停/继续/停止已有代码；进程重启后的专家任务恢复 UI 尚未接通。当前 NestroApp 只传普通 invokeMember 模型调用，没有传 invokeMemberWithTools，专家工作包的工具感知调用链未接通；可编辑 DAG、失败包返工、结构化验收/返工协议仍缺。 |
+| 1 | 专家系统 | 主模型自动组队/DAG、并行依赖、checkpoint、历史分页及会话内批次暂停/继续/停止已有代码；工具感知调用回调已接通，专家成员默认只获得共享目录中无需确认的只读工具，外部写入/设备操作仍由主模型统一调度；进程重启后的专家任务恢复 UI 尚未接通。可编辑 DAG、失败包返工、结构化验收/返工协议仍缺。 |
 | 2 | 模型管理 | 服务商生态与魔搭 OAuth 代码链路已补齐；待部署 OAuth 服务、注册第三方应用并确认 OAuth Token 的推理权限；未验收、未锁定 |
 | 3 | 聊天系统 | 主模型原生工具调用、流式聊天、上下文组装、会话记忆召回、请求取消/恢复已接入；聊天输入新增图片/音频/视频多选导入，素材复制到当前项目并把 asset_id 附加到草稿，主模型通过 media.ai.run/status 调用专业模型；ChatMessage/Provider 仍未使用原生多模态消息 part，模型动态 context-window 预算也未完成 |
 | 4 | 数据与备份 | Room 持久化、迁移、版本化 JSON 备份/恢复和项目包代码存在；媒体工程 ZIP 当前独立于通用备份；记忆跨项目共享字段已补 13→14 迁移与完整备份往返测试源码，尚待执行验证 |
@@ -35,7 +35,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 13 | MCP 工具中心 | 远程 HTTPS Streamable HTTP、工具发现/schema 校验、逐工具持久授权、撤销/取消和审计代码已纳入整合分支；持久 MCP 授权与任务级一次/当前任务全部授权语义需统一，测试未执行 |
 | 14 | GitHub 工作台 | 最新实现已纳入 integration/19-modules：本地仓库索引并发串行化、删除仓库隔离目录与中断恢复、凭据回滚验证、Push 结果核验；路径、服务商 URL、分支名、账号名回归测试已补充。统一编译/JVM/仪器测试/模拟器/真机验收待执行 |
 | 15 | AI 共建工作台 | 功能源码与主要回归测试已进入 integration/19-modules；已补齐导航/聊天回流、SBOM 脚本及缺失测试源码；统一编译、测试与真实 Actions 验证待执行 |
-| 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已有代码；CapabilityDirectoryPage 已接入路由，具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤已有逐步骤审批与 checkpoint。仍缺专家/工作流的工具感知模型适配器接线；专家任务未传项目/会话元数据，工作流任务也未传项目/会话元数据；统一重试/幂等安全策略与完整任务总览仍需补齐。 |
+| 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已接通；CapabilityDirectoryPage 具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤有逐步骤审批与 checkpoint；专家成员默认获得只读工具租约，工作流步骤默认只读、显式开启并通过步骤审批后可发现完整工具目录，实际调用仍走工具级授权/审批。专家与工作流任务均传递项目/会话元数据。仍缺专家级副作用工具 allowlist、统一任务总览 UI，以及完整重试/幂等和进程恢复验收。 |
 | 17 | 智能剪辑 | feature/module-17-smart-editing 的代码历史已包含在 integration/19-modules；尚未编译、测试及设备验收，未锁定 |
 | 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口显式关闭 expertTeamEnabled，且没有 workflow.run 工具，不能直接分派专家 DAG/工作流。 |
 | 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页可多选图片/音频/视频并导入当前项目素材库，由主模型按 asset_id 调度专业模型；ChatMessage 原生多模态 part 尚未实现，视频场景分析不等于通用视频问答，非语音音频理解与图像生成仍缺；真实 API/信任根配置与统一验收待完成 |
