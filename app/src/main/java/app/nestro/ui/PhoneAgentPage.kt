@@ -380,7 +380,7 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
     }
     virtualSession?.let { PhoneAgentFloatingPreview(it) }
 }
-
+}
 
 internal fun clampPhoneAgentPreviewOffset(offset: Offset, maxLeft: Float, maxTop: Float): Offset =
     Offset(
@@ -516,5 +516,4 @@ private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.m
             }
         }
     }
-}
 }
