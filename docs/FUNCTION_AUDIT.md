@@ -1283,3 +1283,6 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 协调器捕获停止取消并将任务状态持久化为 `CANCELLED`；UI finally 释放暂停门闩，避免残留挂起。
 - 相关补丁：`31ba2a975c1e714ef763facd169ef9c670e025f4`、`01bd3c46a5d547eaad4b17b7e35aad8deb85965a`、`c5790b421cb695d62b9a0050a942b160b868096f`、`7e0d3683557fc84644701eeb5991d1e03ff477a9`、`4b26d25af3cad1c8b99d5be19151b842783241d3`。
 - 仍未执行编译或测试；跨进程恢复入口仍是独立遗留。
+
+
+- 增加 `ExpertTeamExecutionCoordinatorTest.projectPlanPausesAtCompletedWaveAndContinuesFromCheckpoint` 集成测试源码：验证第一批工作包完成后状态进入 PAUSED，用户恢复后只执行后续依赖包，最终状态进入 COMPLETED。提交：`3a02646778fcb0135bdb866ca5ebb5f62950cfe2`。该测试仍未执行。
