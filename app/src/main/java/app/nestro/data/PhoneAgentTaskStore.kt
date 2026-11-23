@@ -36,16 +36,6 @@ object PhoneAgentTaskStore {
         return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
     }
 
-    fun stopStatusAfterAction(actionSucceeded: Boolean): String =
-        if (actionSucceeded) STATUS_PAUSED else STATUS_INTERRUPTED
-
-    fun stopStepAfterAction(currentStep: Int, actionSucceeded: Boolean): Int =
-        if (actionSucceeded) currentStep + 1 else currentStep
-
-    fun userPauseStatus(currentStatus: String, hasAmbiguousAction: Boolean): String {
-        if (currentStatus in setOf(STATUS_COMPLETED, STATUS_CANCELLED, STATUS_FAILED, STATUS_WAITING_USER)) return currentStatus
-        return if (hasAmbiguousAction) STATUS_INTERRUPTED else STATUS_PAUSED
-    }
 
     suspend fun create(dao: NestroDao, projectId: String, conversationId: String, plan: PhoneAgentPlanner.Plan): PhoneAgentTaskEntity {
         require(plan.goal.isNotBlank() && plan.goal.length <= 2_000) { "任务目标为空或超出长度限制" }
