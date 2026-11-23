@@ -2,6 +2,8 @@ package app.nestro.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 data class SkillDependency(val name: String, val version: String)
 
@@ -17,12 +19,28 @@ data class SkillBundle(
 )
 
 object SkillBundleParser {
+    private const val MAX_BUNDLE_BYTES = 30_000
+
+    /** Reads an imported skill file with a byte cap before allocating the complete payload. */
+    fun readUtf8Bounded(input: InputStream, maxBytes: Int = MAX_BUNDLE_BYTES): String {
+        require(maxBytes in 1..MAX_BUNDLE_BYTES) { "技能文件读取上限无效" }
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8_192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            require(output.size() <= maxBytes - count) { "技能文件超过 30 KB，已停止读取" }
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray().toString(Charsets.UTF_8)
+    }
     private val allowedPermissions = setOf(
         "network_read", "phone_accessibility", "file_read", "file_write", "mcp_call"
     )
 
     fun parse(raw: String, sourceLabel: String): SkillBundle {
-        require(raw.isNotBlank() && raw.toByteArray(Charsets.UTF_8).size <= 30_000) { "技能文件为空或超过 30 KB" }
+        require(raw.isNotBlank() && raw.toByteArray(Charsets.UTF_8).size <= MAX_BUNDLE_BYTES) { "技能文件为空或超过 30 KB" }
         val safeSource = sourceLabel.substringAfterLast('/').take(120).ifBlank { "本地文件" }
         if (!raw.trimStart().startsWith("{")) {
             val name = safeSource.substringBeforeLast('.').replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().take(40)
@@ -78,7 +96,7 @@ object SkillBundleParser {
     fun fromStored(name: String, prompt: String, metadataRaw: String?): SkillBundle {
         require(name.isNotBlank() && name.length <= 40) { "技能名称无效" }
         require(prompt.isNotBlank() && prompt.length <= 8_000) { "技能指令为空或过长" }
-        require(metadataRaw == null || metadataRaw.toByteArray(Charsets.UTF_8).size <= 30_000) {
+        require(metadataRaw == null || metadataRaw.toByteArray(Charsets.UTF_8).size <= MAX_BUNDLE_BYTES) {
             "技能元数据超过 30 KB"
         }
         val metadata = try {
