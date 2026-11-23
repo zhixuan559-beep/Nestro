@@ -134,7 +134,7 @@ internal fun AgentTaskCenterPage(
             )
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(tasks, key = { it.taskId }) { task ->
