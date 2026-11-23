@@ -142,11 +142,35 @@ object SkillDependencyResolver {
         }
     }
 
-    fun resolve(rootRelease: SignedSkillRelease, catalog: List<SignedSkillRelease>, installedVersions: Map<String, String>, verifiedRootBundle: SkillBundle? = null): InstallPlan {
+    fun resolve(
+        rootRelease: SignedSkillRelease,
+        catalog: List<SignedSkillRelease>,
+        installedVersions: Map<String, String>,
+        verifiedRootBundle: SkillBundle? = null,
+        installedSkills: Map<String, String> = emptyMap(),
+        installedMetadata: Map<String, String> = emptyMap(),
+        disabledSkills: Set<String> = emptySet(),
+        loadVerifiedBundle: (SignedSkillRelease) -> SkillBundle = { SkillCommunityClient.downloadVerifiedBundle(it) }
+    ): InstallPlan {
         val byName = catalog.groupBy { it.name }
         var attempts = 0
-        val rootBundle = verifiedRootBundle ?: SkillCommunityClient.downloadVerifiedBundle(rootRelease)
+        val rootBundle = verifiedRootBundle ?: loadVerifiedBundle(rootRelease)
         require(rootBundle.name == rootRelease.name && rootBundle.version == rootRelease.version && rootBundle.source == "已验证签名社区目录" && rootBundle.signerFingerprint == rootRelease.signerFingerprint) { "根技能与签名目录不一致" }
+        fun ensureReplaceable(release: SignedSkillRelease) {
+            if (release.name !in installedSkills) return
+            val raw = installedMetadata[release.name]
+            val metadata = if (raw.isNullOrBlank()) JSONObject() else runCatching { JSONObject(raw) }
+                .getOrElse { error("已安装技能元数据损坏，拒绝覆盖：${release.name}") }
+            require(metadata.optString("source") == "已验证签名社区目录") {
+                "拒绝用社区技能覆盖本地技能：${release.name}"
+            }
+            val installedVersion = metadata.optString("version", "1.0.0").ifBlank { "1.0.0" }
+            require(runCatching { SkillSemVer.compare(release.version, installedVersion) }.isSuccess &&
+                SkillSemVer.compare(release.version, installedVersion) > 0) {
+                "只允许安装高于已安装版本的社区技能：${release.name}"
+            }
+        }
+        ensureReplaceable(rootRelease)
         val initialConstraints = rootBundle.dependencies.groupBy { it.name }.mapValues { (_, rows) -> rows.map { it.version }.distinct() }
         val initial = State(initialConstraints, mapOf(rootRelease.name to rootRelease), mapOf(rootRelease.name to rootBundle), emptyMap())
 
@@ -180,8 +204,18 @@ object SkillDependencyResolver {
             val ranges = state.constraints[unresolved].orEmpty()
             val installed = installedVersions[unresolved]
             if (installed != null && ranges.all { runCatching { SkillSemVer.matches(installed, it) }.getOrDefault(false) }) {
-                val installedSolution = search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
-                if (installedSolution != null) return installedSolution
+                if (installedSkills.isEmpty() && installedMetadata.isEmpty() && disabledSkills.isEmpty()) {
+                    val installedSolution = search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
+                    if (installedSolution != null) return installedSolution
+                } else if (unresolved in installedSkills) {
+                    require(unresolved !in disabledSkills) { "依赖技能已停用，请先启用：$unresolved" }
+                    val dependencyIssues = inspectInstalledSkill(unresolved, installedSkills, installedMetadata, disabledSkills)
+                    require(dependencyIssues.isEmpty()) {
+                        "已安装依赖的完整依赖链不可用：$unresolved；${dependencyIssues.joinToString("；")}"
+                    }
+                    val installedSolution = search(state.copy(satisfied = state.satisfied + (unresolved to installed)), depth + 1)
+                    if (installedSolution != null) return installedSolution
+                }
                 // A later dependency may add a stricter range; then try a signed catalog version instead.
             }
             val candidates = byName[unresolved].orEmpty()
@@ -190,7 +224,8 @@ object SkillDependencyResolver {
             for (candidate in candidates) {
                 attempts++
                 require(attempts <= 100) { "依赖冲突求解超过 100 次尝试，已停止以避免无限下载" }
-                val bundle = runCatching { SkillCommunityClient.downloadVerifiedBundle(candidate) }.getOrNull() ?: continue
+                ensureReplaceable(candidate)
+                val bundle = runCatching { loadVerifiedBundle(candidate) }.getOrNull() ?: continue
                 if (bundle.name != candidate.name || bundle.version != candidate.version || bundle.source != "已验证签名社区目录" || bundle.signerFingerprint != candidate.signerFingerprint) continue
                 val nextConstraints = state.constraints.mapValues { it.value.toMutableList() }.toMutableMap()
                 bundle.dependencies.forEach { dep ->
