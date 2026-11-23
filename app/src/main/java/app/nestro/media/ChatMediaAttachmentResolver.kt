@@ -10,7 +10,6 @@ import app.nestro.data.ChatMessageMediaPart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
