@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `a256fef031b6d60c5e966ac71066ef9a79c87c0f`（2026-11-24）。
+> 当前唯一开发与交付基线：`main`，本轮业务源码与测试源码回读基线 `62ce60c32261b182bbc441163f21fabd6b935ec8`（2026-11-24）。
 > 本文的目录统计与部分模块落点最初来自 `integration/19-modules` 历史审计，尚未在当前 main 重新统计；不得把旧统计数字或历史分支状态当作 main 的现状。具体功能状态必须按 main 当前源码、调用点和数据流核验。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。
 >
@@ -17,7 +17,7 @@
 | 4 数据与备份 | `data/NestroDatabase.kt`、`data/ConversationPersistenceService.kt`、`data/LocalBackupRepository.kt`、`data/LocalBackupCompatibility.kt`、`data/ProjectPackageCodec.kt` | `androidTest/.../NestroDatabaseMigrationTest.kt`、`ui/LocalBackupRoundTripTest.kt`、`test/.../ProjectPackageCodecTest.kt` |
 | 5 项目空间 | `data/ProjectSpaceRepository.kt`、`data/ProjectAccessControlStore.kt`、`data/ProjectResourceScopeStore.kt`、`data/ProjectSpaceRules.kt` | `androidTest/.../ProjectSpaceLifecycleTest.kt`、`ProjectAccessControlStoreTest.kt`、`test/.../ProjectResourceScopeStoreTest.kt` |
 | 6 知识库 | `data/KnowledgeRepository.kt`、`data/KnowledgeSearchEngine.kt`、`data/KnowledgeVectorSearch.kt`、`data/KnowledgeEmbeddingModelManager.kt`、`data/KnowledgePdfOcr.kt`、`data/KnowledgeChunker.kt` | `test/.../KnowledgeSearchEngineTest.kt`、`KnowledgeEmbeddingPoolingTest.kt`、`androidTest/.../KnowledgeVectorIndexDatabaseTest.kt`、`KnowledgePdfImportTest.kt` |
-| 7 我的记忆 | `data/UserMemoryStore.kt`、`data/UserMemoryRepository.kt`、`data/AutomaticMemoryExtractionCoordinator.kt`、`data/ConversationMemoryStore.kt`、`data/ProjectMemorySettingsStore.kt`、`ui/MemoryUiState.kt` | `test/.../UserMemoryStoreTest.kt`、`AutomaticMemoryExtractionCoordinatorTest.kt`、`androidTest/.../UserMemoryRepositoryInstrumentedTest.kt` |
+| 7 我的记忆/技能库 | `data/UserMemoryStore.kt`、`data/UserMemoryRepository.kt`、`data/AutomaticMemoryExtractionCoordinator.kt`、`data/ConversationMemoryStore.kt`、`data/ProjectMemorySettingsStore.kt`、`data/SkillBundleParser.kt`、`data/SkillDependencyResolver.kt`、`data/SkillCommunityLifecycleStore.kt`、`ui/MemoryUiState.kt` | `test/.../UserMemoryStoreTest.kt`、`AutomaticMemoryExtractionCoordinatorTest.kt`、`SkillBundleParserTest.kt`、`androidTest/.../UserMemoryRepositoryInstrumentedTest.kt` |
 | 8 Phone Agent | `data/PhoneAgentTaskStore.kt`、`phone/PhoneAgentTaskService.kt`、`phone/PhoneAgentWorkScheduler.kt`、`phone/PhoneAgentWorker.kt`、`phone/PhoneAgentExecutor.kt`、`phone/PhoneAgentService.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayController.kt`、`phone/virtualdisplay/mika/MikaVirtualDisplayService.kt`、`ui/PhoneAgentPage.kt`（浮动预览交互） | `test/.../PhoneAgentTaskStoreTest.kt`、各 PhoneAgent policy tests |
 | 9 语音系统 | `speech/AndroidSpeechRecognitionController.kt`、`speech/AndroidTextToSpeechController.kt`、`speech/OpenAiCompatibleSpeechProviders.kt`、`speech/OpenAiRealtimeVoiceProvider.kt`、`ui/VoiceInputButton.kt`、`ui/VoiceSystemPage.kt` | `test/.../SpeechProvidersTest.kt`、`SpeechHttpPolicyTest.kt`、`androidTest/.../VoiceInputButtonTest.kt` |
 | 10 Artifacts | `data/ArtifactStore.kt`、`ui/ArtifactLibraryPage.kt` | `test/.../ArtifactStoreBackupTest.kt`、`ArtifactStoreReferenceTest.kt`、`androidTest/.../ArtifactStoreTest.kt` |
@@ -87,4 +87,4 @@
 - 当前唯一开发与交付基线已切换为 `main`，本次回读时 HEAD：`f33f67f8625ed8d2992b683358da055de5848775`。
 - 本文此前以 `integration/19-modules` 为基线的记录均视为历史审计线索，不自动代表当前 `main` 状态；后续功能状态必须按 `main` 当前源码、调用点和数据流重新核实。
 - 2026-11-24 后续增补：新增项目级统一任务中心；媒体时间线支持多音频轨与独立音量；日历自动任务接入专家 DAG 与已保存工作流调度。详细边界见本文件结构性缺口和 `FUNCTION_AUDIT.md` 的 2026-11-24 增补。
-- 当前仍未完成 ChatMessage 原生多模态 parts、PIP/多视频轨与转场、任意时间条件触发及工作流步骤内部工具调用。未运行编译/测试/构建。
+- 原生 image/audio/video parts 已按 Provider 接通；模型能力门禁、真实 API 联调、大文件直传与跨 Provider 一致性仍待完成。PIP/多视频轨与转场、任意时间条件触发及工作流步骤内部工具调用仍未完成。未运行编译/测试/构建。
