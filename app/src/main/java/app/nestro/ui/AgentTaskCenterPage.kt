@@ -120,7 +120,7 @@ internal fun AgentTaskCenterPage(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("统一任务", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "当前项目内由聊天、专家、工作流、媒体、日历、插件和手机执行创建的任务。",
+                    "当前项目内已接入统一任务机的跨模块任务状态与执行记录。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
