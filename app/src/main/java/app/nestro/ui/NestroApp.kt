@@ -719,6 +719,15 @@ fun NestroApp(initialPage: String = "home") {
         return teamsAllowed && workflowsAllowed
     }
     fun canWriteSkillDependents(skillName: String): Boolean {
+        val dependents = SkillDependencyResolver.findDependents(skillName, skills, skillMetadata)
+        if (dependents == null) {
+            status = "技能依赖元数据损坏，已阻止重命名或删除，避免破坏依赖关系。"
+            return false
+        }
+        if (dependents.isNotEmpty()) {
+            status = "技能「$skillName」仍被以下技能依赖：${dependents.joinToString("、")}。请先调整依赖，再重命名或删除。"
+            return false
+        }
         val expertsAllowed = expertProfiles.filterValues { skillName in it.skillNames }.keys
             .all { canWriteProjectResource(ProjectResourceKind.EXPERT, it) }
         val workflowsAllowed = workflows.filter { workflow ->
@@ -728,6 +737,19 @@ fun NestroApp(initialPage: String = "home") {
         val templatesAllowed = owners == null || "*" in owners || expertTemplates.none { skillName in it.profile.skillNames }
         if (!templatesAllowed) status = "该技能被全局专家模板引用，不能在项目空间内单独重命名或删除。"
         return expertsAllowed && workflowsAllowed && templatesAllowed
+    }
+    fun canDisableSkill(skillName: String): Boolean {
+        val dependents = SkillDependencyResolver.findDependents(skillName, skills, skillMetadata)
+        if (dependents == null) {
+            status = "技能依赖元数据损坏，已阻止停用。"
+            return false
+        }
+        val activeDependents = dependents.filterNot { it in disabledSkills }
+        if (activeDependents.isNotEmpty()) {
+            status = "技能「$skillName」被启用中的技能依赖：${activeDependents.joinToString("、")}。请先处理依赖技能。"
+            return false
+        }
+        return true
     }
     val chatListState = rememberLazyListState()
     val conversationHistoryListState = rememberLazyListState()
@@ -3982,6 +4004,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 }) { Text("编辑", color = Mint) }
                                                 TextButton(onClick = {
                                                     if (!canWriteProjectResource(ProjectResourceKind.SKILL, name)) return@TextButton
+                                                    if (!isDisabled && !canDisableSkill(name)) return@TextButton
                                                     disabledSkills = if(isDisabled) disabledSkills - name else disabledSkills + name
                                                     if(!isDisabled && selectedSkill==name) selectedSkill = ""
                                                     prefs.edit().putString("disabled_skills_v1", disabledSkillsToJson(disabledSkills)).apply()
