@@ -767,3 +767,10 @@ NESTRO 不是单纯聊天、单独的 Phone Agent 或媒体编辑器，而是以
 - 本轮修复：AgentTaskRetryPolicy 增加瞬时 HTTP 状态分类（408、425、429、500–599）；OpenAiClient 各协议的 HTTP 失败统一通过该分类生成 RetryableAgentTaskException 或非重试 IllegalStateException；补充 408/425/429/5xx 与 400/401/403/404/422 的策略测试。
 - 当前不开放副作用后的自动重试；日历专属语义型业务错误映射仍需依据真实业务错误码定义，不能用“把 maxRetries 调大”代替。
 - 新增测试源码未运行；不运行 Gradle/JVM/Android 测试，继续遵守十九模块收口后的统一验收闸门。
+
+
+## 2026-11-24 主线基线切换说明
+
+- 当前唯一开发与交付基线已切换为 `main`，本次回读时 HEAD：`f33f67f8625ed8d2992b683358da055de5848775`。
+- 本文此前以 `integration/19-modules` 为基线的记录均视为历史审计线索，不自动代表当前 `main` 状态；后续功能状态必须按 `main` 当前源码、调用点和数据流重新核实。
+- 本轮只完成已证明无生产调用的 `UnifiedAgentDispatcher` 及其专属测试清理；十九模块全量复核仍在进行，未进入编译/测试阶段。
