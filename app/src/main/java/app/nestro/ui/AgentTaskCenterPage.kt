@@ -48,11 +48,7 @@ internal fun AgentTaskCenterPage(
 
     suspend fun reloadTasks() {
         tasks = withContext(Dispatchers.IO) {
-            application.database.dao().allAgentTaskStates()
-                .asSequence()
-                .filter { it.projectId == projectId }
-                .take(200)
-                .toList()
+            application.database.dao().recentAgentTaskStatesForProject(projectId, 200)
         }
         if (expandedTaskId.isNotBlank() && tasks.none { it.taskId == expandedTaskId }) {
             expandedTaskId = ""
