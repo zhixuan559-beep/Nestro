@@ -79,6 +79,12 @@ interface CalendarDao {
         updatedAt: Long
     )
 
+    @Query("UPDATE calendar_events SET nextRunAt = :nextRunAt, lastRunAt = :lastRunAt, lastTaskId = :taskId, lastIdempotencyKey = :idempotencyKey, automationStatus = 'QUEUED', automationResult = '', automationError = '', automationUpdatedAt = :updatedAt, updatedAt = :updatedAt WHERE id = :id AND automationGeneration = :generation")
+    suspend fun recordAutomationDispatchForGeneration(
+        id: String, nextRunAt: Long, lastRunAt: Long, taskId: String,
+        idempotencyKey: String, updatedAt: Long, generation: Long
+    ): Int
+
     @Query("UPDATE calendar_events SET nextRunAt = :nextRunAt, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateAutomationNextRunAt(id: String, nextRunAt: Long, updatedAt: Long)
 
@@ -90,6 +96,12 @@ interface CalendarDao {
         error: String,
         updatedAt: Long
     )
+
+    @Query("UPDATE calendar_events SET automationStatus = :status, automationResult = :result, automationError = :error, automationUpdatedAt = :updatedAt WHERE id = :id AND automationGeneration = :generation")
+    suspend fun recordAutomationResultForGeneration(
+        id: String, status: String, result: String, error: String,
+        updatedAt: Long, generation: Long
+    ): Int
 
     @Query("DELETE FROM calendar_events WHERE id = :id")
     suspend fun delete(id: String): Int
