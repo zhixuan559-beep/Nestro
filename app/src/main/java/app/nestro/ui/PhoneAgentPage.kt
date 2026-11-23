@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
-internal fun PhoneAgentPage(context: Context, projectId: String) {
+internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("nestro_local", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val app = remember { context.applicationContext as NestroApplication }
@@ -76,7 +76,10 @@ internal fun PhoneAgentPage(context: Context, projectId: String) {
         Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("手机自动化", color = Ink, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = onBack) { Text("返回对话", color = Mint) }
+        }
         Text("Phone Agent 会先建立任务计划，再在授权范围内执行可验证的低风险动作。支付、验证码和最终提交始终由你接手。", color = Muted)
         val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.RequestPermission()

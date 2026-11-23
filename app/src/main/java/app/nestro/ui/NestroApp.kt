@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.NestroApplication
+import app.nestro.calendar.CalendarPage
 import app.nestro.model.ModelRegistry
 import app.nestro.mcp.McpToolCenterPage
 import app.nestro.git.GitWorkbenchPage
@@ -187,6 +188,8 @@ fun NestroApp(initialPage: String = "home") {
     BackHandler(enabled = showDrawer || page !in setOf("home", "chat")) {
         if (showDrawer) {
             showDrawer = false
+        } else if (page == "workflow-schedule") {
+            page = "workflows"
         } else {
             page = "home"
         }
@@ -228,6 +231,12 @@ fun NestroApp(initialPage: String = "home") {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
     var activeProjectId by projectSpaceUiState.activeProjectId
+    var hasPhoneAgentTasks by remember { mutableStateOf(false) }
+    LaunchedEffect(activeProjectId, messages.size) {
+        hasPhoneAgentTasks = if (activeProjectId.isBlank()) false else withContext(Dispatchers.IO) {
+            runCatching { appRuntime.phoneAgentTaskService.loadTasks(activeProjectId, 10).isNotEmpty() }.getOrDefault(false)
+        }
+    }
     fun readableSourcesFor(targetProjectId: String): Set<String> {
         val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
         return ProjectAccessControlStore.grantedReadableSourceProjects(prefs, targetProjectId).intersect(eligible)
@@ -1888,6 +1897,11 @@ fun NestroApp(initialPage: String = "home") {
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            if ((page == "home" || page == "chat") && hasPhoneAgentTasks) {
+                                TextButton(onClick = { page = "phone-agent" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                                    Text("手机任务", color = Ink, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
                             IconButton(onClick = { page = "tools" }) {
                                 Icon(Icons.Outlined.Extension, contentDescription = "工具与扩展", tint = Ink)
                             }
@@ -2305,7 +2319,10 @@ fun NestroApp(initialPage: String = "home") {
                         )
                         "workflows" -> {
                              Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                 Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall)
+                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                     Text("工作流", color = Ink, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                                     TextButton(onClick = { page = "workflow-schedule" }) { Text("自动调度", color = Mint) }
+                                 }
                                  Text("把复杂任务拆成连续步骤。每一步接收上一步结果，支持提示词、专家角色和技能指令。", color = Muted)
                                  OutlinedTextField(value = workflowInputDraft, onValueChange = { workflowInputDraft = it.take(12000) }, label = { Text("本次运行目标") }, placeholder = { Text("例如：研究一个市场，最后形成可执行分析。") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                                  if (workflowRunStatus.isNotBlank()) AnimatedStatusText(workflowRunStatus, color = Mint, style = MaterialTheme.typography.bodySmall)
@@ -3900,6 +3917,8 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                         }
+                        "phone-agent" -> PhoneAgentPage(context, activeProjectId) { page = "home" }
+                        "workflow-schedule" -> CalendarPage(appRuntime.calendarRepository, activeProjectId, onBack = { page = "workflows" })
                         "artifacts" -> ArtifactLibraryPage(activeProjectId)
                         "media-editor" -> MediaEditorPage(context, activeProjectId, pendingOpenMediaAssetId) { prompt ->
                             draft = prompt

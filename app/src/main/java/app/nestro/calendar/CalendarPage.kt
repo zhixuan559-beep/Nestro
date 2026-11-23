@@ -62,7 +62,7 @@ private val calendarTimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.ROO
 private val calendarDateTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT)
 
 @Composable
-fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
+fun CalendarPage(repository: CalendarRepository, activeProjectId: String, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val appRuntime = context.applicationContext as? NestroApplication
     val scope = rememberCoroutineScope()
@@ -203,9 +203,10 @@ fun CalendarPage(repository: CalendarRepository, activeProjectId: String) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("日历", style = MaterialTheme.typography.headlineSmall)
+                Text(if (onBack == null) "日历" else "自动调度", style = MaterialTheme.typography.headlineSmall)
                 Text("本机保存 · 支持重复日程与后台提醒", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (onBack != null) TextButton(onClick = onBack) { Text("返回工作流") }
             TextButton(onClick = {
                 selectedDate = LocalDate.now()
                 visibleMonth = YearMonth.now()
