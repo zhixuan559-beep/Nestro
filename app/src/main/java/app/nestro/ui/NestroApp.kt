@@ -425,7 +425,6 @@ fun NestroApp(initialPage: String = "home") {
             }
             else -> {
                 selectedExpert = "通用助手"
-                taskModeEnabled = false
             }
         }
         prefs.edit()
