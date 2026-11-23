@@ -181,13 +181,13 @@ class ChatRequestContextAssemblerCacheTest {
             cacheTtlMillis = 500L,
             nowMillis = { now }
         )
-        val args = arrayOf("p", "c", "根据知识库和我的偏好回忆历史", emptyList<ChatMessage>(), "base")
-        val first = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
-        val second = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
+        val history = emptyList<ChatMessage>()
+        val first = assembler.assemble("p", "c", "根据知识库和我的偏好回忆历史", history, "base")
+        val second = assembler.assemble("p", "c", "根据知识库和我的偏好回忆历史", history, "base")
         assertEquals(first, second)
         assertEquals(2, retrievalCalls)
         now += 501L
-        val third = assembler.assemble(args[0], args[1], args[2], args[3], args[4])
+        val third = assembler.assemble("p", "c", "根据知识库和我的偏好回忆历史", history, "base")
         assertTrue(third.systemContext.contains("conversation-3"))
         assertEquals(4, retrievalCalls)
     }
