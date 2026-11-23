@@ -27,7 +27,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 5 | 项目空间 | 项目 CRUD、项目范围、READ/WRITE 授权和资源归属代码存在；跨模块文件/专家/Skill/工作流/产物/媒体资源的生命周期一致性仍需联测 |
 | 6 | 知识库 | 本地文档导入、PDF OCR、分块、BM25/FTS、BGE ONNX 向量检索和索引重建代码存在；真实模型性能、长文档和设备资源验证待后续阶段 |
 | 7 | 我的记忆 | 显式/自动记忆、来源校验、跨项目共享与语义召回已有代码；ChatRequestContextAssembler 已有 64 项/60 秒最终上下文 LRU，按项目、会话、prompt、基础上下文和记忆版本隔离。尚非独立全局/项目/会话三级缓存；历史召回缓存键已纳入当前项目其他会话的语料版本，新增/编辑/删除历史会话后会重新检索。saveCandidates 的来源项目/会话/user 消息校验与插入或替换已收进 DAO @Transaction，避免预检后并发删除造成来源失效；来源 ID 仍无外键级联，源数据后续删除时的记忆清理策略待收口；迁移与备份测试源码待执行。 |
-| 8 | Phone Agent | 隔离虚拟屏、Mika ADB/TLS 配对、Binder nonce/UID/证书校验、Accessibility 节点桥接、任务授权/暂停/用户接管及素材导入已有代码。导航链路已有 Google Maps Directions、路线核验、用户确认和主屏任务交接代码，仍待设备验证。预览支持单击缩放、双击/长按触控、画面拖动滑动、四角缩放；顶部独立拖动条可移动窗口，并通过边界函数限制在可视区域内。对应窗口位置边界测试源码已补充，尚未执行。 |
+| 8 | Phone Agent | 隔离虚拟屏、Mika ADB/TLS 配对、Binder nonce/UID/证书校验、Accessibility 节点桥接、任务授权/暂停/用户接管及素材导入已有代码。`PhoneAgentPlanner` 已区分 NAVIGATION 与 TRAVEL：单点导航和多日旅行均有规划步骤；路线通过 Google Maps Directions 预览，要求核验后由 confirm_sensitive 交用户确认，再交主屏启动。该顺序当前由规划/模型指令驱动，尚未证明有绕过即阻断的硬状态门禁；仍待测试与真机验收。预览支持单击缩放、双击/长按触控、画面拖动滑动、四角缩放；顶部独立拖动条可移动窗口，并通过边界函数限制在可视区域内。对应窗口位置边界测试源码已补充，尚未执行。 |
 | 9 | 语音系统 | 已合并并锁定（PR #9；CI Run #1190 的 verify 与 Android emulator instrumentation 均通过；真机音频路由/兼容性仍待最终设备阶段） |
 | 10 | 我的作品 | ArtifactStore 产物记录、项目范围、文件校验、版本/索引恢复和备份验证代码已纳入整合分支；媒体工程原文件由模块17 ZIP 归档管理，二者边界需保持清晰；完整自动化/设备验收待后续阶段 |
 | 11 | 专家模板 | 当前 main 已包含该模块代码（历史来源 refactor/phase-2-architecture，commit 544b3be）：内置/自定义模板、从专家保存、编辑、复制内置、删除二次确认、搜索/分类、套用、JSON 批量导入预览/导出；导入限制文件体积/数量/名称与 ID 唯一性/技能项目范围，持久化失败不覆盖界面状态，并兼容修复旧模板重复 ID；专家 CRUD/版本/启停/导入导出已有闭环；回归测试代码已补充但尚未执行，自动化、模拟器与真机验收留待统一阶段 |
@@ -141,7 +141,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - [x] 虚拟屏多显示屏窗口读取、实时帧、坐标触控、后台任务和主屏用户接管/虚拟屏恢复；主屏仅用于用户接管，不作为 Agent 自动执行环境。
 - [x] 公共 HTTPS 素材下载、自动导入当前项目素材库、来源/授权记录和素材 ID 回传。
 - [x] Mika 实时浮窗已移除标题栏/展开收起按钮和可见手柄；单击切换大小，双击/长按触控，拖动屏幕滑动，四角透明区域上拉缩小/下拉放大。代码已提交，待设备验证。
-- [ ] TRAVEL 分类、地图路线规划、主屏导航前展示路线并单独授权；复用已有通用屏幕交接。
+- [x] 已补 TRAVEL 分类、旅行多日规划步骤、Google Maps Directions 路线预览、路线核验、confirm_sensitive 用户确认与主屏交接指令；硬状态门禁和真机验证仍待验收。
 - [ ] 登录态/应用私有文件/受限下载源的边界与用户接管体验继续审计。
 - [ ] ADB/helper/虚拟屏/手势/设备兼容测试（延后统一执行）。
 - [x] 已恢复 DAO 终态 SQL 保护，禁止迟到 plan/progress 写入复活 CANCELLED/COMPLETED 任务；对应回归测试源码已回收（尚未运行）。
@@ -399,7 +399,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 以下条目依据当前整合分支源码回读，修正本清单中未随着后续提交更新的旧结论：
 - 模块3：原生工具循环已具备受限 parallelSafe 并发；模型 context-window 仍未进入 ModelDefinition，固定 16,384/2,048 预算仍是缺口。
 - 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 仍缺；DAO 项目/会话/消息来源归属校验已补并有 instrumentation 测试源码，未运行。
-- 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线授权仍缺。
+- 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线确认指令已补；硬状态门禁和真机验收仍待完成。
 - 模块16：插件统一任务机/checkpoint、外部写入审批、插件恢复入口和 MCP 两层授权语义已实现；能力授权/调用审计已有 UI，但统一跨模块任务总览仍未收敛。任意代码沙箱和完整 VoiceInteractionService 仍未实现。
 - 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟分钟触发已补齐并按 automationGeneration 隔离任务定义，待执行延迟 occurrence 可跨重启恢复。统一任务机已有 attempts/maxRetries、RetryableAgentTaskException/网络异常分类和指数退避；ModelLedToolDispatcher 在副作用开始后阻止自动重放。本轮补齐 HTTP 408/425/429/5xx 可重试映射。仍缺任意时间条件模型与日历专属语义型业务错误映射，专家 DAG/Workflow 直接调度边界待核。
 - 模块19：主模型已注册 media.ai.run/status，可调用 image/transcribe/scenes/audio-clean；scenes 仅是场景分段，不等于通用视频问答，音频理解目前主要为转写，视频生成单独通过 media.video.generate/status。
