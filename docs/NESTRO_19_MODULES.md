@@ -22,7 +22,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 |---:|---|---|
 | 1 | 专家系统 | 主模型自动组队/DAG、并行依赖、checkpoint、历史分页及会话内批次暂停/继续/停止已有代码；工具感知调用回调已接通，专家成员默认只获得共享目录中无需确认的只读工具，外部写入/设备操作仍由主模型统一调度；进程重启后的专家任务恢复 UI 尚未接通。可编辑 DAG、失败包返工、结构化验收/返工协议仍缺。 |
 | 2 | 模型管理 | 服务商生态与魔搭 OAuth 代码链路已补齐；待部署 OAuth 服务、注册第三方应用并确认 OAuth Token 的推理权限；未验收、未锁定 |
-| 3 | 聊天系统 | 主模型原生工具调用、流式聊天、上下文组装、会话记忆召回、请求取消/恢复已接入；图片/音频/视频附件从当前项目素材库按 asset_id 解析为 request-only media parts；OpenAI 接 image_url 与 WAV/MP3 input_audio，Anthropic 接 base64 image，Gemini 接 inlineData image/audio/video；ChatRequestPolicy 保留 parts 并按估算 token 成本计入上下文预算，不修改 Room 消息结构。大文件仍通过 media.ai.run/status 专业任务桥接；模型能力声明/兼容性门禁与真实 API 联调待完成。主聊天历史与工具决策轮已按候选模型最小 contextWindowTokens 动态预算并约束输出 reserve，但系统提示词自身超窗压缩/截断策略仍待补 |
+| 3 | 聊天系统 | 主模型原生工具调用、流式聊天、上下文组装、会话记忆召回、请求取消/恢复已接入；图片/音频/视频附件从当前项目素材库按 asset_id 解析为 request-only media parts；OpenAI 接 image_url；模型 ID 含 `audio` 时才发送 WAV/MP3 input_audio；Anthropic 接 base64 image，Gemini 接 inlineData image/audio/video；ChatRequestPolicy 保留 parts 并按估算 token 成本计入上下文预算，不修改 Room 消息结构。大文件仍通过 media.ai.run/status 专业任务桥接；模型能力声明/兼容性门禁与真实 API 联调待完成。主聊天历史与工具决策轮已按候选模型最小 contextWindowTokens 动态预算并约束输出 reserve，但系统提示词自身超窗压缩/截断策略仍待补 |
 | 4 | 数据与备份 | Room 持久化、迁移、版本化 JSON 备份/恢复和项目包代码存在；媒体工程 ZIP 当前独立于通用备份；记忆跨项目共享字段已补 13→14 迁移与完整备份往返测试源码，尚待执行验证 |
 | 5 | 项目空间 | 项目 CRUD、项目范围、READ/WRITE 授权和资源归属代码存在；跨模块文件/专家/Skill/工作流/产物/媒体资源的生命周期一致性仍需联测 |
 | 6 | 知识库 | 本地文档导入、PDF OCR、分块、BM25/FTS、BGE ONNX 向量检索和索引重建代码存在；真实模型性能、长文档和设备资源验证待后续阶段 |
@@ -461,7 +461,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 
 ## 2026-11-24 原生音视频接线补充
 
-- OpenAI：图片与 WAV/MP3 input_audio；Anthropic：图片；Gemini：图片/音频/视频 inlineData。Gemini 每请求限制 1 个音频、最多 10 个视频；当前 resolver 将音视频单文件限制在 8 MiB、请求媒体总量限制在 12 MiB。
+- OpenAI：图片；仅模型 ID 含 `audio` 时发送 WAV/MP3 input_audio；Anthropic：图片；Gemini：图片/音频/视频 inlineData。Gemini 每请求限制 1 个音频、最多 10 个视频；当前 resolver 将音视频单文件限制在 8 MiB、请求媒体总量限制在 12 MiB。
 - `ChatRequestPolicy` 按媒体类型/时长估算 token 成本；大文件仍由 `media.ai.run/status` 处理。模型能力声明/兼容性门禁和真实服务商联调仍未完成。
 - 新增 serializer、asset_id 解析、时长预算与 coordinator 回归测试源码；未运行编译或测试。
 
@@ -471,3 +471,10 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 从 `feature/module-7-skill-library` 仅提取 `fromStored` 的安全校验思路，按 main 当前 `SkillSemVer`、权限白名单与 signerFingerprint 结构适配，不合并旧分支的依赖解析器。
 - `LocalBackupRepository` 在备份导出与恢复前调用 `SkillBundleParser.validateStoredCollection`；损坏 JSON、错误权限/依赖类型、非法 SemVer/指纹和超限 UTF-8 元数据将被拒绝。
 - 新增对应单元测试源码，未运行编译或测试。
+
+
+## 2026-11-24 历史分支核对状态
+
+- 37 条非 main 分支已逐条对照 main 的提交关系：17 条 ahead_by=0，20 条仍有独有提交。ahead 分支名称与数量以 `docs/FUNCTION_AUDIT.md` 顶部全量清单为准。
+- 代表性源码抽查显示大多数旧实现已被 main 的更新版本替代；技能库 `fromStored` 数据校验是已确认的有效缺口，现已按 main 架构适配并接入备份/恢复。
+- 不整分支合并、不删除历史分支；20 条 ahead 分支仍需按具体文件/调用链逐项核销，不把提交领先直接等同于功能缺失。
