@@ -1,6 +1,6 @@
 # NESTRO 当前代码地图
 
-> 静态审计基线：`integration/19-modules`，源码/界面复核基线 `3a02646778fcb0135bdb866ca5ebb5f62950cfe2`（2026-11-23；后续审计仍以 GitHub 当前完整 HEAD 为准）。
+> 静态审计基线：`integration/19-modules`，本轮记忆事务修复提交 `11191b234e64075217af6a4c047bbb4d6664cea8`（2026-11-24；此前 `3a02646778fcb0135bdb866ca5ebb5f62950cfe2` 仍是上一轮业务源码复核基线）。
 > 防断档中控：GitHub Issue #21（构建前总审计与十九模块收口）。本地图正在按新基线重新核对；不得将旧代码地图当作当前完整审计结果。
 >
 > 当前树：445 个 Git tree 条目，其中 Kotlin 源码/测试文件 333 个（主源码 205 个、JVM 测试 95 个、Android instrumentation 测试 33 个）。本文按实际源码路径记录模块落点和跨模块调用链；它是代码导航图，不代表构建或验收通过。
@@ -70,11 +70,12 @@
 
 - 统一任务机的通用 retry 默认值为 2；WorkflowExecutionCoordinator 与 ExpertTeamExecutionCoordinator 的 runInline 调用沿用默认值。Workflow 工具感知步骤可能包含外部副作用，需补 task/step retry-safety 契约，避免不确定结果后整段重放。MCP、媒体 AI、媒体渲染、日历和生成式插件路径已显式将统一任务重试设为 0。
 - 模块16已有生成式插件 runInline、步骤 checkpoint、恢复 UI、统一审批与项目能力授权/调用审计；仍缺统一跨模块任务总览收敛、任意代码插件沙箱和完整 Android VoiceInteractionService。
-- 模块7自动记忆写入缺少 DAO 事务内 project/conversation/message 归属校验；独立全局/项目/会话记忆上下文缓存仍未实现。手动 global_memory_v1 与自动结构化记忆是不同能力。
-- 模块8缺 TRAVEL 专用路线规划及主屏导航授权链路；虚拟屏通用接管已存在。
+- 模块7自动记忆候选写入已新增 `NestroDao.saveUserMemoryCandidateIfSourceValid`：项目存在性、来源会话项目归属、来源 user message 校验与对应 upsert/replace 位于同一个 Room `@Transaction`；`UserMemoryRepositoryInstrumentedTest` 已增加 DAO 边界回归测试，但尚未运行。来源 ID 仍是普通字段、没有外键级联约束，删除源数据后的记忆清理策略仍需单独收口；独立全局/项目/会话记忆上下文缓存仍未实现。手动 global_memory_v1 与自动结构化记忆是不同能力。
+- 模块8已有 `PhoneAgentPlanner` 的 NAVIGATION 分类、`open_navigation` Google Maps Directions 动作、路线读取核验、`confirm_sensitive` 用户确认和主屏导航交接代码；这不是当前缺口，仍待真机验证。当前真实 UI 缺口是 `PhoneAgentFloatingPreview` 固定右下角，窗口本身不能拖动；窗口内屏幕滑动与角部缩放已存在。
 - 模块17仍限单视频轨/最多单音频轨；多轨/PIP、转场、速度曲线、关键帧、字幕烧录和高级混音缺失。
 - 模块18已接统一任务机与主模型工具链，但缺延迟/任意时间条件触发、独立 retryCount/错误分类退避；目前不直接调度 expert DAG/workflow。
 - 模块3仍缺按真实模型 context-window 动态预算；原生工具并发只覆盖显式声明的安全只读工具。
 - ChatMessage 原生多模态 parts、通用视频问答、非语音音频事件理解仍未实现；现有媒体素材导入桥接与 media.ai.run 能力不可夸大。
-- 模块7记忆归属校验、模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
+- 模块1专家团 `executeProjectPlan` 的 `runInline` 仍缺 `AgentTaskMetadata`，且 `NestroApp` 当前只传普通 `invokeMember`，未传工具感知适配器；普通专家团 `execute` 已记录 projectId，但仍缺 conversationId。模块3/工作流 `runInline` 目前缺 projectId/conversationId 元数据，`NestroApp` 也未传 `invokeModelWithTools`，工具声明即使有租约也没有接入模型实际调用。模块5资源 scope 覆盖边界、模块1团队协作 UI/生命周期、模块4媒体 ZIP 与通用备份边界仍需完成静态审计。
+- 模块8浮窗窗口拖动、模块17多视频轨/PIP/多音轨、模块19原生聊天多模态 content parts/通用视频问答/非语音音频事件理解仍未完成；现有素材导入与专业媒体任务不能代替原生多模态传输层。
 - 全部新代码与新增测试仍待统一 Kotlin 编译、JVM/Android 测试、模拟器/真机及真实 API 联调；本代码地图不代表验收通过。
