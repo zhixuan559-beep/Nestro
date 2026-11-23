@@ -3,6 +3,7 @@ package app.nestro.model
 import app.nestro.data.ModelConfig
 import app.nestro.data.ModelProfileMetadata
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -250,6 +251,31 @@ class ModelRequestConfigurationSelectorTest {
             assertEquals(effort, configs.first().reasoningEffort)
             assertEquals(null, configs.last().reasoningEffort)
         }
+    }
+
+    @Test
+    fun registrySelectionPropagatesDeclaredInputAndNativeToolCapabilities() {
+        val provider = ModelProvider("p", "Provider", "https://api.example.com")
+        val registry = ModelRegistry(
+            providers = listOf(provider),
+            apiKeys = listOf(ModelApiKey("k1", "p", "Primary"), ModelApiKey("k2", "p", "Backup")),
+            models = listOf(
+                ModelDefinition(
+                    "active", "p", "Active", "model-a", listOf("k1"),
+                    inputModalities = setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.VIDEO),
+                    supportsNativeToolCalling = false
+                ),
+                ModelDefinition("backup", "p", "Backup", "model-b", listOf("k2"))
+            )
+        )
+        val configs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
+            registry, "active", true
+        ) { "secret" }
+
+        assertEquals(setOf(ModelModality.TEXT, ModelModality.IMAGE, ModelModality.VIDEO), configs.first().inputModalities)
+        assertFalse(configs.first().supportsNativeToolCalling)
+        assertEquals(setOf(ModelModality.TEXT), configs.last().inputModalities)
+        assertTrue(configs.last().supportsNativeToolCalling)
     }
 
     @Test
