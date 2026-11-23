@@ -1562,6 +1562,7 @@ fun NestroApp(initialPage: String = "home") {
                         plan = plan,
                         members = memberTasks,
                         projectId = requestProjectId,
+                        conversationId = requestConversationId,
                         taskId = assistantId + "-team-project",
                         shouldStop = { stopRequested },
                         eventSink = app.nestro.data.ExpertTeamEventSink { event ->
@@ -1607,6 +1608,40 @@ fun NestroApp(initialPage: String = "home") {
                                     onUsage = recordModelUsage,
                                     onProviderUsage = recordProviderModelUsage
                                 ).take(12_000)
+                            }
+                        },
+                        invokeMemberWithTools = { member, memberPrompt, discovery ->
+                            withContext(Dispatchers.IO) {
+                                val memberSystemContext = listOf(requestSystemContext, memberPrompt)
+                                    .filter { it.isNotBlank() }.joinToString("\n\n").take(18_000)
+                                val parentTaskId = assistantId + "-team-project"
+                                val scopedRequestId = UUID.nameUUIDFromBytes(
+                                    "expert-member-tools:$parentTaskId:${member.name}:$memberPrompt".toByteArray(Charsets.UTF_8)
+                                ).toString()
+                                val execution = appRuntime.chatRequestExecutionCoordinator.execute(
+                                    request = ChatRequestExecutionRequest(
+                                        requestId = scopedRequestId,
+                                        conversationId = requestConversationId,
+                                        projectId = requestProjectId,
+                                        prompt = memberPrompt,
+                                        startedAt = System.currentTimeMillis(),
+                                        history = ChatRequestPolicy.boundedChatHistory(requestHistory, memberSystemContext),
+                                        modelConfigs = requestModelConfigs,
+                                        baseSystemContext = memberSystemContext,
+                                        taskModeEnabled = true,
+                                        expertTeamEnabled = false,
+                                        parentTaskId = parentTaskId,
+                                        temperature = requestExpertProfiles[member.name]?.temperature,
+                                        maxTokens = requestExpertProfiles[member.name]?.maxTokens,
+                                        previousAssistant = null,
+                                        shouldStop = { stopRequested },
+                                        allowedToolIds = discovery.list().map { it.id }.toSet()
+                                    ),
+                                    onUsage = recordModelUsage,
+                                    onProviderUsage = recordProviderModelUsage,
+                                    onPartialAnswer = {}
+                                )
+                                execution.finalization.finalText.take(12_000)
                             }
                         },
                             shouldPause = { expertTeamPauseController.isPaused() },
