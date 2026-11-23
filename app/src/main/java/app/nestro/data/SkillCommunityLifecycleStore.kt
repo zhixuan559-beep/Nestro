@@ -18,10 +18,16 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         require(bundles.all { it.source == "已验证签名社区目录" }) { "仅允许安装经过签名目录验证的社区技能" }
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
+        SkillBundleParser.validateStoredCollection(skills.toString(), metadata.toString())
+        val disabled = disabledSkills()
+        val disabledNames = (0 until disabled.length()).map { disabled.optString(it) }.toSet()
+        val currentSkills = skills.keys().asSequence().associateWith { name -> skills.optString(name) }
+        val currentMetadata = metadata.keys().asSequence().associateWith { name -> metadata.optString(name) }
         val history = historyJson()
         val planned = bundles.associateBy { it.name }
-        val currentVersions = metadata.keys().asSequence().associateWith { name ->
-            runCatching { JSONObject(metadata.optString(name, "{}")).optString("version") }.getOrDefault("")
+        val currentVersions = skills.keys().asSequence().associateWith { name ->
+            val raw = metadata.optString(name, "")
+            if (raw.isBlank()) "1.0.0" else JSONObject(raw).optString("version", "1.0.0").ifBlank { "1.0.0" }
         }.toMutableMap()
         bundles.forEach { bundle ->
             require(runCatching { SkillSemVer.compare(bundle.version, bundle.version) }.isSuccess) { "社区技能版本不是有效 SemVer 2.0" }
@@ -37,11 +43,22 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         bundles.forEach { bundle -> bundle.dependencies.forEach { dependency ->
             val available = currentVersions[dependency.name] ?: error("缺少技能依赖：${dependency.name}")
             require(SkillSemVer.matches(available, dependency.version)) { "依赖版本不匹配：${dependency.name} 需要 ${dependency.version}，计划版本为 $available" }
+            if (dependency.name in currentSkills) {
+                require(dependency.name !in disabledNames) { "依赖技能已停用，请先启用：${dependency.name}" }
+                if (dependency.name !in planned) {
+                    val issues = SkillDependencyResolver.inspectInstalledSkill(
+                        dependency.name, currentSkills, currentMetadata, disabledNames
+                    )
+                    require(issues.isEmpty()) {
+                        "已安装依赖的完整依赖链不可用：${dependency.name}；${issues.joinToString("；")}"
+                    }
+                }
+            }
         } }
         // Existing dependents must remain compatible with every changed package.
         metadata.keys().forEach { dependentName ->
             if (dependentName in planned) return@forEach
-            val row = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val row = JSONObject(metadata.optString(dependentName, "{}"))
             val deps = row.optJSONArray("dependencies") ?: return@forEach
             for (i in 0 until deps.length()) {
                 val dep = deps.optJSONObject(i) ?: continue
@@ -65,7 +82,6 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
             visiting.remove(name)
         }
         graph.keys.forEach(::visit)
-        val disabled = disabledSkills()
         bundles.forEach { bundle ->
             val oldPrompt = skills.optString(bundle.name, null)
             val oldMeta = metadata.optString(bundle.name, null)
@@ -84,11 +100,12 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         require(name.isNotBlank() && name.length <= 40)
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
-        val currentMeta = runCatching { JSONObject(metadata.optString(name, "{}")) }.getOrDefault(JSONObject())
+        SkillBundleParser.validateStoredCollection(skills.toString(), metadata.toString())
+        val currentMeta = JSONObject(metadata.optString(name, "{}"))
         require(currentMeta.optString("source") == "已验证签名社区目录") { "仅可从社区管理器卸载社区技能" }
         metadata.keys().forEach { dependentName ->
             if (dependentName == name) return@forEach
-            val dependent = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val dependent = JSONObject(metadata.optString(dependentName, "{}"))
             val deps = dependent.optJSONArray("dependencies") ?: return@forEach
             require((0 until deps.length()).none { deps.optJSONObject(it)?.optString("name") == name }) { "该技能仍被 $dependentName 依赖，不能直接卸载" }
         }
@@ -117,6 +134,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
     fun rollback(name: String) {
         val skills = JSONObject(preferences.getString("skills", "{}") ?: "{}")
         val metadata = JSONObject(preferences.getString("skill_metadata_v1", "{}") ?: "{}")
+        SkillBundleParser.validateStoredCollection(skills.toString(), metadata.toString())
         val history = historyJson()
         val snapshots = history.optJSONArray(name) ?: error("没有可回退的历史版本")
         require(snapshots.length() > 0) { "没有可回退的历史版本" }
@@ -124,7 +142,7 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         val restoredVersion = if (previous.optBoolean("hadSkill")) runCatching { JSONObject(previous.getString("metadata")).optString("version") }.getOrDefault("") else ""
         metadata.keys().forEach { dependentName ->
             if (dependentName == name) return@forEach
-            val dependent = runCatching { JSONObject(metadata.optString(dependentName, "{}")) }.getOrDefault(JSONObject())
+            val dependent = JSONObject(metadata.optString(dependentName, "{}"))
             val deps = dependent.optJSONArray("dependencies") ?: return@forEach
             for (i in 0 until deps.length()) {
                 val dep = deps.optJSONObject(i) ?: continue
@@ -169,9 +187,16 @@ class SkillCommunityLifecycleStore(private val preferences: SharedPreferences) {
         return result
     }
 
-    private fun disabledSkills(): JSONArray = runCatching {
-        JSONArray(preferences.getString("disabled_skills_v1", "[]") ?: "[]")
-    }.getOrDefault(JSONArray())
+    private fun disabledSkills(): JSONArray {
+        val rows = JSONArray(preferences.getString("disabled_skills_v1", "[]") ?: "[]")
+        require(rows.length() <= 500) { "停用技能列表超过 500 项" }
+        val seen = mutableSetOf<String>()
+        for (index in 0 until rows.length()) {
+            val name = rows.optString(index).trim()
+            require(name.isNotBlank() && name.length <= 40 && seen.add(name)) { "停用技能列表损坏" }
+        }
+        return rows
+    }
 
     private fun historyJson(): JSONObject = runCatching {
         JSONObject(preferences.getString(HISTORY_KEY, "{}") ?: "{}")
