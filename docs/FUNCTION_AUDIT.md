@@ -1377,7 +1377,9 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - `feature/module-7-skill-library` 的独有文件为旧 `SkillCommunityInstallPlanner.kt`、`SkillInstallPolicy.kt` 和相关测试。当前主线已使用更新的 SemVer 2.0、约束回溯求解、签名信任根/撤销、安装计划及原子生命周期 API；旧接口不覆盖当前实现，不重复迁入。
 - 其余若干旧分支仅多出一份只有 package 声明的空 `ConversationIntelligence.kt`，不是可用实现；模块5历史设计文档已存在于 main。其他分支的独有路径均已在 main 找到或被当前更高版本实现替代。
 - PR #1（旧知识检索/能力中心 Draft）与 PR #3（旧 Phase 2 架构 Draft）已关闭；当前开放 PR 数为 0。
-- **分支引用尚未删除。** 当前 GitHub 连接没有 DELETE git ref / delete branch 操作；未用强制移动分支指针伪装删除，也未声称已清理。待具备删除 ref 权限的连接后，可按上述核销结果删除 37 条历史分支，保留 main。
+- **37 条历史分支均已核销为删除候选，但分支引用尚未删除。** 当前 GitHub 连接没有 DELETE git ref / delete branch 操作；未用强制移动分支指针伪装删除，也未声称已清理。待具备删除 ref 权限的连接后，保留 main，删除以下候选：
+  - 已是 main 祖先（17）：`feature/calendar-chat-dispatch`、`feature/modelscope-oauth`、`feature/module-5-project-space`、`feature/module-7-memory`、`feature/module-10-artifacts`、`feature/module-11-expert-templates`、`feature/module-12-model-comparison`、`feature/module-17-smart-editing`、`feature/module-18-calendar`、`feature/phase2-optimization`、`feature/voice-system`、`integration/19-modules`、`refactor/phase-2-architecture`、`staging/phase2-agent-cancellation`、`staging/phase2-model-ui-feedback`、`staging/phase2-phoneagent-cancellation`、`staging/phase2-provider-lifecycle`。
+  - 有分叉提交但代码已在 main、被更新实现替代，或仅含空 stub（20）：`design/chat-first-minimal-nost`、`feature/expert-group-chat-lifecycle`、`feature/knowledge-retrieval-ranking`、`feature/module-6-knowledge-base`、`feature/module-7-skill-library`、`feature/module-8-phone-agent`、`feature/module-9-voice-system`、`feature/module-13-mcp-tool-center`、`feature/module-14-github-workbench`、`feature/module-15-ai-coworkbench`、`fix/automatic-chat-dispatch-entry`、`fix/memory-context-cache-phone-navigation`、`fix/module-13-audit-reliability`、`fix/monochrome-ui-semantic-colors`、`fix/orchestration-retry-safety`、`test/github-write-access-20261122`、`ui/chat-first-directory-refine`、`wip/module-5-project-space`、`wip/module-6-finalize`、`wip/module-6-knowledge-base`。
 
 ### UI 与接口首轮复核
 
