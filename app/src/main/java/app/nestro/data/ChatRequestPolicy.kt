@@ -46,7 +46,7 @@ object ChatRequestPolicy {
         val boundedNewestFirst = ArrayList<ChatHistoryItem>()
 
         for (message in history.asReversed().take(40)) {
-            if (remainingTokenUnits <= 0L || remainingChars <= 0) break
+            if (remainingTokenUnits <= 0L || (remainingChars <= 0 && message.mediaParts.isEmpty())) break
             var mediaTokenUnits = 0L
             val retainedMediaParts = message.mediaParts.filter { part ->
                 val cost = part.estimatedTokens.coerceAtLeast(1).toLong() * 4L
