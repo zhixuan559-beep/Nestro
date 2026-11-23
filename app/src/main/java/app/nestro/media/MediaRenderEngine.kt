@@ -8,12 +8,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.audio.ToInt16PcmAudioProcessor
+import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import java.io.File
+import kotlin.math.roundToLong
 
 @UnstableApi
 object MediaRenderEngine {
@@ -41,7 +43,8 @@ object MediaRenderEngine {
                 .filter { it.timelineStartMs < videoDurationMs }
                 .map { clip ->
                     val boundedEnd = minOf(clip.timelineEndMs, videoDurationMs)
-                    clip.copy(sourceEndMs = clip.sourceStartMs + (boundedEnd - clip.timelineStartMs))
+                    val boundedSourceDuration = ((boundedEnd - clip.timelineStartMs) * clip.speed).roundToLong()
+                    clip.copy(sourceEndMs = minOf(clip.sourceEndMs, clip.sourceStartMs + boundedSourceDuration))
                 }
             if (!audioTrack.muted && boundedAudioClips.any { !it.muted }) {
                 val audioBuilder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
@@ -108,6 +111,13 @@ object MediaRenderEngine {
             editedBuilder.setRemoveAudio(true)
         } else {
             editedBuilder.setEffects(normalizedAudioEffects(audioVolume))
+        }
+        if (asset.kind != MediaAssetKind.IMAGE && clip.speed != 1f) {
+            val clipSpeed = clip.speed
+            editedBuilder.setSpeed(object : SpeedProvider {
+                override fun getSpeed(timeUs: Long): Float = clipSpeed
+                override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = C.TIME_UNSET
+            })
         }
         return editedBuilder.build()
     }

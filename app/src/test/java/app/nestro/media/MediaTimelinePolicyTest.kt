@@ -52,6 +52,39 @@ class MediaTimelinePolicyTest {
     }
 
     @Test
+    fun speedChangesOutputDurationAndSplitMapsBackToSourceTime() {
+        val withClip = MediaTimelinePolicy.addClip(MediaTimeline.empty(project), "video-main", video)
+        val original = withClip.tracks.first { it.id == "video-main" }.clips.single()
+        val sped = MediaTimelinePolicy.setClipSpeed(withClip, "video-main", original.id, 2f)
+        val spedClip = sped.tracks.first { it.id == "video-main" }.clips.single()
+        assertEquals(5_000L, spedClip.durationMs)
+
+        val split = MediaTimelinePolicy.splitClip(sped, "video-main", original.id, 2_500L)
+        val clips = split.tracks.first { it.id == "video-main" }.clips.sortedBy { it.timelineStartMs }
+        assertEquals(2, clips.size)
+        assertEquals(5_000L, clips[0].sourceEndMs)
+        assertEquals(5_000L, clips[1].sourceStartMs)
+        assertEquals(2_500L, clips[1].timelineStartMs)
+        assertEquals(2_500L, clips[0].durationMs)
+    }
+
+    @Test
+    fun speedIsBoundedAndCannotCreateSameTrackOverlap() {
+        val withClip = MediaTimelinePolicy.addClip(MediaTimeline.empty(project), "video-main", video)
+        val original = withClip.tracks.first { it.id == "video-main" }.clips.single()
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.setClipSpeed(withClip, "video-main", original.id, 0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.setClipSpeed(withClip, "video-main", original.id, 5f)
+        }
+        val withTwo = MediaTimelinePolicy.addClip(withClip, "video-main", video)
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaTimelinePolicy.setClipSpeed(withTwo, "video-main", original.id, 0.5f)
+        }
+    }
+
+    @Test
     fun overlappingClipsAreRejected() {
         val first = MediaTimelinePolicy.addClip(MediaTimeline.empty(project), "video-main", video)
         val second = MediaTimelinePolicy.addClip(first, "video-main", video)

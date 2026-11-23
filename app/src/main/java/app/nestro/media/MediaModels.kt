@@ -1,6 +1,7 @@
 package app.nestro.media
 
 import java.util.UUID
+import kotlin.math.roundToLong
 
 enum class MediaAssetKind { VIDEO, AUDIO, IMAGE }
 enum class MediaTrackKind { VIDEO, AUDIO }
@@ -36,9 +37,13 @@ data class MediaClip(
     val timelineStartMs: Long,
     val sourceStartMs: Long,
     val sourceEndMs: Long,
-    val muted: Boolean = false
+    val muted: Boolean = false,
+    val speed: Float = 1f
 ) {
-    val durationMs: Long get() = sourceEndMs - sourceStartMs
+    val sourceDurationMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val durationMs: Long get() = if (speed.isFinite() && speed > 0f) {
+        (sourceDurationMs.toDouble() / speed.toDouble()).roundToLong().coerceAtLeast(1L)
+    } else 0L
     val timelineEndMs: Long get() = timelineStartMs + durationMs
 }
 

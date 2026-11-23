@@ -1,12 +1,15 @@
 package app.nestro.media
 
 import java.util.UUID
+import kotlin.math.roundToLong
 
 object MediaTimelinePolicy {
     const val MAX_PROJECT_DURATION_MS = 7_200_000L
     const val MAX_SUBTITLES = 10_000
     const val MAX_CLIPS_PER_TRACK = 2_000
     const val MAX_AUDIO_TRACKS = 8
+    const val MIN_CLIP_SPEED = 0.25f
+    const val MAX_CLIP_SPEED = 4f
 
     fun addTrack(timeline: MediaTimeline, kind: MediaTrackKind): MediaTimeline {
         val track = when (kind) {
@@ -42,8 +45,16 @@ object MediaTimelinePolicy {
         val track = timeline.tracks.firstOrNull { it.id == trackId } ?: error("轨道不存在")
         val clip = track.clips.firstOrNull { it.id == clipId } ?: error("剪辑片段不存在")
         require(offsetMs in 1 until clip.durationMs) { "拆分位置必须位于片段内部" }
-        val first = clip.copy(sourceEndMs = clip.sourceStartMs + offsetMs)
-        val second = clip.copy(id = UUID.randomUUID().toString(), timelineStartMs = clip.timelineStartMs + offsetMs, sourceStartMs = clip.sourceStartMs + offsetMs)
+        require(clip.sourceDurationMs > 1L) { "源素材不足以拆分" }
+        val sourceOffsetMs = (offsetMs.toDouble() * clip.speed.toDouble())
+            .roundToLong().coerceIn(1L, clip.sourceDurationMs - 1L)
+        val splitSourceMs = clip.sourceStartMs + sourceOffsetMs
+        val first = clip.copy(sourceEndMs = splitSourceMs)
+        val second = clip.copy(
+            id = UUID.randomUUID().toString(),
+            timelineStartMs = first.timelineEndMs,
+            sourceStartMs = splitSourceMs
+        )
         return timeline.copy(tracks = timeline.tracks.map { t -> if (t.id == trackId) t.copy(clips = t.clips.flatMap { if (it.id == clipId) listOf(first, second) else listOf(it) }) else t })
     }
 
@@ -59,6 +70,27 @@ object MediaTimelinePolicy {
         val track = timeline.tracks.firstOrNull { it.id == trackId } ?: error("轨道不存在")
         require(track.clips.any { it.id == clipId }) { "剪辑片段不存在" }
         return timeline.copy(tracks = timeline.tracks.map { t -> if (t.id == trackId) t.copy(clips = t.clips.map { if (it.id == clipId) it.copy(timelineStartMs = newStartMs) else it }) else t })
+    }
+
+    fun setClipSpeed(timeline: MediaTimeline, trackId: String, clipId: String, speed: Float): MediaTimeline {
+        require(speed.isFinite() && speed in MIN_CLIP_SPEED..MAX_CLIP_SPEED) {
+            "片段速度必须在 0.25× 到 4× 之间"
+        }
+        val track = timeline.tracks.firstOrNull { it.id == trackId } ?: error("轨道不存在")
+        require(track.clips.any { it.id == clipId }) { "剪辑片段不存在" }
+        val updated = timeline.copy(tracks = timeline.tracks.map { current ->
+            if (current.id == trackId) current.copy(clips = current.clips.map {
+                if (it.id == clipId) it.copy(speed = speed) else it
+            }) else current
+        })
+        val ordered = updated.tracks.first { it.id == trackId }.clips.sortedBy { it.timelineStartMs }
+        ordered.zipWithNext().forEach { (left, right) ->
+            require(left.timelineEndMs <= right.timelineStartMs) {
+                "变速后片段与同轨其他片段重叠，请先移动后续片段"
+            }
+        }
+        require(updated.durationMs <= MAX_PROJECT_DURATION_MS) { "变速后项目时长超过 2 小时" }
+        return updated
     }
 
     fun removeClip(timeline: MediaTimeline, trackId: String, clipId: String): MediaTimeline {
@@ -99,6 +131,7 @@ object MediaTimelinePolicy {
                 require(asset.projectId == timeline.projectId) { "时间线引用了其他项目素材" }
                 require((track.kind == MediaTrackKind.AUDIO) == (asset.kind == MediaAssetKind.AUDIO)) { "素材轨道类型不匹配" }
                 require(clip.timelineStartMs >= 0 && clip.sourceStartMs >= 0 && clip.sourceEndMs > clip.sourceStartMs) { "剪辑时间范围无效" }
+                require(clip.speed.isFinite() && clip.speed in MIN_CLIP_SPEED..MAX_CLIP_SPEED) { "片段速度必须在 0.25× 到 4× 之间" }
                 require(clip.sourceEndMs <= asset.durationMs) { "剪辑超出源素材时长" }
                 require(clip.timelineEndMs <= MAX_PROJECT_DURATION_MS) { "项目时长超过 2 小时" }
                 if (index > 0) require(ordered[index - 1].timelineEndMs <= clip.timelineStartMs) { "同一轨道的剪辑片段不能重叠" }

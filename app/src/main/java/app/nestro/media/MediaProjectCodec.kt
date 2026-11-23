@@ -28,7 +28,7 @@ object MediaProjectCodec {
             track.clips.forEach { clip ->
                 clips.put(JSONObject().put("id", clip.id).put("assetId", clip.assetId)
                     .put("timelineStartMs", clip.timelineStartMs).put("sourceStartMs", clip.sourceStartMs)
-                    .put("sourceEndMs", clip.sourceEndMs).put("muted", clip.muted))
+                    .put("sourceEndMs", clip.sourceEndMs).put("muted", clip.muted).put("speed", clip.speed))
             }
             tracks.put(JSONObject().put("id", track.id).put("name", track.name)
                 .put("kind", track.kind.name).put("muted", track.muted)
@@ -54,7 +54,8 @@ object MediaProjectCodec {
                     id = clip.getString("id"), assetId = clip.getString("assetId"),
                     timelineStartMs = clip.getLong("timelineStartMs"),
                     sourceStartMs = clip.getLong("sourceStartMs"), sourceEndMs = clip.getLong("sourceEndMs"),
-                    muted = clip.optBoolean("muted")
+                    muted = clip.optBoolean("muted"),
+                    speed = clip.optDouble("speed", 1.0).toFloat()
                 )
             }
             MediaTrack(

@@ -680,6 +680,14 @@ fun MediaEditorPage(
                                 Text(asset?.displayName ?: "缺失素材", style = MaterialTheme.typography.bodySmall)
                                 Text(formatDuration(clip.timelineStartMs) + " → " + formatDuration(clip.timelineEndMs),
                                     style = MaterialTheme.typography.labelSmall)
+                                TextButton(onClick = {
+                                    val speedOptions = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)
+                                    val currentIndex = speedOptions.indexOf(clip.speed).let { if (it < 0) 2 else it }
+                                    val nextSpeed = speedOptions[(currentIndex + 1) % speedOptions.size]
+                                    runCatching {
+                                        persist(MediaTimelinePolicy.setClipSpeed(timeline, track.id, clip.id, nextSpeed))
+                                    }.onFailure { status = it.message ?: "调整速度失败" }
+                                }) { Text("速度 ${clip.speed}×") }
                             }
                             TextButton(onClick = {
                                 runCatching {
