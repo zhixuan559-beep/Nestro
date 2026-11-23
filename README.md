@@ -4,7 +4,7 @@
 
 Nestro 不运营自营账号系统，也不托管用户的模型推理服务。用户自行选择兼容的模型服务商并配置 API Key。
 
-> **当前阶段（2026-11-24）：唯一开发与交付主线为 `main`，本轮业务源码与测试源码回读基线为 `085ff4d8afaad7e6a8de8e3479bdbaf850d0d262`。所有新功能、修复和文档更新直接提交 main；历史分支仅作为代码对照证据，不作为开发入口，不整分支合并或覆盖现有实现。十九模块当前状态以 [十九模块功能审计](docs/FUNCTION_AUDIT.md)、[当前代码地图](docs/CURRENT_CODE_MAP.md)、[十九模块完整清单](docs/NESTRO_19_MODULES.md) 和 [实现状态与开发路线图](docs/IMPLEMENTATION_ROADMAP.md) 为准。功能整合和清理完成前不运行最终构建；未经编译、测试和设备验收不得宣称交付完成。**
+> **当前阶段（2026-11-24）：唯一开发与交付主线为 `main`。所有新功能、修复和文档更新直接提交 main；历史分支仅作为代码对照证据，不整分支合并或覆盖现有实现。每次开发必须先遵守仓库根目录 [AGENTS.md](AGENTS.md) 中的执行使命令，再参考 [十九模块功能审计](docs/FUNCTION_AUDIT.md)、[当前代码地图](docs/CURRENT_CODE_MAP.md)、[十九模块完整清单](docs/NESTRO_19_MODULES.md) 和 [实现状态与开发路线图](docs/IMPLEMENTATION_ROADMAP.md)。功能整合和清理完成前不运行最终构建；未经编译、测试和设备验收不得宣称交付完成。**
 
 ## 产品原则
 
@@ -35,6 +35,7 @@ Nestro 不运营自营账号系统，也不托管用户的模型推理服务。�
 - [当前代码地图](docs/CURRENT_CODE_MAP.md)：当前整合分支源码落点与跨模块调用链。
 - [十九模块完整清单](docs/NESTRO_19_MODULES.md)：固定模块范围及逐项功能清单。
 - [实现状态与开发路线图](docs/IMPLEMENTATION_ROADMAP.md)：新增需求、处理顺序和后续收口安排。
+- [开发使命令](AGENTS.md)：所有 AI 开发任务的强制执行顺序、禁止事项和阶段闸门。
 
 ## 模型配置
 
