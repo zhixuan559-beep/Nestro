@@ -39,6 +39,7 @@ import app.nestro.data.ConversationPersistenceService
 import app.nestro.data.ChatRequestRecoveryCoordinator
 import app.nestro.data.ConversationStartupCoordinator
 import app.nestro.data.UserMemoryRepository
+import app.nestro.data.UserMemoryStore
 import app.nestro.data.ConversationContextRepository
 import app.nestro.data.ProjectSpaceRepository
 import app.nestro.data.ProjectAccessControlStore
