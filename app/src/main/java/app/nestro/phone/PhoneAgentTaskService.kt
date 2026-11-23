@@ -108,6 +108,7 @@ class PhoneAgentTaskService(
             PhoneAgentTaskStore.STATUS_RUNNING -> AgentTaskStatus.RUNNING
             PhoneAgentTaskStore.STATUS_WAITING_USER -> AgentTaskStatus.WAITING_FOR_USER
             PhoneAgentTaskStore.STATUS_PAUSED -> AgentTaskStatus.PAUSED
+            PhoneAgentTaskStore.STATUS_INTERRUPTED -> AgentTaskStatus.PAUSED
             PhoneAgentTaskStore.STATUS_COMPLETED -> AgentTaskStatus.COMPLETED
             PhoneAgentTaskStore.STATUS_FAILED -> AgentTaskStatus.FAILED
             PhoneAgentTaskStore.STATUS_CANCELLED -> AgentTaskStatus.CANCELLED
