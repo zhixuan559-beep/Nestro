@@ -148,4 +148,25 @@ class CalendarRulesAutomationTest {
     }
 
 
+    @Test
+    fun missedPreEventTriggerIsNotScheduledAgainAfterDispatch() {
+        val start = 1_800_000_000_000L
+        val value = event(startAt = start, automationDelayMinutes = -30)
+        val dispatched = value.copy(
+            lastTaskId = CalendarRules.automationTaskId(value, start),
+            lastRunAt = start - 10 * 60_000L
+        )
+        assertNull(CalendarRules.nextAutomationScheduledOccurrenceStart(dispatched, start - 10 * 60_000L))
+    }
+
+    @Test
+    fun definitionGenerationAllowsNewPreEventTriggerAfterPreviousDispatch() {
+        val start = 1_800_000_000_000L
+        val original = event(startAt = start, automationDelayMinutes = -30, automationGeneration = 1L)
+        val dispatched = original.copy(lastTaskId = CalendarRules.automationTaskId(original, start))
+        val edited = dispatched.copy(automationGeneration = 2L)
+        assertEquals(start, CalendarRules.nextAutomationScheduledOccurrenceStart(edited, start - 10 * 60_000L))
+    }
+
+
 }
