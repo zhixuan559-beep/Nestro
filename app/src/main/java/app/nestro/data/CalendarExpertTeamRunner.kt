@@ -49,7 +49,7 @@ internal class CalendarExpertTeamRunner(
             }
         }.getOrDefault(emptyMap())
         val profiles = ExpertProfileCodec.decode(preferences.getString("expert_profiles_v1", "{}") ?: "{}")
-        val skills = runCatching {
+        val skills = DEFAULT_SKILLS + runCatching {
             val json = JSONObject(preferences.getString("skills", "{}") ?: "{}")
             buildMap {
                 val keys = json.keys()
