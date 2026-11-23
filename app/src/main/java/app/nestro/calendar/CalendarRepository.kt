@@ -87,32 +87,61 @@ class CalendarRepository(context: Context) {
         nextRunAt: Long,
         lastRunAt: Long,
         taskId: String,
-        idempotencyKey: String
-    ) {
-        dao.recordAutomationDispatch(
-            id = eventId,
-            nextRunAt = nextRunAt,
-            lastRunAt = lastRunAt,
-            taskId = taskId,
-            idempotencyKey = idempotencyKey,
-            updatedAt = System.currentTimeMillis()
-        )
+        idempotencyKey: String,
+        expectedGeneration: Long? = null
+    ): Boolean {
+        val updatedAt = System.currentTimeMillis()
+        return if (expectedGeneration == null) {
+            dao.recordAutomationDispatch(
+                id = eventId,
+                nextRunAt = nextRunAt,
+                lastRunAt = lastRunAt,
+                taskId = taskId,
+                idempotencyKey = idempotencyKey,
+                updatedAt = updatedAt
+            )
+            true
+        } else {
+            dao.recordAutomationDispatchForGeneration(
+                id = eventId,
+                nextRunAt = nextRunAt,
+                lastRunAt = lastRunAt,
+                taskId = taskId,
+                idempotencyKey = idempotencyKey,
+                updatedAt = updatedAt,
+                generation = expectedGeneration
+            ) > 0
+        }
     }
 
     suspend fun recordAutomationResult(
         eventId: String,
         status: String,
         result: String = "",
-        error: String = ""
-    ) {
+        error: String = "",
+        expectedGeneration: Long? = null
+    ): Boolean {
         require(status in setOf("IDLE", "QUEUED", "RUNNING", "WAITING_FOR_USER", "WAITING_FOR_TASK", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"))
-        dao.recordAutomationResult(
-            id = eventId,
-            status = status,
-            result = result.take(8_000),
-            error = error.take(2_000),
-            updatedAt = System.currentTimeMillis()
-        )
+        val updatedAt = System.currentTimeMillis()
+        return if (expectedGeneration == null) {
+            dao.recordAutomationResult(
+                id = eventId,
+                status = status,
+                result = result.take(8_000),
+                error = error.take(2_000),
+                updatedAt = updatedAt
+            )
+            true
+        } else {
+            dao.recordAutomationResultForGeneration(
+                id = eventId,
+                status = status,
+                result = result.take(8_000),
+                error = error.take(2_000),
+                updatedAt = updatedAt,
+                generation = expectedGeneration
+            ) > 0
+        }
     }
 
     suspend fun create(
