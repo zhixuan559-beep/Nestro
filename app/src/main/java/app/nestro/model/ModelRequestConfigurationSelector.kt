@@ -25,6 +25,7 @@ internal object ModelRequestConfigurationSelector {
         readKey: (profileId: String) -> String
     ): List<ModelConfig> {
         val selectableIds = selectableLegacyProfileIds(registry)
+        val activeModel = registry.models.firstOrNull { it.id == "legacy-model-$activeProfileId" }
         return buildList {
             if (
                 activeProfileId in selectableIds &&
@@ -32,7 +33,10 @@ internal object ModelRequestConfigurationSelector {
                 activeConfig.model.isNotBlank() &&
                 activeConfig.apiKey.isNotBlank()
             ) {
-                add(activeConfig)
+                add(activeConfig.copy(
+                    inputModalities = activeModel?.inputModalities ?: activeConfig.inputModalities,
+                    supportsNativeToolCalling = activeModel?.supportsNativeToolCalling ?: activeConfig.supportsNativeToolCalling
+                ))
             }
             if (failoverEnabled) {
                 profiles.filter { it.id != activeProfileId && it.id in selectableIds }
@@ -40,7 +44,9 @@ internal object ModelRequestConfigurationSelector {
                         val key = readKey(profile.id)
                         if (key.isNotBlank()) add(ModelConfig(
                             profile.baseUrl, profile.model, key,
-                            contextWindowTokens = registry.models.firstOrNull { it.id == "legacy-model-${profile.id}" }?.contextWindowTokens
+                            contextWindowTokens = registry.models.firstOrNull { it.id == "legacy-model-${profile.id}" }?.contextWindowTokens,
+                            inputModalities = registry.models.firstOrNull { it.id == "legacy-model-${profile.id}" }?.inputModalities ?: setOf(ModelModality.TEXT),
+                            supportsNativeToolCalling = registry.models.firstOrNull { it.id == "legacy-model-${profile.id}" }?.supportsNativeToolCalling ?: true
                         ))
                     }
             }
@@ -83,7 +89,9 @@ internal object ModelRequestConfigurationSelector {
                     provider.baseUrl, model.modelCode, secret,
                     reasoningEffort.takeIf { model.supportsReasoningEffort },
                     provider.protocol,
-                    model.contextWindowTokens
+                    model.contextWindowTokens,
+                    model.inputModalities,
+                    model.supportsNativeToolCalling
                 )
             }
         }
