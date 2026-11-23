@@ -91,6 +91,36 @@ class ChatRequestPolicyTest {
     }
 
     @Test
+    fun contextWindowUsesSmallestConfiguredFailoverModel() {
+        val configs = listOf(
+            ModelConfig("https://large.example", "large", "key", contextWindowTokens = 131_072),
+            ModelConfig("https://small.example", "small", "key", contextWindowTokens = 8_192)
+        )
+        assertEquals(8_192, ModelContextWindowPolicy.effectiveContextWindow(configs))
+    }
+
+    @Test
+    fun unknownFailoverWindowUsesConservativeDefault() {
+        val configs = listOf(
+            ModelConfig("https://known.example", "known", "key", contextWindowTokens = 32_768),
+            ModelConfig("https://unknown.example", "unknown", "key")
+        )
+        assertEquals(
+            ModelContextWindowPolicy.DEFAULT_CONTEXT_WINDOW_TOKENS,
+            ModelContextWindowPolicy.effectiveContextWindow(configs)
+        )
+    }
+
+    @Test
+    fun outputReserveIsClampedToSelectedModelWindow() {
+        assertEquals(1_024, ModelContextWindowPolicy.outputReserve(4_096, 1_024))
+        assertEquals(
+            ModelContextWindowPolicy.DEFAULT_OUTPUT_RESERVE_TOKENS,
+            ModelContextWindowPolicy.outputReserve(null, 8_192)
+        )
+    }
+
+    @Test
     fun recognizesTransientFailureInNestedCause() {
         assertTrue(ChatRequestPolicy.shouldRetry(
             IllegalStateException("request failed", IOException("socket timeout"))
