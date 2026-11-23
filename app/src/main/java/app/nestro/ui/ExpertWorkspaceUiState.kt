@@ -9,6 +9,30 @@ import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamCollaborationEvent
 import app.nestro.data.ExpertTeamRunHistoryCodec
 import app.nestro.data.ExpertTeamRunResult
+import kotlinx.coroutines.CompletableDeferred
+import java.util.concurrent.atomic.AtomicReference
+
+internal class ExpertTeamPauseController {
+    private val resumeSignal = AtomicReference<CompletableDeferred<Unit>?>(null)
+
+    fun isPaused(): Boolean = resumeSignal.get() != null
+
+    fun pause(): Boolean =
+        resumeSignal.compareAndSet(null, CompletableDeferred())
+
+    fun resume(): Boolean {
+        val gate = resumeSignal.getAndSet(null) ?: return false
+        gate.complete(Unit)
+        return true
+    }
+
+    suspend fun awaitResume() {
+        while (true) {
+            val gate = resumeSignal.get() ?: return
+            gate.await()
+        }
+    }
+}
 
 internal const val EXPERT_TEAM_EVENT_PAGE_SIZE = 16
 internal const val EXPERT_TEAM_EVENT_MAX_VISIBLE = 100
