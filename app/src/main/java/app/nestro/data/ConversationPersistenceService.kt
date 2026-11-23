@@ -32,6 +32,26 @@ internal fun decodeMessageVersions(raw: String, activeVersion: Int): List<String
 
 /** Owns Room restore/migration and snapshot persistence for conversations and projects. */
 class ConversationPersistenceService(private val database: NestroDatabase, private val context: Context? = null) {
+    private suspend fun invalidateRemovedMemorySources(
+        dao: NestroDao,
+        projectId: String,
+        conversationId: String,
+        previousMessages: List<MessageEntity>,
+        nextMessages: List<ChatMessage>
+    ) {
+        val nextMessagesById = nextMessages.associateBy { it.id }
+        val removedSourceMessageIds = previousMessages
+            .filter { old ->
+                old.role == "user" && nextMessagesById[old.id]?.let {
+                    it.role == "user" && it.content == old.content
+                } != true
+            }
+            .map { it.id }
+        if (removedSourceMessageIds.isNotEmpty()) {
+            dao.deleteUserMemoriesForSourceMessages(projectId, conversationId, removedSourceMessageIds)
+        }
+    }
+
     internal data class RestoreResult(
         val conversations: List<ConversationRecord>,
         val projects: List<ProjectRecord>
@@ -219,17 +239,9 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             require(current == null || current.projectId == projectId) {
                 "会话项目归属已变化，拒绝跨项目覆盖"
             }
-            val nextMessagesById = messages.associateBy { it.id }
-            val removedSourceMessageIds = existing?.messages.orEmpty()
-                .filter { old ->
-                    old.role == "user" && nextMessagesById[old.id]?.let {
-                        it.role == "user" && it.content == old.content
-                    } != true
-                }
-                .map { it.id }
-            if (removedSourceMessageIds.isNotEmpty()) {
-                dao.deleteUserMemoriesForSourceMessages(projectId, conversationId, removedSourceMessageIds)
-            }
+            invalidateRemovedMemorySources(
+                dao, projectId, conversationId, existing?.messages.orEmpty(), messages
+            )
             val now = System.currentTimeMillis()
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
                 ?.ifBlank { "新对话" } ?: current?.title ?: initialTitle?.take(80)?.ifBlank { "新对话" } ?: "新对话"
@@ -264,17 +276,9 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                 ?: return@withTransaction
             val current = existing.conversation
             require(dao.projectExists(current.projectId)) { "会话所属项目不存在，拒绝恢复消息" }
-            val nextMessagesById = messages.associateBy { it.id }
-            val removedSourceMessageIds = existing.messages
-                .filter { old ->
-                    old.role == "user" && nextMessagesById[old.id]?.let {
-                        it.role == "user" && it.content == old.content
-                    } != true
-                }
-                .map { it.id }
-            if (removedSourceMessageIds.isNotEmpty()) {
-                dao.deleteUserMemoriesForSourceMessages(current.projectId, conversationId, removedSourceMessageIds)
-            }
+            invalidateRemovedMemorySources(
+                dao, current.projectId, conversationId, existing.messages, messages
+            )
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
                 ?.ifBlank { "新对话" } ?: current.title
             val title = if (current.title == "新对话" || current.title == "旧对话") firstPrompt else current.title
@@ -318,17 +322,9 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
                     dao.deleteUserMemoriesForConversations(listOf(record.id), existing.conversation.projectId)
                 }
                 if (record.messagesLoaded && existing != null) {
-                    val nextMessagesById = record.messages.associateBy { it.id }
-                    val removedSourceMessageIds = existing.messages
-                        .filter { old ->
-                            old.role == "user" && nextMessagesById[old.id]?.let {
-                                it.role == "user" && it.content == old.content
-                            } != true
-                        }
-                        .map { it.id }
-                    if (removedSourceMessageIds.isNotEmpty()) {
-                        dao.deleteUserMemoriesForSourceMessages(record.projectId, record.id, removedSourceMessageIds)
-                    }
+                    invalidateRemovedMemorySources(
+                        dao, record.projectId, record.id, existing.messages, record.messages
+                    )
                 }
                 dao.putConversation(ConversationEntity(record.id, record.title, record.updatedAt, record.projectId))
                 if (record.messagesLoaded) {
