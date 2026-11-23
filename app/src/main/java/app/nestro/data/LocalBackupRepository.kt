@@ -28,7 +28,8 @@ private val nonTerminalPhoneAgentStatuses = setOf(
     PhoneAgentTaskStore.STATUS_PLANNED,
     PhoneAgentTaskStore.STATUS_RUNNING,
     PhoneAgentTaskStore.STATUS_PAUSED,
-    PhoneAgentTaskStore.STATUS_WAITING_USER
+    PhoneAgentTaskStore.STATUS_WAITING_USER,
+    PhoneAgentTaskStore.STATUS_INTERRUPTED
 )
 
 private suspend fun requireNoActivePhoneAgentTasks(database: NestroDatabase) {
@@ -919,7 +920,7 @@ private suspend fun applyLocalBackup(
     val validTaskStatuses = setOf(
         PhoneAgentTaskStore.STATUS_PLANNED, PhoneAgentTaskStore.STATUS_RUNNING,
         PhoneAgentTaskStore.STATUS_WAITING_USER, PhoneAgentTaskStore.STATUS_PAUSED,
-        PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
+        PhoneAgentTaskStore.STATUS_INTERRUPTED, PhoneAgentTaskStore.STATUS_COMPLETED, PhoneAgentTaskStore.STATUS_FAILED,
         PhoneAgentTaskStore.STATUS_CANCELLED
     )
     val validTaskCategories = PhoneAgentPlanner.Category.values().map { it.name }.toSet()
