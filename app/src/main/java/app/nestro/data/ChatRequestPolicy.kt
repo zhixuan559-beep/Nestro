@@ -3,7 +3,11 @@ package app.nestro.data
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 
-data class ChatHistoryItem(val role: String, val content: String)
+data class ChatHistoryItem(
+    val role: String,
+    val content: String,
+    val mediaParts: List<ChatMessageMediaPart> = emptyList()
+)
 
 object ChatRequestPolicy {
     const val MAX_HISTORY_CHARS = 48_000
@@ -43,16 +47,24 @@ object ChatRequestPolicy {
 
         for (message in history.asReversed().take(40)) {
             if (remainingTokenUnits <= 0L || remainingChars <= 0) break
+            var mediaTokenUnits = 0L
+            val retainedMediaParts = message.mediaParts.filter { part ->
+                val cost = part.estimatedTokens.coerceAtLeast(1).toLong() * 4L
+                if (cost <= remainingTokenUnits - mediaTokenUnits) {
+                    mediaTokenUnits += cost
+                    true
+                } else false
+            }
             val content = takeLastWithinBudget(
                 message.content,
                 maxChars = remainingChars,
-                maxTokenUnits = remainingTokenUnits
+                maxTokenUnits = (remainingTokenUnits - mediaTokenUnits).coerceAtLeast(0L)
             )
-            if (content.isEmpty()) continue
+            if (content.isEmpty() && retainedMediaParts.isEmpty()) continue
 
-            boundedNewestFirst += message.copy(content = content)
+            boundedNewestFirst += message.copy(content = content, mediaParts = retainedMediaParts)
             remainingChars -= content.length
-            remainingTokenUnits -= tokenUnits(content)
+            remainingTokenUnits -= tokenUnits(content) + mediaTokenUnits
         }
 
         return boundedNewestFirst.asReversed()
@@ -64,12 +76,12 @@ object ChatRequestPolicy {
         contextWindowTokens: Int = 16_384,
         outputReserveTokens: Int = 2_048
     ): List<ChatMessage> = boundedHistory(
-        history.map { ChatHistoryItem(it.role, it.content) },
+        history.map { ChatHistoryItem(it.role, it.content, it.mediaParts) },
         systemPrompt,
         contextWindowTokens,
         outputReserveTokens
     ).mapIndexed { index, item ->
-        ChatMessage("request-context-$index", item.role, item.content)
+        ChatMessage("request-context-$index", item.role, item.content, mediaParts = item.mediaParts)
     }
 
     private fun takeLastWithinBudget(
