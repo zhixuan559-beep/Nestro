@@ -24,6 +24,8 @@
         android:name=".NestroApplication"
         android:allowBackup="false"
         android:label="Nost"
+        android:icon="@drawable/nost_launcher_icon"
+        android:roundIcon="@drawable/nost_launcher_icon"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <provider
