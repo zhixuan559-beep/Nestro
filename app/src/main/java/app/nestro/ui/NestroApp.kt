@@ -460,6 +460,7 @@ fun NestroApp(initialPage: String = "home") {
         }
         if (deleteChats) {
             val remaining = conversations.filterNot { it.id in teamChatIds }
+            prefs.edit().also { editor -> teamChatIds.forEach { editor.remove("draft_$it") } }.apply()
             conversationPageItems = conversationPageItems.filterNot { it.id in teamChatIds }
             conversationPageRefreshKey++
             val activeWasDeleted = activeConversationId in teamChatIds
