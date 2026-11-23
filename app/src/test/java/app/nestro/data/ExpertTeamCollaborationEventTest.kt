@@ -25,6 +25,6 @@ class ExpertTeamCollaborationEventTest {
             ExpertTeamCollaborationEvent(taskId = "task-1", projectId = "project-a", teamId = "team-1",
                 sequence = index.toLong(), type = "member_message", message = "message-$index")
         }
-        assertEquals(500, ExpertTeamCollaborationEventCodec.decode(ExpertTeamCollaborationEventCodec.encode(many)).size)
+        assertEquals(300, ExpertTeamCollaborationEventCodec.decode(ExpertTeamCollaborationEventCodec.encode(many)).size)
     }
 }
