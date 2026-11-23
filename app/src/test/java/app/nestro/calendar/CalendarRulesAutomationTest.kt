@@ -169,4 +169,17 @@ class CalendarRulesAutomationTest {
     }
 
 
+    @Test
+    fun latePreEventDispatchDoesNotBackfillEveryFutureRecurrence() {
+        val start = 1_800_000_000_000L
+        val value = event(startAt = start, recurrence = CalendarRules.DAILY, automationDelayMinutes = -10_080)
+        val dispatched = value.copy(
+            lastTaskId = CalendarRules.automationTaskId(value, start),
+            lastRunAt = start - 6 * 24 * 60 * 60 * 1000L
+        )
+        val now = start - 6 * 24 * 60 * 60 * 1000L
+        assertEquals(start + 7 * 24 * 60 * 60 * 1000L, CalendarRules.nextAutomationScheduledOccurrenceStart(dispatched, now))
+    }
+
+
 }
