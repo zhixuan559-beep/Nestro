@@ -1402,3 +1402,10 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已删除旧类及仅验证该类的测试文件，提交分别为 `7124010867e79028159a1cf07c26fd55e95f6f4d`、`60b64468062f54dec19e77c54acf2d1645a66435`。
 - 反向核验：`ChatNetworkPolicy` 在 `ChatExecutionService`、`OpenAiClient` 中有生产调用；`TtsCapability` 在 `AndroidTextToSpeechController` 中有生产调用。两者保留，不按历史报告误删。
 - 仅完成静态引用审查与删除回读；未执行 Gradle、编译或测试。
+
+
+## 2026-11-24 Mika 虚拟屏输入事件资源与静态语法修复
+
+- 当前 `main` 回读发现 `MikaVirtualDisplayService.injectAsciiText` 的 `events.forEach` 含未闭合的 `try`，属于明确 Kotlin 语法阻塞；同时生成的 `KeyEvent` 未释放。
+- 已改为外层 `try/finally`，无论注入正常返回或中途异常，都会回收本次 `getEvents()` 生成的全部 `KeyEvent`。底层 `inject()` 本身通过 `runCatching` 将反射注入失败转换为 `false`，因此仍会逐个尝试并保留原有返回码语义。
+- 源码提交：`3c6ecfde27f49cfe2975e4577d55be08a7183066`；已回读确认 try/finally 结构完整。未运行编译或测试，不能宣称编译通过。
