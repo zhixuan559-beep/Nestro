@@ -76,6 +76,7 @@ fun MediaEditorPage(
     var status by remember(projectId) { mutableStateOf("导入本地视频、音频或图片，素材只保存在当前项目。") }
     var selectedAssetId by remember(projectId) { mutableStateOf("") }
     var selectedAudioTrackId by remember(projectId) { mutableStateOf("audio-main") }
+    var audioTrackVolumeDrafts by remember(projectId) { mutableStateOf(emptyMap<String, Float>()) }
     var subtitleDraft by remember(projectId) { mutableStateOf("") }
     var subtitleEdits by remember(projectId) { mutableStateOf(emptyMap<String, String>()) }
     var subtitlePage by remember(projectId) { mutableStateOf(0) }
@@ -110,6 +111,7 @@ fun MediaEditorPage(
         }
         assets = result.first
         timeline = result.second
+        audioTrackVolumeDrafts = result.second.tracks.associate { it.id to it.volume }
         if (result.second.tracks.none { it.id == selectedAudioTrackId && it.kind == MediaTrackKind.AUDIO }) {
             selectedAudioTrackId = result.second.tracks.firstOrNull { it.kind == MediaTrackKind.AUDIO }?.id.orEmpty()
         }
@@ -418,7 +420,10 @@ fun MediaEditorPage(
         }
         val targetTrackId = track.id
         runCatching { MediaTimelinePolicy.addClip(next, targetTrackId, asset) }
-            .onSuccess { saved -> persist(saved) { if (kind == MediaTrackKind.AUDIO) selectedAudioTrackId = targetTrackId } }
+            .onSuccess { saved -> persist(saved) {
+                if (kind == MediaTrackKind.AUDIO) selectedAudioTrackId = targetTrackId
+                audioTrackVolumeDrafts = audioTrackVolumeDrafts + (targetTrackId to 1f)
+            } }
             .onFailure { status = "添加剪辑失败：" + (it.message ?: "时间线不允许该操作") }
     }
 
@@ -597,7 +602,10 @@ fun MediaEditorPage(
                 runCatching {
                     val next = MediaTimelinePolicy.addTrack(timeline, MediaTrackKind.AUDIO)
                     val newTrackId = next.tracks.last().id
-                    persist(next) { selectedAudioTrackId = newTrackId }
+                    persist(next) {
+                        selectedAudioTrackId = newTrackId
+                        audioTrackVolumeDrafts = audioTrackVolumeDrafts + (newTrackId to 1f)
+                    }
                 }.onFailure { status = it.message ?: "新增音频轨失败" }
             }) { Text("添加音频轨") }
         }
@@ -625,12 +633,28 @@ fun MediaEditorPage(
                                     runCatching {
                                         persist(MediaTimelinePolicy.removeTrack(timeline, track.id)) {
                                             if (selectedAudioTrackId == track.id) selectedAudioTrackId = fallbackTrackId
+                                            audioTrackVolumeDrafts = audioTrackVolumeDrafts - track.id
                                         }
                                     }.onFailure { status = it.message ?: "删除音频轨失败" }
                                 }
                             ) { Text("删除轨") }
                         }
                     }
+                    val trackVolume = audioTrackVolumeDrafts[track.id] ?: track.volume
+                    Text("轨道音量 · ${(trackVolume * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+                    Slider(
+                        value = trackVolume,
+                        onValueChange = { value ->
+                            audioTrackVolumeDrafts = audioTrackVolumeDrafts + (track.id to value)
+                        },
+                        onValueChangeFinished = {
+                            val volume = audioTrackVolumeDrafts[track.id] ?: track.volume
+                            persist(timeline.copy(tracks = timeline.tracks.map { current ->
+                                if (current.id == track.id) current.copy(volume = volume) else current
+                            }))
+                        },
+                        valueRange = 0f..2f
+                    )
                     track.clips.sortedBy { it.timelineStartMs }.forEach { clip ->
                         val asset = assets.firstOrNull { it.id == clip.assetId }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
