@@ -1,5 +1,7 @@
 package app.nestro.data
 
+import org.json.JSONObject
+
 /** Backtracking resolver: intersects all ranges for a dependency before selecting one signed release. */
 object SkillDependencyResolver {
     data class InstallPlan(val orderedBundles: List<SkillBundle>, val alreadySatisfied: Map<String, String>) {
