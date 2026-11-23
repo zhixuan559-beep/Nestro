@@ -325,6 +325,15 @@ interface NestroDao {
             CASE WHEN :term12 != '' AND LOWER(m.content) LIKE '%' || LOWER(:term12) || '%' THEN 1 ELSE 0 END
         ) DESC, c.updatedAt DESC, m.position DESC LIMIT :limit
     """)
+    @Query("""
+        SELECT CAST(COUNT(*) AS TEXT) || ':' ||
+               CAST(COALESCE(SUM(updatedAt), 0) AS TEXT) || ':' ||
+               CAST(COALESCE(MAX(updatedAt), 0) AS TEXT)
+        FROM conversations
+        WHERE projectId = :projectId AND id != :currentConversationId
+    """)
+    suspend fun conversationRecallCorpusVersion(projectId: String, currentConversationId: String): String
+
     suspend fun searchConversationMessagesByTerms(
         projectId: String, currentConversationId: String,
         term1: String,
