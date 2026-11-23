@@ -1,6 +1,7 @@
 package app.nestro.data
 
 import app.nestro.agent.AgentTaskRetryPolicy
+import app.nestro.model.ModelModality
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -218,7 +219,7 @@ internal object OpenAiClient {
         val openAiMessages = JSONArray().apply {
             if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
             boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach {
-                put(ChatMessageContentSerializer.openAiMessage(it, supportsAudioInput = ChatMessageContentSerializer.modelIdHintsAudioInputSupport(config.model)))
+                put(ChatMessageContentSerializer.openAiMessage(it, supportsAudioInput = ModelModality.AUDIO in config.inputModalities))
             }
         }
         val anthropicMessages = JSONArray().apply {
@@ -536,7 +537,7 @@ internal object OpenAiClient {
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
                     boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg ->
-                        put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = ChatMessageContentSerializer.modelIdHintsAudioInputSupport(config.model)))
+                        put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = ModelModality.AUDIO in config.inputModalities))
                     }
                 })
                 put("stream", false)
@@ -578,7 +579,7 @@ internal object OpenAiClient {
                 if (maxTokens != null) put("max_tokens", maxTokens.coerceIn(1, 32768))
                 put("messages", JSONArray().apply {
                     if (systemPrompt.isNotBlank()) put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = ChatMessageContentSerializer.modelIdHintsAudioInputSupport(config.model))) }
+                    boundedRequestHistory(history, systemPrompt, maxTokens ?: 2048).forEach { msg -> put(ChatMessageContentSerializer.openAiMessage(msg, supportsAudioInput = ModelModality.AUDIO in config.inputModalities)) }
                 })
                 if (supportsOpenAiStreamUsage(config)) put("stream_options", JSONObject().put("include_usage", true))
                 put("stream", true)
