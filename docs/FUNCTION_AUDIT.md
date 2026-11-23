@@ -1473,3 +1473,8 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 
 - 追加边界复核：批量快照同步遇到会话项目归属变化时，只清理旧项目的来源记忆，不误删目标项目中已导入的独立副本；同项目消息正文被改写（即使 messageId 不变）也会使原自动记忆失效。该规则已集中到 `invalidateRemovedMemorySources`，项目移动保护提交 `3336ffe9f21c9269d99ddf2733704a3cee4f257b`，instrumentation 测试同时覆盖来源消息删除、同 ID 改写及跨项目副本保留（`126f1b5167511315ccb8755fa72ae18aaf881a14`）。
+
+## 2026-11-24 工具目录导航接线复核
+
+- 静态提取 `ToolsDirectoryPage` 的 14 个 destination（models、comparison、voice、skills、workflows、plugins、mcp、capabilities、memory、knowledge、artifacts、media-editor、coworkbench、git），逐一与当前 `NestroApp` 页面路由分支比对，14/14 均存在对应路由，没有发现目录按钮指向未处理页面的断链。
+- 这只证明目录入口有路由，不代表每个页面内部的业务操作都已闭环；页面→回调→Service/Repository→数据/任务→状态回传仍需按模块继续核查。
