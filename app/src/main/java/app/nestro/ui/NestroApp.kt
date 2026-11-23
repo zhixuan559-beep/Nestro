@@ -472,6 +472,7 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     } else next.messages
                     activeConversationId = next.id
+                    applyConversationContext(next.id, next.projectId)
                     messages = nextMessages
                     prefs.edit().putString("active_conversation_id", next.id)
                         .putString("active_project_id", next.projectId).remove("selected_team_id").apply()
@@ -805,8 +806,7 @@ fun NestroApp(initialPage: String = "home") {
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 prefs.edit().putString("selected_expert", selectedExpert).apply()
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, activeProjectId) == activeConversationId }?.id
-                    ?: (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } }.orEmpty()
+                applyConversationContext(activeConversationId, activeProjectId)
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -859,8 +859,7 @@ fun NestroApp(initialPage: String = "home") {
                 expertTemplates = ExpertTemplateCodec.decode(prefs.getString("expert_templates_v1", "[]") ?: "[]")
                 selectedExpert = ExpertCatalogRules.resolveSelection(prefs.getString("selected_expert", "通用助手") ?: "通用助手", experts, expertProfiles)
                 expertTeams = loadExpertTeams(prefs)
-                selectedTeamId = expertTeams.firstOrNull { expertTeamConversationId(it.id, activeProjectId) == activeConversationId }?.id
-                    ?: (prefs.getString("selected_team_id", "") ?: "").takeIf { id -> expertTeams.any { it.id == id } }.orEmpty()
+                applyConversationContext(activeConversationId, activeProjectId)
                 skills = loadSkills(prefs)
                 skillMetadata = loadSkillMetadata(prefs)
                 disabledSkills = loadDisabledSkills(prefs).intersect(skills.keys)
@@ -2881,7 +2880,7 @@ fun NestroApp(initialPage: String = "home") {
                                     val record = ConversationRecord(id, "新对话", System.currentTimeMillis(), emptyList(), activeProjectId)
                                     conversations = listOf(record) + conversations
                                     activeConversationId = id
-                                    selectedTeamId = ""
+                                    applyConversationContext(id, activeProjectId)
                                     messages = emptyList()
                                     prefs.edit().putString("active_conversation_id", id).putString("active_project_id", activeProjectId).remove("selected_team_id").apply()
                                     ConversationPreferencesStore.saveConversationList(prefs, conversations)
@@ -4049,7 +4048,7 @@ fun NestroApp(initialPage: String = "home") {
                             val conversation = ConversationRecord(UUID.randomUUID().toString(), "新对话", System.currentTimeMillis(), emptyList(), project.id)
                             conversations = listOf(conversation) + conversations
                             activeConversationId = conversation.id
-                            selectedTeamId = ""
+                            applyConversationContext(conversation.id, project.id)
                             messages = emptyList()
                             prefs.edit().putString("active_project_id", project.id).putString("active_conversation_id", conversation.id).remove("selected_team_id").apply()
                             ConversationPreferencesStore.saveConversationList(prefs, conversations)
