@@ -1271,7 +1271,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 
 - `ExpertProjectPlanExecutor.execute` 新增可选暂停检查回调，在每个依赖 DAG wave 开始前及 wave 完成后检查；正在执行的并行批次会先安全完成，不强制中断单个专家请求。
 - `ExpertTeamExecutionCoordinator.executeProjectPlan` 在暂停边界将统一任务状态写为 `PAUSED`，用户继续后恢复为 `RUNNING`；复用现有 AgentTaskCoordinator，不新增任务队列。
-- `ExpertWorkspaceUiState.kt` 增加线程安全的 `ExpertTeamPauseController`；聊天顶栏和专家团页面在团队任务运行时提供“暂停专家团/继续专家团”入口。任务结束或取消时释放暂停门闩。
+- `ExpertWorkspaceUiState.kt` 增加线程安全的 `ExpertTeamPauseController`；聊天顶栏在团队任务运行时提供“暂停专家团/继续专家团”入口。任务结束或取消时释放暂停门闩；暂停等待期间停止按钮可通过 shouldStop 轮询中断，协调器将任务标记为 CANCELLED。
 - 新增/更新测试源码：`ExpertProjectPlanExecutorTest.kt` 覆盖 DAG wave 暂停检查点；`ExpertTeamPauseControllerTest.kt` 覆盖暂停等待、恢复和重复操作幂等性。
 - 相关提交：`1b2ceeede941f39734725e5e33143cd3b5188237`、`f8ba7cc1c05779837744e9e8720d9ae357237a31`、`ef6e0e5331d03f360fb3ec44ed037cd7d71a381d`、`75717b2a7605f68443a72cd20c35eca0f2a96d66`、`e0e0bb1ee458c5e799b667b6bc28ecb714c7bc3d`、`d9bd84a865417a6945fd9364ef3c2394b6b0511d`、`08f89a3be8c1ee0110df353eaf7ff4f71b65e33f`、`12c0183d7140dcae228aa5fbb54dac20ccf1d7a0`。
-- 静态回读已完成；未运行编译或测试。当前实现是进程内会话暂停/继续；应用进程退出后的暂停任务恢复入口尚未完成，不能宣称跨进程恢复验收通过。
+- 静态回读已完成；未运行编译或测试。当前实现是进程内会话暂停/继续；应用进程退出后的暂停任务恢复入口尚未完成，不能宣称跨进程恢复验收通过。停止暂停任务的取消路径已补轮询与 CANCELLED 状态写回。
