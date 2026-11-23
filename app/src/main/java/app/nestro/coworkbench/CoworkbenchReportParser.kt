@@ -231,7 +231,7 @@ object CoworkbenchReportParser {
                 skipped = rootCount("skipped")
             } else {
                 fun aggregate(attribute: String): Int {
-                    val value = (0 until suites.length()).sumOf {
+                    val value = (0 until suites.length).sumOf {
                         suiteCount(suites.item(it) as org.w3c.dom.Element, attribute)
                     }
                     require(value <= Int.MAX_VALUE.toLong()) { "JUnit 子测试套件计数总和越界：$attribute" }
