@@ -104,8 +104,8 @@ class CalendarRulesAutomationTest {
     fun automationDelayMustStayWithinSupportedRange() {
         val start = System.currentTimeMillis() + 60_000L
         assertNull(CalendarRules.validate(event(startAt = start, automationDelayMinutes = Int.MAX_VALUE)))
-        assertTrue(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -1)).orEmpty().contains("延迟"))
-        assertTrue(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -1)).orEmpty().contains("延迟"))
+        assertNull(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -CalendarRules.MAX_AUTOMATION_ADVANCE_MINUTES)))
+        assertTrue(CalendarRules.validate(event(startAt = start, automationDelayMinutes = -CalendarRules.MAX_AUTOMATION_ADVANCE_MINUTES - 1)).orEmpty().contains("偏移"))
     }
 
     @Test
@@ -129,4 +129,23 @@ class CalendarRulesAutomationTest {
         assertNull(CalendarRules.validate(event(startAt = start)))
         assertFalse(CalendarRules.validate(event(startAt = start, automationPrompt = "x".repeat(12_001))).isNullOrBlank())
     }
+    @Test
+    fun supportsPreEventOffsetAndRunsImmediatelyIfThatTriggerWasMissed() {
+        val start = 1_800_000_000_000L
+        val value = event(startAt = start, automationDelayMinutes = -30)
+        assertEquals(start - 30 * 60_000L, CalendarRules.automationTriggerAt(value, start))
+        assertEquals(start, CalendarRules.nextAutomationScheduledOccurrenceStart(value, start - 10 * 60_000L))
+        assertEquals(start - 10 * 60_000L, CalendarRules.nextAutomationRunAt(value, start - 10 * 60_000L))
+        assertNull(CalendarRules.nextAutomationScheduledOccurrenceStart(value, start + 1L))
+    }
+
+    @Test
+    fun recurringPreEventOffsetSkipsPastOccurrenceAndSchedulesNextOne() {
+        val start = 1_800_000_000_000L
+        val value = event(startAt = start, recurrence = CalendarRules.DAILY, automationDelayMinutes = -15)
+        val next = CalendarRules.nextAutomationScheduledOccurrenceStart(value, start + 5 * 60_000L)
+        assertEquals(start + 24 * 60 * 60 * 1000L, next)
+    }
+
+
 }
