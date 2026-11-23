@@ -21,7 +21,6 @@ internal class CalendarExpertTeamRunner(
     private val projectId: String,
     private val conversationId: String,
     private val parentTaskId: String,
-    private val baseSystemContext: String,
     private val onUsage: (ModelConfig, Int, Int) -> Unit,
     private val onProviderUsage: (ModelConfig, Int, Int) -> Unit
 ) {
@@ -77,14 +76,14 @@ internal class CalendarExpertTeamRunner(
         return Directory(names, prompts, profiles, skills, disabledSkills, skillMetadata)
     }
 
-    fun hasAvailableTeam(): Boolean {
+    fun hasAvailableTeam(): Boolean = runCatching {
         val directory = directory()
-        val scopes = runCatching { ProjectResourceScopeStore.load(preferences) }.getOrDefault(emptyMap())
-        return directory.names.count { name ->
+        val scopes = ProjectResourceScopeStore.load(preferences)
+        directory.names.count { name ->
             directory.profiles[name]?.enabled != false &&
                 ProjectResourceScopeStore.isVisible(scopes, ProjectResourceKind.EXPERT, name, projectId)
         } >= 2
-    }
+    }.getOrDefault(false)
 
     suspend fun run(systemContext: String, arguments: Map<String, String>): String {
         require(modelConfigs.isNotEmpty()) { "当前没有可用的文本模型配置，无法执行专家项目" }
