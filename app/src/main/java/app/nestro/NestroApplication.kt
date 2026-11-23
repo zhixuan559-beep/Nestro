@@ -277,7 +277,7 @@ class NestroApplication : Application() {
                 )
             ) {
                 val providerStore = MediaProviderConfigStore(this@NestroApplication)
-                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }.mapNotNull { providerStore.read(it.providerId) }
+                val providers = providerStore.list().mapNotNull { providerStore.read(it.providerId) }
                 if (providers.isEmpty()) {
                     app.nestro.agent.AgentToolResult(true, output = "当前尚未配置媒体服务商。")
                 } else {
