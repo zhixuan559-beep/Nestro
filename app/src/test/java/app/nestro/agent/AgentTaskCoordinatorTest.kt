@@ -218,6 +218,27 @@ class AgentTaskCoordinatorTest {
     }
 
     @Test
+    fun inlineTaskWithZeroRetriesDoesNotReplayRetryableSideEffects() = runBlocking {
+        val states = InMemoryAgentTaskStateStore()
+        val registry = AgentTaskHandlerRegistry()
+        val calls = AtomicInteger()
+        val coordinator = AgentTaskCoordinator(states, registry, this)
+
+        val error = runCatching {
+            coordinator.runInline("inline-no-retry", "workflow", maxRetries = 0) {
+                calls.incrementAndGet()
+                throw RetryableAgentTaskException("external action outcome is uncertain")
+            }
+        }.exceptionOrNull()
+
+        assertTrue(error is RetryableAgentTaskException)
+        assertEquals(1, calls.get())
+        assertEquals(0, states.get("inline-no-retry")?.attempts)
+        assertEquals(AgentTaskStatus.FAILED, states.get("inline-no-retry")?.status)
+        coordinator.close()
+    }
+
+    @Test
     fun nonRetryableFailureDoesNotEnterRetryQueue() = runBlocking {
         val states = InMemoryAgentTaskStateStore()
         val registry = AgentTaskHandlerRegistry()
