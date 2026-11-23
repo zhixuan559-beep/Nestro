@@ -3,6 +3,7 @@ package app.nestro.data
 import app.nestro.agent.AgentTaskCoordinator
 import app.nestro.agent.AgentTaskMetadata
 import app.nestro.agent.AgentTaskStatus
+import kotlinx.coroutines.CancellationException
 import app.nestro.agent.AgentCapabilityRegistry
 import app.nestro.agent.AgentToolDiscovery
 import app.nestro.agent.AgentToolCatalog
@@ -359,9 +360,19 @@ class ExpertTeamExecutionCoordinator(
         ) { taskContext ->
             var sequence = 0L
             suspend fun awaitIfPaused() {
+                if (shouldStop()) throw CancellationException("用户停止专家项目")
                 if (!shouldPause()) return
                 taskContext.pause("用户暂停专家项目；当前执行批次已到安全检查点")
-                awaitResume()
+                try {
+                    awaitResume()
+                } catch (cancelled: CancellationException) {
+                    if (shouldStop()) taskContext.cancel("用户停止专家项目")
+                    throw cancelled
+                }
+                if (shouldStop()) {
+                    taskContext.cancel("用户停止专家项目")
+                    throw CancellationException("用户停止专家项目")
+                }
                 taskContext.transition(AgentTaskStatus.RUNNING, "用户恢复专家项目")
             }
             suspend fun emit(type: String, member: String = "", status: String = "", message: String = "") {
