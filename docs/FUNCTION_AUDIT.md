@@ -1358,6 +1358,7 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 ### 当前判定与验证边界
 
 - 延迟分钟触发：生产代码已贯通，测试源码已补；尚未运行编译/测试，不能写成验收通过。
-- 任意时间条件触发、独立 retryCount/业务错误分类退避仍是真实缺口。
+- 任意时间条件触发仍缺。通用任务机的 AgentTaskState.attempts/maxRetries=2、AgentTaskRetryPolicy 瞬时网络/显式 Retryable 异常分类、指数退避和 ModelLedToolDispatcher 副作用后禁止重放均已存在；本轮补齐模型 HTTP 408/425/429/5xx 的 RetryableAgentTaskException 映射。仍未定义日历专属语义型业务错误映射；外部副作用结果不确定时禁止自动重试属于安全边界，不应列为功能缺失。
 - 日历自动任务当前仍未直接分派专家 DAG/Workflow；expertTeamEnabled=false 与无 workflow.run 工具的边界保持不变。
+- 日历定位为辅助自动调度功能，不作为独立页面；当前 CalendarPage 仅暂存既有配置入口，最终应把日程/延迟配置嵌入任务或工作流编辑入口，完成调用关系核对后再移除独立导航。
 - 本轮未运行 Gradle/Kotlin 编译、JVM/Android 测试、模拟器或真机；遵守十九模块代码收口后统一验收的门禁。

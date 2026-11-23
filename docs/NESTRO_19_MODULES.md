@@ -37,7 +37,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 | 15 | AI 共建工作台 | 功能源码与主要回归测试已进入 integration/19-modules；已补齐导航/聊天回流、SBOM 脚本及缺失测试源码；统一编译、测试与真实 Actions 验证待执行 |
 | 16 | 统一能力中心 | AgentToolCatalog/AgentRuntime/AgentTaskCoordinator、权限路由与任务工具租约已有代码；CapabilityDirectoryPage 已接入路由，具备项目能力开关、MCP 项目授权及调用审计；生成式插件 EXTERNAL_WRITE 步骤已有逐步骤审批与 checkpoint。仍缺专家/工作流的工具感知模型适配器接线；专家任务未传项目/会话元数据，工作流任务也未传项目/会话元数据；统一重试/幂等安全策略与完整任务总览仍需补齐。 |
 | 17 | 智能剪辑 | feature/module-17-smart-editing 的代码历史已包含在 integration/19-modules；尚未编译、测试及设备验收，未锁定 |
-| 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件、业务失败分类重试仍缺；主模型入口显式关闭 expertTeamEnabled，且没有 workflow.run 工具，不能直接分派专家 DAG/工作流。 |
+| 18 | 日历（自动时间调度引擎） | 已补齐延迟分钟触发：UI 配置、Room v6（5→6 migration）、Repository 定义版本递增、WorkManager 延迟执行与 generation 防旧 Worker 误触发、待执行 occurrence 跨重启补排程；备份/恢复保留 delay 与 generation，系统日历导入保留配置。generation=0 保留旧 taskId/idempotencyKey/WorkManager 唯一名兼容。新增规则、Repository 生命周期、迁移和备份往返测试源码，均未运行。任意时间条件触发与日历专属语义型业务错误映射仍缺；通用任务机已有 attempts/maxRetries=2、RetryableAgentTaskException/网络异常分类与指数退避，工具副作用开始后禁止自动重放；HTTP 408/425/429/5xx 已纳入瞬时错误重试。主模型入口显式关闭 expertTeamEnabled，且没有 workflow.run 工具，不能直接分派专家 DAG/工作流。 |
 | 19 | 多模态服务与社区生态 | 图片理解/音频转写/场景识别/音频处理 Provider 与持久任务已存在，media.ai.run/status 已接入主模型，视频生成也已接入；聊天页可多选图片/音频/视频并导入当前项目素材库，由主模型按 asset_id 调度专业模型；ChatMessage 原生多模态 part 尚未实现，视频场景分析不等于通用视频问答，非语音音频理解与图像生成仍缺；真实 API/信任根配置与统一验收待完成 |
 
 
@@ -398,7 +398,7 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 - 模块7：手动全局记忆已通过 global_memory_v1 跨项目/会话共享；自动结构化记忆仍项目隔离，逐条共享+READ 授权已实现；最近用户轮次与当前 prompt 已合并。独立 memory-context cache 仍缺；DAO 项目/会话/消息来源归属校验已补并有 instrumentation 测试源码，未运行。
 - 模块8：Phone Agent 终态 SQL 保护已恢复。Mika 虚拟屏浮窗已按最新要求移除标题栏/可见按钮，单击切换预览大小，双击/长按点击虚拟屏，透明角部拖动缩放，普通拖动滑动；仅改变预览尺寸。TRAVEL 分类与导航路线授权仍缺。
 - 模块16：插件统一任务机/checkpoint、外部写入审批、插件恢复入口和 MCP 两层授权语义已实现；能力授权/调用审计已有 UI，但统一跨模块任务总览仍未收敛。任意代码沙箱和完整 VoiceInteractionService 仍未实现。
-- 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟分钟触发已补齐并按 automationGeneration 隔离任务定义，待执行延迟 occurrence 可跨重启恢复。任意时间条件模型、retryCount 与业务错误分类退避仍缺，专家 DAG/Workflow 直接调度边界待核。
+- 模块18：occurrence 触发、AgentTaskCoordinator 分发、主模型工具链、状态/结果回写、暂停/恢复/取消、nextRunAt/lastRunAt/taskId/idempotency 与进程恢复已存在；延迟分钟触发已补齐并按 automationGeneration 隔离任务定义，待执行延迟 occurrence 可跨重启恢复。统一任务机已有 attempts/maxRetries、RetryableAgentTaskException/网络异常分类和指数退避；ModelLedToolDispatcher 在副作用开始后阻止自动重放。本轮补齐 HTTP 408/425/429/5xx 可重试映射。仍缺任意时间条件模型与日历专属语义型业务错误映射，专家 DAG/Workflow 直接调度边界待核。
 - 模块19：主模型已注册 media.ai.run/status，可调用 image/transcribe/scenes/audio-clean；scenes 仅是场景分段，不等于通用视频问答，音频理解目前主要为转写，视频生成单独通过 media.video.generate/status。
 
 > 以上代码状态不代表编译/测试/真机验收通过。未执行 Gradle、JVM/Android 测试、模拟器或真机测试。
@@ -408,8 +408,8 @@ NESTRO 必须实现“听得懂、看得懂、能创作、能执行、会协作�
 
 - 模块1：`ExpertProjectPlanExecutor` 和 `ExpertTeamExecutionCoordinator` 已实现 DAG 依赖波次、并行执行、成员 checkpoint、失败隔离与恢复；`ModelLedToolDispatcher` 已提供 `expert_team.run` 自主组队入口，NestroApp 也支持手动选择团队。仍缺可编辑 DAG、私聊/自由群聊、团队执行暂停/继续/返工 UI、结构化验收/返工协议、临时团队保存/解散入口和协作历史分页。当前团队 UI 显示最近16条，事件持久记录上限100；不应把已存在的 DAG/并行/checkpoint 误判为未实现。
 - 模块18：日历 handler 调用 `ChatRequestExecutionCoordinator` 时 `taskModeEnabled=true` 但明确 `expertTeamEnabled=false`；`ModelLedToolDispatcher` 会过滤 `expert_team.run`，且没有 `workflow.run` 工具。因此当前日历自动任务可调用 Phone Agent、媒体、MCP、插件等能力，但不能直接调用专家 DAG 或工作流。
-- 模块18重试：CalendarAutomationWorker 创建 AgentTaskCoordinator 任务时明确 `maxRetries=0`；WorkManager 的 `runAttemptCount < 3` 只覆盖统一任务机接收前的入队异常，不覆盖主模型业务执行失败。不能简单调高 maxRetries，否则可能重复执行已经发生的外部写入；需要按步骤幂等/检查点设计安全重试后再开放。
-- 模块18 UI：当前仍有独立月/周/日 Calendar 页面，与“日历仅作辅助调度能力、入口嵌入任务/工作流”的产品要求不一致，需在后续界面阶段收敛。
+- 模块18重试（旧结论已过期）：当前 CalendarAutomationWorker 创建任务时传入 `maxRetries=2`；AgentTaskState 持久化 attempts/maxRetries，AgentTaskRetryPolicy 对 RetryableAgentTaskException、SocketTimeout/Connect/UnknownHost/Socket 异常进行指数退避；本轮将模型 HTTP 408/425/429/5xx 映射为 RetryableAgentTaskException。ModelLedToolDispatcher 在外部副作用工具开始后将后续失败包装为 NonRetryableAgentTaskException，避免不确定结果被重放。尚无日历专属语义型业务错误分类；不允许为追求重试而放开副作用后的自动重放。
+- 模块18 UI：日历是辅助自动调度功能，不作为独立页面。当前 CalendarPage 仅暂存既有配置入口；后续界面阶段应把日程/延迟配置嵌入任务或工作流编辑入口，再按完整调用关系移除独立导航，不在此阶段另建日历产品页。
 
 
 ## 2026-11-22 17:20 UTC — 源码增量修复记录
