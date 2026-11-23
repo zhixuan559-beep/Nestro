@@ -679,10 +679,13 @@ ${prompt.take(8_000)}
                 return ModelToolDispatchResult(directReply = "模型选择了未注册的工具，已阻止执行：${decision.toolId}")
             }
             val mcpOrdinal = if (spec.id.startsWith("mcp_")) mcpCallOrdinal.incrementAndGet() else 0
-            val lease = AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+            val lease = if (taskToolAccess == null) {
+                AgentToolLeaseRegistry.open(taskId, catalog, setOf(spec.id))
+            } else null
+            val toolAccess = taskToolAccess ?: requireNotNull(lease).access
             val scopedAccess = object : AgentToolAccess {
-                override fun find(toolId: String) = lease.access.find(toolId)
-                override fun list() = lease.access.list()
+                override fun find(toolId: String) = toolAccess.find(toolId)
+                override fun list() = toolAccess.list()
                 override suspend fun invoke(toolId: String, arguments: Map<String, String>) =
                     when (toolId) {
                         "phone_agent.execute" -> planPhoneAgent(arguments).let { result -> result.copy(output = result.output.take(4_000), error = result.error.take(2_000)) }
@@ -709,7 +712,7 @@ ${prompt.take(8_000)}
                                     AgentToolResult(true, output = savedOutput)
                                 } else {
                                     saveMcpReplayCall(stateStore, taskId, toolId, invocationArguments, mcpOrdinal, "EXECUTING")
-                                    val result = lease.access.invoke(toolId, invocationArguments)
+                                    val result = toolAccess.invoke(toolId, invocationArguments)
                                     if (result.success) {
                                         saveMcpReplayCall(
                                             stateStore, taskId, toolId, invocationArguments,
@@ -719,7 +722,7 @@ ${prompt.take(8_000)}
                                     result
                                 }
                             } else {
-                                lease.access.invoke(toolId, invocationArguments)
+                                toolAccess.invoke(toolId, invocationArguments)
                             }
                         }
                     }
@@ -744,7 +747,7 @@ ${prompt.take(8_000)}
             val result = try {
                 runtime.execute(AgentToolRequest(taskId, spec.id, decision.arguments))
             } finally {
-                AgentToolLeaseRegistry.release(lease.id)
+                lease?.let { AgentToolLeaseRegistry.release(it.id) }
             }
             if (result.requiresUser) {
                 return ModelToolDispatchResult(
