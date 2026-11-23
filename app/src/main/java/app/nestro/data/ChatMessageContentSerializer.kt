@@ -5,9 +5,6 @@ import org.json.JSONObject
 
 /** Provider-native serialization for ephemeral media parts resolved from project assets. */
 internal object ChatMessageContentSerializer {
-    internal fun modelIdHintsAudioInputSupport(modelId: String): Boolean =
-        modelId.contains("audio", ignoreCase = true)
-
     private fun images(message: ChatMessage): List<ChatMessageMediaPart> =
         message.mediaParts.filter {
             it.kind == "IMAGE" && it.mimeType.startsWith("image/") && it.dataBase64.isNotBlank()
