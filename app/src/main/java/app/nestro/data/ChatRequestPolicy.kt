@@ -3,13 +3,13 @@ package app.nestro.data
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 
-data class ChatHistoryItem(
+internal data class ChatHistoryItem(
     val role: String,
     val content: String,
     val mediaParts: List<ChatMessageMediaPart> = emptyList()
 )
 
-object ChatRequestPolicy {
+internal object ChatRequestPolicy {
     const val MAX_HISTORY_CHARS = 48_000
     private val transientHttpStatus = Regex("""HTTP\s+(408|425|429|5\d\d)""", RegexOption.IGNORE_CASE)
 
