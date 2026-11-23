@@ -205,7 +205,8 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
     internal suspend fun persistConversationMessages(
         conversationId: String,
         projectId: String,
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
+        initialTitle: String? = null
     ) = withContext(Dispatchers.IO) {
         require(conversationId.isNotBlank() && conversationId.length <= 120) { "会话 ID 无效" }
         require(projectId.isNotBlank() && projectId.length <= 120) { "项目 ID 无效" }
@@ -219,10 +220,10 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
             }
             val now = System.currentTimeMillis()
             val firstPrompt = messages.firstOrNull { it.role == "user" }?.content?.take(32)
-                ?.ifBlank { "新对话" } ?: current?.title ?: "新对话"
-            val title = if (current == null || current.title == "新对话" || current.title == "旧对话") {
-                firstPrompt
-            } else current.title
+                ?.ifBlank { "新对话" } ?: current?.title ?: initialTitle?.take(80)?.ifBlank { "新对话" } ?: "新对话"
+            val title = if (current == null) initialTitle?.take(80)?.ifBlank { firstPrompt } ?: firstPrompt
+            else if (current.title == "新对话" || current.title == "旧对话") firstPrompt
+            else current.title
             dao.putConversation(
                 ConversationEntity(conversationId, title, now, projectId)
             )
