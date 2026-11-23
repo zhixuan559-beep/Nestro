@@ -1461,3 +1461,12 @@ PR #1 虽然基于旧 `main` 且整体不适合合并，但源码对照确认其
 - 已将候选模型中最小的已知 context window 接入 `ChatRequestExecutionCoordinator` 与 `ModelLedToolDispatcher`；主聊天历史按模型窗口与 maxTokens/默认输出 reserve 裁剪，实际 maxTokens 超出窗口时同步收敛。工具决策轮也使用相同的保守窗口，并限制决策输出预算。
 - 新增 `ChatRequestPolicyTest` 覆盖 failover 最小窗口选择、未知窗口保守默认值和输出 reserve 上限。源码提交：`c25ba94296552a9a31f26f2b7707d8d780c19ffa`、`78f49576184f20dafadfaf2c6e7fdcfcf20131c8`；测试提交：`e657e97f17a866ba5304a4b524d6e1eb17ac64c4`。
 - 已回读确认主聊天与工具决策两条路径均已接线；系统提示词本身超过模型窗口时的压缩/截断保护仍未补。未运行编译或测试。
+
+
+## 2026-11-24 自动记忆来源消息删除/改写清理
+
+- 进一步核对发现：虽然自动记忆写入时已在 DAO `@Transaction` 内验证来源，但会话仍存在时若用户删除或改写来源 user message，旧记忆可能继续引用已不存在/内容已变化的消息。
+- 已新增 `NestroDao.deleteUserMemoriesForSourceMessages(projectId, conversationId, messageIds)`，并在 `ConversationPersistenceService` 的普通会话持久化、恢复持久化和批量快照同步事务中统一调用。来源 user message 被删除、角色变化或正文变化时，清理来源项目内关联的自动记忆；仅新增消息或其他消息变化不影响仍有效的来源。会话跨项目变更时，清理旧项目中该会话来源的记忆。
+- 清理逻辑已集中到 `invalidateRemovedMemorySources`，避免三条持久化路径各自实现不同规则。新增 Android instrumentation 测试：来源消息删除后清理原项目记忆，同时保留导入到其他项目的独立副本。
+- 源码提交：`fe8588d75238e01d129f43883d6c7e0777b566b9`（DAO）、`6894a290ed87e9e52cf8c33deaa529848d1acf4d`（初始接线）、`c1d19369a5d5a757edbfd899ce15d8bd9abd8011`（内容/角色变化识别）、`7cb9ea857ae28ede92c44fcdc03e8eab635ce7c6`（统一清理逻辑）、`a38614bd03d079e35a117b0fac34018ae1aed7a3` / `b0d37868d5c0aa0971b0b515b9569006f8356c3d`（instrumentation 测试）。
+- 目前仍无数据库外键级联；所有会话/消息删除入口必须经过上述事务清理规则。测试未执行。
