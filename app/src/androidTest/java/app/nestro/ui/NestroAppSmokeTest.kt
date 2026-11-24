@@ -2,11 +2,12 @@ package app.nestro.ui
 
 import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -214,9 +215,9 @@ class NestroAppSmokeTest {
     @Test
     fun phoneAgentIsNotExposedAsPrimaryNavigationDestination() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("手机自动化").assertDoesNotExist()
+        composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
         composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
-        composeRule.onNodeWithText("手机自动化").assertDoesNotExist()
+        composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
     }
 
 }

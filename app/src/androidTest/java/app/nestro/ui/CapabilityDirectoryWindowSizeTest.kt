@@ -23,7 +23,7 @@ class CapabilityDirectoryWindowSizeTest {
             DeviceConfigurationOverride(
                 DeviceConfigurationOverride.ForcedSize(windowSize.value)
             ) {
-                CapabilityDirectoryPage()
+                CapabilityDirectoryPage(projectId = "interaction-test-project")
             }
         }
 

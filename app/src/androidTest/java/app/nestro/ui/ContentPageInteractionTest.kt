@@ -50,7 +50,7 @@ class ContentPageInteractionTest {
 
     @Test
     fun communityCatalogRefreshRequiresHttpsAndTrustedKey() {
-        composeRule.setContent { CapabilityDirectoryPage() }
+        composeRule.setContent { CapabilityDirectoryPage(projectId = "interaction-test-project") }
         composeRule.onNodeWithText("验证并刷新社区目录").assertIsNotEnabled()
 
         composeRule.onNodeWithText("社区目录 HTTPS 地址").performTextInput("http://example.invalid/catalog.json")

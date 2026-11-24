@@ -3,11 +3,12 @@ package app.nestro.ui
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.DpSize
@@ -49,7 +50,7 @@ class ArtifactLibraryWindowSizeTest {
 
         composeRule.onNodeWithText("搜索作品名称").performTextInput("Keep")
         composeRule.onNodeWithText("Keep Plan").assertIsDisplayed()
-        composeRule.onNodeWithText("Other Notes").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Other Notes").assertCountEquals(0)
 
         composeRule.onNodeWithText("预览").performClick()
         composeRule.onNodeWithText("恢复为新版本").assertIsDisplayed()

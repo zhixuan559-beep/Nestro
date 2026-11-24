@@ -3,10 +3,11 @@ package app.nestro.ui
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.ForcedSize
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -72,8 +73,8 @@ class NestroWindowSizeTest {
             composeRule.runOnIdle { windowSize.value = size }
             composeRule.waitForIdle()
             composeRule.onNodeWithContentDescription("菜单").performClick()
-            composeRule.onNodeWithText("手机自动化").assertDoesNotExist()
-            composeRule.onNodeWithText("日历").assertDoesNotExist()
+            composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
+            composeRule.onAllNodesWithText("日历").assertCountEquals(0)
             composeRule.onNodeWithText("工具与扩展", substring = true).assertIsDisplayed()
             composeRule.onNodeWithContentDescription("关闭菜单").performClick()
         }
