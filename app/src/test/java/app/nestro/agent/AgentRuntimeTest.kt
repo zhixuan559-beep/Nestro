@@ -61,7 +61,7 @@ class AgentRuntimeTest {
         var closedStatus: String? = null
         val pendingCoordinator = AgentApprovalCoordinator(
             persistAudit = { },
-            closePendingAudits = { scopeId, status, _ ->
+            closeActiveAudits = { scopeId, status, _ ->
                 closedScope = scopeId
                 closedStatus = status
             }
