@@ -18,7 +18,6 @@ class ChatRequestExecutionCoordinatorTest {
     ): ChatRequestExecutionCoordinator {
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { _, _, _ -> ConversationRecallResult("", emptyList()) },
-            retrieveKnowledge = { _, _ -> "" },
             retrieveUserMemory = { _, _ -> "" }
         )
         val streaming = ChatStreamingCoordinator(
@@ -55,7 +54,7 @@ class ChatRequestExecutionCoordinatorTest {
     fun ordinaryChatDoesNotPreemptivelyRunTeamOrPhoneAgent() = runBlocking {
         val order = mutableListOf<String>()
         var observedSystemPrompt = ""
-        val coordinator = coordinator { systemPrompt, onChunk ->
+        val coordinator = coordinator(stream = { systemPrompt, onChunk ->
             observedSystemPrompt = systemPrompt
             order += "stream"
             onChunk("partial")
@@ -83,7 +82,7 @@ class ChatRequestExecutionCoordinatorTest {
     @Test
     fun taskModeDoesNotPreemptivelyPlanBeforeModelDecision() = runBlocking {
         var planCalls = 0
-        val coordinator = coordinator { _, _ -> "reply" }
+        val coordinator = coordinator(stream = { _, _ -> "reply" })
         coordinator.execute(
             request = request(taskMode = false),
             onUsage = { _, _, _ -> },
@@ -97,7 +96,7 @@ class ChatRequestExecutionCoordinatorTest {
             request = request(taskMode = true),
             onUsage = { _, _, _ -> },
             onProviderUsage = { _, _, _ -> },
-            planPhoneAgent = { planCalls++; "planned" },
+            planPhoneAgent = { planCalls++; AgentToolResult(true, output = "planned") },
             onPartialAnswer = { }
         )
         assertEquals(0, planCalls)
@@ -105,7 +104,7 @@ class ChatRequestExecutionCoordinatorTest {
 
     @Test
     fun preservesPartialOutputWhenStreamingFails() = runBlocking {
-        val coordinator = coordinator { _, onChunk ->
+        val coordinator = coordinator(stream = { _, onChunk ->
             onChunk("partial answer")
             error("network disconnected")
         }
@@ -121,7 +120,7 @@ class ChatRequestExecutionCoordinatorTest {
 
     @Test
     fun propagatesParentCancellation() = runBlocking {
-        val coordinator = coordinator { _, _ -> throw CancellationException("cancelled") }
+        val coordinator = coordinator(stream = { _, _ -> throw CancellationException("cancelled") })
         val result = runCatching {
             coordinator.execute(
                 request = request(),
@@ -135,7 +134,7 @@ class ChatRequestExecutionCoordinatorTest {
     @Test
     fun phoneAgentPlanningCallbackIsDeferredUntilModelSelectsItsTool() = runBlocking {
         var planningError = ""
-        val coordinator = coordinator { _, _ -> "reply" }
+        val coordinator = coordinator(stream = { _, _ -> "reply" })
         val result = coordinator.execute(
             request = request(taskMode = true),
             onUsage = { _, _, _ -> },

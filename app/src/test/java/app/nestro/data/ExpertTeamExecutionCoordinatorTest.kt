@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
@@ -233,7 +234,7 @@ class ExpertTeamExecutionCoordinatorTest {
             ExpertTeamMemberTask("研究员", "负责资料研究与事实核验")
         )
         val secondMemberStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val firstRun = kotlinx.coroutines.launch {
+        val firstRun = launch {
             runCatching {
                 service.execute(
                     teamId = "lead-handoff-resume",
