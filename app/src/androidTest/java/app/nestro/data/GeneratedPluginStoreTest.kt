@@ -30,7 +30,7 @@ class GeneratedPluginStoreTest {
         version = version,
         description = "A local test workflow",
         inputs = listOf(GeneratedPluginInput("query", true, "Search query")),
-        steps = listOf(GeneratedPluginStep("read", "test.read", mapOf("query" to "${input.query}"), "result")),
+        steps = listOf(GeneratedPluginStep("read", "test.read", mapOf("query" to "\${input.query}"), "result")),
         outputDescription = "Workflow result"
     )
 

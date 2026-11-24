@@ -85,14 +85,14 @@ class NestroDatabaseMigrationTest {
 
     @Test fun freshDatabaseKeepsFtsIndexSynchronizedWithKnowledgeChunks() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
-            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
             .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
             dao.insertKnowledgeDocument(KnowledgeDocumentEntity("fresh-doc", "p1", "Fresh", "text/plain", 1, 1, "c".repeat(64)))
             dao.insertKnowledgeChunks(listOf(KnowledgeChunkEntity("fresh-chunk", "fresh-doc", "p1", 0, "SQLite offline retrieval")))
+            dao.insertKnowledgeChunkFts(listOf(KnowledgeChunkFtsEntity("fresh-chunk".stableFtsRowId(), "fresh-chunk", "p1", "SQLite offline retrieval")))
             assertEquals("fresh-chunk", dao.searchKnowledgeChunksFts("p1", "\"sqlite\"", 10).single().id)
-            dao.deleteKnowledgeDocument("fresh-doc", "p1")
+            dao.deleteKnowledgeDocumentAndIndex("fresh-doc", "p1")
             assertEquals(emptyList<KnowledgeChunkEntity>(), dao.searchKnowledgeChunksFts("p1", "\"sqlite\"", 10))
         } finally {
             db.close()
@@ -101,7 +101,6 @@ class NestroDatabaseMigrationTest {
 
     @Test fun knowledgeSearchIsolatedByProjectForFtsAndChineseFallback() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
-            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
             .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
@@ -110,6 +109,10 @@ class NestroDatabaseMigrationTest {
             dao.insertKnowledgeChunks(listOf(
                 KnowledgeChunkEntity("p1-chunk", "p1-doc", "p1", 0, "SQLite 私有知识库定位资料"),
                 KnowledgeChunkEntity("p2-chunk", "p2-doc", "p2", 0, "SQLite 公开知识库定位资料")
+            ))
+            dao.insertKnowledgeChunkFts(listOf(
+                KnowledgeChunkFtsEntity("p1-chunk".stableFtsRowId(), "p1-chunk", "p1", "SQLite 私有知识库定位资料"),
+                KnowledgeChunkFtsEntity("p2-chunk".stableFtsRowId(), "p2-chunk", "p2", "SQLite 公开知识库定位资料")
             ))
 
             val p1English = KnowledgeStore.search(dao, "p1", "SQLite", 6)
@@ -126,7 +129,6 @@ class NestroDatabaseMigrationTest {
 
     @Test fun candidateWindowSamplesLaterChunksInsteadOfOnlyEarlyPositions() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
-            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
             .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
@@ -144,7 +146,6 @@ class NestroDatabaseMigrationTest {
 
     @Test fun duplicateDocumentHashIsIgnoredWithoutReplacingItsChunks() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java)
-            .addCallback(NestroDatabase.KNOWLEDGE_FTS_CALLBACK)
             .allowMainThreadQueries().build()
         try {
             val dao = db.dao()
