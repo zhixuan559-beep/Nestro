@@ -86,7 +86,7 @@ object PhoneAgentAgent {
                 .append("，").append(log.detail.take(100)).append("\n")
         }
         var loop = 0
-        while (loop < 8) {
+        while (loop < 24) {
             if (service.isTaskStopped(taskId)) return pause(dao, taskId, "用户已请求停止", taskContext)
             if (!service.hasValidGrant()) return pause(dao, taskId, "操作授权已失效", taskContext)
             task = dao.phoneAgentTask(taskId)
