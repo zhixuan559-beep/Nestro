@@ -125,7 +125,7 @@ class CalendarDatabaseMigrationTest {
     }
 
     @Test
-    fun versionFiveDatabaseAddsAutomationGenerationWithoutLosingEvents() {
+    fun versionFiveDatabaseAddsAutomationGenerationWithoutLosingEvents() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "nestro_calendar_migration_v5.db"
         context.deleteDatabase(databaseName)
