@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
     id("com.android.application")
@@ -53,7 +54,7 @@ android {
 tasks.withType<Test>().configureEach {
     testLogging {
         events("started", "passed", "skipped", "failed")
-        exceptionFormat = "full"
+        exceptionFormat = TestExceptionFormat.FULL
     }
     maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
 }
