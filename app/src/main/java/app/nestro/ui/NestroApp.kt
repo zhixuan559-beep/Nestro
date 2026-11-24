@@ -206,6 +206,7 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
     var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
+    var customBgHex by remember(prefs) { mutableStateOf(prefs.getString("appearance_custom_bg_v1", "#FBF8F3") ?: "#FBF8F3") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
         ModelManagementUiState(prefs, modelRepository)
@@ -1860,13 +1861,22 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
 
+    val customBgColor = when (customBgHex) {
+        "#0B1220" -> androidx.compose.ui.graphics.Color(0xFF0B1220)
+        "#111815" -> androidx.compose.ui.graphics.Color(0xFF111815)
+        "#EFF2F6" -> androidx.compose.ui.graphics.Color(0xFFEFF2F6)
+        else -> androidx.compose.ui.graphics.Color(0xFFFBF8F3)
+    }
+    val customIsDark = customBgHex == "#0B1220" || customBgHex == "#111815"
     val darkAppearance = appearanceMode == "dark" ||
+        (appearanceMode == "custom" && customIsDark) ||
         (appearanceMode == "system" && androidx.compose.foundation.isSystemInDarkTheme())
+    val resolvedBg = if (appearanceMode == "custom") customBgColor else if (darkAppearance) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
     MaterialTheme(
         colorScheme = if (darkAppearance) darkColorScheme(
             primary = androidx.compose.ui.graphics.Color.White,
             onPrimary = androidx.compose.ui.graphics.Color.Black,
-            background = androidx.compose.ui.graphics.Color.Black,
+            background = resolvedBg,
             onBackground = androidx.compose.ui.graphics.Color.White,
             surface = androidx.compose.ui.graphics.Color(0xFF111111),
             onSurface = androidx.compose.ui.graphics.Color.White,
@@ -1877,7 +1887,7 @@ fun NestroApp(initialPage: String = "home") {
         ) else lightColorScheme(
             primary = androidx.compose.ui.graphics.Color(0xFF111111),
             onPrimary = androidx.compose.ui.graphics.Color.White,
-            background = androidx.compose.ui.graphics.Color.White,
+            background = resolvedBg,
             onBackground = androidx.compose.ui.graphics.Color(0xFF111111),
             surface = androidx.compose.ui.graphics.Color.White,
             onSurface = androidx.compose.ui.graphics.Color(0xFF111111),
@@ -1957,6 +1967,29 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     }
 
+                    if ((page == "home" || page == "chat") && app.nestro.phone.PhoneAgentExecutionEnvironmentProvider.active == null) {
+                        Surface(
+                            color = Card2,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = adaptiveContentPadding, vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text("首次使用请先授权「无障碍桥接」", color = Ink, style = MaterialTheme.typography.labelMedium)
+                                    Text("用于 Phone Agent 隔离虚拟屏及跨应用操作", color = Muted, style = MaterialTheme.typography.labelSmall)
+                                }
+                                TextButton(onClick = {
+                                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }) {
+                                    Text("立即授权", color = Mint, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
                     Crossfade(
                         targetState = if (page == "teams") "experts" else page,
                         animationSpec = tween(NestroMotion.STANDARD),
@@ -3090,7 +3123,7 @@ fun NestroApp(initialPage: String = "home") {
                             }
                         }
                         "settings" -> {
-                            Column(Modifier.weight(1f).fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nost 账号。", color = Muted)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3111,6 +3144,22 @@ fun NestroApp(initialPage: String = "home") {
                                             onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
                                             label = { Text("纯黑") }
                                         )
+                                        FilterChip(
+                                            selected = appearanceMode == "custom",
+                                            onClick = { appearanceMode = "custom"; prefs.edit().putString("appearance_mode_v1", "custom").apply() },
+                                            label = { Text("自定义") }
+                                        )
+                                    }
+                                    if (appearanceMode == "custom") {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            listOf("#FBF8F3" to "暖米纸", "#EFF2F6" to "雾霭灰", "#0B1220" to "墨夜蓝", "#111815" to "深林灰").forEach { (hex, label) ->
+                                                FilterChip(
+                                                    selected = customBgHex == hex,
+                                                    onClick = { customBgHex = hex; prefs.edit().putString("appearance_custom_bg_v1", hex).apply() },
+                                                    label = { Text(label) }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                                 Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
@@ -3157,8 +3206,9 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("隐私与安全", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("会话与专家数据保存在应用私有存储。API Key 使用 Android Keystore 的 AES-GCM 加密。备份不包含 Key，也不会上传到 Nost 服务器。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("隐私、免责声明与开源信息", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                        Text("免责声明：Nost (Nestro) 采用本地优先架构，会话、记忆与知识库默认保存于本机私有存储，API Key 经 Android Keystore AES-GCM 加密，不上传至任何自营后台。第三方模型接口费用、输出准确性及 Phone Agent 跨应用自动化操作风险由用户自行核验与承担。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("开源协议与致谢：本项目基于 MIT License 开源（github.com/zhixuan559-beep/Nestro）。隔离虚拟屏与设备桥接部分参考并遵循以下开源项目声明：Mika（Copyright 2026 wangzan101，Apache-2.0）、scrcpy（Copyright Genymobile / Romain Vimont，Apache-2.0）及 Android-Agent 相关开源许可。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
