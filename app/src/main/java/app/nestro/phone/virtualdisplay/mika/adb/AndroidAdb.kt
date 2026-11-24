@@ -26,8 +26,14 @@ object AndroidAdb {
     private const val TAG = "MikaAdbKey"
 
     // 设备端导出时不带 context;TLS 1.3 里空 context 与不带 context 的结果相同(RFC 8446 §7.5)
+    // exportKeyingMaterial 仅 API 31+ 可用;低于 31 的设备走 ADB TLS 配对本就不可行,明确抛错而非静默失败。
     val exporter = KeyingMaterialExporter { socket, label, length ->
-        SSLSockets.exportKeyingMaterial(socket, label, ByteArray(0), length) ?: throw SSLException("keying material export failed")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            SSLSockets.exportKeyingMaterial(socket, label, ByteArray(0), length)
+                ?: throw SSLException("keying material export failed")
+        } else {
+            throw SSLException("keying material export requires API 31")
+        }
     }
 
     @Volatile private var source: AdbIdentitySource? = null
