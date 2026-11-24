@@ -59,7 +59,7 @@ class ChatRequestExecutionCoordinatorTest {
             order += "stream"
             onChunk("partial")
             "complete"
-        }
+        })
         val result = coordinator.execute(
             request = request(),
             onUsage = { _, _, _ -> },
@@ -107,7 +107,7 @@ class ChatRequestExecutionCoordinatorTest {
         val coordinator = coordinator(stream = { _, onChunk ->
             onChunk("partial answer")
             error("network disconnected")
-        }
+        })
         val result = coordinator.execute(
             request = request(),
             onUsage = { _, _, _ -> },
