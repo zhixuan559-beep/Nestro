@@ -15,8 +15,8 @@ android {
         applicationId = "app.nestro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.4.0"
         buildConfigField("String", "MODELSCOPE_OAUTH_BACKEND_URL", "\"${modelscopeOAuthBackendUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -27,6 +27,15 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     buildFeatures {
