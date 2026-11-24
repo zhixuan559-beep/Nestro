@@ -1,13 +1,16 @@
 package app.nestro.calendar
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -124,7 +127,14 @@ object CalendarReminderScheduler {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(event.id.hashCode(), notification) }
+        // POST_NOTIFICATIONS is a runtime permission on Android 13+; without it the
+        // notification is dropped, so skip silently instead of calling notify() unguarded.
+        val canNotify = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (canNotify) {
+            runCatching { NotificationManagerCompat.from(context).notify(event.id.hashCode(), notification) }
+        }
     }
 }
 
