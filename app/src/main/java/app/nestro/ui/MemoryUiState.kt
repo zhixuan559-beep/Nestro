@@ -16,7 +16,7 @@ internal class MemoryUiState(preferences: SharedPreferences) {
     val manualMemoryCategoryExpanded: MutableState<Boolean> = mutableStateOf(false)
     val automaticMemories: MutableState<List<UserMemoryEntity>> = mutableStateOf(emptyList())
     val automaticMemoryEnabled: MutableState<Boolean> =
-        mutableStateOf(preferences.getBoolean("automatic_memory_enabled", false))
+        mutableStateOf(preferences.getBoolean("automatic_memory_enabled", true))
     val memoryEdits: MutableState<Map<String, String>> = mutableStateOf(emptyMap())
     val memoryStatus: MutableState<String> = mutableStateOf("")
 }
