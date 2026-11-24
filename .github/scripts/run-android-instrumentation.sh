@@ -70,7 +70,7 @@ if [[ "${SKIP_ANDROID_APK_BUILD:-false}" != "true" ]]; then
   fi
 fi
 
-if ! install_with_retry app/build/outputs/apk/debug/app-debug.apk; then
+if ! install_with_retry app/build/outputs/apk/debug/app-x86_64-debug.apk; then
   echo "Failed to install the application APK after three attempts." > "$DIAG/diagnostic-error.txt"
   exit 4
 fi
