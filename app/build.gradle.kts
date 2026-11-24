@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -43,6 +45,17 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+// Unit tests: 717 tests ran 57m serially with zero console output, then hit
+// the 60m job cap (#1602). Parallel forks cut wall time; per-test logging
+// shows progress and pinpoints a hanging test if one ever stalls again.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("started", "passed", "skipped", "failed")
+        exceptionFormat = "full"
+    }
+    maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
 }
 
 dependencies {
