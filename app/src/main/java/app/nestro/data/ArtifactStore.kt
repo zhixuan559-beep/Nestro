@@ -347,7 +347,12 @@ object ArtifactStore {
     fun export(context: Context, record: ArtifactRecord, destination: Uri) {
         val content = read(context, record)
         context.contentResolver.openOutputStream(destination)?.use { stream ->
-            stream.write(content.toByteArray(Charsets.UTF_8))
+            val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+            val payload = content.toByteArray(Charsets.UTF_8)
+            if (payload.size < 3 || payload[0] != bom[0] || payload[1] != bom[1] || payload[2] != bom[2]) {
+                stream.write(bom)
+            }
+            stream.write(payload)
         } ?: error("无法写入所选位置")
     }
 
