@@ -1,5 +1,7 @@
 package app.nestro.media
 
+@file:OptIn(UnstableApi::class, ExperimentalApi::class)
+
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
