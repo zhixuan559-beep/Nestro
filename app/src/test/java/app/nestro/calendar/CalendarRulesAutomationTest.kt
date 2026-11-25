@@ -97,7 +97,10 @@ class CalendarRulesAutomationTest {
 
         assertTrue(CalendarRules.isOccurrence(value, nextOccurrence))
         assertEquals(nextOccurrence + 30 * 60_000L, CalendarRules.automationTriggerAt(value, nextOccurrence))
-        assertEquals(nextOccurrence + 30 * 60_000L, CalendarRules.nextAutomationRunAt(value, start + 1L))
+        // 下一次运行取触发时刻仍待定的最近 occurrence：now 刚过首个 occurrence 开始时刻，
+        // 其触发时刻（start + 30 分钟）仍在未来，故仍排它；触发时刻过后才顺延到下一个 occurrence。
+        assertEquals(start + 30 * 60_000L, CalendarRules.nextAutomationRunAt(value, start + 1L))
+        assertEquals(nextOccurrence + 30 * 60_000L, CalendarRules.nextAutomationRunAt(value, start + 30 * 60_000L + 1L))
     }
 
     @Test
