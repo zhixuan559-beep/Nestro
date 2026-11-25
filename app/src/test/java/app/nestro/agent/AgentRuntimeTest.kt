@@ -49,12 +49,20 @@ class AgentRuntimeTest {
     fun approvalCoordinatorPersistsPendingAndFinalDecisionWithStableId() = runBlocking {
         val records = mutableListOf<AgentApprovalAuditRecord>()
         val coordinator = AgentApprovalCoordinator(persistAudit = { record -> records += record })
-        coordinator.setHandler { AgentApprovalDecision.AUTHORIZE_TASK }
+        // 处理器必须调 respond() 回传决定：只返回决定值会被丢弃（处理器类型为
+        // suspend (AgentApprovalRequest) -> Unit），authorize 随后在 deferred.await()
+        // 上永久挂起——此前这正是单测步骤跑满 6 小时预算的根因（#1609 日志核对：
+        // 571 个 STARTED 中仅此用例无结果）。其余用例与生产侧 NestroApp 均用 respond 模式。
+        coordinator.setHandler { request ->
+            coordinator.respond(request.id, AgentApprovalDecision.AUTHORIZE_TASK)
+        }
 
         val decision = coordinator.authorize("scope-audit", "mcp.sample", "写入远程数据")
 
         assertEquals(AgentApprovalDecision.AUTHORIZE_TASK, decision)
-        assertEquals(listOf("PENDING", "AUTHORIZED_TASK"), records.map { it.status })
+        // AUTHORIZED_TASK 出现两次是既有行为：respond() 持久化一次，authorize
+        // 随后 consumeDecision() 又持久化一次（真实存储按 id 覆盖写，无影响）。
+        assertEquals(listOf("PENDING", "AUTHORIZED_TASK", "AUTHORIZED_TASK"), records.map { it.status })
         assertEquals(records.first().id, records.last().id)
 
         var closedScope: String? = null
