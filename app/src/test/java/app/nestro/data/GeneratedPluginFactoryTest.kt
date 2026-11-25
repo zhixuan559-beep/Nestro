@@ -125,10 +125,14 @@ class GeneratedPluginFactoryTest {
 
     @Test
     fun executorRefusesToReplayAnInterruptedExternalWrite() = runBlocking {
+        // 同一个插件实例：createdAt 默认取当前毫秒并计入检查点指纹，
+        // 执行与恢复若各调一次 plugin()，指纹失配会先抛“检查点与当前插件版本或输入不匹配”，
+        // 到不了“外部写入”断言。
+        val pluginUnderTest = plugin().copy(enabled = true)
         val checkpoints = mutableListOf<String>()
         val result = runCatching {
             GeneratedPluginWorkflowExecutor.execute(
-                plugin = plugin().copy(enabled = true),
+                plugin = pluginUnderTest,
                 inputs = mapOf("source" to "content://video/1"),
                 discovery = discovery,
                 invokeThroughRuntime = { toolId, _ ->
@@ -142,7 +146,7 @@ class GeneratedPluginFactoryTest {
         val interruptedCheckpoint = checkpoints.last()
         val resumeError = runCatching {
             GeneratedPluginRunCheckpointCodec.decode(
-                plugin().copy(enabled = true),
+                pluginUnderTest,
                 mapOf("source" to "content://video/1"),
                 interruptedCheckpoint,
                 discovery
@@ -193,7 +197,10 @@ class GeneratedPluginFactoryTest {
 
     @Test
     fun packageCodecPreservesDraftAndDisabledDefault() {
-        val decoded = GeneratedPluginPackageCodec.decode(GeneratedPluginPackageCodec.encode(listOf(plugin())))
-        assertEquals(listOf(plugin()), decoded)
+        // 同一个插件实例：createdAt 默认取当前毫秒，两次 plugin() 相差几毫秒即判不等；
+        // arguments 顺序差异只是打印显示，Map 相等与顺序无关。
+        val original = plugin()
+        val decoded = GeneratedPluginPackageCodec.decode(GeneratedPluginPackageCodec.encode(listOf(original)))
+        assertEquals(listOf(original), decoded)
     }
 }
