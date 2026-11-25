@@ -9,6 +9,7 @@ class ChatRequestContextAssemblerTest {
     @Test
     fun assemblesBoundedContextFromRecentHistoryAndProjectScopedSources() = kotlinx.coroutines.runBlocking {
         var observedQuery = ""
+        var observedUserMemoryQuery = ""
         val source = ConversationRecallSource("old-conversation", "message-1", "旧会话", "user", "历史片段", 1L)
         val assembler = ChatRequestContextAssembler(
             retrieveMemory = { projectId, conversationId, query ->
@@ -19,7 +20,7 @@ class ChatRequestContextAssemblerTest {
             },
             retrieveUserMemory = { projectId, query ->
                 assertEquals("project-1", projectId)
-                assertEquals("根据知识库和我的偏好，回忆我们之前讨论的当前问题", query)
+                observedUserMemoryQuery = query
                 "用户记忆上下文"
             }
         )
@@ -36,6 +37,12 @@ class ChatRequestContextAssemblerTest {
         assertTrue(observedQuery.contains("历史消息3"))
         assertTrue(observedQuery.contains("历史消息10"))
         assertFalse(observedQuery.lines().contains("历史消息1"))
+        // 用户记忆查询串按 0bae335d 的约定由最近用户轮次 + 当前问题组成（字面 \n 分隔），
+        // 不再是只有当前问题：取最近 7 条用户消息，故含历史消息 4–10、不含历史消息 1。
+        assertTrue(observedUserMemoryQuery.contains("历史消息4"))
+        assertTrue(observedUserMemoryQuery.contains("历史消息10"))
+        assertTrue(observedUserMemoryQuery.contains("根据知识库和我的偏好，回忆我们之前讨论的当前问题"))
+        assertFalse(observedUserMemoryQuery.split("\\n").contains("历史消息1"))
         assertEquals(1, result.recalledCount)
         assertEquals(listOf(source), result.recallSources)
         assertTrue(result.systemContext.indexOf("基础上下文") < result.systemContext.indexOf("历史召回上下文"))
