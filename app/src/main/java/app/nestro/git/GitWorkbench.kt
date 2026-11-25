@@ -94,7 +94,9 @@ object GitWorkbenchPolicy {
     fun safeRelativePath(value: String): String {
         require(value.isNotBlank() && value.length <= 1024) { "文件路径不能为空且不能超过 1024 个字符" }
         require(!value.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(value)) { "必须使用仓库内的相对路径" }
-        val normalized = value.replace('\\', '/')
+        // 连续反斜杠先折叠成一个分隔符：Windows 风格的 docs\\guide.md 应得 docs/guide.md；
+        // 正斜杠的 // 不折叠，仍由下方的空段检查判为无效（测试 rejectsEncoded… 的 a//b 用例）。
+        val normalized = value.replace(Regex("\\\\+"), "/")
         require(normalized.isNotBlank() && normalized.split('/').none { it.isBlank() || it == "." || it == ".." }) {
             "文件路径无效"
         }
