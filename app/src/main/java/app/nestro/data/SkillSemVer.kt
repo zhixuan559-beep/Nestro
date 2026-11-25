@@ -43,6 +43,23 @@ object SkillSemVer {
         return a.pre.size.compareTo(b.pre.size)
     }
 
+    /**
+     * 把范围边界里的省略写法补齐为完整三段式："1" -> "1.0.0"，"1.0" -> "1.0.0"。
+     * 仅用于依赖范围的边界；完整版本号与预发布/构建元数据原样走严格 parse。
+     * 含前导零（如 "01.0"）或四段以上的不补齐，仍由 parse 抛错。
+     */
+    private fun normalizePartialVersion(raw: String): String {
+        val core = raw.substringBefore('-').substringBefore('+')
+        val pre = raw.substring(core.length)
+        val parts = core.split('.')
+        if (parts.size > 2 || parts.any { it.isEmpty() || !it.matches(Regex("0|[1-9][0-9]*")) }) return raw
+        return when (parts.size) {
+            1 -> "${parts[0]}.0.0$pre"
+            2 -> "${parts[0]}.${parts[1]}.0$pre"
+            else -> raw
+        }
+    }
+
     fun matches(version: String, range: String): Boolean {
         val candidate=parse(version)
         if(range.isBlank()) return false
@@ -51,14 +68,17 @@ object SkillSemVer {
             val terms=alternative.trim().split(Regex("[ ,]+")).filter { it.isNotBlank() }
             val allowsPrerelease = terms.any { term ->
                 val expectedText = term.removePrefix(">=").removePrefix("<=").removePrefix(">").removePrefix("<").removePrefix("^").removePrefix("~")
-                runCatching { parse(expectedText).let { it.pre.isNotEmpty() && it.major==candidate.major && it.minor==candidate.minor && it.patch==candidate.patch } }.getOrDefault(false)
+                runCatching { parse(normalizePartialVersion(expectedText)).let { it.pre.isNotEmpty() && it.major==candidate.major && it.minor==candidate.minor && it.patch==candidate.patch } }.getOrDefault(false)
             }
             terms.isNotEmpty() && (candidate.pre.isEmpty() || allowsPrerelease) && terms.all { term ->
                 if (term == "*") candidate.pre.isEmpty() else {
                     val operator=listOf(">=","<=",">","<","^","~").firstOrNull(term::startsWith)
                     val expectedText=if(operator==null) term else term.removePrefix(operator)
-                    val expected=parse(expectedText)
-                    val comparison=compare(version,expectedText)
+                    // 范围边界允许省略次要/补丁位（如 ">=1.0" 即 ">=1.0.0"，与 npm 风格一致）；
+                    // 技能自身的 version 字段仍走严格 parse，不受此影响。
+                    val normalizedExpected=normalizePartialVersion(expectedText)
+                    val expected=parse(normalizedExpected)
+                    val comparison=compare(version,normalizedExpected)
                     when(operator) {
                         null -> comparison==0
                         ">=" -> comparison>=0
