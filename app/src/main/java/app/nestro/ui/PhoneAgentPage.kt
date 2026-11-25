@@ -388,9 +388,13 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
 
 internal fun clampPhoneAgentPreviewOffset(offset: Offset, maxLeft: Float, maxTop: Float): Offset =
     Offset(
-        x = offset.x.coerceIn(-maxLeft.coerceAtLeast(0f), 0f),
-        y = offset.y.coerceIn(-maxTop.coerceAtLeast(0f), 0f)
+        x = offset.x.coerceIn(-maxLeft.coerceAtLeast(0f), 0f).normalizeZero(),
+        y = offset.y.coerceIn(-maxTop.coerceAtLeast(0f), 0f).normalizeZero()
     )
+
+// Offset 是 packed Long 值类，-0f 与 +0f 打包值不同：maxLeft/maxTop 为 0 时
+// coerceIn 下限为 -0f，会得到 Offset(-0f, -0f) != Offset.Zero。归一化 -0f 为 +0f。
+private fun Float.normalizeZero(): Float = if (this == 0f) 0f else this
 
 @Composable
 private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController.Session) {
