@@ -21,8 +21,17 @@ import android.os.Build
 internal class MikaShellContext private constructor(base: Context) : ContextWrapper(base) {
     override fun getPackageName(): String = SHELL_PACKAGE
     override fun getOpPackageName(): String = SHELL_PACKAGE
-    override fun getAttributionSource(): AttributionSource =
-        AttributionSource.Builder(SHELL_UID).setPackageName(SHELL_PACKAGE).build()
+    override fun getAttributionSource(): AttributionSource {
+        // AttributionSource.Builder 需要 API 31；低版本走系统默认归属源。
+        // API 30 以下 AttributionSource 不存在，系统框架不会调用此方法。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return AttributionSource.Builder(SHELL_UID).setPackageName(SHELL_PACKAGE).build()
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return super.getAttributionSource()
+        }
+        error("AttributionSource 在 API 30 以下不可用")
+    }
     override fun getApplicationContext(): Context = this
 
     companion object {
