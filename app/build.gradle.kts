@@ -46,6 +46,13 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Lint：media3 的 UnstableApi 是媒体播放代码有意使用的（ExoPlayer）。
+    // 文件级 @OptIn 已试过两次，lint 连标注行本身也判违规，无法收敛，
+    // 故只压制这一项检查；其余 lint 检查不受影响。
+    lint {
+        disable += "UnsafeOptInUsageError"
+    }
 }
 
 // Unit tests: 717 tests ran 57m serially with zero console output, then hit
