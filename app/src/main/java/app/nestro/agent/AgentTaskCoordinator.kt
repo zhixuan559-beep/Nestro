@@ -106,8 +106,14 @@ class AgentTaskExecutionContext internal constructor(
                     }
                 }
                 else -> {
-                    if (states.get(taskId)?.status in setOf(AgentTaskStatus.WAITING_FOR_TASK, AgentTaskStatus.WAITING_FOR_USER)) {
-                        transition(AgentTaskStatus.RUNNING, "子任务正在执行：${child.title}")
+                    // The child is still actively running, so this task is blocked
+                    // waiting for it: its durable state must say WAITING_FOR_TASK
+                    // (recovery and UI rely on it) instead of a stale RUNNING.
+                    // A parent that mirrored the child's user wait likewise goes
+                    // back to waiting-for-task once the child resumes.
+                    val parentStatus = states.get(taskId)?.status
+                    if (parentStatus == AgentTaskStatus.RUNNING || parentStatus == AgentTaskStatus.WAITING_FOR_USER) {
+                        waitForTask("等待子任务完成：${child.title}")
                     }
                 }
             }
@@ -486,7 +492,19 @@ class AgentTaskCoordinator(
                 maxRetries = maxRetries
             )
             check(queued.owner == handlerId) { "runInline 任务 ID 已被占用" }
-            return completion.await()
+            val result = try {
+                completion.await()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // The handler's failure reaches the caller before the queue
+                // consumer persists the terminal state; wait for that write so
+                // durable state observed after runInline throws is already final.
+                awaitInlineExecutionSettled(taskId)
+                throw error
+            }
+            awaitInlineExecutionSettled(taskId)
+            return result
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
                 val latest = states.get(taskId)
@@ -505,6 +523,17 @@ class AgentTaskCoordinator(
         } finally {
             handlers.unregister(handlerId)
         }
+    }
+
+    /**
+     * The inline handler delivers its result the moment it returns, but the queue
+     * consumer persists the terminal state immediately afterwards. Wait until the
+     * consumer releases the execution slot so a caller reading durable state after
+     * runInline returns (or throws) never observes a stale RUNNING for work that
+     * has already finished.
+     */
+    private suspend fun awaitInlineExecutionSettled(taskId: String) {
+        while (activeJobs.containsKey(taskId)) delay(5)
     }
 
     /** Persist a lifecycle transition for a task coordinated by this shared task machine. */
