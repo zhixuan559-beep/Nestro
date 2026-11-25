@@ -1,6 +1,7 @@
-package app.nestro.media
-
+// 文件级 OptIn 标注必须写在 package 之前，否则 import 会被判非法（#1616：ksp 编译失败）。
 @file:OptIn(UnstableApi::class, ExperimentalApi::class)
+
+package app.nestro.media
 
 import android.content.Context
 import android.net.Uri
