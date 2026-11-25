@@ -14,10 +14,15 @@ class ChatStreamingCoordinatorTest {
         val persisted = mutableListOf<String>()
         val persistedStarts = mutableListOf<Long>()
         val visible = mutableListOf<String>()
+        // 分块需超过持久化/界面批处理阈值（256 字符/16 字符），否则小分块会被
+        // 刻意合并（见 batchesTinyProviderDeltasAndPersistsOnlyAtBoundaries），
+        // 本用例验证的是“每个达到阈值的 partial 都被持久化并回显”。
+        val firstChunk = "第一段" + "一".repeat(300)
+        val secondChunk = "第二段" + "二".repeat(300)
         val coordinator = ChatStreamingCoordinator(
             transport = ChatStreamingTransport { _, _, _, _, _, _, _, _, _, onChunk ->
-                onChunk("第一段")
-                onChunk("第二段")
+                onChunk(firstChunk)
+                onChunk(secondChunk)
                 "完整回复"
             },
             partialStateStore = ChatPartialStateStore { _, _, _, _, partial, startedAt -> persisted += partial; persistedStarts += startedAt }
@@ -37,10 +42,10 @@ class ChatStreamingCoordinatorTest {
             shouldStop = { false },
             onPartialAnswer = { visible += it }
         )
-        assertEquals(listOf("第一段", "第一段第二段"), persisted)
+        assertEquals(listOf(firstChunk, firstChunk + secondChunk), persisted)
         assertEquals(persisted, visible)
         assertEquals(listOf(123L, 123L), persistedStarts)
-        assertEquals("第一段第二段", result.partialAnswer)
+        assertEquals(firstChunk + secondChunk, result.partialAnswer)
         assertEquals("完整回复", result.response)
         assertEquals(null, result.failure)
     }
