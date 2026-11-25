@@ -56,8 +56,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Run JVM unit tests
-        run: gradle --no-daemon --stacktrace testDebugUnitTest
+      # Unit tests run in chunks (Adrian 2026-11-26): the monolithic suite never
+      # finished inside the 360-minute job cap (six runs killed at the cap), so
+      # each chunk gets its own 30-minute step timeout and every chunk runs even
+      # if an earlier one fails or times out — a hanging chunk names itself.
+      - name: Run JVM unit tests (chunk 1 - agent/mcp/model/calendar/git)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.agent.*" --tests "app.nestro.mcp.*" --tests "app.nestro.model.*" --tests "app.nestro.calendar.*" --tests "app.nestro.git.*"
+
+      - name: Run JVM unit tests (chunk 2 - data A-C)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.data.A*" --tests "app.nestro.data.B*" --tests "app.nestro.data.C*"
+
+      - name: Run JVM unit tests (chunk 3 - data E-K)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.data.E*" --tests "app.nestro.data.G*" --tests "app.nestro.data.K*"
+
+      - name: Run JVM unit tests (chunk 4 - data L-Z)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.data.L*" --tests "app.nestro.data.M*" --tests "app.nestro.data.O*" --tests "app.nestro.data.P*" --tests "app.nestro.data.S*" --tests "app.nestro.data.U*" --tests "app.nestro.data.W*"
+
+      - name: Run JVM unit tests (chunk 5 - phone)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.phone.*"
+
+      - name: Run JVM unit tests (chunk 6 - ui/speech/media/coworkbench)
+        if: ${{ !cancelled() && steps.setup_gradle.outcome == 'success' }}
+        timeout-minutes: 30
+        run: gradle --no-daemon --stacktrace testDebugUnitTest --tests "app.nestro.ui.*" --tests "app.nestro.speech.*" --tests "app.nestro.media.*" --tests "app.nestro.coworkbench.*"
 
       - name: Export resolved Gradle dependency graphs
         if: always() && steps.setup_gradle.outcome == 'success'
