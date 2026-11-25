@@ -31,7 +31,9 @@ internal fun prepareMemoryExtractionInput(
 ): List<String> {
     if (maxMessages <= 0 || maxChars <= 0) return emptyList()
     val safe = messages.map { it.trim() }
-        .filter { it.isNotBlank() && UserMemoryStore.isSafeContent(it) }
+        // 只留带长期信号的安全内容：无信号的普通消息（如“今天讨论了普通任务”）不送提取器，
+        // 否则提取输入里会混入一次性内容；敏感内容仍由 isSafeContent 挡掉。
+        .filter { it.isNotBlank() && UserMemoryStore.isSafeContent(it) && shouldExtractAutomaticMemory(it) }
         .distinct()
         .takeLast(maxMessages)
     var remaining = maxChars
@@ -63,7 +65,9 @@ internal fun buildMemoryRecallQuery(
             remaining -= kept.length + 1
             kept
         }.asReversed()
-    return (history + listOf(current).filter { it.isNotBlank() }).joinToString("\n").takeLast(maxChars)
+    // 与调用方 ChatRequestContextAssembler 的 recallQuery 一致：查询串用字面 \n 作分隔，
+    // 不用真实换行（单行查询串进缓存键与检索匹配；真实换行会改变匹配与切分语义）。
+    return (history + listOf(current).filter { it.isNotBlank() }).joinToString("\\n").takeLast(maxChars)
 }
 
 internal fun extractMemoryCandidates(
