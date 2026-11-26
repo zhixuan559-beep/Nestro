@@ -16,6 +16,7 @@ class ChatRequestRecoveryPersistenceTest {
         val preferences = context.getSharedPreferences("chat_recovery_room_test", Context.MODE_PRIVATE)
         preferences.edit().clear().putBoolean("room_storage_initialized", true).apply()
         try {
+            database.dao().putProjects(listOf(ProjectEntity("project-1", "项目一", "", 1L)))
             database.dao().putConversation(ConversationEntity("conversation-1", "新对话", 1L, "project-1"))
             database.dao().putMessages(
                 listOf(MessageEntity("user-1", "conversation-1", 0, "user", "原始问题"))
@@ -93,6 +94,7 @@ class ChatRequestRecoveryPersistenceTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, NestroDatabase::class.java).build()
         try {
+            database.dao().putProjects(listOf(ProjectEntity("project-1", "项目一", "", 1L)))
             database.dao().putConversation(ConversationEntity("long-conversation", "长对话", 1L, "project-1"))
             val messages = (0..500).map { index ->
                 ChatMessage("message-$index", if (index % 2 == 0) "user" else "assistant", "内容-$index")
