@@ -25,7 +25,9 @@ class SkillLibraryInteractionTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("技能库").performScrollTo().performClick()
+        // 抽屉菜单已无“技能库”项：经“工具与扩展”→“Skills”进入技能库页。
+        composeRule.onNodeWithText("工具与扩展").performScrollTo().performClick()
+        composeRule.onNodeWithText("Skills").performScrollTo().performClick()
         composeRule.onNodeWithText("本地技能库").assertIsDisplayed()
 
         composeRule.onNodeWithText("＋ 创建技能").performScrollTo().performClick()
