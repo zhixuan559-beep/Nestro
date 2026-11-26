@@ -261,7 +261,10 @@ class WorkflowEngineTest {
                 }
             )
         }.exceptionOrNull() as WorkflowExecutionException
-        assertTrue(checkpointed.any { it.startsWith("research-a:研究目标") })
+        // 检查点输出是并行波的输入（而非成功兄弟自己的输出）：新运行首波尚无前序输出，
+        // 故 research-a 的检查点输出为空串；兄弟自己的输出保存在 WorkflowStepRun 里，
+        // 恢复时由 resumeCompletedRuns 带回（见本用例第二段）。
+        assertEquals(listOf("research-a:"), checkpointed)
         assertTrue(failure.stepRuns.any { it.stepId == "research-b" && it.status == "failed" })
 
         val resumedCalls = mutableListOf<String>()
