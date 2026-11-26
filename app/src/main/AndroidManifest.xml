@@ -23,7 +23,7 @@
     <application
         android:name=".NestroApplication"
         android:allowBackup="false"
-        android:label="Nost"
+        android:label="Nestro"
         android:icon="@drawable/nost_launcher_icon"
         android:roundIcon="@drawable/nost_launcher_icon"
         android:supportsRtl="true"
