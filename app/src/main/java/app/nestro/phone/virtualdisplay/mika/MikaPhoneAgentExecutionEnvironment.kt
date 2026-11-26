@@ -22,6 +22,7 @@ class MikaPhoneAgentExecutionEnvironment(
     override fun requestTaskStop(taskId: String) = service.requestTaskStop(taskId)
     override fun captureVisibleText() = service.captureVisibleText(session.displayId)
     override fun clickVisibleText(exactText: String) = service.clickVisibleText(session.displayId, exactText)
+    override fun clickAt(xPermille: Int, yPermille: Int) = service.clickAt(session.displayId, xPermille, yPermille)
     override fun setTextOnVisibleField(label: String, value: String) =
         service.setTextOnVisibleField(session.displayId, label, value)
     override fun scroll(direction: String) = service.scroll(session.displayId, direction)
