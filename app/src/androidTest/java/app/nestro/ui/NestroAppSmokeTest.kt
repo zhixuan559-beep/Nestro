@@ -22,7 +22,7 @@ class NestroAppSmokeTest {
 
     @Test
     fun mainScreenRendersApplicationHeader() {
-        composeRule.onNodeWithText("Nost").assertIsDisplayed()
+        composeRule.onNodeWithText("Nestro").assertIsDisplayed()
     }
     @Test
     fun opensConversationHistoryFromAccessibleNavigationDrawer() {
@@ -120,7 +120,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("本地知识库").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("新建对话", substring = true).performClick()
-        composeRule.onNodeWithText("Nost").assertIsDisplayed()
+        composeRule.onNodeWithText("Nestro").assertIsDisplayed()
     }
 
     @Test
