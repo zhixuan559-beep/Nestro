@@ -21,7 +21,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 
 class ArtifactLibraryWindowSizeTest {
     @get:Rule
@@ -57,8 +56,19 @@ class ArtifactLibraryWindowSizeTest {
         composeRule.onNodeWithText("恢复为新版本").performClick()
         composeRule.waitForIdle()
 
-        assertEquals(2, ArtifactStore.list(context, "artifact-ui-project").size)
-        assertTrue(ArtifactStore.list(context, "artifact-ui-project").any { it.version == 2 })
+        // list() 按版本逐条返回（ArtifactStoreTest 已定：同一标题保存两次即 2 条记录）；
+        // 恢复为新版本会新增一条 v2 记录：Keep Plan v1+v2、Other Notes v1，共 3 条。
+        assertEquals(3, ArtifactStore.list(context, "artifact-ui-project").size)
+        assertEquals(
+            listOf(1, 2),
+            ArtifactStore.list(context, "artifact-ui-project")
+                .filter { it.title == "Keep Plan" }.map { it.version }.sorted()
+        )
+        assertEquals(
+            listOf(1),
+            ArtifactStore.list(context, "artifact-ui-project")
+                .filter { it.title == "Other Notes" }.map { it.version }
+        )
     }
 
     @Test
