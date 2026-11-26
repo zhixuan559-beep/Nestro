@@ -17,6 +17,7 @@ import org.json.JSONObject
 class PhoneAgentService : AccessibilityService() {
     private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String, val screenSnapshot: String)
     @Volatile private var lastTextUndo: TextUndoRecord? = null
+    @Volatile private var activeMainScreenEnvironment: MainScreenPhoneAgentExecutionEnvironment? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -25,6 +26,26 @@ class PhoneAgentService : AccessibilityService() {
         if (controller?.virtualExecutionPreferred == true) {
             controller.activatePhoneAgent(this)
         }
+        // 主屏兜底：虚拟屏未挂载、且用户此前明确允许过主屏执行时才挂载；绝不自动接管主屏。
+        if (PhoneAgentExecutionEnvironmentProvider.active == null &&
+            MainScreenPhoneAgentExecutionEnvironment.isMainScreenExecutionAllowed(applicationContext)
+        ) {
+            activateMainScreenExecution()
+        }
+    }
+
+    /** 用户在界面上明确允许后，把 Phone Agent 挂到真实主屏；虚拟屏环境在位时不抢占。 */
+    fun activateMainScreenExecution(): Boolean {
+        if (PhoneAgentExecutionEnvironmentProvider.active != null) return false
+        val environment = MainScreenPhoneAgentExecutionEnvironment(this)
+        activeMainScreenEnvironment = environment
+        PhoneAgentExecutionEnvironmentProvider.attach(environment)
+        return true
+    }
+
+    fun deactivateMainScreenExecution() {
+        activeMainScreenEnvironment?.let(PhoneAgentExecutionEnvironmentProvider::detach)
+        activeMainScreenEnvironment = null
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -35,6 +56,7 @@ class PhoneAgentService : AccessibilityService() {
 
     override fun onDestroy() {
         lastTextUndo = null
+        deactivateMainScreenExecution()
         if (activeService === this) activeService = null
         (applicationContext as? NestroApplication)?.mikaVirtualDisplayController?.detachPhoneAgentEnvironment(this)
         super.onDestroy()
