@@ -12,6 +12,7 @@ class PhoneAgentExecutionEnvironmentTest {
         override fun requestTaskStop(taskId: String) = Unit
         override fun captureVisibleText() = "isolated screen"
         override fun clickVisibleText(exactText: String) = true
+        override fun clickAt(xPermille: Int, yPermille: Int) = true
         override fun setTextOnVisibleField(label: String, value: String) = true
         override fun scroll(direction: String) = true
         override fun openUrl(rawUrl: String) = true
