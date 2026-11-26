@@ -158,7 +158,7 @@ internal fun NavigationDrawerContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Nost",
+                "Nestro",
                 style = MaterialTheme.typography.titleLarge,
                 color = Ink,
                 modifier = Modifier.weight(1f)
