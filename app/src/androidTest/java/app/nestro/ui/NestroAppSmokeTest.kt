@@ -160,9 +160,10 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
         composeRule.onNodeWithContentDescription("发送").performClick()
 
+        // 无模型提示是追加到聊天列表底部的消息，可能在折叠线以下；先滚到可见再断言。
         composeRule.onNodeWithText(
             "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
     }
 
     @Test
