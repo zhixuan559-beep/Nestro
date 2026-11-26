@@ -55,6 +55,7 @@ class NestroWindowSizeTest {
                     .performScrollTo()
                     .performClick()
                 composeRule.waitForIdle()
+                println("NestroWindowSizeTest checking size=$size destination=$navigationLabel title=$pageTitle")
                 composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
         }
