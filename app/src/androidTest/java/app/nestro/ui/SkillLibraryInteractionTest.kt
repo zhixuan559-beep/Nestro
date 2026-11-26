@@ -4,6 +4,9 @@ import app.nestro.MainActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -37,7 +40,10 @@ class SkillLibraryInteractionTest {
         composeRule.onNodeWithText("保存").performClick()
         composeRule.onNodeWithText("交互测试技能").assertIsDisplayed()
 
-        composeRule.onNodeWithText("停用").performClick()
+        // 技能库页每个已启用技能各带一个“停用”按钮（内置技能＋新建技能共 4 个），不能直接按文本点。
+        // 新建技能是唯一带“删除”按钮的卡片（内置技能无删除，NestroApp.kt 技能卡内同一 Row），
+        // 用同级“删除”锚定新建技能卡内的“停用”按钮；先滚到可见再点（新建卡片在列表末尾）。
+        composeRule.onNode(hasText("停用").and(hasAnySibling(hasText("删除")))).performScrollTo().performClick()
         composeRule.onNodeWithText("已停用").assertIsDisplayed()
         composeRule.onNodeWithText("启用").performClick()
         composeRule.onNodeWithText("已启用").assertIsDisplayed()
