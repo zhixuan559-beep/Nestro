@@ -263,6 +263,33 @@ interface NestroDao {
         offset: Int
     ): List<ConversationListItem>
 
+    /**
+     * 侧栏归档只收专家/专家团会话，主对话不归档：只返回 id 在 [archivedIds] 内的会话，
+     * 分页（limit/offset）按过滤后的集合计，与旧的 conversationListPage 互不干扰。
+     */
+    @Query("""
+        SELECT c.id AS id, c.title AS title, c.updatedAt AS updatedAt, c.projectId AS projectId,
+               COALESCE((SELECT SUBSTR(m.content, 1, 240) FROM messages AS m WHERE m.conversationId = c.id
+                         ORDER BY m.position DESC LIMIT 1), '') AS lastMessagePreview,
+               (SELECT COUNT(*) FROM messages AS countMessage WHERE countMessage.conversationId = c.id) AS messageCount
+        FROM conversations AS c
+        WHERE c.projectId = :projectId
+          AND c.id IN (:archivedIds)
+          AND (:query = '' OR INSTR(LOWER(c.title), LOWER(:query)) > 0
+               OR EXISTS (SELECT 1 FROM messages AS searchMessage
+                          WHERE searchMessage.conversationId = c.id
+                            AND INSTR(LOWER(searchMessage.content), LOWER(:query)) > 0))
+        ORDER BY c.updatedAt DESC, c.id DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun archivedConversationListPage(
+        projectId: String,
+        query: String,
+        archivedIds: List<String>,
+        limit: Int,
+        offset: Int
+    ): List<ConversationListItem>
+
     @Transaction
     @Query("SELECT * FROM conversations WHERE id = :conversationId LIMIT 1")
     suspend fun conversationWithMessages(conversationId: String): ConversationWithMessages?
