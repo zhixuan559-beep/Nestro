@@ -1994,6 +1994,7 @@ fun NestroApp(initialPage: String = "home") {
                     }
                     Crossfade(
                         targetState = if (page == "teams") "experts" else page,
+                        modifier = Modifier.weight(1f),
                         animationSpec = tween(NestroMotion.STANDARD),
                         label = "page-transition"
                     ) { targetPage ->
@@ -4139,6 +4140,26 @@ fun NestroApp(initialPage: String = "home") {
                         }
                         else -> SimplePage("Nestro", "本地优先的 AI 助手")
                     }
+                    }
+                    // 底部双板块：对话框 / 工作台（定稿：黑白极简双板块导航；工作台为工具目录及下属页）
+                    NavigationBar(containerColor = Bg) {
+                        NavigationBarItem(
+                            selected = page == "home" || page == "chat",
+                            onClick = { page = "home" },
+                            icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "对话框") },
+                            label = { Text("对话框") }
+                        )
+                        NavigationBarItem(
+                            selected = page in setOf(
+                                "tools", "models", "comparison", "voice", "skills",
+                                "workflows", "tasks", "plugins", "mcp", "capabilities",
+                                "memory", "knowledge", "artifacts", "media-editor",
+                                "coworkbench", "git"
+                            ),
+                            onClick = { page = "tools" },
+                            icon = { Icon(Icons.Outlined.Dashboard, contentDescription = "工作台") },
+                            label = { Text("工作台") }
+                        )
                     }
                 }
                 }
