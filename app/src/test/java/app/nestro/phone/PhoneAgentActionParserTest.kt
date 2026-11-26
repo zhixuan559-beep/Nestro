@@ -210,4 +210,38 @@ class PhoneAgentActionParserTest {
         }
     }
 
+    @Test
+    fun coordinateClickParsesPermilleCoordinates() {
+        val action = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click_at","x":540,"y":960,"expectedAfter":"已加入购物车"}]}"""
+        ).actions.single()
+        assertEquals(
+            PhoneAgentExecutor.Action.ClickAt(540, 960, "已加入购物车"),
+            action
+        )
+    }
+
+    @Test
+    fun coordinateClickRejectsOutOfRangeOrMissingCoordinates() {
+        listOf(
+            """{"done":false,"actions":[{"type":"click_at","x":1001,"y":960}]}""",
+            """{"done":false,"actions":[{"type":"click_at","x":540,"y":-1}]}""",
+            """{"done":false,"actions":[{"type":"click_at","x":540}]}"""
+        ).forEach { raw ->
+            try {
+                PhoneAgentActionParser.parse(raw)
+                fail("invalid click_at coordinates must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test
+    fun coordinateClickWithSensitiveEvidenceBecomesUserHandoff() {
+        val plan = PhoneAgentActionParser.parse(
+            """{"done":false,"actions":[{"type":"click_at","x":540,"y":960,"expectedAfter":"test@example.com"}]}"""
+        )
+        assertTrue(plan.actions.single() is PhoneAgentExecutor.Action.ConfirmSensitive)
+    }
+
 }
