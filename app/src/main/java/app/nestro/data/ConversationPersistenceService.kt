@@ -203,9 +203,17 @@ class ConversationPersistenceService(private val database: NestroDatabase, priva
         projectId: String,
         query: String,
         limit: Int,
-        offset: Int
+        offset: Int,
+        archivedIds: List<String>? = null
     ): List<ConversationListItem> = withContext(Dispatchers.IO) {
-        database.dao().conversationListPage(projectId, query, limit, offset)
+        if (archivedIds != null) {
+            // 侧栏归档只收专家/专家团会话：无归档 id 时直接返回空，避免向 Room 传空 IN 列表；
+            // 传 null 时保持旧行为（返回全部会话），供其他调用方使用。
+            if (archivedIds.isEmpty()) return@withContext emptyList()
+            database.dao().archivedConversationListPage(projectId, query, archivedIds, limit, offset)
+        } else {
+            database.dao().conversationListPage(projectId, query, limit, offset)
+        }
     }
 
     internal suspend fun loadMessages(conversationId: String): List<ChatMessage>? = withContext(Dispatchers.IO) {
