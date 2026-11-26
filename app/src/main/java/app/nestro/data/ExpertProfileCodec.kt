@@ -12,7 +12,7 @@ data class ExpertProfile(
     val maxTokens: Int? = null,
     val description: String = "",
     val version: String = "1.0.0",
-    val source: String = "Nost 本地专家"
+    val source: String = "Nestro 本地专家"
 )
 
 object ExpertProfileCodec {
