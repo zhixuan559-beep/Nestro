@@ -38,7 +38,8 @@ class CapabilityDirectoryWindowSizeTest {
             composeRule.waitForIdle()
             composeRule.onNodeWithText("能力目录").performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithText("社区目录 HTTPS 地址").performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText("语音输出（预留）").performScrollTo().assertExists()
+            // 生产侧条目已改名：“语音输出（预留）”改为“语音输出”，状态另以“已接入”显示。
+            composeRule.onNodeWithText("语音输出").performScrollTo().assertExists()
         }
     }
 }
