@@ -152,7 +152,8 @@ class MikaVirtualDisplayController(context: Context) {
                 activeEnvironment = null
                 activeBridgeService = null
             }
-            // No main-screen execution fallback exists; tasks pause until the virtual display is restored.
+            // 主屏兜底只在用户明确允许后由界面手动启用，这里不自动挂载；
+            // 任务暂停，直至虚拟屏恢复或用户手动启用主屏执行。
             // MikaAgentDisplay.release() already releases the remote display; calling
             // finishDisplay here first would send a duplicate Binder release.
             display.release()
