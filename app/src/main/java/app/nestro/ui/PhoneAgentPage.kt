@@ -4,6 +4,7 @@ import app.nestro.NestroApplication
 import app.nestro.data.PhoneAgentTaskStore
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentService
+import app.nestro.phone.MainScreenPhoneAgentExecutionEnvironment
 import app.nestro.phone.PhoneAgentExecutionEnvironmentProvider
 import android.content.Context
 import android.content.Intent
@@ -216,6 +217,40 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
                             ) { Text("关闭隔离屏", color = MaterialTheme.colorScheme.error) }
                         }
                     }
+                }
+                // 主屏兜底：无虚拟屏时，经用户明确允许后在真实主屏上执行；绝不自动切换。
+                val mainScreenAllowed = prefs.getBoolean(MainScreenPhoneAgentExecutionEnvironment.MAIN_SCREEN_EXECUTION_ALLOWED_KEY, false)
+                val mainScreenActive = PhoneAgentExecutionEnvironmentProvider.active is MainScreenPhoneAgentExecutionEnvironment
+                Text("主屏执行（无虚拟屏时）", color = Ink, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    when {
+                        mainScreenActive -> "正在主屏上执行：Phone Agent 直接操作你当前看到的界面，支付、验证码仍由你接手"
+                        mainScreenAllowed -> "已允许主屏执行；虚拟屏不可用时，点下方按钮手动启用"
+                        else -> "没有无线调试助手时，可手动允许 Phone Agent 在真实主屏上执行；不会自动切换，需你点按钮确认"
+                    },
+                    color = Muted, style = MaterialTheme.typography.bodySmall
+                )
+                if (virtualSession == null && !mainScreenActive) {
+                    Button(
+                        onClick = {
+                            MainScreenPhoneAgentExecutionEnvironment.setMainScreenExecutionAllowed(context, true)
+                            val started = PhoneAgentService.activeService?.activateMainScreenExecution() == true
+                            taskMessage = if (started) "已在主屏上启用 Phone Agent 执行" else "无障碍桥接尚未连接，无法启用主屏执行"
+                            refresh++
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                    ) { Text("在主屏上执行") }
+                }
+                if (mainScreenActive) {
+                    TextButton(
+                        onClick = {
+                            PhoneAgentService.activeService?.deactivateMainScreenExecution()
+                            taskMessage = "已停止主屏执行；任务将暂停"
+                            refresh++
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("停止主屏执行", color = MaterialTheme.colorScheme.error) }
                 }
 
             }
