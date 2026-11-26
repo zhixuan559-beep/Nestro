@@ -79,7 +79,10 @@ class ExpertProjectPlanExecutorTest {
         assertTrue(result.isSuccessful)
         assertEquals(3, calls.size)
         assertFalse("研究员" in calls)
-        assertEquals(listOf(3, 4), checkpointSizes)
+        // 逐包落盘（566bb741 起）：第二波两个包各完成一次回调，行数依次为 2、3，
+        // 第三波完成后再回调一次为 4；与 successfulPackageIsCheckpointedBeforeParallelSiblingFinishes
+        // 依赖的逐包检查点语义一致，旧的按波回调期望 [3, 4] 已过期。
+        assertEquals(listOf(2, 3, 4), checkpointSizes)
     }
 
     @Test
