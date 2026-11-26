@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import app.nestro.phone.PhoneAgentPlanner
 import app.nestro.phone.PhoneAgentExecutor
+import app.nestro.phone.PhoneAgentCoordinates
 import app.nestro.phone.PhoneAgentRiskPolicy
 import app.nestro.phone.PhoneAgentUrlPolicy
 import java.util.UUID
@@ -81,6 +82,16 @@ object PhoneAgentTaskStore {
                             !PhoneAgentRiskPolicy.containsSensitiveValue(action.exactText)
                     ) { "高风险、敏感或无效点击必须由用户处理" }
                     row.put("type", "click").put("text", action.exactText).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
+                }
+                is PhoneAgentExecutor.Action.ClickAt -> {
+                    require(
+                        PhoneAgentCoordinates.isValid(action.xPermille, action.yPermille) &&
+                            (action.expectedAfter == null || (
+                                action.expectedAfter.length <= 120 &&
+                                    !PhoneAgentRiskPolicy.containsSensitiveValue(action.expectedAfter)
+                            ))
+                    ) { "无效或敏感的坐标点击不能持久化" }
+                    row.put("type", "click_at").put("x", action.xPermille).put("y", action.yPermille).put("expectedAfter", action.expectedAfter ?: JSONObject.NULL)
                 }
                 is PhoneAgentExecutor.Action.EnterText -> {
                     require(action.fieldLabel.isNotBlank() && action.fieldLabel.length <= 80 && action.value.length <= 1000 && !PhoneAgentRiskPolicy.isSensitiveField(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.fieldLabel) && !PhoneAgentRiskPolicy.containsSensitiveValue(action.value)) { "敏感或无效输入必须由用户本人处理" }
@@ -172,6 +183,19 @@ object PhoneAgentTaskStore {
                     ) { "已保存的点击目标无效或包含个人敏感信息" }
                     require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "已保存的高风险点击必须由用户重新确认" }
                     PhoneAgentExecutor.Action.ClickText(label, expectedAfter)
+                }
+                "click_at" -> {
+                    val x = row.getInt("x")
+                    val y = row.getInt("y")
+                    val expectedAfter = row.optString("expectedAfter").takeIf { it.isNotBlank() && it != "null" }
+                    require(
+                        PhoneAgentCoordinates.isValid(x, y) &&
+                            (expectedAfter == null || (
+                                expectedAfter.length <= 120 &&
+                                    !PhoneAgentRiskPolicy.containsSensitiveValue(expectedAfter)
+                            ))
+                    ) { "已保存的坐标点击无效或包含个人敏感信息" }
+                    PhoneAgentExecutor.Action.ClickAt(x, y, expectedAfter)
                 }
                 "enter_text" -> {
                     val label = row.getString("label").trim()
