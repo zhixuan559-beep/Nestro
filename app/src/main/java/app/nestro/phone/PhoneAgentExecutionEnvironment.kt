@@ -13,6 +13,8 @@ interface PhoneAgentExecutionEnvironment {
     fun requestTaskStop(taskId: String)
     fun captureVisibleText(): String
     fun clickVisibleText(exactText: String): Boolean
+    /** 按千分比坐标（0..1000）点按：用于无文字的图标控件，或多个同名目标中点指定的一个。 */
+    fun clickAt(xPermille: Int, yPermille: Int): Boolean
     fun setTextOnVisibleField(label: String, value: String): Boolean
     fun scroll(direction: String): Boolean
     fun openUrl(rawUrl: String): Boolean
