@@ -81,6 +81,13 @@ object SkillDependencyResolver {
         installedMetadata: Map<String, String>
     ): List<String>? {
         if (skillName.isBlank() || skillName.length > 40) return null
+        // 损坏的已存元数据一律 fail closed：哪怕损坏条目对应的技能已不在已安装列表里，
+        // 也说明存储的图谱不完整，调用方不能据此删技能/改名。只校验元数据本身是否可解析，
+        // 空白沿用 fromStored 的约定视作 "{}"。
+        for ((_, raw) in installedMetadata) {
+            if (raw.isBlank()) continue
+            if (runCatching { JSONObject(raw) }.isFailure) return null
+        }
         val dependents = mutableListOf<String>()
         installedSkills.forEach { (candidateName, prompt) ->
             if (candidateName == skillName) return@forEach
