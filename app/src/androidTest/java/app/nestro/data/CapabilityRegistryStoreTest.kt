@@ -143,14 +143,14 @@ class CapabilityRegistryStoreTest {
         }
 
         CapabilityRegistryStore.registerAll(preferences, items)
+        
         assertEquals(160, CapabilityRegistryStore.list(preferences).size)
         // 160 个能力默认 defaultGranted=false，未授权时 authorize 必然返回 false；先显式授权再断言 authorize 通过。
         CapabilityRegistryStore.setGranted(preferences, "project-a", "capability.test.160", true)
         assertTrue(CapabilityRegistryStore.authorize(preferences, "project-a", "capability.test.160"))
     }
 
-    @Test
-    
+    @Test    
     fun toolAuditNeverStoresSecretParameterNames() {
         assertEquals(
             listOf("query", "page_size"),
