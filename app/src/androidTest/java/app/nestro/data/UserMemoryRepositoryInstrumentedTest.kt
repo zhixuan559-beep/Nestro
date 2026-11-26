@@ -145,11 +145,12 @@ class UserMemoryRepositoryInstrumentedTest {
             persistence.persistConversationMessages(
                 conversationId = "conversation-a",
                 projectId = "project-a",
-                messages = listOf(ChatMessage("message-a", "user", "原始偏好内容"))
+                messages = listOf(ChatMessage("message-a", "user", "原始偏好内容表达方式"))
             )
+            // 导出编解码要求内容长度 8..180 字符，6 字原文会在 encode 时被拒绝，改用 11 字同义内容（与来源消息正文保持一致）
             val sourceMemory = memory().copy(
-                content = "原始偏好内容",
-                fingerprint = UserMemoryStore.fingerprint("preference|原始偏好内容")
+                content = "原始偏好内容表达方式",
+                fingerprint = UserMemoryStore.fingerprint("preference|原始偏好内容表达方式")
             )
             assertTrue(dao.saveUserMemoryCandidateIfSourceValid(sourceMemory))
             val repository = UserMemoryRepository(database)
