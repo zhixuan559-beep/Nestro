@@ -127,7 +127,11 @@ if [[ -n "${ANDROID_TEST_FILTER:-}" ]]; then
   instrument_args+=(-e class "$ANDROID_TEST_FILTER")
   echo "Running targeted instrumentation tests: $ANDROID_TEST_FILTER"
 fi
-run_with_timeout 1500 adb shell am instrument "${instrument_args[@]}" app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
+# 测试命令限时：#1663 证明 1500 秒（25 分钟）不够——套件跑满 25 分钟
+# 被杀时只完成 143/175 个测试（第 144 个测试刚开始即中断，无断言失败），
+# 而 instrumented job 的超时预算是 120 分钟，此处放宽到 3300 秒（55 分钟）
+# 仍留有余量。若下轮仍在同一测试处卡住，则说明是该测试本身挂起，再修测试。
+run_with_timeout 3300 adb shell am instrument "${instrument_args[@]}" app.nestro.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$DIAG/instrumentation-run.txt"
 instrumentation_exit=${PIPESTATUS[0]}
 set -e
 
