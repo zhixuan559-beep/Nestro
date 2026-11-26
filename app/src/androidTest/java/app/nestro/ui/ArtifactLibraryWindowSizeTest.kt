@@ -52,6 +52,13 @@ class ArtifactLibraryWindowSizeTest {
         composeRule.onAllNodesWithText("Other Notes").assertCountEquals(0)
 
         composeRule.onNodeWithText("预览").performClick()
+        // “预览”读文件是异步协程（Dispatchers.IO 读完才置 preview 态弹对话框），
+        // 按钮在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            runCatching {
+                composeRule.onNodeWithText("恢复为新版本").assertIsDisplayed()
+            }.isSuccess
+        }
         composeRule.onNodeWithText("恢复为新版本").assertIsDisplayed()
         composeRule.onNodeWithText("恢复为新版本").performClick()
         composeRule.waitForIdle()
