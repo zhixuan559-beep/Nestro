@@ -21,10 +21,21 @@ if [[ "$booted" != "1" ]]; then
   exit 2
 fi
 
+# `pm path android` can succeed while other system providers (settings,
+# storage) are still initializing — run #1648 saw exactly that: three
+# install attempts failed in turn with "Can't find service: package",
+# "Cannot access system provider: 'settings'", and a StorageManager NPE,
+# even though the `pm path` probe had passed. Probe the settings provider
+# too, so an install is only attempted once the system services it needs
+# are actually up.
+emulator_system_ready() {
+  adb shell pm path android >/dev/null 2>&1 && adb shell settings get secure android_id >/dev/null 2>&1
+}
+
 # sys.boot_completed can become 1 before Package Manager is ready to accept APK installs.
 package_ready=""
 for attempt in $(seq 1 45); do
-  if adb shell pm path android >/dev/null 2>&1; then
+  if emulator_system_ready; then
     package_ready="1"
     break
   fi
@@ -38,17 +49,21 @@ fi
 
 install_with_retry() {
   local apk="$1"
-  for attempt in 1 2 3; do
+  for attempt in $(seq 1 6); do
+    # Re-probe before each attempt: the pre-build readiness check goes
+    # stale during the ~4.5 minute APK build, and `pm path` alone proved
+    # too weak in run #1648 (three installs failed in ~17 seconds while
+    # the system was still bringing providers up).
+    for ready_attempt in $(seq 1 30); do
+      emulator_system_ready && break
+      sleep 2
+    done
     if adb install -r "$apk"; then
       return 0
     fi
-    echo "APK install attempt $attempt failed; waiting for Package Manager and retrying." >&2
+    echo "APK install attempt $attempt failed; waiting for system services and retrying." >&2
     adb wait-for-device || true
-    sleep 5
-    for ready_attempt in $(seq 1 15); do
-      adb shell pm path android >/dev/null 2>&1 && break
-      sleep 2
-    done
+    sleep 15
   done
   return 1
 }
