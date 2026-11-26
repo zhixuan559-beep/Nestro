@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="phone_agent_accessibility_description">Nost 手机自动化服务。仅在用户主动触发时读取当前界面，并按临时授权执行操作。</string>
+    <string name="phone_agent_accessibility_description">Nestro 手机自动化服务。仅在用户主动触发时读取当前界面，并按临时授权执行操作。</string>
 </resources>
