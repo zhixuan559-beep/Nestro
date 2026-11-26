@@ -29,8 +29,10 @@ object CoworkbenchDataFlowAnalyzer {
             "网络请求地址", "外部输入可能控制请求 URL；限制 HTTPS、主机白名单、端口和重定向目标")
     )
 
+    // 赋值号 `=` 前允许空白：常规写法 `val x = ...` / `String x = ...` 都有空格，
+    // 漏写 `\s*` 会导致所有赋值都匹配不到、污点从不传播（#11/#12 根因）。
     private val assignment = Regex(
-        """^\s*(?:(?:val|var)\s+|(?:(?:final\s+)?(?:String|CharSequence|Object|Uri|URI|File|Path)\s+))?([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*[A-Za-z_][A-Za-z0-9_?.]*(?:<[^>]+>)?\s*)?=\s*(.+)$"""
+        """^\s*(?:(?:val|var)\s+|(?:(?:final\s+)?(?:String|CharSequence|Object|Uri|URI|File|Path)\s+))?([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*[A-Za-z_][A-Za-z0-9_?.]*(?:<[^>]+>)?\s*)?\s*=\s*(.+)$"""
     )
     private val identifier = Regex("""\b[A-Za-z_][A-Za-z0-9_]*\b""")
     private val commentLine = Regex("""^\s*(?://|/\*|\*|#)""")
