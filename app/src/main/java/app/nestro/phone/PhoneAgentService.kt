@@ -2,6 +2,10 @@ package app.nestro.phone
 
 import android.accessibilityservice.AccessibilityService
 import android.app.DownloadManager
+import android.graphics.Path
+import android.graphics.Point
+import android.graphics.Rect
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Environment
 import android.os.SystemClock
@@ -11,6 +15,9 @@ import app.nestro.media.MediaProjectStore
 import app.nestro.NestroApplication
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -63,15 +70,25 @@ class PhoneAgentService : AccessibilityService() {
     }
 
     /** Read a window on the selected isolated display, never the user's foreground display. */
-    fun captureVisibleText(displayId: Int): String = captureRoot(rootForDisplay(displayId))
+    fun captureVisibleText(displayId: Int): String = captureRoot(rootForDisplay(displayId), displaySize(displayId))
 
-    private fun captureRoot(root: AccessibilityNodeInfo?): String {
+    private fun captureRoot(root: AccessibilityNodeInfo?, size: Point?): String {
         root ?: return "当前页面没有可读取的无障碍节点。"
         val lines = mutableListOf<String>()
-        collect(root, lines, 0)
+        collect(root, lines, 0, size)
         val result = lines.take(120).joinToString("\n").ifBlank { "当前页面没有可读取的文本。" }
         audit("SCREEN_READ", "读取指定执行屏的可访问界面文本")
         return result
+    }
+
+    /** 目标执行屏的真实尺寸（像素），用于文本节点中心点与千分比坐标互换；取不到时快照不带坐标。 */
+    private fun displaySize(displayId: Int): Point? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return runCatching {
+            val manager = getSystemService(DisplayManager::class.java) ?: return null
+            val display = manager.getDisplay(displayId) ?: return null
+            Point().also { display.getRealSize(it) }.takeIf { it.x > 0 && it.y > 0 }
+        }.getOrNull()
     }
 
     private fun rootForDisplay(displayId: Int): AccessibilityNodeInfo? {
@@ -87,16 +104,28 @@ class PhoneAgentService : AccessibilityService() {
         }.getOrNull()
     }
 
-    private fun collect(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
+    private fun collect(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int, size: Point?) {
         if (depth > 12 || out.size >= 120) return
         if (node.isVisibleToUser && !node.isPassword) {
             val text = node.text?.toString()?.trim().orEmpty()
             val desc = node.contentDescription?.toString()?.trim().orEmpty()
             val value = redactSensitiveText((text.ifBlank { desc }).take(180))
-            if (value.isNotBlank()) out += value
+            if (value.isNotBlank()) {
+                // 每行末尾标注该节点中心点的千分比坐标，供模型用 click_at 点按
+                // 无文字的图标控件，或多个同名目标中指定的一个；取不到尺寸时退回纯文本。
+                val annotated = if (size != null) {
+                    val bounds = Rect()
+                    node.getBoundsInScreen(bounds)
+                    val center = PhoneAgentCoordinates.centerPermille(
+                        bounds.left, bounds.top, bounds.right, bounds.bottom, size.x, size.y
+                    )
+                    if (center != null) "$value ${PhoneAgentCoordinates.suffix(center.first, center.second)}" else value
+                } else value
+                out += annotated
+            }
         }
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { child -> collect(child, out, depth + 1) }
+            node.getChild(i)?.let { child -> collect(child, out, depth + 1, size) }
             if (out.size >= 120) break
         }
     }
@@ -139,9 +168,70 @@ class PhoneAgentService : AccessibilityService() {
         return success
     }
 
-    fun setTextOnVisibleField(displayId: Int, label: String, value: String): Boolean = setTextOnVisibleField(rootForDisplay(displayId), label, value)
+    /** 按千分比坐标点按目标执行屏：用于快照里有坐标、无文字的图标控件，
+     * 或多个同名目标中点指定的一个。坐标必须来自当次屏幕快照，不得编造。 */
+    fun clickAt(displayId: Int, xPermille: Int, yPermille: Int): Boolean {
+        require(PhoneAgentCoordinates.isValid(xPermille, yPermille)) { "点击坐标无效" }
+        require(hasValidGrant()) { "没有有效的操作授权" }
+        val root = rootForDisplay(displayId) ?: return false
+        val size = displaySize(displayId) ?: return false
+        val x = PhoneAgentCoordinates.toPixels(xPermille, size.x)
+        val y = PhoneAgentCoordinates.toPixels(yPermille, size.y)
+        val target = findNodeAtPoint(root, x, y) ?: run {
+            audit("CLICK_AT_BLOCKED", "目标点无可见控件")
+            return false
+        }
+        if (target.isPassword) {
+            audit("CLICK_AT_BLOCKED", "目标为密码字段")
+            return false
+        }
+        // 点位节点的文字/描述仍走与 clickVisibleText 相同的风控：高风险与敏感目标拒绝点按。
+        // 无文字的图标控件标签为空，风控对空标签返回 false，正好放行——这正是坐标点按要补的缺口。
+        val label = (target.text?.toString().orEmpty().ifBlank { target.contentDescription?.toString().orEmpty() }).trim()
+        require(!PhoneAgentRiskPolicy.requiresUserHandoffForClick(label)) { "该操作属于高风险操作，必须由用户本人完成确认" }
+        require(!PhoneAgentRiskPolicy.containsSensitiveValue(label)) { "页面目标包含个人敏感信息，已阻止点击" }
+        val success = dispatchTap(x.toFloat(), y.toFloat())
+        consumeSingleGrantIfNeeded()
+        audit("CLICK_AT", "坐标=[$xPermille,$yPermille]")
+        return success
+    }
 
-    private fun setTextOnVisibleField(root: AccessibilityNodeInfo?, label: String, value: String): Boolean {
+    /** 目标点处最深的可见节点，仅用于点按前的安全核查；点按本身按坐标执行，不依赖节点文字。 */
+    private fun findNodeAtPoint(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        if (!node.isVisibleToUser) return null
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (!bounds.contains(x, y)) return null
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { findNodeAtPoint(it, x, y) }?.let { return it }
+        }
+        return node
+    }
+
+    /** 经无障碍手势在指定像素点轻点一次。回调在主线程投递；主线程调用时等待会超时返回 false，不会死锁。 */
+    private fun dispatchTap(x: Float, y: Float): Boolean {
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
+            .build()
+        val latch = CountDownLatch(1)
+        val completed = AtomicBoolean(false)
+        val callback = object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                completed.set(true)
+                latch.countDown()
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                latch.countDown()
+            }
+        }
+        if (!dispatchGesture(gesture, callback, null)) return false
+        latch.await(3, TimeUnit.SECONDS)
+        return completed.get()
+    }
+
+    fun setTextOnVisibleField(displayId: Int, label: String, value: String): Boolean {
         val target = label.trim()
         require(target.isNotBlank() && target.length <= 80) { "输入框定位文本无效" }
         require(value.length <= 1000) { "输入内容过长" }
@@ -151,7 +241,7 @@ class PhoneAgentService : AccessibilityService() {
                 !PhoneAgentRiskPolicy.containsSensitiveValue(target)
         ) { "密码、验证码及敏感字段必须由用户本人填写" }
         require(hasValidGrant()) { "没有有效的操作授权" }
-        val root = root ?: return false
+        val root = rootForDisplay(displayId) ?: return false
         val matches = findEditableFields(root, target)
         if (matches.size != 1) {
             audit("SET_TEXT_BLOCKED", if (matches.isEmpty()) "未找到唯一可见输入框" else "存在多个同名输入框，已阻止填写")
@@ -178,7 +268,8 @@ class PhoneAgentService : AccessibilityService() {
         val success = performed && node.text?.toString() == value
         if (success) {
             lastTextUndo = if (PhoneAgentRiskPolicy.redactSensitiveText(value) == value) {
-                TextUndoRecord(target, previousValue, value, captureRoot(root))
+                // 撤销快照与 captureVisibleText 用同一格式（含坐标标注），否则 undoLastTextEdit 的快照比对恒不成立。
+                TextUndoRecord(target, previousValue, value, captureRoot(root, displaySize(displayId)))
             } else null
         }
         consumeSingleGrantIfNeeded()
