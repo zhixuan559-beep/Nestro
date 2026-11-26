@@ -19,6 +19,7 @@ class MainScreenPhoneAgentExecutionEnvironment(val service: PhoneAgentService) :
     override fun requestTaskStop(taskId: String) = service.requestTaskStop(taskId)
     override fun captureVisibleText() = service.captureVisibleText(Display.DEFAULT_DISPLAY)
     override fun clickVisibleText(exactText: String) = service.clickVisibleText(Display.DEFAULT_DISPLAY, exactText)
+    override fun clickAt(xPermille: Int, yPermille: Int) = service.clickAt(Display.DEFAULT_DISPLAY, xPermille, yPermille)
     override fun setTextOnVisibleField(label: String, value: String) =
         service.setTextOnVisibleField(Display.DEFAULT_DISPLAY, label, value)
     override fun scroll(direction: String) = service.scroll(Display.DEFAULT_DISPLAY, direction)
