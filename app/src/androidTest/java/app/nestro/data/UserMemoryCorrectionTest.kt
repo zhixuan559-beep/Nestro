@@ -55,6 +55,10 @@ class UserMemoryCorrectionTest {
         try {
             val dao = db.dao()
             dao.putProjects(listOf(ProjectEntity("project-a", "项目 A", "", 1L)))
+            // 来源校验（7f103f56 起 saveCandidates 要求来源会话与用户消息真实存在）：
+            // 不先建会话与用户消息，saveCandidates 会直接返回 0。
+            dao.putConversation(ConversationEntity("conversation-new", "新对话", 1L, "project-a"))
+            dao.putMessages(listOf(MessageEntity("message-new", "conversation-new", 0, "user", "我偏好简洁直接的表达")))
             val original = memory("memory-a", "project-a", "我偏好简洁直接的表达")
             dao.putUserMemory(original)
 
@@ -98,6 +102,13 @@ class UserMemoryCorrectionTest {
             dao.putUserMemory(original)
             dao.putUserMemory(foreign)
             dao.putUserMemory(conflict)
+            // 来源校验（7f103f56 起）：两次更正都要先经过来源会话校验，否则会在
+            // supersedes 逻辑之前就被拒，测不到“外项目 ID / 指纹冲突被拒”的本意。
+            dao.putConversation(ConversationEntity("conversation-a", "对话 A", 1L, "project-a"))
+            dao.putMessages(listOf(
+                MessageEntity("message-a", "conversation-a", 0, "user", "更正外部项目的记忆"),
+                MessageEntity("message-b", "conversation-a", 1, "user", "已经存在的目标偏好内容")
+            ))
 
             val foreignAttempt = UserMemoryStore.saveCandidates(
                 dao, "project-a", "conversation-a", "message-a",
@@ -111,7 +122,9 @@ class UserMemoryCorrectionTest {
             assertEquals(0, foreignAttempt)
             assertEquals(0, conflictAttempt)
             assertEquals(original.content, dao.userMemoryById("memory-a", "project-a")?.content)
-            assertEquals(3, dao.userMemories("project-a").size)
+            // 项目 A 只有 original 与 conflict 两条：foreign 在项目 B；两次更正均被拒、未建新记忆。
+            // 旧期望 3 自 481de9d7 写下时即错（当时两尝试同样返回 0、总数同样是 2，从未绿过）。
+            assertEquals(2, dao.userMemories("project-a").size)
             assertTrue(dao.userMemoryById("memory-foreign", "project-b") != null)
             assertFalse(dao.userMemoryById("memory-foreign", "project-a") != null)
         } finally {
