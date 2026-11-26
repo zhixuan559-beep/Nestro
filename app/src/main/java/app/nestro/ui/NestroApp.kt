@@ -2000,6 +2000,8 @@ fun NestroApp(initialPage: String = "home") {
                     ) { targetPage ->
                     when (targetPage) {
                         "home", "chat" -> {
+                            // 对话区与输入框纵向排列：内容占剩余高度，输入框贴底（此前两者是 Crossfade 内 Box 的重叠孩子，输入框盖住了内容顶部）。
+                            Column(Modifier.fillMaxSize()) {
                             if (messages.isEmpty()) {
                                 Column(
                                     Modifier.weight(1f).fillMaxWidth().padding(22.dp),
@@ -2160,6 +2162,7 @@ fun NestroApp(initialPage: String = "home") {
                                     )
                                 }
                                 AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                            }
                             }
                         }
                         "tools" -> ToolsDirectoryPage(onNavigate = { destination -> page = destination })
