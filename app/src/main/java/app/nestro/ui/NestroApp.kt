@@ -310,7 +310,7 @@ fun NestroApp(initialPage: String = "home") {
     var status by chatExecutionUiState.status
     val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
-            "Nost 已成为系统默认助手入口。"
+            "Nestro 已成为系统默认助手入口。"
         } else {
             "系统助手设置未更改。"
         }
@@ -1939,7 +1939,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Icon(Icons.Outlined.Menu, contentDescription = "菜单", tint = Ink)
                             }
                             Column {
-                                Text("Nost", color = Ink, style = MaterialTheme.typography.titleLarge)
+                                Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
                                 AnimatedStatusText(status, color = Muted, style = MaterialTheme.typography.labelSmall)
                                 if (busy && teamRunStatus.isNotBlank()) {
                                     AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
@@ -2008,7 +2008,7 @@ fun NestroApp(initialPage: String = "home") {
                                     Spacer(Modifier.height(20.dp))
                                     Text("有什么可以帮忙？", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                     Spacer(Modifier.height(8.dp))
-                                    Text("直接描述目标，Nost 会判断并调度所需能力。", color = Muted)
+                                    Text("直接描述目标，Nestro 会判断并调度所需能力。", color = Muted)
                                 }
                             } else {
                                 LazyColumn(
@@ -3127,7 +3127,7 @@ fun NestroApp(initialPage: String = "home") {
                         "settings" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
-                                Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nost 账号。", color = Muted)
+                                Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nestro 账号。", color = Muted)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3170,7 +3170,7 @@ fun NestroApp(initialPage: String = "home") {
                                         Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
                                         Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Button(onClick = {
-                                            val name = "Nost-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+                                            val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
                                             exportBackupLauncher.launch(name)
                                         }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                             Text("导出本地备份")
@@ -3188,9 +3188,9 @@ fun NestroApp(initialPage: String = "home") {
                                         val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
                                         Text(
                                             when {
-                                                assistantHeld -> "Nost 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
                                                 assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
-                                                else -> "当前系统未开放系统助手角色，仍可通过 Nost 应用内聊天入口使用。"
+                                                else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
                                             },
                                             color = Muted, style = MaterialTheme.typography.bodySmall
                                         )
@@ -3199,7 +3199,7 @@ fun NestroApp(initialPage: String = "home") {
                                             onClick = {
                                                 val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
                                                 if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
-                                                else status = "当前设备不支持申请系统助手角色，或 Nost 已经是默认助手。"
+                                                else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
                                             },
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
@@ -3209,7 +3209,7 @@ fun NestroApp(initialPage: String = "home") {
                                 Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("隐私、免责声明与开源信息", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("免责声明：Nost (Nestro) 采用本地优先架构，会话、记忆与知识库默认保存于本机私有存储，API Key 经 Android Keystore AES-GCM 加密，不上传至任何自营后台。第三方模型接口费用、输出准确性及 Phone Agent 跨应用自动化操作风险由用户自行核验与承担。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        Text("免责声明：Nestro 采用本地优先架构，会话、记忆与知识库默认保存于本机私有存储，API Key 经 Android Keystore AES-GCM 加密，不上传至任何自营后台。第三方模型接口费用、输出准确性及 Phone Agent 跨应用自动化操作风险由用户自行核验与承担。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                         Text("开源协议与致谢：本项目基于 MIT License 开源（github.com/zhixuan559-beep/Nestro）。隔离虚拟屏与设备桥接部分参考并遵循以下开源项目声明：Mika（Copyright 2026 wangzan101，Apache-2.0）、scrcpy（Copyright Genymobile / Romain Vimont，Apache-2.0）及 Android-Agent 相关开源许可。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
@@ -4137,7 +4137,7 @@ fun NestroApp(initialPage: String = "home") {
                                  if (skillExportStatus.isNotBlank()) Text(skillExportStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        else -> SimplePage("Nost", "本地优先的 AI 助手")
+                        else -> SimplePage("Nestro", "本地优先的 AI 助手")
                     }
                     }
                 }
@@ -4507,7 +4507,7 @@ fun NestroApp(initialPage: String = "home") {
                             showRecallDialog = false
                         }.padding(vertical = 9.dp)) {
                             Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
-                            Text("${if (source.role == "user") "用户" else "Nost"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                            Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                             Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                         }
                         HorizontalDivider(color = Line)
@@ -5154,7 +5154,7 @@ fun NestroApp(initialPage: String = "home") {
                         maxTokens = maxTokens,
                         description = expertDescriptionDraft.trim(),
                         version = expertProfiles[oldName]?.version ?: "1.0.0",
-                        source = expertProfiles[oldName]?.source ?: "Nost 本地专家"
+                        source = expertProfiles[oldName]?.source ?: "Nestro 本地专家"
                     )
                     val profileError = ExpertProfileCodec.validate(profile, skills.keys)
                     if (profileError != null) {
