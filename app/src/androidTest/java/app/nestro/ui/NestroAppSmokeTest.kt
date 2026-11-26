@@ -44,6 +44,7 @@ class NestroAppSmokeTest {
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
     }
