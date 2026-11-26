@@ -240,7 +240,12 @@ core-lib = { group = "org.example", name = "core", version.ref = "core" }
             )
             assertTrue(impact.dependenciesAdded.any { it.contains("catalog-value:core:2.0") })
             assertTrue(impact.dependenciesRemoved.any { it.contains("catalog-value:core:1.0") })
-            assertTrue(impact.dependenciesAdded.any { it.contains("catalog:core-lib:org.example:core:core") })
+            // core-lib 本身未变：其 catalog 词条（含 version-ref:core）在新旧基线中相同，
+            // 不应出现在 added/removed 里；版本上浮只通过 catalog-value 词条体现（上两断言已覆盖）。
+            // 旧断言期望 added 里有 "catalog:core-lib:org.example:core:core"——既缺 version-ref: 前缀，
+            // 又与“未变的库不进 added”相悖，自写下时即错、从未绿过。
+            assertTrue(impact.dependenciesAdded.none { it.startsWith("catalog:core-lib:") })
+            assertTrue(impact.dependenciesRemoved.none { it.startsWith("catalog:core-lib:") })
         } finally {
             root.deleteRecursively()
         }
