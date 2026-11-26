@@ -27,6 +27,8 @@ object PhoneAgentExecutor {
         data class LaunchApp(val packageName: String) : Action()
         data class DownloadAsset(val url: String, val displayName: String, val sourceUrl: String, val licenseLabel: String) : Action()
         data class ClickText(val exactText: String, val expectedAfter: String? = null) : Action()
+        /** 按快照标注的千分比坐标点按：用于无文字的图标控件，或多个同名目标中点指定的一个。 */
+        data class ClickAt(val xPermille: Int, val yPermille: Int, val expectedAfter: String? = null) : Action()
         data class EnterText(val fieldLabel: String, val value: String) : Action()
         data class Scroll(val direction: String) : Action()
         data class Wait(val millis: Long) : Action()
@@ -188,6 +190,15 @@ object PhoneAgentExecutor {
                                         else service.screenTextChanged(before)
                                     } else false
                                 }
+                                is Action.ClickAt -> {
+                                    val before = service.captureVisibleText()
+                                    val clicked = service.clickAt(executingAction.xPermille, executingAction.yPermille)
+                                    if (clicked) {
+                                        delay(500)
+                                        if (executingAction.expectedAfter != null) service.verifyVisibleText(executingAction.expectedAfter)
+                                        else service.screenTextChanged(before)
+                                    } else false
+                                }
                                 is Action.EnterText -> service.setTextOnVisibleField(executingAction.fieldLabel, executingAction.value)
                                 is Action.Scroll -> {
                                     val before = service.captureVisibleText()
@@ -280,6 +291,7 @@ object PhoneAgentExecutor {
         is Action.LaunchApp -> "打开应用：" + action.packageName.take(80)
         is Action.DownloadAsset -> "下载并导入素材：" + action.displayName.take(80) + "；授权：" + action.licenseLabel.take(60)
         is Action.ClickText -> "点击目标：" + PhoneAgentRiskPolicy.redactSensitiveText(action.exactText).take(80)
+        is Action.ClickAt -> "点击坐标：[${action.xPermille},${action.yPermille}]"
         is Action.EnterText -> "填写字段：" + action.fieldLabel.take(60) + "（${action.value.length} 字符，内容不记录）"
         is Action.Scroll -> if (action.direction == "forward") "向下滚动" else "向上滚动"
         is Action.Wait -> "等待 ${action.millis.coerceIn(0, 10_000)} ms"
@@ -293,6 +305,7 @@ object PhoneAgentExecutor {
         is Action.LaunchApp -> "phone.launch_app"
         is Action.DownloadAsset -> "phone.download_asset"
         is Action.ClickText -> "phone.click"
+        is Action.ClickAt -> "phone.click_at"
         is Action.EnterText -> "phone.enter_text"
         is Action.Scroll -> "phone.scroll"
         is Action.Wait -> "phone.wait"
