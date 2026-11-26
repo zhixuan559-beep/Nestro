@@ -51,7 +51,10 @@ class ProjectAccessControlStoreTest {
         try {
             prefs.edit().clear().commit()
             ProjectAccessControlStore.grant(prefs, "source-a", "target", setOf(ProjectAccessControlStore.Access.READ), 35L)
-            ProjectAccessControlStore.grant(prefs, "source-b", "target", setOf(ProjectAccessControlStore.Access.WRITE), 36L)
+            // WRITE-only 授权在生产侧已不存在（7449ef32 起 WRITE 必须同时包含 READ，
+            // 再 grant WRITE-only 会在 encodeGrants 处抛错）；source-b 改为一次被拒的 READ
+            // 授权尝试：无授权故被拒、审计留痕，readableSourceProjects 仍应排除它。
+            assertFalse(ProjectAccessControlStore.authorize(prefs, "source-b", "target", ProjectAccessControlStore.Access.READ, 36L))
             assertEquals(setOf("source-a"), ProjectAccessControlStore.readableSourceProjects(
                 prefs, "target", setOf("source-a", "source-b", "target"), 37L
             ))
