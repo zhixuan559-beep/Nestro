@@ -39,7 +39,7 @@ class SkillLibraryInteractionTest {
         composeRule.onNodeWithText("技能名称").performTextInput("交互测试技能")
         composeRule.onNodeWithText("工作指令").performTextInput("仅用于验证技能创建、停用和启用流程。")
         composeRule.onNodeWithText("保存").performClick()
-        composeRule.onNodeWithText("交互测试技能").assertIsDisplayed()
+        composeRule.onNodeWithText("交互测试技能").performScrollTo().assertIsDisplayed()
 
         // 技能库页每个已启用技能各带一个“停用”按钮（内置技能＋新建技能共 4 个），不能直接按文本点。
         // 新建技能是唯一带“删除”按钮的卡片（内置技能无删除，NestroApp.kt 技能卡内同一 Row），
