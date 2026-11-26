@@ -172,4 +172,43 @@ class PhoneAgentTaskStoreTest {
         assertEquals("中断待核对", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_INTERRUPTED))
         assertEquals("已暂停", PhoneAgentTaskStore.statusLabel(PhoneAgentTaskStore.STATUS_PAUSED))
     }
+
+    @Test
+    fun coordinateClickRestoresWithPermilleCoordinates() {
+        val encoded = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click_at").put("x", 540).put("y", 960).put("expectedAfter", "已加入购物车")
+            ))
+            .toString()
+
+        assertEquals(1, PhoneAgentTaskStore.validatePlanJson(encoded))
+        assertEquals(
+            PhoneAgentExecutor.Action.ClickAt(540, 960, "已加入购物车"),
+            PhoneAgentTaskStore.decodeActions(encoded).single()
+        )
+    }
+
+    @Test
+    fun coordinateClickRejectsOutOfRangeCoordinatesAndSensitiveEvidence() {
+        val outOfRange = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click_at").put("x", 1001).put("y", 960)
+            ))
+            .toString()
+        val sensitiveEvidence = JSONObject()
+            .put("format", "phone_agent_actions_v1")
+            .put("actions", JSONArray().put(
+                JSONObject().put("type", "click_at").put("x", 540).put("y", 960).put("expectedAfter", "test@example.com")
+            ))
+            .toString()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(outOfRange)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PhoneAgentTaskStore.validatePlanJson(sensitiveEvidence)
+        }
+    }
 }
