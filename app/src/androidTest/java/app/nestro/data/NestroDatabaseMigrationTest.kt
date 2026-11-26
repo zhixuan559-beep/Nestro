@@ -187,7 +187,7 @@ class NestroDatabaseMigrationTest {
         }
     }
 
-    @Test fun migratesVersionOneDatabaseThroughVersionFifteenWithoutLosingConversationData() = runBlocking {
+    @Test fun migratesVersionOneDatabaseThroughVersionSixteenWithoutLosingConversationData() = runBlocking {
         context.deleteDatabase(databaseName)
         val legacy = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
         legacy.execSQL("CREATE TABLE conversations (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, updatedAt INTEGER NOT NULL, projectId TEXT NOT NULL)")
@@ -210,7 +210,8 @@ class NestroDatabaseMigrationTest {
             val rows = migrated.dao().loadConversations()
             val versionCursor = migrated.openHelper.writableDatabase.query("PRAGMA user_version")
             val schemaVersion = versionCursor.use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else -1 }
-            assertEquals(15, schemaVersion)
+            // 生产侧数据库已到版本 16（MIGRATION_15_16 新增 agent_approval_audits 表），期望值随之更新
+            assertEquals(16, schemaVersion)
             assertEquals(1, rows.size)
             assertEquals("旧会话", rows.single().conversation.title)
             assertEquals("迁移前内容", rows.single().messages.single().content)
