@@ -113,6 +113,20 @@ object PhoneAgentActionParser {
                         }
                     }
                 }
+                "click_at" -> {
+                    // 坐标只能来自当次屏幕快照的 [x=..,y=..] 标注；缺失或越界一律拒绝，不猜坐标。
+                    val x = item.optInt("x", -1)
+                    val y = item.optInt("y", -1)
+                    require(PhoneAgentCoordinates.isValid(x, y)) { "点击坐标无效" }
+                    val expectedAfter = item.optString("expectedAfter").trim()
+                        .takeIf { it.isNotBlank() && it != "null" }
+                    require(expectedAfter == null || expectedAfter.length <= 120) { "动作后核验文字过长" }
+                    if (expectedAfter != null && PhoneAgentRiskPolicy.containsSensitiveValue(expectedAfter)) {
+                        PhoneAgentExecutor.Action.ConfirmSensitive("动作后的核验目标包含个人敏感信息，已暂停并交由你处理。")
+                    } else {
+                        PhoneAgentExecutor.Action.ClickAt(x, y, expectedAfter)
+                    }
+                }
                 "enter_text" -> {
                     val label = item.getString("label").trim()
                     val value = item.getString("value")
