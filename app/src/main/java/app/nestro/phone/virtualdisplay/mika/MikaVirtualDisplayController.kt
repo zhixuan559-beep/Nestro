@@ -35,20 +35,31 @@ class MikaVirtualDisplayController(context: Context) {
     suspend fun createSession(width: Int, height: Int, densityDpi: Int): Session = withContext(Dispatchers.IO) {
         require(width > 0 && height > 0 && densityDpi > 0)
         val remote = adb.adapterOrNull() ?: throw IllegalStateException("无线调试助手尚未连接")
+        // 先记下桥接服务：close() 会摘除旧环境并清空引用；新会话就绪后要按原偏好重挂，
+        // 否则“服务先连、会话后建 / 会话重建”的时序下环境永远挂不上，任务一直暂停。
+        val bridgeService = activeBridgeService
         activeSession?.close()
         val viewport = phoneViewport(width, height, densityDpi)
         val display = MikaAgentDisplay(remote, viewport.width, viewport.height, viewport.dpi, displayManager)
-        Session(remote, display).also { activeSession = it }
+        val session = Session(remote, display)
+        activeSession = session
+        // 会话（重）建后立即重挂：此前已选虚拟执行且桥接在位时才挂；不碰主屏兜底，绝不自动接管主屏。
+        if (virtualExecutionPreferred && bridgeService != null) {
+            activatePhoneAgent(bridgeService)
+        }
+        session
     }
 
     fun currentSession(): Session? = activeSession
 
     fun activatePhoneAgent(service: PhoneAgentService): Boolean {
+        // 先记住桥接服务：无会话时本次挂载失败，但引用要留给 createSession 在会话就绪后重挂；
+        // 否则“服务先连、会话后建”的时序下环境永远挂不上。
+        activeBridgeService = service
         val session = activeSession ?: return false
         val preferenceSaved = app.getSharedPreferences("nestro_local", Context.MODE_PRIVATE).edit()
             .putBoolean("phone_virtual_execution_preferred", true).commit()
         if (!preferenceSaved) return false
-        activeBridgeService = service
         val environment = MikaPhoneAgentExecutionEnvironment(service, session)
         activeEnvironment = environment
         PhoneAgentExecutionEnvironmentProvider.attach(environment)
