@@ -115,7 +115,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
         composeRule.onNodeWithText("知识库", substring = false).performClick()
 
-        composeRule.onNodeWithText("本地知识库").assertIsDisplayed()
+        composeRule.onNodeWithText("本地知识库").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("新建对话", substring = true).performClick()
         composeRule.onNodeWithText("Nost").assertIsDisplayed()
