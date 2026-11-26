@@ -113,7 +113,9 @@ class NestroAppSmokeTest {
     fun opensKnowledgeBaseAndReturnsToNewConversation() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
-        composeRule.onNodeWithText("知识库", substring = false).performClick()
+        // “知识库”是工具页第 11 个入口，手机屏下在折叠线以下：直接点按会把触摸注到屏外坐标、被静默丢弃，
+        // 页面切不过去（#1645 即因此在 :118 找不到“本地知识库”节点）。先滚到可见再点（同文件 :85/:93 既有模式）。
+        composeRule.onNodeWithText("知识库", substring = false).performScrollTo().performClick()
 
         composeRule.onNodeWithText("本地知识库").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("菜单").performClick()
