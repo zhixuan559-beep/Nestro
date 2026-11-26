@@ -54,6 +54,21 @@ class ConversationPaginationTest {
     }
 
     @Test
+    fun archivedPageListsOnlyExpertAndTeamConversations() = runBlocking {
+        dao.putConversation(ConversationEntity("main-chat", "新对话", 3L, "project-a"))
+        dao.putConversation(ConversationEntity("expert-chat", "专家会话", 2L, "project-a"))
+        dao.putConversation(ConversationEntity("team-chat", "专家团会话", 1L, "project-a"))
+        dao.putConversation(ConversationEntity("other-project-expert", "专家会话", 4L, "project-b"))
+
+        val page = dao.archivedConversationListPage(
+            "project-a", "", listOf("expert-chat", "team-chat"), 30, 0
+        )
+
+        // 主对话不归档、其他项目不计入；归档内按更新时间倒序。
+        assertEquals(listOf("expert-chat", "team-chat"), page.map { it.id })
+    }
+
+    @Test
     fun searchesTitleAndMessageContentWithoutLoadingFullConversationRows() = runBlocking {
         dao.putConversation(ConversationEntity("title-hit", "项目复盘", 2L, "project-a"))
         dao.putMessages(listOf(MessageEntity("m1", "title-hit", 0, "assistant", "普通摘要")))
