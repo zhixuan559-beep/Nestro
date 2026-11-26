@@ -1130,6 +1130,15 @@ fun NestroApp(initialPage: String = "home") {
         draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
     }
 
+    // 侧栏归档只收专家/专家团会话，主对话不归档。专家会话 id 由专家名/专家团 id 与项目 id
+    // 确定性派生，与 applyConversationContext / removeExpertTeam 用的是同一派生规则。
+    val archivedConversationIds = remember(expertTeams, experts, activeProjectId) {
+        buildSet {
+            expertTeams.forEach { add(expertTeamConversationId(it.id, activeProjectId)) }
+            experts.forEach { add(expertConversationId(it, activeProjectId)) }
+        }
+    }
+
     ConversationPageLoadEffect(
         page = page,
         activeProjectId = activeProjectId,
@@ -1146,7 +1155,8 @@ fun NestroApp(initialPage: String = "home") {
                     projectId = projectId,
                     query = query,
                     limit = limit,
-                    offset = offset
+                    offset = offset,
+                    archivedIds = archivedConversationIds.toList()
                 )
             }
         }
@@ -3327,7 +3337,8 @@ fun NestroApp(initialPage: String = "home") {
                                                                 projectId = activeProjectId,
                                                                 query = conversationSearch.trim().take(120),
                                                                 limit = 30,
-                                                                offset = conversationPageItems.size
+                                                                offset = conversationPageItems.size,
+                                                                archivedIds = archivedConversationIds.toList()
                                                             )
                                                         }
                                                         val existingIds = conversationPageItems.mapTo(mutableSetOf()) { it.id }
