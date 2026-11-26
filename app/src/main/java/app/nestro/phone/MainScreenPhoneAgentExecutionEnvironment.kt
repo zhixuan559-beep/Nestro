@@ -62,9 +62,12 @@ class MainScreenPhoneAgentExecutionEnvironment(val service: PhoneAgentService) :
                 .putBoolean(MAIN_SCREEN_EXECUTION_ALLOWED_KEY, allowed).apply()
         }
 
-        /** 与虚拟屏会话的 openUrl 校验一致：仅 http/https 且带 host。 */
+        /** 与虚拟屏会话的 openUrl 校验一致：仅 http/https 且带 host。
+         * 用 java.net.URI 而不用 android.net.Uri：后者在 JVM 单测里是桩实现，
+         * Uri.parse 会抛 Stub 异常、runCatching 吞掉后恒返回 false，
+         * 本函数按设计是可单测的纯函数（见 MainScreenPhoneAgentExecutionEnvironmentTest）。 */
         fun isOpenableUrl(rawUrl: String): Boolean {
-            val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return false
+            val uri = runCatching { java.net.URI(rawUrl) }.getOrNull() ?: return false
             return uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
         }
     }
