@@ -26,7 +26,8 @@ class SkillLibraryInteractionTest {
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
         // 抽屉菜单已无“技能库”项：经“工具与扩展”→“Skills”进入技能库页。
-        composeRule.onNodeWithText("工具与扩展").performScrollTo().performClick()
+        // 抽屉项文本带图标前缀（"⌘   工具与扩展"），精确匹配不到，必须用 substring。
+        composeRule.onNodeWithText("工具与扩展", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("Skills").performScrollTo().performClick()
         composeRule.onNodeWithText("本地技能库").assertIsDisplayed()
 
