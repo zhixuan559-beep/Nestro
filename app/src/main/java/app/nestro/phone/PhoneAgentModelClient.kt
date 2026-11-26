@@ -48,6 +48,7 @@ internal object PhoneAgentModelClient {
 - launch_app: {"type":"launch_app","package":"com.example.app"}
 - download_asset: {"type":"download_asset","url":"https://.../asset.mp4","name":"素材名称.mp4","source_url":"https://.../source-page","license":"CC BY 4.0"}；仅下载公开、无敏感凭据的直接媒体链接，必须同时提供来源页面和明确授权标记，下载完成后自动导入当前项目素材库
 - click: {"type":"click","text":"页面上精确可见的按钮文字","expectedAfter":"动作后应出现的可见文字"}
+- click_at: {"type":"click_at","x":540,"y":960,"expectedAfter":"动作后应出现的可见文字"}；x、y 是屏幕快照每行末尾 [x=..,y=..] 标注的千分比坐标（0..1000），用于点击无文字的图标控件，或在多个同名目标中点指定的一个；只使用快照中实际出现的坐标，不得编造
 - enter_text: {"type":"enter_text","label":"输入框可见标签","value":"非敏感内容"}
 - scroll: {"type":"scroll","direction":"forward"}，方向只能 forward/backward
 - wait: {"type":"wait","millis":500}
