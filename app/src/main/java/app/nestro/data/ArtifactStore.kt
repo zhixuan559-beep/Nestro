@@ -154,9 +154,12 @@ object ArtifactStore {
         val fileName = "$id.md"
         val target = File(root(context), fileName)
         val record = ArtifactRecord(id, projectId, cleanTitle, fileName, "text/markdown", System.currentTimeMillis(), bytes.size.toLong(), version)
+        // 先读索引再写文件：readAll 在索引缺失且目录已有未登记 .md 时会 fail closed；
+        // 若先写文件再读索引，本次刚写入的文件会被当成孤儿而自触发失败，全新目录下第一次保存永远存不进。
+        // 与 duplicateProject 先读后写的顺序一致；孤儿检测语义不变（list() 开头已做过同一检查）。
+        val all = readAll(context)
         try {
             writeAtomically(target, bytes)
-            val all = readAll(context)
             all.put(JSONObject().put("id", record.id).put("projectId", record.projectId)
                 .put("title", record.title).put("fileName", record.fileName)
                 .put("mimeType", record.mimeType).put("createdAt", record.createdAt)
