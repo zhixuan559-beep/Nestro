@@ -1,0 +1,52 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- 深色底，与黑白极简界面一致 -->
+    <path android:fillColor="#070A16" android:pathData="M0,0h120v120h-120z" />
+    <!-- 左鱼：冷色流光（青 → 蓝），S 形分界由两段 r=28 内弧构成 -->
+    <path android:pathData="M60,4 A56,56 0 0,0 60,116 A28,28 0 0,1 60,60 A28,28 0 0,0 60,4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="8"
+                android:startY="8"
+                android:endX="112"
+                android:endY="112">
+                <item android:offset="0" android:color="#61DFFF" />
+                <item android:offset="0.55" android:color="#4F8CFF" />
+                <item android:offset="1" android:color="#5A8CFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 右鱼：暖色流光（紫 → 品红），与左鱼共用 S 形分界，无缝拼接 -->
+    <path android:pathData="M60,4 A56,56 0 0,1 60,116 A28,28 0 0,0 60,60 A28,28 0 0,1 60,4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="112"
+                android:startY="8"
+                android:endX="8"
+                android:endY="112">
+                <item android:offset="0" android:color="#A16BFF" />
+                <item android:offset="0.55" android:color="#C86BFF" />
+                <item android:offset="1" android:color="#E879FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 上鱼眼：落在右鱼区，取左鱼冷色 -->
+    <path
+        android:fillColor="#7FE7FF"
+        android:pathData="M51,32 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+    <!-- 下鱼眼：落在左鱼区，取右鱼暖色 -->
+    <path
+        android:fillColor="#D9A6FF"
+        android:pathData="M51,88 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+    <!-- 中心星芒：双鱼绕星 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.95"
+        android:pathData="M60,50 L62.8,57.2 L70,60 L62.8,62.8 L60,70 L57.2,62.8 L50,60 L57.2,57.2 Z" />
+</vector>
