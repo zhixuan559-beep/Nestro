@@ -229,10 +229,11 @@ class NestroDatabaseMigrationTest {
             assertEquals("chunk-fts", migrated.dao().searchKnowledgeChunksFts("default", "虚拟屏*", 5).single().id)
             assertEquals(0L, migrated.dao().loadProjects().single { it.id == "default" }.archivedAt)
             migrated.dao().putUserMemory(UserMemoryEntity("mem1", "default", "fact", "保留的记忆", "fp1", "c1", "m1", 0.9, 1, 1))
-            assertEquals(1, migrated.dao().allUserMemories().size)
-            assertEquals(false, migrated.dao().userMemories("default").single().shareAcrossProjects)
+            // 旧库种子已有一条 mem-before，新增 mem1 后共 2 条（此前期望 1 是 833497a0 加种子时漏改的旧数）
+            assertEquals(2, migrated.dao().allUserMemories().size)
+            assertEquals(false, migrated.dao().userMemories("default").single { it.id == "mem1" }.shareAcrossProjects)
             assertEquals(1, migrated.dao().setUserMemoryShareAcrossProjects("mem-before", "default", true, 2L))
-            assertEquals(true, migrated.dao().userMemories("default").single().shareAcrossProjects)
+            assertEquals(true, migrated.dao().userMemories("default").single { it.id == "mem-before" }.shareAcrossProjects)
             migrated.dao().putAgentTaskState(AgentTaskStateEntity(
                 "agent-1", "phone_agent", "PAUSED", 2, "{checkpoint}", "", 2,
                 projectId = "project-a", conversationId = "conversation-a", kind = "phone",
