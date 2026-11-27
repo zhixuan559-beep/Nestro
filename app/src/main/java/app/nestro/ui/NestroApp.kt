@@ -132,6 +132,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -188,6 +189,73 @@ private fun SettingsRow(title: String, subtitle: String, onClick: () -> Unit) {
         Text("›", color = Muted, style = MaterialTheme.typography.titleLarge)
     }
     HorizontalDivider(color = Line)
+}
+
+// 改版第 d 步：专家团过程清单（学 Manus）——计划先列、逐项打勾、标明负责专家；
+// 输入框上方一条可展开的进度条，平时收起只留进度。状态复用既有 teamMemberStatuses，
+// 不另起执行状态源；标题取工作包指令首行，单色纪律内只用 Ink/Muted/Mint。
+@Composable
+private fun ProjectPlanChecklistCard(
+    plan: ExpertProjectPlan,
+    statuses: Map<String, String>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val items = projectPlanChecklistItems(plan, statuses)
+    val doneCount = items.count { it.status == "success" }
+    Surface(
+        color = Card2,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { onToggleExpanded() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("计划清单 · 已完成 $doneCount/${items.size}", color = Ink, style = MaterialTheme.typography.labelMedium)
+                    LinearProgressIndicator(
+                        progress = if (items.isEmpty()) 0f else doneCount.toFloat() / items.size,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Mint,
+                        trackColor = Line
+                    )
+                }
+                Icon(
+                    if (expanded) ExpandLess else ExpandMore,
+                    contentDescription = if (expanded) "收起清单" else "展开清单",
+                    tint = Muted
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                items.forEach { item ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (item.status) {
+                            "success" -> Icon(CheckCircle, contentDescription = "已完成", tint = Mint, modifier = Modifier.size(18.dp))
+                            "running" -> CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Mint, strokeWidth = 2.dp)
+                            "failed" -> Icon(ErrorOutline, contentDescription = "失败", tint = ColorStop, modifier = Modifier.size(18.dp))
+                            "blocked" -> Icon(PauseCircleOutline, contentDescription = "等待依赖", tint = Muted, modifier = Modifier.size(18.dp))
+                            else -> Icon(RadioButtonUnchecked, contentDescription = "待执行", tint = Muted, modifier = Modifier.size(18.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${item.memberName} · ${when (item.status) { "success" -> "已完成"; "running" -> "进行中"; "failed" -> "失败"; "blocked" -> "等待依赖"; else -> "待执行" }}",
+                                color = Muted, style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -479,6 +547,9 @@ fun NestroApp(initialPage: String = "home") {
         mutableStateOf(EXPERT_TEAM_EVENT_PAGE_SIZE)
     }
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
+    var activeProjectPlan by expertWorkspaceUiState.activeProjectPlan
+    var activeProjectPlanConversationId by expertWorkspaceUiState.activeProjectPlanConversationId
+    var planChecklistExpanded by remember { mutableStateOf(true) }
 
     fun toggleExpertTeamPause() {
         if (expertTeamPauseController.isPaused()) {
@@ -1441,6 +1512,8 @@ fun NestroApp(initialPage: String = "home") {
             stopRequested = false
             teamRunStatus = ""
             teamMemberStatuses = emptyMap()
+            activeProjectPlan = null
+            activeProjectPlanConversationId = ""
             val requestConversationId = activeConversationId
             val requestProjectId = activeProjectId
             val requestHistory = messages.toList()
@@ -1681,6 +1754,8 @@ fun NestroApp(initialPage: String = "home") {
                         "专家团“$teamName”正在执行第 $reworkRound 轮验收返工…"
                     }
                     teamMemberStatuses = executionPlan.packages.associate { it.id to "waiting" }
+                    activeProjectPlan = executionPlan
+                    activeProjectPlanConversationId = requestConversationId
                     val eventPrefsKey = "expert_team_events_v1"
                     expertTeamPauseController.resume()
                     teamExecutionPaused = false
@@ -2172,6 +2247,16 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                             Column(Modifier.fillMaxWidth().animateContentSize().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                val visibleProjectPlan = activeProjectPlan
+                                if (visibleProjectPlan != null && activeProjectPlanConversationId == activeConversationId) {
+                                    ProjectPlanChecklistCard(
+                                        plan = visibleProjectPlan,
+                                        statuses = teamMemberStatuses,
+                                        expanded = planChecklistExpanded,
+                                        onToggleExpanded = { planChecklistExpanded = !planChecklistExpanded },
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                                    )
+                                }
                                 Row(
                                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
