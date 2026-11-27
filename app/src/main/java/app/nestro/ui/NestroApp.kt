@@ -243,6 +243,9 @@ fun NestroApp(initialPage: String = "home") {
             runCatching { appRuntime.phoneAgentTaskService.loadTasks(activeProjectId, 10).isNotEmpty() }.getOrDefault(false)
         }
     }
+    // 步骤 b：对话里的小窗读当前隔离屏会话；回对话页时重读（会话在手机任务页创建）。
+    val virtualDisplayController = remember { appRuntime.mikaVirtualDisplayController }
+    var conversationVirtualSession by remember { mutableStateOf(virtualDisplayController.currentSession()) }
     fun readableSourcesFor(targetProjectId: String): Set<String> {
         val eligible = projects.filter { it.archivedAt == 0L && it.id != targetProjectId }.map { it.id }.toSet()
         return ProjectAccessControlStore.grantedReadableSourceProjects(prefs, targetProjectId).intersect(eligible)
@@ -1868,6 +1871,7 @@ fun NestroApp(initialPage: String = "home") {
 
     LaunchedEffect(page) {
         if (page == "home" || page == "chat") {
+            conversationVirtualSession = virtualDisplayController.currentSession()
             val lastIndex = messages.lastIndex + if (busy) 1 else 0
             if (lastIndex >= 0) chatListState.scrollToItem(lastIndex)
         }
@@ -2011,6 +2015,8 @@ fun NestroApp(initialPage: String = "home") {
                     when (targetPage) {
                         "home", "chat" -> {
                             // 对话区与输入框纵向排列：内容占剩余高度，输入框贴底（此前两者是 Crossfade 内 Box 的重叠孩子，输入框盖住了内容顶部）。
+                            // 步骤 b：单对话主界面——对话即主屏，虚拟屏小窗叠在对话上，底部双板块保留。
+                            Box(Modifier.fillMaxSize()) {
                             Column(Modifier.fillMaxSize()) {
                             if (messages.isEmpty()) {
                                 Column(
@@ -2172,6 +2178,12 @@ fun NestroApp(initialPage: String = "home") {
                                     )
                                 }
                                 AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                            }
+                            }
+                            // 步骤 b：虚拟屏小窗嵌在对话里（学 Mika）：有隔离屏会话时才出现；
+                            // 点「展开」进完整手机任务页。
+                            conversationVirtualSession?.let { session ->
+                                PhoneAgentPreviewWindow(session, onExpand = { page = "phone-agent" })
                             }
                             }
                         }
