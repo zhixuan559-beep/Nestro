@@ -1203,7 +1203,8 @@ fun NestroApp(initialPage: String = "home") {
         automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
         activeConversationId = startup.activeConversationId
         applyConversationContext(activeConversationId, activeProjectId)
-        messages = startup.messages
+        // 启动恢复是异步的：若用户在恢复完成前已发送消息，恢复结果不得用旧消息覆盖当前会话，否则首条消息会闪没。
+        if (messages.isEmpty()) messages = startup.messages
         persistedConversationVersions.clear()
         persistedConversationVersions.putAll(startup.persistedConversationVersions)
         databaseReady = startup.databaseReady
