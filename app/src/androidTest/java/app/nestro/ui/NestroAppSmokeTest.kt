@@ -12,10 +12,13 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onParent
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import org.junit.Rule
 import org.junit.Test
 
@@ -248,12 +251,30 @@ class NestroAppSmokeTest {
                 .fetchSemanticsNodes().isNotEmpty()
             val promptNodeCount = composeRule.onAllNodesWithText(userPrompt, substring = true)
                 .fetchSemanticsNodes().size
+            // 续诊（#1724 的四段状态分不清“在长列表底部屏外”与“根本不在当前列表里”）：
+            // 提示文本与用户文本是同一次发送里相邻追加的两条消息——提示在、用户不在，
+            // 说明用户消息被单独丢了；两者都不在，再看滑到底后用户文本是否出现。
+            val tipNodeCount = composeRule.onAllNodesWithText("还没有配置模型", substring = true)
+                .fetchSemanticsNodes().size
+            val promptNodeCountUnmerged = composeRule.onAllNodesWithText(
+                userPrompt, substring = true, useUnmergedTree = true
+            ).fetchSemanticsNodes().size
+            runCatching {
+                repeat(6) {
+                    composeRule.onRoot().performTouchInput { swipeUp() }
+                    composeRule.waitForIdle()
+                }
+            }
+            val promptNodeCountAfterScroll = composeRule.onAllNodesWithText(userPrompt, substring = true)
+                .fetchSemanticsNodes().size
             val emptyStateShown = composeRule.onAllNodesWithText("有什么可以帮忙？")
                 .fetchSemanticsNodes().isNotEmpty()
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
-                    "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown"
+                    "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown；" +
+                    "提示文本节点数=$tipNodeCount，未合并树用户文本节点数=$promptNodeCountUnmerged，" +
+                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll"
             )
         }
 
