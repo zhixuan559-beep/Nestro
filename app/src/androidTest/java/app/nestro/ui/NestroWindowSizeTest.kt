@@ -56,6 +56,12 @@ class NestroWindowSizeTest {
                     .performClick()
                 composeRule.waitForIdle()
                 println("NestroWindowSizeTest checking size=$size destination=$navigationLabel title=$pageTitle")
+                // 页面切换是异步的，标题在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
+                composeRule.waitUntil(timeoutMillis = 10_000) {
+                    runCatching {
+                        composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
+                    }.isSuccess
+                }
                 composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
         }
