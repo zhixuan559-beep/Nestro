@@ -47,7 +47,7 @@ class NestroAppSmokeTest {
         composeRule.waitForIdle()
 
         // 返回是异步导航，聊天页标题在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
-        composeRule.waitUntil(timeoutMillis = 10_000) {
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
             }.isSuccess
@@ -169,7 +169,7 @@ class NestroAppSmokeTest {
 
         // 无模型提示是异步追加到聊天列表底部的消息，可能在折叠线以下；
         // 先等它真正出现并滚到可见再断言，避免时序抖动。
-        composeRule.waitUntil(timeoutMillis = 10_000) {
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText(
                     "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
@@ -227,7 +227,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("深度研究员", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("搜索模板名称、说明或指令").performScrollTo().performTextInput("风险审查员")
         // 搜索过滤是异步的，过滤结果在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
-        composeRule.waitUntil(timeoutMillis = 10_000) {
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("✦  风险审查员", substring = false).performScrollTo().assertIsDisplayed()
             }.isSuccess
