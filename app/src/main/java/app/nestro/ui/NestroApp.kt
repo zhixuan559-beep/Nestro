@@ -1247,15 +1247,19 @@ fun NestroApp(initialPage: String = "home") {
                 activeConversationId = activeConversationId
             )
         }
+        // recover() 是挂起点：恢复期间用户仍可能新建/切换会话，前面算出的 switchedDuringRestore
+        // 只覆盖到 restore() 结束，须按 recover() 返回时的会话 id 重算，否则恢复结果会把
+        // 恢复期间新建的会话记录从列表抹掉、把旧会话消息与草稿盖回当前视图，发送再次静默落空。
+        val switchedDuringRecovery = activeConversationId != conversationIdAtEffectStart
         // 恢复协调器返回的列表同样可能不含恢复期间新建的会话：会话已变时把当前列表里多出的记录接回。
         val conversationsBeforeRecovery = conversations
         conversations = recoveredChat.conversations
-        if (switchedDuringRestore) {
+        if (switchedDuringRecovery) {
             val recoveredIds = recoveredChat.conversations.map { it.id }.toSet()
             val keptDuringRecovery = conversationsBeforeRecovery.filter { it.id !in recoveredIds }
             if (keptDuringRecovery.isNotEmpty()) conversations = keptDuringRecovery + conversations
         }
-        if (!switchedDuringRestore) {
+        if (!switchedDuringRecovery) {
             recoveredChat.activeMessages?.let { messages = it }
             recoveredChat.restoredPrompt?.let { draft = it }
         }
