@@ -239,10 +239,23 @@ class NestroAppSmokeTest {
             }.getOrDefault(false)
         }
         // 三次都没发出去就直接失败，别拖到提示等待再超时——定位信息更明确。
-        if (!sendLanded) throw AssertionError(
-            "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
-                "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown"
-        )
+        // 续诊（#1723 的三段状态只证明“草稿被消费、气泡未现”，分不清是哪一路）：
+        // 无模型提示状态出现 = sendPrompt 无模型分支跑过（消息已追加进 messages）；
+        // 用户文本节点数 = 0 表示消息已不在状态里，≥1 表示在树里但不可见（屏外/长列表）；
+        // 空态标题出现 = messages 已被清空。
+        if (!sendLanded) {
+            val statusShown = composeRule.onAllNodesWithText("请先配置模型 API")
+                .fetchSemanticsNodes().isNotEmpty()
+            val promptNodeCount = composeRule.onAllNodesWithText(userPrompt, substring = true)
+                .fetchSemanticsNodes().size
+            val emptyStateShown = composeRule.onAllNodesWithText("有什么可以帮忙？")
+                .fetchSemanticsNodes().isNotEmpty()
+            throw AssertionError(
+                "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
+                    "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
+                    "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown"
+            )
+        }
 
         // 无模型提示是 send 处理里同步追加的 ChatMessage；新会话只有两条消息，无需滚动即可见。
         composeRule.waitUntil(timeoutMillis = 30_000) {
