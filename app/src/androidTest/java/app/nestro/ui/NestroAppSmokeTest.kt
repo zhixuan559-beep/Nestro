@@ -211,6 +211,13 @@ class NestroAppSmokeTest {
             composeRule.waitForIdle()
 
             composeRule.onNodeWithContentDescription("菜单").performClick()
+            // 抽屉内容经 LaunchedEffect 异步挂载（drawerMounted），横屏重组后挂载可能晚于点击返回；
+            // 先等「项目空间」真正出现再滚到可见并点击，避免时序抖动。
+            composeRule.waitUntil(timeoutMillis = 30_000) {
+                runCatching {
+                    composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().assertIsDisplayed()
+                }.isSuccess
+            }
             composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
             composeRule.onNodeWithText("项目空间", substring = false).assertIsDisplayed()
         } finally {
