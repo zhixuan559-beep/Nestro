@@ -66,6 +66,16 @@ object PhoneAgentExecutor {
     }
 
     private suspend fun runFrom(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, catalog: AgentToolCatalog, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
+        // 步骤 b：悬浮胶囊只在任务真正开始执行后出现；结束按结果收起，需要用户接手时变色提醒。
+        val result = runFromInner(dao, taskId, taskContext, actions, startIndex, markTaskCompleted, catalog, onProgress)
+        when (result.outcome) {
+            Outcome.WAITING_USER -> PhoneAgentService.updateCapsuleFor("需要你处理", needsUser = true)
+            else -> PhoneAgentService.hideCapsule()
+        }
+        return result
+    }
+
+    private suspend fun runFromInner(dao: NestroDao, taskId: String, taskContext: AgentTaskExecutionContext, actions: List<Action>, startIndex: Int, markTaskCompleted: Boolean, catalog: AgentToolCatalog, onProgress: suspend (Int, ActionResult) -> Unit): ExecutionResult {
         val task = dao.phoneAgentTask(taskId) ?: return ExecutionResult(Outcome.FAILED, 0, emptyList(), "任务不存在")
         if (task.status == PhoneAgentTaskStore.STATUS_CANCELLED) {
             return ExecutionResult(Outcome.CANCELLED, 0, emptyList(), "任务已取消")
@@ -85,6 +95,7 @@ object PhoneAgentExecutor {
         val results = mutableListOf<ActionResult>()
         taskContext.checkpoint(task.planJson, startIndex)
         PhoneAgentTaskStore.updateProgress(dao, taskId, PhoneAgentTaskStore.STATUS_RUNNING, startIndex)
+        PhoneAgentService.showCapsuleFor("正在执行：" + task.goal.take(24))
         var action: Action = actions.getOrNull(startIndex) ?: Action.Wait(0)
         val toolPermissionRouter = AgentPermissionRouter { _, _ ->
                 when {
