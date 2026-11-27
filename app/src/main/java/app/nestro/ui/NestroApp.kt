@@ -1148,9 +1148,17 @@ fun NestroApp(initialPage: String = "home") {
         onResetEdits = { memoryEdits = emptyMap() }
     )
 
+    // 启动恢复首次确立会话 id 时（上一 id 为空），不要用持久化草稿覆盖用户已输入的文字：
+    // 输入框只在会话 id 非空时才持久化草稿，恢复完成前输入的文字只在内存里，
+    // 此时按新 id 从 prefs 取草稿会得到空串、把已输入的文字抹掉，点发送后 prompt 为空被静默吞掉。
+    // 用户主动切会话一定是“非空 → 非空”，仍按原逻辑加载目标会话的持久化草稿。
+    var lastConversationIdForDraft by remember { mutableStateOf("") }
     LaunchedEffect(activeConversationId) {
         recallSources = emptyList()
-        draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
+        if (lastConversationIdForDraft.isNotBlank()) {
+            draft = if (activeConversationId.isBlank()) "" else prefs.getString("draft_$activeConversationId", "") ?: ""
+        }
+        lastConversationIdForDraft = activeConversationId
     }
 
     // 侧栏归档只收专家/专家团会话，主对话不归档。专家会话 id 由专家名/专家团 id 与项目 id
