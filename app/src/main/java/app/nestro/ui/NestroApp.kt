@@ -174,6 +174,22 @@ private fun expertTeamConversationId(teamId: String, projectId: String): String 
 private fun expertConversationId(expertName: String, projectId: String): String =
     UUID.nameUUIDFromBytes("nost-expert-chat:$expertName:$projectId".toByteArray(Charsets.UTF_8)).toString()
 
+// 改版第 c 步：设置第一层的六行日常项共用此行样式（标题＋一句人话说明＋›），与工具目录同款。
+@Composable
+private fun SettingsRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = Ink, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        Text("›", color = Muted, style = MaterialTheme.typography.titleLarge)
+    }
+    HorizontalDivider(color = Line)
+}
+
 @Composable
 fun NestroApp(initialPage: String = "home") {
     val context = LocalContext.current
@@ -186,6 +202,8 @@ fun NestroApp(initialPage: String = "home") {
     var databaseReady by remember { mutableStateOf(false) }
     val persistedConversationVersions = remember { mutableStateMapOf<String, Int>() }
     var page by remember(initialPage) { mutableStateOf(initialPage) }
+    // 改版第 c 步：设置只分两层。null = 第一层六行日常项；其余值 = 第二层详情（backup/appearance/phone/about）。
+    var settingsDetail by remember { mutableStateOf<String?>(null) }
     var pendingOpenMediaAssetId by remember { mutableStateOf("") }
     var showModelDialog by remember { mutableStateOf(false) }
     var showDrawer by remember { mutableStateOf(false) }
@@ -193,6 +211,8 @@ fun NestroApp(initialPage: String = "home") {
     BackHandler(enabled = showDrawer || page !in setOf("home", "chat")) {
         if (showDrawer) {
             showDrawer = false
+        } else if (page == "settings" && settingsDetail != null) {
+            settingsDetail = null
         } else if (page == "workflow-schedule") {
             page = "workflows"
         } else {
@@ -3154,89 +3174,119 @@ fun NestroApp(initialPage: String = "home") {
                             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Text("设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
                                 Text("免注册、本地优先。模型 API 由你自行配置；不需要 Nestro 账号。", color = Muted)
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        FilterChip(
-                                            selected = appearanceMode == "system",
-                                            onClick = { appearanceMode = "system"; prefs.edit().putString("appearance_mode_v1", "system").apply() },
-                                            label = { Text("跟随系统") }
-                                        )
-                                        FilterChip(
-                                            selected = appearanceMode == "light",
-                                            onClick = { appearanceMode = "light"; prefs.edit().putString("appearance_mode_v1", "light").apply() },
-                                            label = { Text("纯白") }
-                                        )
-                                        FilterChip(
-                                            selected = appearanceMode == "dark",
-                                            onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
-                                            label = { Text("纯黑") }
-                                        )
-                                        FilterChip(
-                                            selected = appearanceMode == "custom",
-                                            onClick = { appearanceMode = "custom"; prefs.edit().putString("appearance_mode_v1", "custom").apply() },
-                                            label = { Text("自定义") }
-                                        )
+                                // 改版第 c 步（设计意见底稿第 5 条）：设置只分两层，第一层只留六行日常项；
+                                // 模型与已连接的服务走已有页面，手机控制/记忆与备份/外观与语言/关于在本页展开第二层。
+                                if (settingsDetail != null) {
+                                    TextButton(onClick = { settingsDetail = null }) { Text("‹ 返回设置", color = Mint) }
+                                }
+                                when (settingsDetail) {
+                                    null -> {
+                                        SettingsRow("模型", config.model.ifBlank { "还没配置模型" }) { page = "models" }
+                                        SettingsRow("已连接的服务", "连接外部工具服务（MCP）") { page = "tools" }
+                                        SettingsRow("手机控制", "虚拟屏与无障碍授权") { settingsDetail = "phone" }
+                                        SettingsRow("记忆与备份", "本地数据备份") { settingsDetail = "backup" }
+                                        SettingsRow(
+                                            "外观与语言",
+                                            when (appearanceMode) { "light" -> "纯白"; "dark" -> "纯黑"; "custom" -> "自定义"; else -> "跟随系统" }
+                                        ) { settingsDetail = "appearance" }
+                                        SettingsRow("关于", "隐私、免责声明与开源信息") { settingsDetail = "about" }
                                     }
-                                    if (appearanceMode == "custom") {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            listOf("#FBF8F3" to "暖米纸", "#EFF2F6" to "雾霭灰", "#0B1220" to "墨夜蓝", "#111815" to "深林灰").forEach { (hex, label) ->
-                                                FilterChip(
-                                                    selected = customBgHex == hex,
-                                                    onClick = { customBgHex = hex; prefs.edit().putString("appearance_custom_bg_v1", hex).apply() },
-                                                    label = { Text(label) }
+                                    "phone" -> {
+                                        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Text("系统默认助手", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                                val assistantAvailable = app.nestro.phone.AndroidAssistantRoleSupport.isAvailable(context)
+                                                val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
+                                                Text(
+                                                    when {
+                                                        assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
+                                                        assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
+                                                        else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
+                                                    },
+                                                    color = Muted, style = MaterialTheme.typography.bodySmall
                                                 )
+                                                Button(
+                                                    enabled = assistantAvailable && !assistantHeld,
+                                                    onClick = {
+                                                        val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
+                                                        if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
+                                                        else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                                                ) { Text(if (assistantHeld) "已设为系统助手" else "设为系统默认助手") }
+                                            }
+                                        }
+                                        Button(onClick = { settingsDetail = null; page = "phone-agent" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                            Text("打开虚拟屏控制")
+                                        }
+                                    }
+                                    "backup" -> {
+                                        Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
+                                        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                                Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                Button(onClick = {
+                                                    val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
+                                                    exportBackupLauncher.launch(name)
+                                                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                                    Text("导出本地备份")
+                                                }
+                                                OutlinedButton(onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
+                                                    Text("从备份恢复")
+                                                }
+                                                Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) MaterialTheme.colorScheme.error else Muted, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                        TextButton(onClick = { settingsDetail = null; page = "memory" }) { Text("查看它记住了什么", color = Mint) }
+                                    }
+                                    "appearance" -> {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text("外观", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                FilterChip(
+                                                    selected = appearanceMode == "system",
+                                                    onClick = { appearanceMode = "system"; prefs.edit().putString("appearance_mode_v1", "system").apply() },
+                                                    label = { Text("跟随系统") }
+                                                )
+                                                FilterChip(
+                                                    selected = appearanceMode == "light",
+                                                    onClick = { appearanceMode = "light"; prefs.edit().putString("appearance_mode_v1", "light").apply() },
+                                                    label = { Text("纯白") }
+                                                )
+                                                FilterChip(
+                                                    selected = appearanceMode == "dark",
+                                                    onClick = { appearanceMode = "dark"; prefs.edit().putString("appearance_mode_v1", "dark").apply() },
+                                                    label = { Text("纯黑") }
+                                                )
+                                                FilterChip(
+                                                    selected = appearanceMode == "custom",
+                                                    onClick = { appearanceMode = "custom"; prefs.edit().putString("appearance_mode_v1", "custom").apply() },
+                                                    label = { Text("自定义") }
+                                                )
+                                            }
+                                            if (appearanceMode == "custom") {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    listOf("#FBF8F3" to "暖米纸", "#EFF2F6" to "雾霭灰", "#0B1220" to "墨夜蓝", "#111815" to "深林灰").forEach { (hex, label) ->
+                                                        FilterChip(
+                                                            selected = customBgHex == hex,
+                                                            onClick = { customBgHex = hex; prefs.edit().putString("appearance_custom_bg_v1", hex).apply() },
+                                                            label = { Text(label) }
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                Text("本地备份可迁移会话与专家配置。API Key 由当前设备的 Android Keystore 保护，不会写入备份。", color = Muted)
-                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("本地数据备份", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("包含本机完整会话与消息、项目空间、知识库文档索引与文本片段、全局及项目记忆、模型配置元数据、专家/团队、技能、工作流和 Phone Agent 记录。API Key 不进入备份，迁移设备后需重新配置。备份带完整性校验，请保存到安全位置。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                        Button(onClick = {
-                                            val name = "Nestro-backup-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".json"
-                                            exportBackupLauncher.launch(name)
-                                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
-                                            Text("导出本地备份")
+                                    "about" -> {
+                                        Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text("隐私、免责声明与开源信息", color = Ink, style = MaterialTheme.typography.titleMedium)
+                                                Text("免责声明：Nestro 采用本地优先架构，会话、记忆与知识库默认保存于本机私有存储，API Key 经 Android Keystore AES-GCM 加密，不上传至任何自营后台。第三方模型接口费用、输出准确性及 Phone Agent 跨应用自动化操作风险由用户自行核验与承担。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                                Text("开源协议与致谢：本项目基于 MIT License 开源（github.com/zhixuan559-beep/Nestro）。隔离虚拟屏与设备桥接部分参考并遵循以下开源项目声明：Mika（Copyright 2026 wangzan101，Apache-2.0）、scrcpy（Copyright Genymobile / Romain Vimont，Apache-2.0）及 Android-Agent 相关开源许可。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                            }
                                         }
-                                        OutlinedButton(onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
-                                            Text("从备份恢复")
-                                        }
-                                        Text(backupStatus, color = if (backupStatus.startsWith("恢复失败") || backupStatus.startsWith("导出失败")) MaterialTheme.colorScheme.error else Muted, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("系统默认助手", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        val assistantAvailable = app.nestro.phone.AndroidAssistantRoleSupport.isAvailable(context)
-                                        val assistantHeld = app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)
-                                        Text(
-                                            when {
-                                                assistantHeld -> "Nestro 已获得系统助手角色。具体唤起方式取决于 Android 版本和设备厂商。"
-                                                assistantAvailable -> "可向 Android 请求系统助手角色；是否可用由系统角色管理器和设备厂商决定。"
-                                                else -> "当前系统未开放系统助手角色，仍可通过 Nestro 应用内聊天入口使用。"
-                                            },
-                                            color = Muted, style = MaterialTheme.typography.bodySmall
-                                        )
-                                        Button(
-                                            enabled = assistantAvailable && !assistantHeld,
-                                            onClick = {
-                                                val requestIntent = app.nestro.phone.AndroidAssistantRoleSupport.createRequestIntent(context)
-                                                if (requestIntent != null) assistantRoleLauncher.launch(requestIntent)
-                                                else status = "当前设备不支持申请系统助手角色，或 Nestro 已经是默认助手。"
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-                                        ) { Text(if (assistantHeld) "已设为系统助手" else "设为系统默认助手") }
-                                    }
-                                }
-                                Surface(color = Card, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("隐私、免责声明与开源信息", color = Ink, style = MaterialTheme.typography.titleMedium)
-                                        Text("免责声明：Nestro 采用本地优先架构，会话、记忆与知识库默认保存于本机私有存储，API Key 经 Android Keystore AES-GCM 加密，不上传至任何自营后台。第三方模型接口费用、输出准确性及 Phone Agent 跨应用自动化操作风险由用户自行核验与承担。", color = Muted, style = MaterialTheme.typography.bodySmall)
-                                        Text("开源协议与致谢：本项目基于 MIT License 开源（github.com/zhixuan559-beep/Nestro）。隔离虚拟屏与设备桥接部分参考并遵循以下开源项目声明：Mika（Copyright 2026 wangzan101，Apache-2.0）、scrcpy（Copyright Genymobile / Romain Vimont，Apache-2.0）及 Android-Agent 相关开源许可。", color = Muted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
