@@ -47,12 +47,14 @@ class NestroAppSmokeTest {
         composeRule.waitForIdle()
 
         // 返回是异步导航，聊天页标题在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
+        // 不以空态标题「有什么可以帮忙？」为准：套件里先跑的测试可能已留存消息，恢复后空态标题不再出现；
+        // 输入框占位文案只在对话页出现，用它判定已回到对话页，不受残留消息影响。
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
+                composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
             }.isSuccess
         }
-        composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
+        composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
     }
 
     @Test
