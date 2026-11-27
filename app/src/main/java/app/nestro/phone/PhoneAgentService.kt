@@ -26,6 +26,20 @@ class PhoneAgentService : AccessibilityService() {
     private data class TextUndoRecord(val label: String, val previousValue: String, val appliedValue: String, val screenSnapshot: String)
     @Volatile private var lastTextUndo: TextUndoRecord? = null
     @Volatile private var activeMainScreenEnvironment: MainScreenPhoneAgentExecutionEnvironment? = null
+    /** 悬浮胶囊（步骤 b）：任务执行时离开 App 也能看到进度，点按回 App。 */
+    private var capsule: PhoneAgentCapsule? = null
+    private fun capsule(): PhoneAgentCapsule =
+        capsule ?: PhoneAgentCapsule(this).also { capsule = it }
+
+    /** 任务开始执行时显示胶囊；服务未连接时调用方用伴生方法，内部判空。 */
+    fun showCapsule(label: String) = capsule().show(label)
+
+    /** 任务状态变化时刷新胶囊文案；需要用户接手时圆点变色提醒。 */
+    fun updateCapsule(label: String, needsUser: Boolean) = capsule().update(label, needsUser)
+
+    fun hideCapsule() {
+        capsule?.hide()
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -64,6 +78,8 @@ class PhoneAgentService : AccessibilityService() {
 
     override fun onDestroy() {
         lastTextUndo = null
+        capsule?.hide()
+        capsule = null
         deactivateMainScreenExecution()
         if (activeService === this) activeService = null
         (applicationContext as? NestroApplication)?.mikaVirtualDisplayController?.detachPhoneAgentEnvironment(this)
@@ -480,5 +496,18 @@ class PhoneAgentService : AccessibilityService() {
     companion object {
         @Volatile var activeService: PhoneAgentService? = null
             private set
+
+        /** 执行器侧调用：服务未连接（单测/未授权）时一律空操作，绝不抛异常。 */
+        fun showCapsuleFor(label: String) {
+            runCatching { activeService?.showCapsule(label) }
+        }
+
+        fun updateCapsuleFor(label: String, needsUser: Boolean) {
+            runCatching { activeService?.updateCapsule(label, needsUser) }
+        }
+
+        fun hideCapsule() {
+            runCatching { activeService?.hideCapsule() }
+        }
     }
 }
