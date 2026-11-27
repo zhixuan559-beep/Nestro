@@ -199,9 +199,10 @@ class NestroAppSmokeTest {
             }.isSuccess
         }
 
-        // 发送可能被启动恢复/草稿竞态静默吞掉（会话 id 切换的 LaunchedEffect 若在输入后才跑到，
-        // 会把草稿重置为空串，发送按钮随即禁用、点击无事发生）；必须确认发送真正落地再往下走，
-        // 未落地则清空重输再发，最多 3 次。
+        // 发送按钮是输入框的 trailingIcon：BasicTextField 默认 mergeDescendants 会把它的点击语义
+        // 并进输入框节点——按合并树找“发送”只会点到输入框本身（聚焦），发不出去；
+        // #1716 的三次重试全部静默落空正是这个原因。改走未合并树找图标节点，再点它的父节点
+        // （IconButton 的 clickable 宿主），才是真正点发送。
         // 注意：只看“用户消息文本出现”会误判——没发出去时输入框里本身就含这行字；
         // 真正落地的标志是两者同时成立：草稿被消费（占位文案重现）且消息气泡里出现该文本。
         // 输入框按可编辑节点找（hasSetTextAction），不依赖占位文案：重发时若草稿还在，
@@ -214,7 +215,7 @@ class NestroAppSmokeTest {
                 composeRule.onNode(hasSetTextAction()).performTextClearance()
             }
             composeRule.onNode(hasSetTextAction()).performTextInput(userPrompt)
-            composeRule.onNodeWithContentDescription("发送").performClick()
+            composeRule.onNodeWithContentDescription("发送", useUnmergedTree = true).onParent().performClick()
             sendLanded = runCatching {
                 composeRule.waitUntil(timeoutMillis = 10_000) {
                     val placeholderShown = runCatching {
