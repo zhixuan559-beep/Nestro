@@ -224,7 +224,7 @@ private fun ProjectPlanChecklistCard(
                     )
                 }
                 Icon(
-                    if (expanded) ExpandLess else ExpandMore,
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                     contentDescription = if (expanded) "收起清单" else "展开清单",
                     tint = Muted
                 )
@@ -238,11 +238,11 @@ private fun ProjectPlanChecklistCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         when (item.status) {
-                            "success" -> Icon(CheckCircle, contentDescription = "已完成", tint = Mint, modifier = Modifier.size(18.dp))
+                            "success" -> Icon(Icons.Outlined.CheckCircle, contentDescription = "已完成", tint = Mint, modifier = Modifier.size(18.dp))
                             "running" -> CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Mint, strokeWidth = 2.dp)
-                            "failed" -> Icon(ErrorOutline, contentDescription = "失败", tint = ColorStop, modifier = Modifier.size(18.dp))
-                            "blocked" -> Icon(PauseCircleOutline, contentDescription = "等待依赖", tint = Muted, modifier = Modifier.size(18.dp))
-                            else -> Icon(RadioButtonUnchecked, contentDescription = "待执行", tint = Muted, modifier = Modifier.size(18.dp))
+                            "failed" -> Icon(Icons.Outlined.ErrorOutline, contentDescription = "失败", tint = ColorStop, modifier = Modifier.size(18.dp))
+                            "blocked" -> Icon(Icons.Outlined.PauseCircleOutline, contentDescription = "等待依赖", tint = Muted, modifier = Modifier.size(18.dp))
+                            else -> Icon(Icons.Outlined.RadioButtonUnchecked, contentDescription = "待执行", tint = Muted, modifier = Modifier.size(18.dp))
                         }
                         Column(Modifier.weight(1f)) {
                             Text(item.title, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
