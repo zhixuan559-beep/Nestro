@@ -9,17 +9,7 @@ import app.nestro.phone.PhoneAgentExecutionEnvironmentProvider
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 @Composable
 internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> Unit) {
@@ -417,146 +406,6 @@ internal fun PhoneAgentPage(context: Context, projectId: String, onBack: () -> U
         }
         Text("安全边界：不自动填写密码或验证码，不绕过登录/风控，不替你完成付款或不可逆提交。网页检索会向搜索服务发送检索词，含手机号、邮箱、卡号等敏感信息会被拦截。操作记录保存在本机。", color = Muted, style = MaterialTheme.typography.bodySmall)
     }
-    virtualSession?.let { PhoneAgentFloatingPreview(it) }
+    virtualSession?.let { PhoneAgentPreviewWindow(it) }
 }
-}
-
-internal fun clampPhoneAgentPreviewOffset(offset: Offset, maxLeft: Float, maxTop: Float): Offset =
-    Offset(
-        x = offset.x.coerceIn(-maxLeft.coerceAtLeast(0f), 0f).normalizeZero(),
-        y = offset.y.coerceIn(-maxTop.coerceAtLeast(0f), 0f).normalizeZero()
-    )
-
-// Offset 是 packed Long 值类，-0f 与 +0f 打包值不同：maxLeft/maxTop 为 0 时
-// coerceIn 下限为 -0f，会得到 Offset(-0f, -0f) != Offset.Zero。归一化 -0f 为 +0f。
-private fun Float.normalizeZero(): Float = if (this == 0f) 0f else this
-
-@Composable
-private fun PhoneAgentFloatingPreview(session: app.nestro.phone.virtualdisplay.mika.MikaVirtualDisplayController.Session) {
-    val scope = rememberCoroutineScope()
-    val virtualFrame by session.frames.collectAsState()
-    var previewScale by remember(session) { mutableFloatStateOf(0.68f) }
-    var windowOffset by remember(session) { mutableStateOf(Offset.Zero) }
-    val previewWidthDp = 180.dp * previewScale
-    val frameAspect = virtualFrame?.let { it.height.toFloat() / it.width.toFloat() } ?: (320f / 180f)
-    val previewHeightDp = previewWidthDp * frameAspect
-
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-        val density = LocalDensity.current
-        val previewWidthPx = with(density) { previewWidthDp.toPx() }
-        val previewHeightPx = with(density) { previewHeightDp.toPx() }
-        val edgePx = with(density) { 12.dp.toPx() }
-        val maxLeft = (constraints.maxWidth - previewWidthPx - edgePx).coerceAtLeast(0f)
-        val maxTop = (constraints.maxHeight - previewHeightPx - edgePx).coerceAtLeast(0f)
-
-        Surface(
-            color = Card,
-            shape = RoundedCornerShape(12.dp),
-            tonalElevation = 8.dp,
-            modifier = Modifier
-                .offset { IntOffset(windowOffset.x.roundToInt(), windowOffset.y.roundToInt()) }
-                .padding(end = 12.dp, bottom = 12.dp)
-                .width(previewWidthDp)
-                .height(previewHeightDp)
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(16.dp)
-                        .pointerInput(session, maxLeft, maxTop) {
-                            detectDragGestures(
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    windowOffset = clampPhoneAgentPreviewOffset(
-                                        windowOffset + dragAmount,
-                                        maxLeft,
-                                        maxTop
-                                    )
-                                }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        Modifier
-                            .width(28.dp)
-                            .height(3.dp)
-                            .background(Muted, RoundedCornerShape(2.dp))
-                    )
-                }
-                Box(Modifier.fillMaxWidth().weight(1f)) {
-                    val bitmap = virtualFrame
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "隔离虚拟屏实时画面",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .pointerInput(session, previewScale) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            previewScale = if (previewScale < 1f) 1.4f else 0.68f
-                                        },
-                                        onDoubleTap = { offset ->
-                                            scope.launch {
-                                                session.pipInput.tap(
-                                                    (offset.x / size.width).coerceIn(0f, 1f),
-                                                    (offset.y / size.height).coerceIn(0f, 1f)
-                                                )
-                                            }
-                                        },
-                                        onLongPress = { offset ->
-                                            scope.launch {
-                                                session.pipInput.tap(
-                                                    (offset.x / size.width).coerceIn(0f, 1f),
-                                                    (offset.y / size.height).coerceIn(0f, 1f)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                                .pointerInput(session, previewScale) {
-                                    var resizing = false
-                                    val points = mutableListOf<Pair<Float, Float>>()
-                                    val corner = 26.dp.toPx()
-                                    detectDragGestures(
-                                        onDragStart = { start ->
-                                            resizing =
-                                                (start.x <= corner || start.x >= size.width - corner) &&
-                                                (start.y <= corner || start.y >= size.height - corner)
-                                            points.clear()
-                                            if (!resizing) {
-                                                points += (start.x / size.width).coerceIn(0f, 1f) to
-                                                    (start.y / size.height).coerceIn(0f, 1f)
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            if (!resizing && points.size >= 2) {
-                                                val path = points.toList()
-                                                scope.launch { session.pipInput.swipe(path, 500L) }
-                                            }
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            if (resizing) {
-                                                previewScale = (previewScale + dragAmount.y / 420f).coerceIn(0.45f, 1.4f)
-                                            } else {
-                                                points += (change.position.x / size.width).coerceIn(0f, 1f) to
-                                                    (change.position.y / size.height).coerceIn(0f, 1f)
-                                            }
-                                            change.consume()
-                                        }
-                                    )
-                                }
-                        )
-                    } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("等待虚拟屏画面…", color = Muted, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
