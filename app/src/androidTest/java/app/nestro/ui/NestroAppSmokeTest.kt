@@ -179,6 +179,25 @@ class NestroAppSmokeTest {
 
         // 无模型提示是异步追加到聊天列表底部的消息，可能在折叠线以下；
         // 先等它真正出现并滚到可见再断言，避免时序抖动。
+        // 启动恢复若恰在发送瞬间落定，首条发送可能被静默吞掉：15 秒内未见提示则重发一次
+        //（输入框若还留有文字直接重发，若已清空则重新输入再发；重发时恢复早已落定），
+        // 仍无提示才是真失败。
+        val guidanceShown = runCatching {
+            composeRule.waitUntil(timeoutMillis = 15_000) {
+                runCatching {
+                    composeRule.onNodeWithText(
+                        "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
+                    ).performScrollTo().assertIsDisplayed()
+                }.isSuccess
+            }
+            true
+        }.getOrDefault(false)
+        if (!guidanceShown) {
+            runCatching {
+                composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
+            }
+            composeRule.onNodeWithContentDescription("发送").performClick()
+        }
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText(
