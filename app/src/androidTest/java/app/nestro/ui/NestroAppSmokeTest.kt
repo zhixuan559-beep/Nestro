@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import org.junit.Rule
 import org.junit.Test
@@ -174,30 +175,51 @@ class NestroAppSmokeTest {
             }
         }
 
-        composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
-        composeRule.onNodeWithContentDescription("发送").performClick()
-
-        // 无模型提示是异步追加到聊天列表底部的消息，可能在折叠线以下；
-        // 先等它真正出现并滚到可见再断言，避免时序抖动。
-        // 启动恢复若恰在发送瞬间落定，首条发送可能被静默吞掉：15 秒内未见提示则重发一次
-        //（输入框若还留有文字直接重发，若已清空则重新输入再发；重发时恢复早已落定），
-        // 仍无提示才是真失败。
-        val guidanceShown = runCatching {
-            composeRule.waitUntil(timeoutMillis = 15_000) {
-                runCatching {
-                    composeRule.onNodeWithText(
-                        "还没有配置模型。进入「模型管理」，填写兼容 OpenAI Chat Completions 的 API 地址、模型名称和 Key。"
-                    ).performScrollTo().assertIsDisplayed()
-                }.isSuccess
-            }
-            true
-        }.getOrDefault(false)
-        if (!guidanceShown) {
+        // 恢复会选中 Room 里残留的旧会话（套件先跑的测试留下的消息都在里面），提示追加在长列表底部、
+        // 节点未合成时 waitUntil 里的 performScrollTo 永远找不到它，盲重发也救不回来；
+        // 先开一个全新空会话再发送，提示就是列表里唯二的消息之一，不依赖滚动也能直接显示。
+        // 注意抽屉里的「新建对话」只回首页不建会话，要去「最近对话」页点「＋ 新建对话」按钮才建空会话。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
-            }
-            composeRule.onNodeWithContentDescription("发送").performClick()
+                composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
+            }.isSuccess
         }
+        composeRule.onNodeWithText("最近对话", substring = true).performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithText("＋ 新建对话").assertIsDisplayed()
+            }.isSuccess
+        }
+        composeRule.onNodeWithText("＋ 新建对话").performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+            }.isSuccess
+        }
+
+        // 发送可能被启动恢复/草稿竞态静默吞掉：先确认用户消息本身已上屏（发送真正落地），
+        // 未上屏则清空重输再发，最多 3 次；用户消息出现后，无模型提示在同一次 send 里同步追加，必出现。
+        val userPrompt = "第十项异常态回归"
+        var userMessageShown = false
+        repeat(3) {
+            if (userMessageShown) return@repeat
+            runCatching {
+                composeRule.onNodeWithText("输入或按住说话…").performTextClearance()
+            }
+            composeRule.onNodeWithText("输入或按住说话…").performTextInput(userPrompt)
+            composeRule.onNodeWithContentDescription("发送").performClick()
+            userMessageShown = runCatching {
+                composeRule.waitUntil(timeoutMillis = 10_000) {
+                    runCatching {
+                        composeRule.onNodeWithText(userPrompt, substring = true).assertIsDisplayed()
+                    }.isSuccess
+                }
+                true
+            }.getOrDefault(false)
+        }
+
+        // 无模型提示是 send 处理里同步追加的 ChatMessage；新会话只有两条消息，无需滚动即可见。
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText(
