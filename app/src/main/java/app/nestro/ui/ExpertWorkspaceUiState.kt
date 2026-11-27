@@ -5,6 +5,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import app.nestro.data.ExpertBundle
+import app.nestro.data.ExpertProjectPlan
 import app.nestro.data.ExpertTeamBundle
 import app.nestro.data.ExpertTeamCollaborationEvent
 import app.nestro.data.ExpertTeamRunHistoryCodec
@@ -46,6 +47,32 @@ internal fun visibleExpertTeamEvents(
     visibleCount: Int
 ): List<ExpertTeamCollaborationEvent> =
     events.takeLast(visibleCount.coerceIn(1, EXPERT_TEAM_EVENT_MAX_VISIBLE)).asReversed()
+
+/** One row of the live expert-team plan checklist (Manus-style). */
+data class ProjectPlanChecklistItem(
+    val packageId: String,
+    val memberName: String,
+    val title: String,
+    val status: String
+)
+
+/**
+ * Derives the live plan-checklist rows for an expert project plan:
+ * one row per work package, titled by the first line of its instruction,
+ * with the live status from [statuses] ("waiting" when not started yet).
+ */
+internal fun projectPlanChecklistItems(
+    plan: ExpertProjectPlan,
+    statuses: Map<String, String>
+): List<ProjectPlanChecklistItem> =
+    plan.packages.map { item ->
+        ProjectPlanChecklistItem(
+            packageId = item.id,
+            memberName = item.memberName,
+            title = item.instruction.lineSequence().firstOrNull()?.trim()?.take(60).orEmpty().ifBlank { item.id },
+            status = statuses[item.id] ?: "waiting"
+        )
+    }
 
 /**
  * Owns expert editor, import/export, team editor and team-run presentation state.
@@ -89,4 +116,6 @@ internal class ExpertWorkspaceUiState(preferences: SharedPreferences) {
         ExpertTeamRunHistoryCodec.decode(preferences.getString("expert_team_runs_v1", "[]") ?: "[]")
     )
     val teamMemberStatuses: MutableState<Map<String, String>> = mutableStateOf(emptyMap())
+    val activeProjectPlan: MutableState<ExpertProjectPlan?> = mutableStateOf(null)
+    val activeProjectPlanConversationId: MutableState<String> = mutableStateOf("")
 }
