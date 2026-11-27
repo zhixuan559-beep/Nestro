@@ -210,28 +210,39 @@ class NestroAppSmokeTest {
         // 占位文案节点已不在语义树里，按它找会直接抛错。
         val userPrompt = "第十项异常态回归"
         var sendLanded = false
+        // 诊断用：把复合断言拆开，末次尝试的三段状态写进失败信息（第 300 轮计划）——
+        // 点击前草稿是否还在、点击后占位文案是否重现、用户气泡是否出现，三者各指一个不同的失败分支。
+        var lastDraftPresentBeforeClick = false
+        var lastPlaceholderShown = false
+        var lastPromptShown = false
         repeat(3) {
             if (sendLanded) return@repeat
             runCatching {
                 composeRule.onNode(hasSetTextAction()).performTextClearance()
             }
             composeRule.onNode(hasSetTextAction()).performTextInput(userPrompt)
+            // 占位文案节点不在树里 = 草稿还在输入框里；若它已出现，说明草稿在点击前就被抹掉，发送按钮是禁用的。
+            lastDraftPresentBeforeClick = composeRule.onAllNodesWithText("输入或按住说话…")
+                .fetchSemanticsNodes().isEmpty()
             composeRule.onNodeWithContentDescription("发送", useUnmergedTree = true).onParent().performClick()
             sendLanded = runCatching {
                 composeRule.waitUntil(timeoutMillis = 10_000) {
-                    val placeholderShown = runCatching {
+                    lastPlaceholderShown = runCatching {
                         composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
                     }.isSuccess
-                    val promptShown = runCatching {
+                    lastPromptShown = runCatching {
                         composeRule.onNodeWithText(userPrompt, substring = true).assertIsDisplayed()
                     }.isSuccess
-                    placeholderShown && promptShown
+                    lastPlaceholderShown && lastPromptShown
                 }
                 true
             }.getOrDefault(false)
         }
         // 三次都没发出去就直接失败，别拖到提示等待再超时——定位信息更明确。
-        if (!sendLanded) throw AssertionError("发送三次均未落地：用户消息始终未上屏")
+        if (!sendLanded) throw AssertionError(
+            "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
+                "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown"
+        )
 
         // 无模型提示是 send 处理里同步追加的 ChatMessage；新会话只有两条消息，无需滚动即可见。
         composeRule.waitUntil(timeoutMillis = 30_000) {
