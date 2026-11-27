@@ -1208,6 +1208,8 @@ fun NestroApp(initialPage: String = "home") {
         }
         modelUiState.initialize()
         val startup = appRuntime.conversationStartupCoordinator.restore(prefs)
+        // 恢复快照取自恢复开始前：恢复期间新建的会话不在快照里，直接覆盖会把它从列表抹掉。
+        val conversationsBeforeRestore = conversations
         conversations = startup.conversations
         projects = startup.projects
         projectStorageReadOnly = startup.projectStorageReadOnly
@@ -1218,9 +1220,16 @@ fun NestroApp(initialPage: String = "home") {
         if (!switchedDuringRestore) {
             activeConversationId = startup.activeConversationId
             applyConversationContext(activeConversationId, activeProjectId)
+        } else {
+            // 恢复期间新建的会话接回列表首部（新建记录在前，与新建时 prepend 的顺序一致），
+            // 否则新会话只剩 id 在内存里、记录却不在列表中，后续保存与展示都会错位。
+            val snapshotIds = startup.conversations.map { it.id }.toSet()
+            val createdDuringRestore = conversationsBeforeRestore.filter { it.id !in snapshotIds }
+            if (createdDuringRestore.isNotEmpty()) conversations = createdDuringRestore + conversations
         }
         // 启动恢复是异步的：若用户在恢复完成前已发送消息，恢复结果不得用旧消息覆盖当前会话，否则首条消息会闪没。
-        if (messages.isEmpty()) messages = startup.messages
+        // 会话已变时同样不得注入旧会话的消息——新会话视图里会凭空出现旧会话的长列表，发送追加到底部、气泡屏外不可见。
+        if (messages.isEmpty() && !switchedDuringRestore) messages = startup.messages
         persistedConversationVersions.clear()
         persistedConversationVersions.putAll(startup.persistedConversationVersions)
         databaseReady = startup.databaseReady
@@ -1238,7 +1247,14 @@ fun NestroApp(initialPage: String = "home") {
                 activeConversationId = activeConversationId
             )
         }
+        // 恢复协调器返回的列表同样可能不含恢复期间新建的会话：会话已变时把当前列表里多出的记录接回。
+        val conversationsBeforeRecovery = conversations
         conversations = recoveredChat.conversations
+        if (switchedDuringRestore) {
+            val recoveredIds = recoveredChat.conversations.map { it.id }.toSet()
+            val keptDuringRecovery = conversationsBeforeRecovery.filter { it.id !in recoveredIds }
+            if (keptDuringRecovery.isNotEmpty()) conversations = keptDuringRecovery + conversations
+        }
         if (!switchedDuringRestore) {
             recoveredChat.activeMessages?.let { messages = it }
             recoveredChat.restoredPrompt?.let { draft = it }
