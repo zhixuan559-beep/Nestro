@@ -6,8 +6,10 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -198,26 +200,37 @@ class NestroAppSmokeTest {
             }.isSuccess
         }
 
-        // 发送可能被启动恢复/草稿竞态静默吞掉：先确认用户消息本身已上屏（发送真正落地），
-        // 未上屏则清空重输再发，最多 3 次；用户消息出现后，无模型提示在同一次 send 里同步追加，必出现。
+        // 发送可能被启动恢复/草稿竞态静默吞掉（会话 id 切换的 LaunchedEffect 若在输入后才跑到，
+        // 会把草稿重置为空串，发送按钮随即禁用、点击无事发生）；必须确认发送真正落地再往下走，
+        // 未落地则清空重输再发，最多 3 次。
+        // 注意：只看“用户消息文本出现”会误判——没发出去时输入框里本身就含这行字；
+        // 真正落地的标志是两者同时成立：草稿被消费（占位文案重现）且消息气泡里出现该文本。
+        // 输入框按可编辑节点找（hasSetTextAction），不依赖占位文案：重发时若草稿还在，
+        // 占位文案节点已不在语义树里，按它找会直接抛错。
         val userPrompt = "第十项异常态回归"
-        var userMessageShown = false
+        var sendLanded = false
         repeat(3) {
-            if (userMessageShown) return@repeat
+            if (sendLanded) return@repeat
             runCatching {
-                composeRule.onNodeWithText("输入或按住说话…").performTextClearance()
+                composeRule.onNode(hasSetTextAction()).performTextClearance()
             }
-            composeRule.onNodeWithText("输入或按住说话…").performTextInput(userPrompt)
+            composeRule.onNode(hasSetTextAction()).performTextInput(userPrompt)
             composeRule.onNodeWithContentDescription("发送").performClick()
-            userMessageShown = runCatching {
+            sendLanded = runCatching {
                 composeRule.waitUntil(timeoutMillis = 10_000) {
-                    runCatching {
+                    val placeholderShown = runCatching {
+                        composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+                    }.isSuccess
+                    val promptShown = runCatching {
                         composeRule.onNodeWithText(userPrompt, substring = true).assertIsDisplayed()
                     }.isSuccess
+                    placeholderShown && promptShown
                 }
                 true
             }.getOrDefault(false)
         }
+        // 三次都没发出去就直接失败，别拖到提示等待再超时——定位信息更明确。
+        if (!sendLanded) throw AssertionError("发送三次均未落地：用户消息始终未上屏")
 
         // 无模型提示是 send 处理里同步追加的 ChatMessage；新会话只有两条消息，无需滚动即可见。
         composeRule.waitUntil(timeoutMillis = 30_000) {
