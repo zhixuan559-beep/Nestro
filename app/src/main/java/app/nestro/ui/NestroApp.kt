@@ -182,7 +182,7 @@ private fun SettingsRow(title: String, subtitle: String, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, color = Ink, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, color = Muted, style = MaterialTheme.typography.bodySmall)
         }
@@ -296,7 +296,7 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
     var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
-    var customBgHex by remember(prefs) { mutableStateOf(prefs.getString("appearance_custom_bg_v1", "#FBF8F3") ?: "#FBF8F3") }
+    var customBgHex by remember(prefs) { mutableStateOf(prefs.getString("appearance_custom_bg_v1", "#FFFFFF") ?: "#FFFFFF") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
         ModelManagementUiState(prefs, modelRepository)
@@ -2012,12 +2012,12 @@ fun NestroApp(initialPage: String = "home") {
     }
 
     val customBgColor = when (customBgHex) {
-        "#0B1220" -> androidx.compose.ui.graphics.Color(0xFF0B1220)
-        "#111815" -> androidx.compose.ui.graphics.Color(0xFF111815)
-        "#EFF2F6" -> androidx.compose.ui.graphics.Color(0xFFEFF2F6)
-        else -> androidx.compose.ui.graphics.Color(0xFFFBF8F3)
+        "#1A1A1A" -> androidx.compose.ui.graphics.Color(0xFF1A1A1A)
+        "#000000" -> androidx.compose.ui.graphics.Color(0xFF000000)
+        "#F5F5F5" -> androidx.compose.ui.graphics.Color(0xFFF5F5F5)
+        else -> androidx.compose.ui.graphics.Color(0xFFFFFFFF)
     }
-    val customIsDark = customBgHex == "#0B1220" || customBgHex == "#111815"
+    val customIsDark = customBgHex == "#1A1A1A" || customBgHex == "#000000"
     val darkAppearance = appearanceMode == "dark" ||
         (appearanceMode == "custom" && customIsDark) ||
         (appearanceMode == "system" && androidx.compose.foundation.isSystemInDarkTheme())
@@ -2154,7 +2154,7 @@ fun NestroApp(initialPage: String = "home") {
                             Column(Modifier.fillMaxSize()) {
                             if (messages.isEmpty()) {
                                 Column(
-                                    Modifier.weight(1f).fillMaxWidth().padding(22.dp),
+                                    Modifier.weight(1f).fillMaxWidth().padding(24.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
@@ -2313,7 +2313,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 }
                                             }
                                         },
-                                        shape = RoundedCornerShape(22.dp),
+                                        shape = RoundedCornerShape(24.dp),
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedBorderColor = Mint, unfocusedBorderColor = Line,
                                             focusedTextColor = Ink, unfocusedTextColor = Ink,
@@ -2321,7 +2321,7 @@ fun NestroApp(initialPage: String = "home") {
                                         )
                                     )
                                 }
-                                AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 7.dp))
+                                AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp))
                             }
                             }
                             // 步骤 b：虚拟屏小窗嵌在对话里（学 Mika）：有隔离屏会话时才出现；
@@ -3192,7 +3192,7 @@ fun NestroApp(initialPage: String = "home") {
                                 if (activeTeamRunHistory.isNotEmpty()) {
                                     val latestTeamRun=activeTeamRunHistory.first()
                                     Surface(color=Card,shape=RoundedCornerShape(12.dp),modifier=Modifier.fillMaxWidth()) {
-                                        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                             Text("最近一次协作 · ${latestTeamRun.teamName}",color=Ink,style=MaterialTheme.typography.titleSmall)
                                             Text("成功 ${latestTeamRun.successfulMembers} / ${latestTeamRun.members.size} · 失败 ${latestTeamRun.failedMembers}",color=Muted,style=MaterialTheme.typography.bodySmall)
                                             latestTeamRun.members.forEach { run ->
@@ -3392,7 +3392,7 @@ fun NestroApp(initialPage: String = "home") {
                                             }
                                             if (appearanceMode == "custom") {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    listOf("#FBF8F3" to "暖米纸", "#EFF2F6" to "雾霭灰", "#0B1220" to "墨夜蓝", "#111815" to "深林灰").forEach { (hex, label) ->
+                                                    listOf("#FFFFFF" to "纯白", "#F5F5F5" to "浅灰", "#1A1A1A" to "深灰", "#000000" to "纯黑").forEach { (hex, label) ->
                                                         FilterChip(
                                                             selected = customBgHex == hex,
                                                             onClick = { customBgHex = hex; prefs.edit().putString("appearance_custom_bg_v1", hex).apply() },
@@ -4726,7 +4726,7 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                             showRecallDialog = false
-                        }.padding(vertical = 9.dp)) {
+                        }.padding(vertical = 8.dp)) {
                             Text(source.title, color = Mint, style = MaterialTheme.typography.titleSmall)
                             Text("${if (source.role == "user") "用户" else "Nestro"} · 消息 ${source.messageId.take(8)}", color = Muted, style = MaterialTheme.typography.labelSmall)
                             Text(source.excerpt, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 4)
@@ -5578,7 +5578,7 @@ fun NestroApp(initialPage: String = "home") {
                     if (visibleTemplates.isEmpty()) Text("没有匹配的模板。", color = Muted)
                     visibleTemplates.forEach { template ->
                         Surface(color = Card, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("${template.profile.avatar}  ${template.name}", color = Ink, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                                     Text(if (template.builtIn) "内置" else "自定义", color = Mint, style = MaterialTheme.typography.labelSmall)
