@@ -172,8 +172,20 @@ class NestroAppSmokeTest {
         composeRule.activityRule.scenario.recreate()
         composeRule.waitForIdle()
 
-        // 启动恢复是异步的：等恢复落定再输入——恢复出旧消息时空态标题消失；
-        // 若恢复出的是空会话（标题不消失），等满 15 秒后继续，已有的草稿/消息守卫会兜底。
+        // 启动恢复是异步的：必须等它真正落定再建会话、再输入。只等空态标题消失并不可靠——
+        // 慢模拟器上恢复（读 Room 全量会话＋初始化模型）常超过 15 秒，等满就继续会撞上恢复后到的
+        // 快照覆盖：消息发进旧会话的长列表底部、气泡屏外不可见，三次重试也救不回来（#1719–#1724、
+        // #1730 均是这副症状：提示在、用户消息不在、滑到底仍为 0）。
+        // restore() 成功后会把 room_storage_initialized 置 true，直接等这个标志位才是恢复落定的信号；
+        // 恢复失败（Room 不可用）时标志位不出现，等满 90 秒就按旧逻辑继续，不因此硬失败。
+        runCatching {
+            composeRule.waitUntil(timeoutMillis = 90_000) {
+                composeRule.activity.getSharedPreferences("nestro_local", 0)
+                    .getBoolean("room_storage_initialized", false)
+            }
+        }
+        // 标志位只证明 restore() 已返回，其后快照落到界面上还要一个主线程轮转；等空闲后再看标题。
+        composeRule.waitForIdle()
         runCatching {
             composeRule.waitUntil(timeoutMillis = 15_000) {
                 composeRule.onAllNodesWithText("有什么可以帮忙？").fetchSemanticsNodes().isEmpty()
@@ -200,6 +212,13 @@ class NestroAppSmokeTest {
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+            }.isSuccess
+        }
+        // 新会话建好后必须是空的才往下走：若此时空态标题不在屏上，说明视图里仍是恢复出的旧会话
+        // 长列表，消息发进去会沉底不可见——直接停在这里报出来，别等发送断言再含糊失败。
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
             }.isSuccess
         }
 
