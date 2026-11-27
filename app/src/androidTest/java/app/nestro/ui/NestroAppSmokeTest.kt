@@ -166,6 +166,14 @@ class NestroAppSmokeTest {
         composeRule.activityRule.scenario.recreate()
         composeRule.waitForIdle()
 
+        // 启动恢复是异步的：等恢复落定再输入——恢复出旧消息时空态标题消失；
+        // 若恢复出的是空会话（标题不消失），等满 15 秒后继续，已有的草稿/消息守卫会兜底。
+        runCatching {
+            composeRule.waitUntil(timeoutMillis = 15_000) {
+                composeRule.onAllNodesWithText("有什么可以帮忙？").fetchSemanticsNodes().isEmpty()
+            }
+        }
+
         composeRule.onNodeWithText("输入或按住说话…").performTextInput("第十项异常态回归")
         composeRule.onNodeWithContentDescription("发送").performClick()
 
@@ -232,10 +240,17 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("专家与专家团", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
-        composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").assertIsDisplayed()
+        // 计数行在弹窗可滚动列内，可能位于折叠线以下；先滚到可见再断言。
+        composeRule.onNodeWithText("内置模板 10 个 · 自定义模板 0 个").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("深度研究员", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("搜索模板名称、说明或指令").performScrollTo().performTextInput("风险审查员")
         // 搜索过滤是异步的，过滤结果在断言瞬间可能尚未完成显示；等它真正显示出来再断言，避免时序抖动。
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithText("✦  风险审查员", substring = false).performScrollTo().assertIsDisplayed()
+            }.isSuccess
+        }
+        // 过滤项刚出现又瞬时不可见会被误判；等它稳定显示再断言。
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("✦  风险审查员", substring = false).performScrollTo().assertIsDisplayed()
