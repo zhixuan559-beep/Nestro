@@ -1194,6 +1194,10 @@ fun NestroApp(initialPage: String = "home") {
     )
 
     LaunchedEffect(Unit) {
+        // 恢复是异步的：启动后用户可能已切到别的会话（例如新建对话）；记下 effect 启动时的会话 id，
+        // 恢复完成时若会话已变，不再用恢复结果覆盖当前会话——否则会把刚建的新会话切回旧会话，
+        // 输入的草稿被草稿恢复 effect 抹掉、消息发进旧会话的长列表底部，发送会静默落空。
+        val conversationIdAtEffectStart = activeConversationId
         try {
             appRuntime.ensureBackupRestoreRecovered()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -1209,8 +1213,12 @@ fun NestroApp(initialPage: String = "home") {
         projectStorageReadOnly = startup.projectStorageReadOnly
         activeProjectId = startup.activeProjectId
         automaticMemoryEnabled = ProjectMemorySettingsStore.isEnabled(prefs, activeProjectId)
-        activeConversationId = startup.activeConversationId
-        applyConversationContext(activeConversationId, activeProjectId)
+        // 恢复完成前会话已变（用户/测试新建了对话）时，不再用恢复的旧 id 覆盖当前会话。
+        val switchedDuringRestore = activeConversationId != conversationIdAtEffectStart
+        if (!switchedDuringRestore) {
+            activeConversationId = startup.activeConversationId
+            applyConversationContext(activeConversationId, activeProjectId)
+        }
         // 启动恢复是异步的：若用户在恢复完成前已发送消息，恢复结果不得用旧消息覆盖当前会话，否则首条消息会闪没。
         if (messages.isEmpty()) messages = startup.messages
         persistedConversationVersions.clear()
@@ -1231,8 +1239,10 @@ fun NestroApp(initialPage: String = "home") {
             )
         }
         conversations = recoveredChat.conversations
-        recoveredChat.activeMessages?.let { messages = it }
-        recoveredChat.restoredPrompt?.let { draft = it }
+        if (!switchedDuringRestore) {
+            recoveredChat.activeMessages?.let { messages = it }
+            recoveredChat.restoredPrompt?.let { draft = it }
+        }
         if (recoveredChat.interrupted) {
             status = "上次请求中断，已恢复输入和已接收内容，可重新发送"
         }
