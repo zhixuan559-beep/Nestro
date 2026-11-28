@@ -1,6 +1,7 @@
 package app.nestro.ui
 
 import app.nestro.data.ChatMessage
+import app.nestro.data.VoiceMessageMarker
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -10,14 +11,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
 internal fun ChatMessage.allVersions(): List<String> = when {
     versions.isEmpty() -> listOf(content)
@@ -68,20 +73,67 @@ internal fun Suggestion(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null, onOpenMediaSetup: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Unit)? = null, onEdit: (() -> Unit)? = null, onRegenerate: (() -> Unit)? = null, onRetry: (() -> Unit)? = null, onVersionChange: ((Int) -> Unit)? = null, onOpenVideo: ((String) -> Unit)? = null, onOpenMediaSetup: (() -> Unit)? = null, onPlayVoice: ((String) -> Unit)? = null, modifier: Modifier = Modifier) {
     val user = message.role == "user"
     val videoMarker = Regex("""\[NESTRO_VIDEO_ASSET:([A-Fa-f0-9-]{36})\]""")
     val setupMarker = "[NESTRO_MEDIA_PROVIDER_SETUP]"
     val videoAssetId = videoMarker.find(message.content)?.groupValues?.getOrNull(1)
     val visibleContent = message.content.replace(videoMarker, "").replace(setupMarker, "").trim()
+    // 改版新 a 步：语音消息（内容带 [NESTRO_VOICE:毫秒] 前缀）画成设计图 01 的蓝色波形气泡；
+    // 点气泡朗读转写文本（原始录音未保留，TTS 回放是目前唯一能播的形态）。
+    val voice = VoiceMessageMarker.parse(message.content)
     Row(modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
         Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-            Surface(
-                color = if (user) Card2 else Bg,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.widthIn(max = 320.dp)
-            ) {
-                Text(visibleContent, color = Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+            if (voice != null && user) {
+                val (durationMs, transcript) = voice
+                Surface(
+                    onClick = { onPlayVoice?.invoke(transcript) },
+                    color = VoiceBubbleBlue,
+                    shape = RoundedCornerShape(topStart = 19.dp, topEnd = 19.dp, bottomEnd = 6.dp, bottomStart = 19.dp),
+                    modifier = Modifier.width(250.dp)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(11.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = "播放语音",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Row(
+                            Modifier.weight(1f).height(23.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            voiceWaveHeights(transcript).forEach { barHeight ->
+                                Box(
+                                    Modifier.width(3.dp).height(barHeight.dp)
+                                        .background(Color.White, RoundedCornerShape(2.dp))
+                                )
+                            }
+                        }
+                        Text(
+                            formatVoiceDuration(durationMs),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    color = if (user) Ink else Card2,
+                    shape = RoundedCornerShape(
+                        topStart = 19.dp, topEnd = 19.dp,
+                        bottomEnd = if (user) 6.dp else 19.dp,
+                        bottomStart = if (user) 19.dp else 6.dp
+                    ),
+                    modifier = Modifier.widthIn(max = 320.dp)
+                ) {
+                    Text(visibleContent, color = if (user) Bg else Ink, modifier = Modifier.padding(13.dp), style = MaterialTheme.typography.bodyMedium)
+                }
             }
             if (!user && setupMarker in message.content && onOpenMediaSetup != null) {
                 TextButton(
@@ -139,6 +191,68 @@ internal fun MessageBubble(message: ChatMessage, onSaveArtifact: ((String) -> Un
                     Text("重新生成", color = Muted, style = MaterialTheme.typography.labelMedium)
                 }
             }
+        }
+    }
+}
+
+/** 设计图 01 的语音气泡蓝。单色纪律下仅语音气泡用此蓝（定版设计钦点）。 */
+private val VoiceBubbleBlue = Color(0xFF2F7DF6)
+
+/** 波形条高度由转写文本哈希决定：同一条语音每次画出来一样，不同语音各不相同。 */
+private fun voiceWaveHeights(transcript: String): List<Int> {
+    val hash = transcript.hashCode()
+    return List(18) { index ->
+        val bits = (hash ushr ((index % 8) * 3)) and 0x7
+        8 + bits * 2
+    }
+}
+
+private fun formatVoiceDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+    return String.format(Locale.US, "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+}
+
+/** 输入框里的已选标签（设计图 07）：黑底白字，点一下清除该选择。 */
+@Composable
+internal fun InputTagChip(label: String, onClear: () -> Unit) {
+    Surface(
+        onClick = onClear,
+        shape = RoundedCornerShape(13.dp),
+        color = Ink,
+        modifier = Modifier.semantics { contentDescription = "清除$label" }
+    ) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(label, color = Bg, style = MaterialTheme.typography.labelMedium)
+            Text("×", color = Bg, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+/** 「＋」菜单里选专家/选技能用的单行选项：标题＋副标题，选中态打勾。 */
+@Composable
+internal fun PickerOptionRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) Card2 else Card,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Ink, style = MaterialTheme.typography.bodyMedium)
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, color = Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            if (selected) Text("已选", color = Mint, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
