@@ -48,22 +48,27 @@ class NestroWindowSizeTest {
         }
 
         val destinations = listOf(
-            // 改版第 b 步：抽屉按设计图 02 重排——主助手行回对话页；「最近对话/项目空间/设置」
-            // 收进底部「更多」组；工具目录改走「连接你的应用」。「新建对话」行已撤（主助手行即对话页）。
+            // 改版第 c 步：抽屉「更多」组已撤，最近对话/项目空间/设置改走资料页（第三个分量 true）；
+            // 主助手行与连接入口仍走抽屉。「新建对话」行已撤（主助手行即对话页）。
             // 输入框占位文案只在对话页出现，用它判定已进对话页，不受残留消息影响。
-            "小轩（主助手）" to "长按说话，轻触输入",
-            "最近对话" to "对话历史",
-            "项目空间" to "项目空间",
-            "连接你的应用" to "工具与扩展",
-            "设置" to "设置"
+            Triple("小轩（主助手）", "长按说话，轻触输入", false),
+            Triple("最近对话", "对话历史", true),
+            Triple("项目空间", "项目空间", true),
+            Triple("连接你的应用", "工具与扩展", false),
+            Triple("设置", "设置", true)
         )
 
         windowSizes.forEach { size ->
             composeRule.runOnIdle { windowSize.value = size }
             composeRule.waitForIdle()
-            destinations.forEach { (navigationLabel, pageTitle) ->
-                waitForNodeWithContentDescription("菜单")
-                composeRule.onNodeWithContentDescription("菜单").performClick()
+            destinations.forEach { (navigationLabel, pageTitle, viaProfile) ->
+                if (viaProfile) {
+                    waitForNodeWithContentDescription("打开资料页")
+                    composeRule.onNodeWithContentDescription("打开资料页").performClick()
+                } else {
+                    waitForNodeWithContentDescription("菜单")
+                    composeRule.onNodeWithContentDescription("菜单").performClick()
+                }
                 composeRule.onNodeWithText(navigationLabel, substring = true)
                     .performScrollTo()
                     .performClick()
@@ -77,10 +82,11 @@ class NestroWindowSizeTest {
                 }
                 composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
-            // 专家页改走顶栏名字胶囊（第 b 步）：抽屉里不再有「专家与专家团」行。
+            // 专家页改走顶栏名字胶囊 → 资料页 →「专家」行（第 c 步）。
             // 名字胶囊也在主内容里，同样要等抽屉关后的重新挂载。
-            waitForNodeWithContentDescription("打开专家页")
-            composeRule.onNodeWithContentDescription("打开专家页").performClick()
+            waitForNodeWithContentDescription("打开资料页")
+            composeRule.onNodeWithContentDescription("打开资料页").performClick()
+            composeRule.onNodeWithText("专家", substring = false).performScrollTo().performClick()
             composeRule.waitForIdle()
             composeRule.waitUntil(timeoutMillis = 30_000) {
                 runCatching {
