@@ -56,7 +56,7 @@ internal object ChatRequestPolicy {
                 } else false
             }
             val content = takeLastWithinBudget(
-                message.content,
+                VoiceMessageMarker.strip(message.content),
                 maxChars = remainingChars,
                 maxTokenUnits = (remainingTokenUnits - mediaTokenUnits).coerceAtLeast(0L)
             )
