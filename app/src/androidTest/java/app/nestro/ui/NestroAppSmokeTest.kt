@@ -34,9 +34,9 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithContentDescription("电话").assertIsDisplayed()
     }
     @Test
-    fun opensConversationHistoryFromAccessibleNavigationDrawer() {
-        composeRule.onNodeWithContentDescription("菜单").performClick()
-        // 改版第 b 步：「最近对话」收进抽屉底部的「更多」组，需先滚到可见再点。
+    fun opensConversationHistoryFromProfilePage() {
+        // 改版第 c 步：抽屉「更多」组已撤，最近对话改走资料页（顶栏名字胶囊进）。
+        composeRule.onNodeWithContentDescription("打开资料页").performClick()
         composeRule.onNodeWithText("最近对话", substring = true).performScrollTo().performClick()
 
         composeRule.onNodeWithText("搜索会话标题与内容").assertIsDisplayed()
@@ -111,8 +111,9 @@ class NestroAppSmokeTest {
     }
 
     @Test
-    fun opensProjectSpacesFromNavigationDrawer() {
-        composeRule.onNodeWithContentDescription("菜单").performClick()
+    fun opensProjectSpacesFromProfilePage() {
+        // 改版第 c 步：抽屉「更多」组已撤，项目空间改走资料页（顶栏名字胶囊进）。
+        composeRule.onNodeWithContentDescription("打开资料页").performClick()
         composeRule.onNodeWithText("项目空间", substring = true).performScrollTo().performClick()
 
         composeRule.onNodeWithText("每个空间拥有独立会话与项目指令。", substring = true).assertIsDisplayed()
@@ -162,9 +163,9 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("返回工作流").performClick()
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("菜单").performClick()
-        // 改版第 b 步：「设置」收进抽屉底部的「更多」组，需先滚到可见再点。
-        composeRule.onNodeWithText("设置", substring = true).performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("打开资料页").performClick()
+        // 改版第 c 步：抽屉「更多」组已撤，设置改走资料页（顶栏名字胶囊进）。
+        composeRule.onNodeWithText("设置", substring = false).performScrollTo().performClick()
         composeRule.onNodeWithText("设置", substring = false).assertIsDisplayed()
         composeRule.onNodeWithText("本地数据备份").assertIsDisplayed()
     }
@@ -212,11 +213,24 @@ class NestroAppSmokeTest {
         // 节点未合成时 waitUntil 里的 performScrollTo 永远找不到它，盲重发也救不回来；
         // 先开一个全新空会话再发送，提示就是列表里唯二的消息之一，不依赖滚动也能直接显示。
         // 注意抽屉里的「新建对话」只回首页不建会话，要去「最近对话」页点「＋ 新建对话」按钮才建空会话。
-        // 改版第 b 步：「最近对话」收进抽屉底部的「更多」组，需先滚到可见再点。
+        // 改版第 c 步：抽屉「更多」组已撤，最近对话改走资料页——先点主助手行收起抽屉回对话页，
+        // 再点顶栏名字胶囊进资料页（窄屏下抽屉开着时主内容已卸载，胶囊不在树里）。
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("我的专家", substring = true).assertIsDisplayed()
+            }.isSuccess
+        }
+        composeRule.onNodeWithText("小轩（主助手）", substring = true).performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithContentDescription("打开资料页").assertIsDisplayed()
+            }.isSuccess
+        }
+        composeRule.onNodeWithContentDescription("打开资料页").performClick()
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            runCatching {
+                composeRule.onNodeWithText("模型与用量", substring = false).assertIsDisplayed()
             }.isSuccess
         }
         composeRule.onNodeWithText("最近对话", substring = true).performScrollTo().performClick()
@@ -389,8 +403,9 @@ class NestroAppSmokeTest {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             composeRule.waitForIdle()
 
-            composeRule.onNodeWithContentDescription("菜单").performClick()
-            // 抽屉内容经 LaunchedEffect 异步挂载（drawerMounted），横屏重组后挂载可能晚于点击返回；
+            // 改版第 c 步：抽屉「更多」组已撤，项目空间改走资料页（顶栏名字胶囊进）。
+            composeRule.onNodeWithContentDescription("打开资料页").performClick()
+            // 资料页经 Crossfade 异步切换，横屏重组后内容可能晚于点击返回；
             // 先等「项目空间」真正出现再滚到可见并点击，避免时序抖动。
             composeRule.waitUntil(timeoutMillis = 30_000) {
                 runCatching {
@@ -407,8 +422,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun expertTemplateLibraryShowsBuiltInsAndFiltersBySearch() {
-        // 改版第 b 步：专家页改走顶栏名字胶囊，抽屉里不再有「专家与专家团」行。
-        composeRule.onNodeWithContentDescription("打开专家页").performClick()
+        // 改版第 c 步：专家页改走顶栏名字胶囊 → 资料页 →「专家」行。
+        composeRule.onNodeWithContentDescription("打开资料页").performClick()
+        composeRule.onNodeWithText("专家", substring = false).performScrollTo().performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
         // 计数行在弹窗可滚动列内，可能位于折叠线以下；先滚到可见再断言。
