@@ -2,6 +2,7 @@ package app.nestro.ui
 
 import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -288,12 +289,36 @@ class NestroAppSmokeTest {
                 .fetchSemanticsNodes().size
             val emptyStateShown = composeRule.onAllNodesWithText("有什么可以帮忙？")
                 .fetchSemanticsNodes().isNotEmpty()
+            // 续诊（#1732）：静态排查已穷尽——发送追加是同步的、异步 messages 写入都有守卫、
+            // 渲染直出 messages，仍缺一个事实：用户消息到底有没有进保存的会话记录。
+            // 去「最近对话」页看新会话（列表首项）的标题与条数：标题已是用户文本 = 保存时
+            // 用户消息在列，问题在显示侧；标题仍是“新对话” = 追加/保存侧就丢了。
+            var historyProbe = "未取到"
+            runCatching {
+                composeRule.onNodeWithContentDescription("菜单").performClick()
+                composeRule.waitUntil(timeoutMillis = 30_000) {
+                    runCatching {
+                        composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
+                    }.isSuccess
+                }
+                composeRule.onNodeWithText("最近对话", substring = true).performClick()
+                composeRule.waitUntil(timeoutMillis = 30_000) {
+                    composeRule.onAllNodesWithText("条消息", substring = true)
+                        .fetchSemanticsNodes().isNotEmpty()
+                }
+                val firstCount = composeRule.onAllNodesWithText("条消息", substring = true)
+                    .fetchSemanticsNodes().firstOrNull()?.config
+                    ?.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text.orEmpty()
+                val titleHasPrompt = composeRule.onAllNodesWithText(userPrompt, substring = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+                historyProbe = "首项条数=$firstCount，标题含用户文本=$titleHasPrompt"
+            }.onFailure { historyProbe = "探针失败：${it.message}" }
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
                     "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown；" +
                     "提示文本节点数=$tipNodeCount，未合并树用户文本节点数=$promptNodeCountUnmerged，" +
-                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll"
+                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；历史探针：$historyProbe"
             )
         }
 
