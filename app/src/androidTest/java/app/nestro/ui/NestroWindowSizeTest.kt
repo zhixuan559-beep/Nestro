@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -27,6 +28,15 @@ class NestroWindowSizeTest {
         DpSize(840.dp, 900.dp),
         DpSize(1200.dp, 900.dp)
     )
+
+    // 窄屏下抽屉与主内容是 if/else 二选一：抽屉关后主内容要等 LaunchedEffect 里
+    // delay(DRAWER_OUT) 跑完才重新挂载，waitForIdle 等不到这段真实延时——点「菜单」
+    // 前先等节点出现，否则偶发找不到节点（#1758 两失败同款时序问题）。
+    private fun waitForNodeWithContentDescription(description: String) {
+        composeRule.waitUntil(timeoutMillis = 30_000) {
+            composeRule.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     @Test(timeout = 300_000)
     fun keepsPrimaryNavigationUsableAcrossPhoneFoldableAndTabletWindowWidths() {
@@ -52,6 +62,7 @@ class NestroWindowSizeTest {
             composeRule.runOnIdle { windowSize.value = size }
             composeRule.waitForIdle()
             destinations.forEach { (navigationLabel, pageTitle) ->
+                waitForNodeWithContentDescription("菜单")
                 composeRule.onNodeWithContentDescription("菜单").performClick()
                 composeRule.onNodeWithText(navigationLabel, substring = true)
                     .performScrollTo()
@@ -67,6 +78,8 @@ class NestroWindowSizeTest {
                 composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
             // 专家页改走顶栏名字胶囊（第 b 步）：抽屉里不再有「专家与专家团」行。
+            // 名字胶囊也在主内容里，同样要等抽屉关后的重新挂载。
+            waitForNodeWithContentDescription("打开专家页")
             composeRule.onNodeWithContentDescription("打开专家页").performClick()
             composeRule.waitForIdle()
             composeRule.waitUntil(timeoutMillis = 30_000) {
@@ -90,13 +103,18 @@ class NestroWindowSizeTest {
         windowSizes.forEach { size ->
             composeRule.runOnIdle { windowSize.value = size }
             composeRule.waitForIdle()
+            waitForNodeWithContentDescription("菜单")
             composeRule.onNodeWithContentDescription("菜单").performClick()
             composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
             composeRule.onAllNodesWithText("日历").assertCountEquals(0)
             // 改版第 b 步：抽屉里不再有「工具与扩展」行，工具目录改走「连接你的应用」；
-            // 抽屉无独立关闭钮，点菜单圆钮收起（showDrawer 取反）。
+            // 抽屉打开时窄屏主内容已卸载，「菜单」圆钮不在树里、点它收不起来（#1758 失败根因）。
+            // 真用户收抽屉靠返回键或点一行进对话——这里点主助手行回对话页收起。
             composeRule.onNodeWithText("连接你的应用", substring = true).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription("菜单").performClick()
+            composeRule.onNodeWithText("小轩（主助手）", substring = true)
+                .performScrollTo()
+                .performClick()
+            composeRule.waitForIdle()
         }
     }
 }
