@@ -2,7 +2,6 @@ package app.nestro.ui
 
 import app.nestro.MainActivity
 import android.content.pm.ActivityInfo
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -289,56 +288,45 @@ class NestroAppSmokeTest {
                 .fetchSemanticsNodes().size
             val emptyStateShown = composeRule.onAllNodesWithText("有什么可以帮忙？")
                 .fetchSemanticsNodes().isNotEmpty()
-            // 续诊（#1732）：静态排查已穷尽——发送追加是同步的、异步 messages 写入都有守卫、
-            // 渲染直出 messages，仍缺一个事实：用户消息到底有没有进保存的会话记录。
-            // 去「最近对话」页看新会话（列表首项）的标题与条数：标题已是用户文本 = 保存时
-            // 用户消息在列，问题在显示侧；标题仍是“新对话” = 追加/保存侧就丢了。
-            // 续诊（#1734）：上轮探针只报了“30 秒超时”，没说是卡在哪一步——菜单没开、
-            // “最近对话”没出现、历史页没加载、还是列表为空，各指不同的根因。
-            // 本轮让探针自报阶段：每步先记阶段名；历史页以搜索框为准判定加载完成，
-            // 不再要求必须有“条消息”节点——列表为空本身就是一条事实（列表项数=0）。
-            var probeStage = "未开始"
-            var historyProbe = "未取到"
+            // 续诊（#1735）：历史页按 step c 设计只列专家/专家团归档会话，主对话永不进该列表——
+            // 无专家时列表项数=0 是预期行为，上轮探针看错了地方，回答不了“用户消息进没进保存记录”。
+            // 本轮直接读进程内 prefs 的 conversations_v1：当前会话记录里有没有用户文本。
+            // 记录里有用户消息 = 追加/保存侧没问题，问题在显示侧；记录里没有 = 保存侧就丢了。
+            var prefsProbe = "未取到"
             runCatching {
-                probeStage = "点菜单"
-                composeRule.onNodeWithContentDescription("菜单").performClick()
-                probeStage = "等最近对话"
-                composeRule.waitUntil(timeoutMillis = 30_000) {
-                    runCatching {
-                        composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
-                    }.isSuccess
+                val prefs = composeRule.activity.getSharedPreferences("nestro_local", 0)
+                val activeId = prefs.getString("active_conversation_id", "").orEmpty()
+                val json = prefs.getString("conversations_v1", "[]").orEmpty()
+                val records = org.json.JSONArray(json)
+                var recordFound = false
+                var savedTitle = ""
+                var savedMessageCount = -1
+                var savedUserCount = 0
+                var savedTipCount = 0
+                for (i in 0 until records.length()) {
+                    val record = records.getJSONObject(i)
+                    if (record.optString("id") != activeId) continue
+                    recordFound = true
+                    savedTitle = record.optString("title")
+                    val messagesJson = record.optJSONArray("messages") ?: org.json.JSONArray()
+                    savedMessageCount = messagesJson.length()
+                    for (j in 0 until messagesJson.length()) {
+                        val message = messagesJson.getJSONObject(j)
+                        val content = message.optString("content")
+                        if (message.optString("role") == "user" && content.contains(userPrompt)) savedUserCount++
+                        if (content.contains("还没有配置模型")) savedTipCount++
+                    }
+                    break
                 }
-                probeStage = "点最近对话"
-                composeRule.onNodeWithText("最近对话", substring = true).performClick()
-                probeStage = "等历史页加载"
-                composeRule.waitUntil(timeoutMillis = 30_000) {
-                    runCatching {
-                        composeRule.onNodeWithText("搜索会话标题与内容").assertIsDisplayed()
-                    }.isSuccess
-                }
-                probeStage = "读列表"
-                val countNodes = composeRule.onAllNodesWithText("条消息", substring = true)
-                    .fetchSemanticsNodes()
-                val firstCount = countNodes.firstOrNull()?.config
-                    // 本项目 Compose BOM 2024.12.01（1.7.x）的 SemanticsConfiguration 没有
-                    // getOrNull，改用 contains + 下标取值的老写法，否则编译报 Unresolved reference。
-                    ?.let { cfg ->
-                        if (cfg.contains(SemanticsProperties.Text)) {
-                            cfg[SemanticsProperties.Text].firstOrNull()?.text.orEmpty()
-                        } else {
-                            ""
-                        }
-                    }.orEmpty()
-                val titleHasPrompt = composeRule.onAllNodesWithText(userPrompt, substring = true)
-                    .fetchSemanticsNodes().isNotEmpty()
-                historyProbe = "列表项数=${countNodes.size}，首项条数=${firstCount.ifBlank { "无" }}，标题含用户文本=$titleHasPrompt"
-            }.onFailure { historyProbe = "探针失败于[$probeStage]：${it.message}" }
+                prefsProbe = "当前会话记录在场=$recordFound，标题=$savedTitle，保存消息数=$savedMessageCount，" +
+                    "用户消息已保存=$savedUserCount，提示已保存=$savedTipCount"
+            }.onFailure { prefsProbe = "探针失败：${it.message}" }
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
                     "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown；" +
                     "提示文本节点数=$tipNodeCount，未合并树用户文本节点数=$promptNodeCountUnmerged，" +
-                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；历史探针：$historyProbe"
+                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；保存探针：$prefsProbe"
             )
         }
 
