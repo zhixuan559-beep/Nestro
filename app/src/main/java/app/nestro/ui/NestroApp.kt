@@ -2150,7 +2150,8 @@ fun NestroApp(initialPage: String = "home") {
                     // 头像说明：设计图 01 是黑底白 N；MEMORY 2026-11-28 新定版 Logo 为白底＋蓝色立体 N＋卡皮巴拉趴在 N 上、
                     // 黑底白 N 版作废——新 Logo 素材尚未产出，这里先用白底蓝 N 扁平字作占位，素材到手后替换为 Logo 图。
                     // 另：Adrian 16:18 定——吉祥物主场就是顶栏正中这个圆润框（第 f 步把这里换成卡皮巴拉软框＋大小档位/关闭）。
-                    Row(
+                    // 改版第 e 步：通话页（设计图 09/10/11）全屏独占，不显示聊天顶栏。
+                    if (page != "call") Row(
                         Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -2195,7 +2196,8 @@ fun NestroApp(initialPage: String = "home") {
                             }
                         }
                         Surface(
-                            onClick = { page = "voice" },
+                            // 改版第 e 步：顶栏电话键进通话页（设计图 09/10/11）；语音配置页仍走资料页「电话」行。
+                            onClick = { page = "call" },
                             modifier = Modifier.size(44.dp),
                             shape = CircleShape,
                             color = Bg,
@@ -4474,6 +4476,11 @@ fun NestroApp(initialPage: String = "home") {
                             onUseChatPrompt = { prompt -> pendingCoworkbenchPrompt = prompt; draft = prompt; page = "home" }
                         )
                         "voice" -> VoiceSystemPage()
+                        "call" -> CallPage(
+                            calleeName = if (selectedExpert != "通用助手") selectedExpert else assistantDisplayName,
+                            onHangup = { page = "home" },
+                            onOpenVoiceSettings = { page = "voice" }
+                        )
                         "knowledge" -> KnowledgePage(appRuntime.knowledgeRepository, activeProjectId, readableProjectIds, writableProjectIds)
                         "skills" -> {
                             Column(Modifier.weight(1f).fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
