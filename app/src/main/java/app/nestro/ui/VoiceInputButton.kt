@@ -46,18 +46,24 @@ fun VoiceInputButton(
     enabled: Boolean,
     onResult: (String) -> Unit,
     onPartialResult: (String) -> Unit = {},
-    onStatus: (String) -> Unit = {}
+    onStatus: (String) -> Unit = {},
+    // 改版新 a 步：compact = 胶囊内嵌形态——无彩色圆底，只一个素麦克风图标（设计图 01 右端）；
+    // onRecordingStarted 供调用方计时长，语音消息气泡要显示 00:08 这类时长。
+    compact: Boolean = false,
+    onRecordingStarted: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val latestResult = rememberUpdatedState(onResult)
     val latestPartial = rememberUpdatedState(onPartialResult)
     val latestStatus = rememberUpdatedState(onStatus)
+    val latestRecordingStarted = rememberUpdatedState(onRecordingStarted)
     var phase by remember { mutableStateOf(VoicePhase.IDLE) }
     val controller = remember(context) { AndroidSpeechRecognitionController(context) }
 
     fun startRecognition() {
         phase = VoicePhase.LISTENING
+        latestRecordingStarted.value()
         latestStatus.value("正在聆听，松开结束")
         controller.start(Locale.getDefault().toLanguageTag(), object : AndroidSpeechRecognitionController.Listener {
             override fun onListening() { phase = VoicePhase.LISTENING }
@@ -92,7 +98,7 @@ fun VoiceInputButton(
     }
 
     Box(
-        modifier = Modifier.size(52.dp).scale(scale)
+        modifier = Modifier.size(if (compact) 40.dp else 52.dp).scale(scale)
             .semantics {
                 contentDescription = when (phase) {
                     VoicePhase.LISTENING -> "正在录音，松开结束"
@@ -102,7 +108,7 @@ fun VoiceInputButton(
                 role = Role.Button
                 if (!enabled) disabled()
             }
-            .background(buttonColor, CircleShape)
+            .then(if (compact) Modifier else Modifier.background(buttonColor, CircleShape))
             .pointerInput(enabled, hasPermission) {
                 detectTapGestures(onPress = {
                     if (!enabled) return@detectTapGestures
@@ -129,11 +135,20 @@ fun VoiceInputButton(
         Icon(
             if (phase == VoicePhase.LISTENING) Icons.Outlined.MicOff else Icons.Outlined.Mic,
             contentDescription = null,
-            tint = when (phase) {
-                VoicePhase.IDLE -> MaterialTheme.colorScheme.onPrimary
-                VoicePhase.LISTENING -> MaterialTheme.colorScheme.onError
-                VoicePhase.PROCESSING -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            tint = if (compact) {
+                when (phase) {
+                    VoicePhase.LISTENING -> ColorStop
+                    VoicePhase.PROCESSING -> Muted
+                    VoicePhase.IDLE -> Ink
+                }
+            } else {
+                when (phase) {
+                    VoicePhase.IDLE -> MaterialTheme.colorScheme.onPrimary
+                    VoicePhase.LISTENING -> MaterialTheme.colorScheme.onError
+                    VoicePhase.PROCESSING -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            },
+            modifier = Modifier.size(if (compact) 21.dp else 24.dp)
         )
     }
 }
