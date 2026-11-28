@@ -75,6 +75,28 @@ internal fun projectPlanChecklistItems(
     }
 
 /**
+ * 改版第 d 步（设计图 05）：干活时对话里默认只显示的状态行文案。
+ * null = 无事可显示（不忙、也无计划）；其余情况只给一行，清单默认收起、点状态行展开。
+ */
+internal fun planStatusLineText(
+    busy: Boolean,
+    plan: ExpertProjectPlan?,
+    statuses: Map<String, String>,
+    teamRunStatus: String
+): String? {
+    if (!busy && plan == null) return null
+    if (plan == null) return "正在思考…"
+    val items = projectPlanChecklistItems(plan, statuses)
+    val doneCount = items.count { it.status == "success" }
+    return when {
+        busy -> "正在处理 · ${teamRunStatus.ifBlank { "专家团干活中" }}"
+        items.isEmpty() -> "计划清单"
+        doneCount == items.size -> "已完成 · $doneCount/${items.size} 项"
+        else -> "计划清单 · 已完成 $doneCount/${items.size} 项"
+    }
+}
+
+/**
  * Owns expert editor, import/export, team editor and team-run presentation state.
  * Existing preference formats and domain execution remain unchanged.
  */
