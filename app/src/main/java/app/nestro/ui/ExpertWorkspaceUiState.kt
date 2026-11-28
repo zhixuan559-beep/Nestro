@@ -85,6 +85,8 @@ internal class ExpertWorkspaceUiState(preferences: SharedPreferences) {
     val expertPromptDraft: MutableState<String> = mutableStateOf("")
     val expertGroupDraft: MutableState<String> = mutableStateOf("默认")
     val expertAvatarDraft: MutableState<String> = mutableStateOf("✦")
+    // 改版第 b 步：创建/编辑专家时可自定义的吉祥物形象（"capybara" / ""）。
+    val expertMascotDraft: MutableState<String> = mutableStateOf("capybara")
     val expertEnabledDraft: MutableState<Boolean> = mutableStateOf(true)
     val expertSkillDraft: MutableState<Set<String>> = mutableStateOf(emptySet())
     val expertTemperatureDraft: MutableState<String> = mutableStateOf("")

@@ -136,6 +136,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -538,6 +540,7 @@ fun NestroApp(initialPage: String = "home") {
     var expertPromptDraft by expertWorkspaceUiState.expertPromptDraft
     var expertGroupDraft by expertWorkspaceUiState.expertGroupDraft
     var expertAvatarDraft by expertWorkspaceUiState.expertAvatarDraft
+    var expertMascotDraft by expertWorkspaceUiState.expertMascotDraft
     var expertEnabledDraft by expertWorkspaceUiState.expertEnabledDraft
     var expertSkillDraft by expertWorkspaceUiState.expertSkillDraft
     var expertTemperatureDraft by expertWorkspaceUiState.expertTemperatureDraft
@@ -775,6 +778,31 @@ fun NestroApp(initialPage: String = "home") {
                 .apply()
             page = "home"
         }
+    }
+
+    // 改版第 b 步：抽屉「＋」菜单与专家页共用的创建入口——只清草稿、打开对应对话框。
+    fun openCreateExpertDialog() {
+        editingExpertName = ""
+        expertDraft = ""
+        expertPromptDraft = ""
+        expertGroupDraft = "默认"
+        expertAvatarDraft = "✦"
+        expertMascotDraft = "capybara"
+        expertEnabledDraft = true
+        expertSkillDraft = emptySet()
+        expertTemperatureDraft = ""
+        expertMaxTokensDraft = ""
+        expertDescriptionDraft = ""
+        expertDialogError = ""
+        showExpertDialog = true
+    }
+
+    fun openCreateTeamDialog() {
+        editingTeamId = ""
+        teamDraftName = ""
+        teamDraftDescription = ""
+        teamDraftMembers = emptySet()
+        showTeamDialog = true
     }
     val workflowUiState = remember(prefs) { WorkflowUiState(prefs) }
 
@@ -2088,6 +2116,15 @@ fun NestroApp(initialPage: String = "home") {
                     ) {
                         NavigationDrawerContent(
                             modifier = Modifier.fillMaxSize(),
+                            assistantName = assistantDisplayName,
+                            experts = experts,
+                            expertProfiles = expertProfiles,
+                            expertTeams = expertTeams,
+                            onOpenMainChat = { page = "home"; showDrawer = false },
+                            onOpenExpertChat = { name -> openExpertChat(name); showDrawer = false },
+                            onOpenTeamChat = { teamId, teamName -> openExpertTeamChat(teamId, teamName); showDrawer = false },
+                            onCreateExpert = { showDrawer = false; openCreateExpertDialog() },
+                            onCreateTeam = { showDrawer = false; openCreateTeamDialog() },
                             onNavigate = { destination -> page = destination; showDrawer = false },
                             onClose = { showDrawer = false }
                         )
@@ -2102,6 +2139,15 @@ fun NestroApp(initialPage: String = "home") {
                         ) {
                             NavigationDrawerContent(
                                 modifier = Modifier.width(adaptiveDrawerWidth).fillMaxHeight(),
+                                assistantName = assistantDisplayName,
+                                experts = experts,
+                                expertProfiles = expertProfiles,
+                                expertTeams = expertTeams,
+                                onOpenMainChat = { page = "home"; showDrawer = false },
+                                onOpenExpertChat = { name -> openExpertChat(name); showDrawer = false },
+                                onOpenTeamChat = { teamId, teamName -> openExpertTeamChat(teamId, teamName); showDrawer = false },
+                                onCreateExpert = { showDrawer = false; openCreateExpertDialog() },
+                                onCreateTeam = { showDrawer = false; openCreateTeamDialog() },
                                 onNavigate = { destination -> page = destination; showDrawer = false },
                                 onClose = { showDrawer = false }
                             )
@@ -2142,7 +2188,7 @@ fun NestroApp(initialPage: String = "home") {
                             Surface(
                                 // 名字胶囊：点进专家页（资料页在第 c 步建成后接管这里）。
                                 onClick = { page = "experts" },
-                                modifier = Modifier.offset(y = (-7).dp),
+                                modifier = Modifier.offset(y = (-7).dp).semantics { contentDescription = "打开专家页" },
                                 shape = RoundedCornerShape(13.dp),
                                 color = Bg,
                                 border = BorderStroke(1.dp, Line),
@@ -3252,6 +3298,7 @@ fun NestroApp(initialPage: String = "home") {
                                                 val profile = expertProfiles[name] ?: ExpertProfile()
                                                 expertGroupDraft = profile.group
                                                 expertAvatarDraft = profile.avatar
+                                                expertMascotDraft = profile.mascot
                                                 expertEnabledDraft = profile.enabled
                                                 expertSkillDraft = profile.skillNames.filter { skillName ->
                                                     !projectResourceScopesReadOnly && ProjectResourceScopeStore.isVisibleFromProjects(
@@ -3338,20 +3385,7 @@ fun NestroApp(initialPage: String = "home") {
                                         }
                                     }
                                 }
-                                Button(onClick = {
-                                    editingExpertName = ""
-                                    expertDraft = ""
-                                    expertPromptDraft = ""
-                                    expertGroupDraft = "默认"
-                                    expertAvatarDraft = "✦"
-                                    expertEnabledDraft = true
-                                    expertSkillDraft = emptySet()
-                                    expertTemperatureDraft = ""
-                                    expertMaxTokensDraft = ""
-                                    expertDescriptionDraft = ""
-                                    expertDialogError = ""
-                                    showExpertDialog = true
-                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
+                                Button(onClick = { openCreateExpertDialog() }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) {
                                     Text("＋ 创建专家")
                                 }
                                 Text("专家团", color = Ink, style = MaterialTheme.typography.titleLarge)
@@ -3448,13 +3482,7 @@ fun NestroApp(initialPage: String = "home") {
                                         }
                                     }
                                 }
-                                Button(onClick = {
-                                    editingTeamId = ""
-                                    teamDraftName = ""
-                                    teamDraftDescription = ""
-                                    teamDraftMembers = emptySet()
-                                    showTeamDialog = true
-                                }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 创建专家团队") }
+                                Button(onClick = { openCreateTeamDialog() }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)) { Text("＋ 创建专家团队") }
                                 if (selectedTeamId.isNotBlank()) {
                                     OutlinedButton(onClick = {
                                         selectedTeamId = ""
@@ -5557,6 +5585,22 @@ fun NestroApp(initialPage: String = "home") {
                     OutlinedTextField(value = expertPromptDraft, onValueChange = { expertPromptDraft = it }, label = { Text("专家角色与工作要求") }, placeholder = { Text("例如：你是一位严谨的中文文案编辑，先判断目标读者，再给出可直接发布的文案。") }, minLines = 4)
                     OutlinedTextField(value = expertGroupDraft, onValueChange = { expertGroupDraft = it.take(30) }, label = { Text("分组") }, singleLine = true)
                     OutlinedTextField(value = expertAvatarDraft, onValueChange = { expertAvatarDraft = it.take(8) }, label = { Text("头像 Emoji") }, singleLine = true)
+                    // 改版第 b 步：创建专家时可自定义吉祥物形象（目前内置只有卡皮巴拉；第 f 步接完整形象系统）。
+                    Text("吉祥物形象", color = Mint, style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            onClick = { expertMascotDraft = "capybara" },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (expertMascotDraft == "capybara") Card2 else Card,
+                            border = BorderStroke(1.dp, if (expertMascotDraft == "capybara") Mint else Line)
+                        ) { Text("卡皮巴拉", modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = Ink) }
+                        Surface(
+                            onClick = { expertMascotDraft = "" },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (expertMascotDraft.isBlank()) Card2 else Card,
+                            border = BorderStroke(1.dp, if (expertMascotDraft.isBlank()) Mint else Line)
+                        ) { Text("无（只用头像）", modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = Ink) }
+                    }
                     OutlinedTextField(value = expertDescriptionDraft, onValueChange = { expertDescriptionDraft = it.take(300) }, label = { Text("专家简介") }, singleLine = false, minLines = 2)
                     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = expertEnabledDraft, onCheckedChange = { expertEnabledDraft = it }); Text("启用此专家", color = Ink) }
                     Text("挂载技能（仅启用技能可新挂载）", color = Mint, style = MaterialTheme.typography.titleSmall)
@@ -5607,6 +5651,7 @@ fun NestroApp(initialPage: String = "home") {
                     var profile = ExpertProfile(
                         group = expertGroupDraft.trim(),
                         avatar = expertAvatarDraft.trim(),
+                        mascot = expertMascotDraft.trim(),
                         enabled = expertEnabledDraft,
                         skillNames = expertSkillDraft.toList(),
                         temperature = temperature,
@@ -5830,6 +5875,7 @@ fun NestroApp(initialPage: String = "home") {
                                         expertPromptDraft = template.prompt
                                         expertGroupDraft = template.profile.group
                                         expertAvatarDraft = template.profile.avatar
+                                        expertMascotDraft = template.profile.mascot
                                         expertEnabledDraft = template.profile.enabled
                                         expertSkillDraft = template.profile.skillNames.filter { it in skills && it !in disabledSkills }.toSet()
                                         expertTemperatureDraft = template.profile.temperature?.toString().orEmpty()

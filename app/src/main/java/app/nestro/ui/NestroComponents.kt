@@ -1,14 +1,19 @@
 package app.nestro.ui
 
+import app.nestro.R
 import app.nestro.data.ChatMessage
+import app.nestro.data.ExpertProfile
 import app.nestro.data.VoiceMessageMarker
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -16,11 +21,17 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -47,22 +58,6 @@ internal fun AnimatedStatusText(
             Text(currentText, modifier = modifier, color = color, style = style, maxLines = maxLines)
         }
     }
-}
-
-@Composable
-internal fun DrawerItem(icon: String, label: String, onClick: () -> Unit) {
-    NavigationDrawerItem(
-        label = { Text("$icon   $label", color = Ink) },
-        selected = false,
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = NavigationDrawerItemDefaults.colors(
-            unselectedContainerColor = Bg,
-            unselectedTextColor = Ink,
-            selectedContainerColor = Card2,
-            selectedTextColor = Ink
-        )
-    )
 }
 
 @Composable
@@ -257,40 +252,259 @@ internal fun PickerOptionRow(title: String, subtitle: String, selected: Boolean,
     }
 }
 
+/** 设计图 02 的白色圆钮（顶栏圆钮同款：白底＋细边＋轻阴影）。 */
+@Composable
+private fun WhiteRoundButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(44.dp),
+        shape = CircleShape,
+        color = Bg,
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 2.dp
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = description, tint = Ink, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** 专家/主助手头像：有吉祥物（卡皮巴拉）显示吉祥物图，否则显示头像 Emoji 或名字首字。 */
+@Composable
+internal fun MascotAvatar(mascot: String, avatar: String, name: String, size: Dp) {
+    val mark = if (avatar.isNotBlank() && avatar != "✦") avatar else name.firstOrNull()?.toString() ?: "✦"
+    Box(
+        Modifier.size(size).background(Card2, RoundedCornerShape(32)).border(1.dp, Line, RoundedCornerShape(32)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (mascot == "capybara") {
+            Image(
+                painterResource(R.drawable.mascot_capybara),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(32)),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(mark, color = Ink, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/**
+ * 专家团图标（改版第 b 步）：成员吉祥物组合——几个小人同框挤在一个小图标里。
+ * 2×2 迷你格：每个成员一个小圆（有吉祥物显示吉祥物图，否则显示名字首字）。
+ */
+@Composable
+internal fun TeamMascotIcon(members: List<String>, profiles: Map<String, ExpertProfile>, size: Dp = 40.dp) {
+    val shown = members.take(4)
+    val mini = 19.dp
+    Box(
+        Modifier.size(size).background(Card2, RoundedCornerShape(12.dp)).border(1.dp, Line, RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            shown.chunked(2).forEach { rowMembers ->
+                Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    rowMembers.forEach { member ->
+                        val profile = profiles[member]
+                        val mark = member.firstOrNull()?.toString() ?: "✦"
+                        Box(
+                            Modifier.size(mini).background(Bg, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (profile?.mascot == "capybara") {
+                                Image(
+                                    painterResource(R.drawable.mascot_capybara),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(mark, color = Ink, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 抽屉里的一行会话入口：头像/图标＋名字，点进该会话。 */
+@Composable
+private fun DrawerChatRow(avatar: @Composable () -> Unit, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        avatar()
+        Text(label, color = Ink, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun DrawerSectionTitle(text: String) {
+    Text(
+        text,
+        color = Muted,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 9.dp)
+    )
+}
+
+/**
+ * 改版第 b 步：抽屉照设计图 02 重排——顶部搜索＋「＋」圆钮，「＋」只有创建专家、创建群聊两项；
+ * 列表 = 主助手＋专家/专家团/群聊（各自独立会话，点行进会话）；底部连接入口。
+ * 抽屉里列出全部专家（含内置三位：各有独立会话，藏起来反而找不到）；主助手固定置顶。
+ */
 @Composable
 internal fun NavigationDrawerContent(
     modifier: Modifier = Modifier,
+    assistantName: String,
+    experts: List<String>,
+    expertProfiles: Map<String, ExpertProfile>,
+    expertTeams: List<ExpertTeam>,
+    onOpenMainChat: () -> Unit,
+    onOpenExpertChat: (String) -> Unit,
+    onOpenTeamChat: (String, String) -> Unit,
+    onCreateExpert: () -> Unit,
+    onCreateTeam: () -> Unit,
     onNavigate: (String) -> Unit,
     onClose: (() -> Unit)? = null
 ) {
+    var showPlusMenu by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val query = searchQuery.trim()
+    val shownExperts = experts.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+    val shownTeams = expertTeams.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
     Column(
-        modifier.background(Bg).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier.background(Bg).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                "Nestro",
-                style = MaterialTheme.typography.titleLarge,
-                color = Ink,
-                modifier = Modifier.weight(1f)
-            )
-            if (onClose != null) {
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Outlined.Close, contentDescription = "关闭菜单", tint = Ink)
+            WhiteRoundButton(Icons.Outlined.Search, "搜索") {
+                searchOpen = !searchOpen
+                if (!searchOpen) searchQuery = ""
+            }
+            Box {
+                WhiteRoundButton(Icons.Outlined.Add, "新建") { showPlusMenu = true }
+                DropdownMenu(expanded = showPlusMenu, onDismissRequest = { showPlusMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("创建专家") },
+                        leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, tint = Ink) },
+                        onClick = { showPlusMenu = false; onCreateExpert() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("创建群聊") },
+                        leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null, tint = Ink) },
+                        onClick = { showPlusMenu = false; onCreateTeam() }
+                    )
                 }
             }
         }
+        if (searchOpen) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("搜索专家与群聊") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+            )
+        }
         Spacer(Modifier.height(12.dp))
-        DrawerItem("＋", "新建对话") { onNavigate("home") }
-        DrawerItem("◷", "最近对话") { onNavigate("conversations") }
-        DrawerItem("▣", "项目空间") { onNavigate("spaces") }
-        HorizontalDivider(color = Line)
-        DrawerItem("✧", "专家与专家团") { onNavigate("experts") }
-        DrawerItem("⌘", "工具与扩展") { onNavigate("tools") }
-        DrawerItem("⚙", "设置") { onNavigate("settings") }
+        Surface(
+            onClick = onOpenMainChat,
+            color = Card2,
+            shape = RoundedCornerShape(15.dp),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "主助手对话" }
+        ) {
+            Row(
+                Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MascotAvatar(mascot = "capybara", avatar = "✦", name = assistantName, size = 40.dp)
+                Text(
+                    "$assistantName（主助手）",
+                    color = Ink,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                )
+            }
+        }
+        DrawerSectionTitle("我的专家")
+        shownExperts.forEach { name ->
+            val profile = expertProfiles[name]
+            DrawerChatRow(
+                avatar = { MascotAvatar(mascot = profile?.mascot ?: "capybara", avatar = profile?.avatar ?: "✦", name = name, size = 40.dp) },
+                label = name,
+                onClick = { onOpenExpertChat(name) }
+            )
+        }
+        shownTeams.forEach { team ->
+            DrawerChatRow(
+                avatar = { TeamMascotIcon(members = team.members, profiles = expertProfiles) },
+                label = team.name,
+                onClick = { onOpenTeamChat(team.id, team.name) }
+            )
+        }
+        if (query.isNotBlank() && shownExperts.isEmpty() && shownTeams.isEmpty()) {
+            Text("没有匹配的专家或群聊", color = Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+        }
+        DrawerSectionTitle("连接")
+        DrawerChatRow(
+            avatar = {
+                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Link, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+                }
+            },
+            label = "连接你的应用",
+            onClick = { onNavigate("tools") }
+        )
+        DrawerChatRow(
+            avatar = {
+                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Call, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+                }
+            },
+            label = "通讯应用",
+            onClick = { onNavigate("phone-agent") }
+        )
+        // 过渡组：第 c 步资料页建成后移除——在此之前，最近对话/项目空间/设置仍走抽屉进，
+        // 避免改版中途功能失联；工具与扩展已由「连接你的应用」接管，专家与专家团由顶栏名字胶囊接管。
+        DrawerSectionTitle("更多")
+        DrawerChatRow(
+            avatar = {
+                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("◷", color = Ink, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            label = "最近对话",
+            onClick = { onNavigate("conversations") }
+        )
+        DrawerChatRow(
+            avatar = {
+                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("▣", color = Ink, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            label = "项目空间",
+            onClick = { onNavigate("spaces") }
+        )
+        DrawerChatRow(
+            avatar = {
+                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("⚙", color = Ink, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            label = "设置",
+            onClick = { onNavigate("settings") }
+        )
         Spacer(Modifier.height(12.dp))
         Text("本地优先 · 免注册", color = Muted, style = MaterialTheme.typography.labelSmall)
     }
