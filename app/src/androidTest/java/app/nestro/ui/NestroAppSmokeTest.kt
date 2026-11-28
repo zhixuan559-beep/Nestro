@@ -314,12 +314,19 @@ class NestroAppSmokeTest {
                 roomProbe = "当前会话id=$activeId，Room记录在场=${savedMessages != null}，保存消息数=${saved.size}，" +
                     "用户消息已保存=$savedUserCount，提示已保存=$savedTipCount"
             }.onFailure { roomProbe = "探针失败：${it.message}" }
+            // 续诊（#1737）：Room 已证实 3 条用户消息入库，保存侧无问题；但语义树里用户文本节点为 0、
+            // 提示为 1、空态不在——显示侧仍未定性。把整棵语义树快照进失败信息，看看到底哪些文本在树上：
+            // 是只有提示没有用户（messages 丢了用户消息）、还是旧会话的长列表（恢复盖回了旧会话）、
+            // 还是提示来自抽屉预览等别的节点。只改测试，不动生产代码。
+            val treeDump = runCatching {
+                composeRule.onRoot().printToString().replace("\n", " | ").take(6000)
+            }.getOrDefault("树快照失败")
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
                     "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown；" +
                     "提示文本节点数=$tipNodeCount，未合并树用户文本节点数=$promptNodeCountUnmerged，" +
-                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；Room探针：$roomProbe"
+                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；Room探针：$roomProbe；语义树：$treeDump"
             )
         }
 
