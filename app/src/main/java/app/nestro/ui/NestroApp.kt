@@ -26,6 +26,7 @@ import app.nestro.data.ProjectAccessControlStore
 import app.nestro.data.ProjectResourceKind
 import app.nestro.data.ProjectMemorySettingsStore
 import app.nestro.data.ArtifactStore
+import app.nestro.data.AutoBackupScheduler
 import app.nestro.media.MediaProjectStore
 import app.nestro.media.MediaEditorPage
 import app.nestro.data.KnowledgeDocumentEntity
@@ -313,6 +314,8 @@ fun NestroApp(initialPage: String = "home") {
         }
     }
     var appearanceMode by remember(prefs) { mutableStateOf(prefs.getString("appearance_mode_v1", "system") ?: "system") }
+    // 改版第 c 步：自动备份开关（资料页一个开关，全自动；默认开，与设计图 03 的开关状态一致）。
+    var autoBackupEnabled by remember(prefs) { mutableStateOf(AutoBackupScheduler.isEnabled(context)) }
     var customBgHex by remember(prefs) { mutableStateOf(prefs.getString("appearance_custom_bg_v1", "#FFFFFF") ?: "#FFFFFF") }
     val modelRepository = remember { appRuntime.modelConfigurationRepository }
     val modelUiState = remember(prefs, modelRepository) {
@@ -2186,9 +2189,9 @@ fun NestroApp(initialPage: String = "home") {
                                 Text("N", color = Color(0xFF2F7DF6), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold))
                             }
                             Surface(
-                                // 名字胶囊：点进专家页（资料页在第 c 步建成后接管这里）。
-                                onClick = { page = "experts" },
-                                modifier = Modifier.offset(y = (-7).dp).semantics { contentDescription = "打开专家页" },
+                                // 改版第 c 步：名字胶囊点进资料页（设计图 03）；专家页改走资料页里的「专家」行。
+                                onClick = { page = "profile" },
+                                modifier = Modifier.offset(y = (-7).dp).semantics { contentDescription = "打开资料页" },
                                 shape = RoundedCornerShape(13.dp),
                                 color = Bg,
                                 border = BorderStroke(1.dp, Line),
@@ -2546,6 +2549,36 @@ fun NestroApp(initialPage: String = "home") {
                                 PhoneAgentPreviewWindow(session, onExpand = { page = "phone-agent" })
                             }
                             }
+                        }
+                        // 改版第 c 步：资料页（设计图 03）——模型与用量、专家、技能、应用、电话、
+                        // 电脑（虚拟屏）、自动化、记忆、文件、自动备份、设置，外加最近对话/项目空间。
+                        "profile" -> {
+                            val activeUsage = modelUsage[activeModelProfileId]
+                            val modelSubtitle = when {
+                                config.model.isBlank() -> "还没配置模型"
+                                activeUsage != null && activeUsage.requests > 0 -> "${config.model} · 已请求 ${activeUsage.requests} 次"
+                                else -> config.model
+                            }
+                            val connectedAppCount = remember(page) {
+                                appRuntime.mcpToolCenterRepository.listServers().count { it.enabled }
+                            }
+                            ProfilePage(
+                                assistantName = assistantDisplayName,
+                                mascot = "capybara",
+                                modelSubtitle = modelSubtitle,
+                                expertCount = experts.size,
+                                skillCount = skills.size,
+                                connectedAppCount = connectedAppCount,
+                                workflowCount = workflows.size,
+                                projectId = activeProjectId,
+                                autoBackupEnabled = autoBackupEnabled,
+                                onAutoBackupChange = { enabled ->
+                                    autoBackupEnabled = enabled
+                                    prefs.edit().putBoolean(AutoBackupScheduler.PREF_KEY, enabled).apply()
+                                    AutoBackupScheduler.ensureScheduled(context)
+                                },
+                                onNavigate = { destination -> page = destination }
+                            )
                         }
                         "tools" -> ToolsDirectoryPage(onNavigate = { destination -> page = destination })
                         "comparison" -> ModelComparisonPage(
