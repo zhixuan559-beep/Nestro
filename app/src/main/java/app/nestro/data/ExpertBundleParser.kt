@@ -14,9 +14,10 @@ data class ExpertBundle(
     val enabled: Boolean = true,
     val skillNames: List<String> = emptyList(),
     val temperature: Double? = null,
-    val maxTokens: Int? = null
+    val maxTokens: Int? = null,
+    val mascot: String = "capybara"
 ) {
-    fun profile(): ExpertProfile = ExpertProfile(group, avatar, enabled, skillNames, temperature, maxTokens, description, version, source)
+    fun profile(): ExpertProfile = ExpertProfile(group, avatar, enabled, skillNames, temperature, maxTokens, description, version, source, mascot)
 }
 
 object ExpertBundleParser {
@@ -37,6 +38,7 @@ object ExpertBundleParser {
         val skillNames = (0 until skillArray.length()).map { skillArray.getString(it).trim() }.distinct()
         val temperature = if (json.has("temperature") && !json.isNull("temperature")) json.optDouble("temperature") else null
         val maxTokens = if (json.has("max_tokens") && !json.isNull("max_tokens")) json.optInt("max_tokens") else null
+        val mascot = json.optString("mascot", "capybara").trim().take(20).takeIf { it.isBlank() || it == "capybara" } ?: "capybara"
         require(name.isNotBlank() && name.length <= 40) { "专家名称无效" }
         require(version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?"))) { "专家版本必须使用语义版本格式" }
         require(description.length <= 300) { "专家描述不能超过 300 个字符" }
@@ -45,7 +47,7 @@ object ExpertBundleParser {
         require(skillNames.all { it.isNotBlank() && it.length <= 40 }) { "专家挂载技能名称无效" }
         require(temperature == null || (temperature.isFinite() && temperature in 0.0..2.0)) { "Temperature 必须在 0 到 2 之间" }
         require(maxTokens == null || maxTokens in 1..32768) { "最大输出 Token 必须在 1 到 32768 之间" }
-        return ExpertBundle(name, version, description, prompt, source, group, avatar, enabled, skillNames, temperature, maxTokens)
+        return ExpertBundle(name, version, description, prompt, source, group, avatar, enabled, skillNames, temperature, maxTokens, mascot)
     }
 
     fun exportJson(name: String, prompt: String, description: String = "", profile: ExpertProfile = ExpertProfile()): String {
@@ -60,6 +62,7 @@ object ExpertBundleParser {
             .put("source", profile.source.ifBlank { "Nestro 本地专家" })
             .put("group", profile.group)
             .put("avatar", profile.avatar)
+            .put("mascot", profile.mascot)
             .put("enabled", profile.enabled)
             .put("skills", JSONArray(profile.skillNames))
             .put("temperature", profile.temperature)

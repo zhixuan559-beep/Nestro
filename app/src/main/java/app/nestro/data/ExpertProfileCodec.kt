@@ -12,7 +12,10 @@ data class ExpertProfile(
     val maxTokens: Int? = null,
     val description: String = "",
     val version: String = "1.0.0",
-    val source: String = "Nestro 本地专家"
+    val source: String = "Nestro 本地专家",
+    // 吉祥物形象 key：改版第 b 步新增（"capybara" = 卡皮巴拉，"" = 无吉祥物、只用头像）。
+    // 第 f 步的虚拟形象系统复用同一字段；旧数据缺省按 "capybara" 解码。
+    val mascot: String = "capybara"
 )
 
 object ExpertProfileCodec {
@@ -35,7 +38,8 @@ object ExpertProfileCodec {
                     maxTokens = maxTokens?.takeIf { it in 1..32768 },
                     description = item.optString("description").take(300),
                     version = item.optString("version", "1.0.0").take(40),
-                    source = item.optString("source", "Nestro 本地专家").take(200)
+                    source = item.optString("source", "Nestro 本地专家").take(200),
+                    mascot = item.optString("mascot", "capybara").take(20).takeIf { it.isBlank() || it == "capybara" } ?: "capybara"
                 ))
             }
         }
@@ -52,7 +56,8 @@ object ExpertProfileCodec {
                 .put("maxTokens", profile.maxTokens)
                 .put("description", profile.description)
                 .put("version", profile.version)
-                .put("source", profile.source))
+                .put("source", profile.source)
+                .put("mascot", profile.mascot))
         }
     }.toString()
 
@@ -60,6 +65,7 @@ object ExpertProfileCodec {
         if (profile.group.isBlank() || profile.group.length > 30) return "专家分组必须为 1 到 30 个字符"
         if (!profile.version.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+([+-][A-Za-z0-9.-]+)?")) || profile.source.length > 200) return "专家版本或来源信息无效"
         if (profile.avatar.isBlank() || profile.avatar.length > 8) return "头像标识无效"
+        if (profile.mascot.isNotBlank() && profile.mascot != "capybara") return "吉祥物选择无效"
         if (profile.skillNames.size > 20 || profile.skillNames.any { it !in availableSkills }) return "挂载技能不存在，请重新选择"
         if (profile.temperature != null && (!profile.temperature.isFinite() || profile.temperature !in 0.0..2.0)) return "Temperature 必须在 0 到 2 之间"
         if (profile.maxTokens != null && profile.maxTokens !in 1..32768) return "最大输出 Token 必须在 1 到 32768 之间"
