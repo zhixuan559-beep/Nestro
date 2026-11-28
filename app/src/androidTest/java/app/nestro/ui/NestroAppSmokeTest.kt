@@ -36,7 +36,8 @@ class NestroAppSmokeTest {
     @Test
     fun opensConversationHistoryFromAccessibleNavigationDrawer() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("最近对话", substring = true).performClick()
+        // 改版第 b 步：「最近对话」收进抽屉底部的「更多」组，需先滚到可见再点。
+        composeRule.onNodeWithText("最近对话", substring = true).performScrollTo().performClick()
 
         composeRule.onNodeWithText("搜索会话标题与内容").assertIsDisplayed()
         composeRule.onNodeWithText("＋ 新建对话").assertIsDisplayed()
@@ -45,7 +46,8 @@ class NestroAppSmokeTest {
     @Test
     fun systemBackReturnsFromToolPageToChat() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("工具与扩展", substring = false).assertIsDisplayed()
         composeRule.onNodeWithText("模型管理").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
@@ -69,21 +71,22 @@ class NestroAppSmokeTest {
     @Test
     fun systemBackClosesNavigationDrawerWithoutLeavingChat() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
+        // 改版第 b 步：抽屉顶上是主助手与「我的专家」，用它判定抽屉开合。
+        composeRule.onNodeWithText("我的专家", substring = true).assertIsDisplayed()
 
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
 
         composeRule.onNodeWithText("有什么可以帮忙？").assertIsDisplayed()
-        composeRule.onNodeWithText("最近对话", substring = true).assertIsNotDisplayed()
+        composeRule.onNodeWithText("我的专家", substring = true).assertIsNotDisplayed()
     }
 
     @Test
     fun toolsDirectoryListsEveryManagementDestination() {
-        // 改版新 a 步：顶栏工具入口已撤，工具目录改走左侧抽屉。
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
 
         listOf(
             "模型管理",
@@ -118,7 +121,8 @@ class NestroAppSmokeTest {
     @Test
     fun opensVoiceInputGuidanceFromToolsDirectory() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("语音", substring = false).performClick()
 
         composeRule.onNodeWithText("语音输入与输出").assertIsDisplayed()
@@ -132,14 +136,16 @@ class NestroAppSmokeTest {
     @Test
     fun opensKnowledgeBaseAndReturnsToNewConversation() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         // “知识库”是工具页第 11 个入口，手机屏下在折叠线以下：直接点按会把触摸注到屏外坐标、被静默丢弃，
         // 页面切不过去（#1645 即因此在 :118 找不到“本地知识库”节点）。先滚到可见再点（同文件 :85/:93 既有模式）。
         composeRule.onNodeWithText("知识库", substring = false).performScrollTo().performClick()
 
         composeRule.onNodeWithText("本地知识库").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("新建对话", substring = true).performClick()
+        // 改版第 b 步：抽屉里不再有「新建对话」行，点主助手行回主对话。
+        composeRule.onNodeWithText("小轩（主助手）", substring = true).performClick()
         // 改版新 a 步：顶栏标题「Nestro」已撤，用只在对话页出现的输入框占位文案判定已回到对话页。
         composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
     }
@@ -147,7 +153,8 @@ class NestroAppSmokeTest {
     @Test
     fun opensWorkflowAndSettingsDestinations() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("工作流", substring = false).performClick()
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
         composeRule.onNodeWithText("自动调度").performClick()
@@ -156,16 +163,17 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("工作流").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("设置", substring = true).performClick()
+        // 改版第 b 步：「设置」收进抽屉底部的「更多」组，需先滚到可见再点。
+        composeRule.onNodeWithText("设置", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("设置", substring = false).assertIsDisplayed()
         composeRule.onNodeWithText("本地数据备份").assertIsDisplayed()
     }
 
     @Test
     fun modelSettingsCanBeOpenedFromToolsDirectory() {
-        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        // 改版第 b 步：模型管理改走抽屉底部「连接你的应用」→ 工具目录。
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
     }
@@ -204,13 +212,14 @@ class NestroAppSmokeTest {
         // 节点未合成时 waitUntil 里的 performScrollTo 永远找不到它，盲重发也救不回来；
         // 先开一个全新空会话再发送，提示就是列表里唯二的消息之一，不依赖滚动也能直接显示。
         // 注意抽屉里的「新建对话」只回首页不建会话，要去「最近对话」页点「＋ 新建对话」按钮才建空会话。
+        // 改版第 b 步：「最近对话」收进抽屉底部的「更多」组，需先滚到可见再点。
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
+                composeRule.onNodeWithText("我的专家", substring = true).assertIsDisplayed()
             }.isSuccess
         }
-        composeRule.onNodeWithText("最近对话", substring = true).performClick()
+        composeRule.onNodeWithText("最近对话", substring = true).performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
                 composeRule.onNodeWithText("＋ 新建对话").assertIsDisplayed()
@@ -351,9 +360,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun modelConfigurationFormShowsValidationInsteadOfSavingIncompleteData() {
-        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        // 改版第 b 步：模型管理改走抽屉底部「连接你的应用」→ 工具目录。
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
 
@@ -364,9 +373,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun modelConnectionTestStaysDisabledUntilRequiredFieldsAreProvided() {
-        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        // 改版第 b 步：模型管理改走抽屉底部「连接你的应用」→ 工具目录。
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
 
         composeRule.onNodeWithText("测试当前编辑配置")
@@ -398,8 +407,8 @@ class NestroAppSmokeTest {
 
     @Test
     fun expertTemplateLibraryShowsBuiltInsAndFiltersBySearch() {
-        composeRule.onNodeWithContentDescription("菜单").performClick()
-        composeRule.onNodeWithText("专家与专家团", substring = true).performScrollTo().performClick()
+        // 改版第 b 步：专家页改走顶栏名字胶囊，抽屉里不再有「专家与专家团」行。
+        composeRule.onNodeWithContentDescription("打开专家页").performClick()
         composeRule.onNodeWithText("模板库").performClick()
 
         // 计数行在弹窗可滚动列内，可能位于折叠线以下；先滚到可见再断言。
@@ -426,7 +435,8 @@ class NestroAppSmokeTest {
     fun phoneAgentIsNotExposedAsPrimaryNavigationDestination() {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
-        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
+        // 改版第 b 步：工具目录改走抽屉底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
     }
 

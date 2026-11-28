@@ -38,13 +38,13 @@ class NestroWindowSizeTest {
         }
 
         val destinations = listOf(
-            // 「新建对话」即对话页：不用空态标题判定——套件里先跑的测试可能已留存消息，恢复后空态标题不再出现；
+            // 改版第 b 步：抽屉按设计图 02 重排——主助手行回对话页；「最近对话/项目空间/设置」
+            // 收进底部「更多」组；工具目录改走「连接你的应用」。「新建对话」行已撤（主助手行即对话页）。
             // 输入框占位文案只在对话页出现，用它判定已进对话页，不受残留消息影响。
-            "新建对话" to "长按说话，轻触输入",
+            "小轩（主助手）" to "长按说话，轻触输入",
             "最近对话" to "对话历史",
             "项目空间" to "项目空间",
-            "专家与专家团" to "专家与专家团",
-            "工具与扩展" to "工具与扩展",
+            "连接你的应用" to "工具与扩展",
             "设置" to "设置"
         )
 
@@ -66,6 +66,15 @@ class NestroWindowSizeTest {
                 }
                 composeRule.onNodeWithText(pageTitle, substring = false).assertIsDisplayed()
             }
+            // 专家页改走顶栏名字胶囊（第 b 步）：抽屉里不再有「专家与专家团」行。
+            composeRule.onNodeWithContentDescription("打开专家页").performClick()
+            composeRule.waitForIdle()
+            composeRule.waitUntil(timeoutMillis = 30_000) {
+                runCatching {
+                    composeRule.onNodeWithText("专家与专家团", substring = false).assertIsDisplayed()
+                }.isSuccess
+            }
+            composeRule.onNodeWithText("专家与专家团", substring = false).assertIsDisplayed()
         }
     }
 
@@ -84,8 +93,10 @@ class NestroWindowSizeTest {
             composeRule.onNodeWithContentDescription("菜单").performClick()
             composeRule.onAllNodesWithText("手机自动化").assertCountEquals(0)
             composeRule.onAllNodesWithText("日历").assertCountEquals(0)
-            composeRule.onNodeWithText("工具与扩展", substring = true).assertIsDisplayed()
-            composeRule.onNodeWithContentDescription("关闭菜单").performClick()
+            // 改版第 b 步：抽屉里不再有「工具与扩展」行，工具目录改走「连接你的应用」；
+            // 抽屉无独立关闭钮，点菜单圆钮收起（showDrawer 取反）。
+            composeRule.onNodeWithText("连接你的应用", substring = true).assertIsDisplayed()
+            composeRule.onNodeWithContentDescription("菜单").performClick()
         }
     }
 }
