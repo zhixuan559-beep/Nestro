@@ -32,11 +32,29 @@ class SkillLibraryInteractionTest {
         // 抽屉菜单已无“技能库”项：经“工具与扩展”→“Skills”进入技能库页。
         // 抽屉项文本带图标前缀（"⌘   工具与扩展"），精确匹配不到，必须用 substring。
         composeRule.onNodeWithText("工具与扩展", substring = true).performScrollTo().performClick()
+        // 先等工具目录页真正落位再点 “Skills”：抽屉关闭有 160ms 真实延时（LaunchedEffect delay），
+        // 目录页未挂载时点入口会落空；“模型管理”只在目录页出现，可作落位信号。
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("模型管理").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText("Skills").performScrollTo().performClick()
         // #1749：performScrollTo() 本身要求节点已在语义树里；切页过渡未完成时节点还不存在，
         // 直接滚会抛“could not find any node”（:39）。先等节点出现，再滚、再等可见。
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithText("本地技能库").fetchSemanticsNodes().isNotEmpty()
+        // #1750：标题 10 秒未出现——切页点击偶发被吞（布局未稳时点中行间空隙），不是标题不存在；
+        // 标题未出现且 “Skills” 入口仍在时重点击，最多 3 次；三次都等不到才让后继断言报失败。
+        var titleSeen = false
+        var attempts = 0
+        while (!titleSeen && attempts < 3) {
+            attempts++
+            titleSeen = runCatching {
+                composeRule.waitUntil(timeoutMillis = 10_000) {
+                    composeRule.onAllNodesWithText("本地技能库").fetchSemanticsNodes().isNotEmpty()
+                }
+                true
+            }.getOrDefault(false)
+            if (!titleSeen && composeRule.onAllNodesWithText("Skills").fetchSemanticsNodes().isNotEmpty()) {
+                composeRule.onNodeWithText("Skills").performScrollTo().performClick()
+            }
         }
         composeRule.onNodeWithText("本地技能库").performScrollTo()
         composeRule.waitUntil(timeoutMillis = 10_000) {
