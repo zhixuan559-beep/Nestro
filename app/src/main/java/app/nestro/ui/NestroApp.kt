@@ -209,68 +209,55 @@ private fun SettingsRow(title: String, subtitle: String, onClick: () -> Unit) {
     HorizontalDivider(color = Line)
 }
 
-// 改版第 d 步：专家团过程清单（学 Manus）——计划先列、逐项打勾、标明负责专家；
-// 输入框上方一条可展开的进度条，平时收起只留进度。状态复用既有 teamMemberStatuses，
-// 不另起执行状态源；标题取工作包指令首行，单色纪律内只用 Ink/Muted/Mint。
+// 改版第 d 步（设计图 05）：专家团过程清单（学 Manus）——对话里干活时默认只显示
+// 状态行，计划清单收成可展开的一条；展开后是灰底圆角卡片里的实时打勾清单：
+// 完成=黑底白勾、进行中=黑边空心圆、待执行=灰边空心圆＋灰字；状态复用既有
+// teamMemberStatuses，不另起执行状态源；标题取工作包指令首行，单色纪律内只用 Ink/Muted/Line。
 @Composable
 private fun ProjectPlanChecklistCard(
     plan: ExpertProjectPlan,
     statuses: Map<String, String>,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val items = projectPlanChecklistItems(plan, statuses)
-    val doneCount = items.count { it.status == "success" }
     Surface(
         color = Card2,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         modifier = modifier
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { onToggleExpanded() },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("计划清单 · 已完成 $doneCount/${items.size}", color = Ink, style = MaterialTheme.typography.labelMedium)
-                    LinearProgressIndicator(
-                        progress = if (items.isEmpty()) 0f else doneCount.toFloat() / items.size,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Mint,
-                        trackColor = Line
+        Column(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 8.dp)) {
+            items.forEachIndexed { index, item ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(11.dp)
+                ) {
+                    when (item.status) {
+                        "success" -> Box(
+                            Modifier.size(20.dp).background(Ink, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Check, contentDescription = "已完成", tint = Color.White, modifier = Modifier.size(11.dp))
+                        }
+                        "running" -> Box(
+                            Modifier.size(20.dp).background(Color.White, CircleShape).border(2.dp, Ink, CircleShape)
+                        )
+                        "failed" -> Icon(Icons.Outlined.ErrorOutline, contentDescription = "失败", tint = ColorStop, modifier = Modifier.size(20.dp))
+                        "blocked" -> Icon(Icons.Outlined.PauseCircleOutline, contentDescription = "等待依赖", tint = Muted, modifier = Modifier.size(20.dp))
+                        else -> Box(
+                            Modifier.size(20.dp).background(Color.White, CircleShape).border(2.dp, Line, CircleShape)
+                        )
+                    }
+                    Text(
+                        item.title,
+                        color = if (item.status == "waiting") Muted else Ink,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-                Icon(
-                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = if (expanded) "收起清单" else "展开清单",
-                    tint = Muted
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(6.dp))
-                items.forEach { item ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        when (item.status) {
-                            "success" -> Icon(Icons.Outlined.CheckCircle, contentDescription = "已完成", tint = Mint, modifier = Modifier.size(18.dp))
-                            "running" -> CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Mint, strokeWidth = 2.dp)
-                            "failed" -> Icon(Icons.Outlined.ErrorOutline, contentDescription = "失败", tint = ColorStop, modifier = Modifier.size(18.dp))
-                            "blocked" -> Icon(Icons.Outlined.PauseCircleOutline, contentDescription = "等待依赖", tint = Muted, modifier = Modifier.size(18.dp))
-                            else -> Icon(Icons.Outlined.RadioButtonUnchecked, contentDescription = "待执行", tint = Muted, modifier = Modifier.size(18.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(item.title, color = Ink, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                "${item.memberName} · ${when (item.status) { "success" -> "已完成"; "running" -> "进行中"; "failed" -> "失败"; "blocked" -> "等待依赖"; else -> "待执行" }}",
-                                color = Muted, style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                }
+                if (index < items.lastIndex) HorizontalDivider(color = Line)
             }
         }
     }
@@ -584,7 +571,7 @@ fun NestroApp(initialPage: String = "home") {
     var teamMemberStatuses by expertWorkspaceUiState.teamMemberStatuses
     var activeProjectPlan by expertWorkspaceUiState.activeProjectPlan
     var activeProjectPlanConversationId by expertWorkspaceUiState.activeProjectPlanConversationId
-    var planChecklistExpanded by remember { mutableStateOf(true) }
+    var planChecklistExpanded by remember { mutableStateOf(false) }
 
     fun toggleExpertTeamPause() {
         if (expertTeamPauseController.isPaused()) {
@@ -2361,29 +2348,52 @@ fun NestroApp(initialPage: String = "home") {
                                         )
                                     }
                                     item {
+                                        // 改版第 d 步（设计图 05）：干活时对话里默认只显示这一条状态行；
+                                        // 有计划时点状态行展开/收起清单（默认收起），清单在状态行下方展开；
+                                        // 干活结束计划还在时状态行留作「已完成 · x/y 项」，下一条派活才清掉。
+                                        val visibleProjectPlan = activeProjectPlan
+                                        val planForConversation = visibleProjectPlan?.takeIf { activeProjectPlanConversationId == activeConversationId }
                                         AnimatedVisibility(
-                                            visible = busy,
+                                            visible = busy || planForConversation != null,
                                             enter = fadeIn(tween(NestroMotion.FADE_IN)) + expandVertically(animationSpec = tween(NestroMotion.FADE_IN)),
                                             exit = fadeOut(tween(NestroMotion.FAST_OUT)) + shrinkVertically(animationSpec = tween(NestroMotion.FAST_OUT))
                                         ) {
-                                            // 忙碌行：顶栏搬下来的专家团状态与暂停按钮也落在这里（第 d 步再收成状态行）。
-                                            Row(
-                                                Modifier.fillMaxWidth().padding(10.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Text("正在思考…", color = Mint)
-                                                if (teamRunStatus.isNotBlank()) {
+                                            Column(Modifier.fillMaxWidth()) {
+                                                Row(
+                                                    Modifier.fillMaxWidth()
+                                                        .then(if (planForConversation != null) Modifier.clickable { planChecklistExpanded = !planChecklistExpanded } else Modifier)
+                                                        .padding(horizontal = 2.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Box(Modifier.size(7.dp).background(if (busy) Ink else Muted, CircleShape))
                                                     Text(
-                                                        teamRunStatus,
-                                                        color = Mint,
-                                                        style = MaterialTheme.typography.labelSmall,
+                                                        text = planStatusLineText(busy, planForConversation, teamMemberStatuses, teamRunStatus) ?: "正在思考…",
+                                                        color = Muted,
+                                                        style = MaterialTheme.typography.bodySmall,
                                                         maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
                                                         modifier = Modifier.weight(1f)
                                                     )
-                                                    TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                                                        Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                    if (busy && teamRunStatus.isNotBlank()) {
+                                                        TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                            Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                        }
                                                     }
+                                                    if (planForConversation != null) {
+                                                        Text(
+                                                            if (planChecklistExpanded) "收起 ▴" else "展开 ▾",
+                                                            color = Muted,
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
+                                                }
+                                                if (planForConversation != null && planChecklistExpanded) {
+                                                    ProjectPlanChecklistCard(
+                                                        plan = planForConversation,
+                                                        statuses = teamMemberStatuses,
+                                                        modifier = Modifier.fillMaxWidth().padding(bottom = 11.dp)
+                                                    )
                                                 }
                                             }
                                         }
@@ -2401,16 +2411,8 @@ fun NestroApp(initialPage: String = "home") {
                                 }
                             }
                             Column(Modifier.fillMaxWidth().animateContentSize().imePadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                val visibleProjectPlan = activeProjectPlan
-                                if (visibleProjectPlan != null && activeProjectPlanConversationId == activeConversationId) {
-                                    ProjectPlanChecklistCard(
-                                        plan = visibleProjectPlan,
-                                        statuses = teamMemberStatuses,
-                                        expanded = planChecklistExpanded,
-                                        onToggleExpanded = { planChecklistExpanded = !planChecklistExpanded },
-                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                                    )
-                                }
+                                // 改版第 d 步：计划清单已收进对话流里的状态行（见 LazyColumn 末尾的状态行 item），
+                                // 输入框上方不再挂任何常驻板块。
                                 // 改版新 a 步（设计图 01/01b/07）：输入区只剩一根长胶囊——左＋、中占位/输入、右麦克风；
                                 // 打字后发送键冒出（01b），语音录完自动发；空间/模型/思考档位三个快捷片移出底栏
                                 // （空间与模型走抽屉/设置页，思考档位收进专家页与高级设置——第 c 步落位）。
