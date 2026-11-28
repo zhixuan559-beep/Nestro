@@ -50,7 +50,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("工具与扩展", substring = false).assertIsDisplayed()
         composeRule.onNodeWithText("模型管理").performClick()
-        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+        composeRule.onNodeWithText("用哪家模型").assertIsDisplayed()
 
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
@@ -173,10 +173,28 @@ class NestroAppSmokeTest {
     @Test
     fun modelSettingsCanBeOpenedFromToolsDirectory() {
         // 改版第 b 步：模型管理改走抽屉底部「连接你的应用」→ 工具目录。
+        // 改版第 c 步续（设计图 04）：模型页第一层标题是「用哪家模型」。
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
-        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+        composeRule.onNodeWithText("用哪家模型").assertIsDisplayed()
+    }
+
+    @Test
+    fun modelFirstLayerShowsProvidersKeyUsageAndAdvanced() {
+        // 改版第 c 步续（设计图 04）：第一层只留服务商、Key、用量与高级设置入口。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
+        composeRule.onNodeWithText("模型管理").performClick()
+        composeRule.onNodeWithText("用哪家模型", substring = false).assertIsDisplayed()
+        composeRule.onNodeWithText("服务商", substring = false).assertIsDisplayed()
+        composeRule.onNodeWithText("DeepSeek", substring = false).assertIsDisplayed()
+        composeRule.onNodeWithText("API Key", substring = false).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("用量", substring = false).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("累计成功请求", substring = false).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("高级设置", substring = false).performScrollTo().performClick()
+        composeRule.onNodeWithText("高级设置", substring = false).assertIsDisplayed()
+        composeRule.onNodeWithText("保存模型配置").performScrollTo().assertIsDisplayed()
     }
 
 
@@ -378,7 +396,9 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
-        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+        composeRule.onNodeWithText("用哪家模型").assertIsDisplayed()
+        // 改版第 c 步续（设计图 04）：保存配置表单沉到「高级设置」。
+        composeRule.onNodeWithText("高级设置", substring = false).performScrollTo().performClick()
 
         composeRule.onNodeWithText("保存模型配置").performScrollTo().performClick()
 
@@ -388,9 +408,11 @@ class NestroAppSmokeTest {
     @Test
     fun modelConnectionTestStaysDisabledUntilRequiredFieldsAreProvided() {
         // 改版第 b 步：模型管理改走抽屉底部「连接你的应用」→ 工具目录。
+        // 改版第 c 步续（设计图 04）：连接测试沉到「高级设置」。
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("模型管理").performClick()
+        composeRule.onNodeWithText("高级设置", substring = false).performScrollTo().performClick()
 
         composeRule.onNodeWithText("测试当前编辑配置")
             .performScrollTo()
