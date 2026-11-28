@@ -1190,6 +1190,8 @@ class NestroApplication : Application() {
         super.onCreate()
         applicationScope.launch {
             ensureBackupRestoreRecovered()
+            // 改版第 c 步：自动备份开关默认开——启动时按开关状态排/取消每日一次的自动备份周期任务。
+            runCatching { app.nestro.data.AutoBackupScheduler.ensureScheduled(this@NestroApplication) }
             // Restore persisted calendar reminders whenever the app process starts.
             runCatching { calendarRepository.reconcileSchedules() }
             mcpToolCenterService.restoreEnabledTools()
