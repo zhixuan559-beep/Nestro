@@ -293,21 +293,33 @@ class NestroAppSmokeTest {
             // 渲染直出 messages，仍缺一个事实：用户消息到底有没有进保存的会话记录。
             // 去「最近对话」页看新会话（列表首项）的标题与条数：标题已是用户文本 = 保存时
             // 用户消息在列，问题在显示侧；标题仍是“新对话” = 追加/保存侧就丢了。
+            // 续诊（#1734）：上轮探针只报了“30 秒超时”，没说是卡在哪一步——菜单没开、
+            // “最近对话”没出现、历史页没加载、还是列表为空，各指不同的根因。
+            // 本轮让探针自报阶段：每步先记阶段名；历史页以搜索框为准判定加载完成，
+            // 不再要求必须有“条消息”节点——列表为空本身就是一条事实（列表项数=0）。
+            var probeStage = "未开始"
             var historyProbe = "未取到"
             runCatching {
+                probeStage = "点菜单"
                 composeRule.onNodeWithContentDescription("菜单").performClick()
+                probeStage = "等最近对话"
                 composeRule.waitUntil(timeoutMillis = 30_000) {
                     runCatching {
                         composeRule.onNodeWithText("最近对话", substring = true).assertIsDisplayed()
                     }.isSuccess
                 }
+                probeStage = "点最近对话"
                 composeRule.onNodeWithText("最近对话", substring = true).performClick()
+                probeStage = "等历史页加载"
                 composeRule.waitUntil(timeoutMillis = 30_000) {
-                    composeRule.onAllNodesWithText("条消息", substring = true)
-                        .fetchSemanticsNodes().isNotEmpty()
+                    runCatching {
+                        composeRule.onNodeWithText("搜索会话标题与内容").assertIsDisplayed()
+                    }.isSuccess
                 }
-                val firstCount = composeRule.onAllNodesWithText("条消息", substring = true)
-                    .fetchSemanticsNodes().firstOrNull()?.config
+                probeStage = "读列表"
+                val countNodes = composeRule.onAllNodesWithText("条消息", substring = true)
+                    .fetchSemanticsNodes()
+                val firstCount = countNodes.firstOrNull()?.config
                     // 本项目 Compose BOM 2024.12.01（1.7.x）的 SemanticsConfiguration 没有
                     // getOrNull，改用 contains + 下标取值的老写法，否则编译报 Unresolved reference。
                     ?.let { cfg ->
@@ -319,8 +331,8 @@ class NestroAppSmokeTest {
                     }.orEmpty()
                 val titleHasPrompt = composeRule.onAllNodesWithText(userPrompt, substring = true)
                     .fetchSemanticsNodes().isNotEmpty()
-                historyProbe = "首项条数=$firstCount，标题含用户文本=$titleHasPrompt"
-            }.onFailure { historyProbe = "探针失败：${it.message}" }
+                historyProbe = "列表项数=${countNodes.size}，首项条数=${firstCount.ifBlank { "无" }}，标题含用户文本=$titleHasPrompt"
+            }.onFailure { historyProbe = "探针失败于[$probeStage]：${it.message}" }
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
