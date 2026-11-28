@@ -29,7 +29,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun mainScreenRendersApplicationHeader() {
-        composeRule.onNodeWithText("Nestro").assertIsDisplayed()
+        // 改版新 a 步：顶栏标题「Nestro」已撤，顶栏只剩抽屉圆钮、助手胶囊、电话圆钮。
+        composeRule.onNodeWithContentDescription("菜单").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("电话").assertIsDisplayed()
     }
     @Test
     fun opensConversationHistoryFromAccessibleNavigationDrawer() {
@@ -58,10 +60,10 @@ class NestroAppSmokeTest {
         // 输入框占位文案只在对话页出现，用它判定已回到对话页，不受残留消息影响。
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+                composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
             }.isSuccess
         }
-        composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+        composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
     }
 
     @Test
@@ -79,7 +81,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun toolsDirectoryListsEveryManagementDestination() {
-        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+        // 改版新 a 步：顶栏工具入口已撤，工具目录改走左侧抽屉。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
 
         listOf(
             "模型管理",
@@ -136,7 +140,8 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("本地知识库").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("菜单").performClick()
         composeRule.onNodeWithText("新建对话", substring = true).performClick()
-        composeRule.onNodeWithText("Nestro").assertIsDisplayed()
+        // 改版新 a 步：顶栏标题「Nestro」已撤，用只在对话页出现的输入框占位文案判定已回到对话页。
+        composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
     }
 
     @Test
@@ -157,8 +162,10 @@ class NestroAppSmokeTest {
     }
 
     @Test
-    fun modelSettingsCanBeOpenedFromTheTopBar() {
-        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+    fun modelSettingsCanBeOpenedFromToolsDirectory() {
+        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
         composeRule.onNodeWithText("模型管理").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
     }
@@ -212,7 +219,7 @@ class NestroAppSmokeTest {
         composeRule.onNodeWithText("＋ 新建对话").performClick()
         composeRule.waitUntil(timeoutMillis = 30_000) {
             runCatching {
-                composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+                composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
             }.isSuccess
         }
         // 新会话建好后必须是空的才往下走：若此时空态标题不在屏上，说明视图里仍是恢复出的旧会话
@@ -223,10 +230,8 @@ class NestroAppSmokeTest {
             }.isSuccess
         }
 
-        // 发送按钮是输入框的 trailingIcon：BasicTextField 默认 mergeDescendants 会把它的点击语义
-        // 并进输入框节点——按合并树找“发送”只会点到输入框本身（聚焦），发不出去；
-        // #1716 的三次重试全部静默落空正是这个原因。改走未合并树找图标节点，再点它的父节点
-        // （IconButton 的 clickable 宿主），才是真正点发送。
+        // 发送键是输入胶囊右端的独立黑圆钮（改版新 a 步：打字后才冒出，不再是输入框的 trailingIcon）；
+        // 它与输入框是兄弟节点，仍走未合并树找图标节点、再点它的父节点（Surface 的 clickable 宿主），才是真正点发送。
         // 注意：只看“用户消息文本出现”会误判——没发出去时输入框里本身就含这行字；
         // 真正落地的标志是两者同时成立：草稿被消费（占位文案重现）且消息气泡里出现该文本。
         // 输入框按可编辑节点找（hasSetTextAction），不依赖占位文案：重发时若草稿还在，
@@ -245,13 +250,13 @@ class NestroAppSmokeTest {
             }
             composeRule.onNode(hasSetTextAction()).performTextInput(userPrompt)
             // 占位文案节点不在树里 = 草稿还在输入框里；若它已出现，说明草稿在点击前就被抹掉，发送按钮是禁用的。
-            lastDraftPresentBeforeClick = composeRule.onAllNodesWithText("输入或按住说话…")
+            lastDraftPresentBeforeClick = composeRule.onAllNodesWithText("长按说话，轻触输入")
                 .fetchSemanticsNodes().isEmpty()
             composeRule.onNodeWithContentDescription("发送", useUnmergedTree = true).onParent().performClick()
             sendLanded = runCatching {
                 composeRule.waitUntil(timeoutMillis = 10_000) {
                     lastPlaceholderShown = runCatching {
-                        composeRule.onNodeWithText("输入或按住说话…").assertIsDisplayed()
+                        composeRule.onNodeWithText("长按说话，轻触输入").assertIsDisplayed()
                     }.isSuccess
                     lastPromptShown = runCatching {
                         composeRule.onNodeWithText(userPrompt, substring = true).assertIsDisplayed()
@@ -346,7 +351,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun modelConfigurationFormShowsValidationInsteadOfSavingIncompleteData() {
-        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
         composeRule.onNodeWithText("模型管理").performClick()
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
 
@@ -357,7 +364,9 @@ class NestroAppSmokeTest {
 
     @Test
     fun modelConnectionTestStaysDisabledUntilRequiredFieldsAreProvided() {
-        composeRule.onNodeWithContentDescription("工具与扩展").performClick()
+        // 改版新 a 步：顶栏工具入口已撤，模型管理改走抽屉 → 工具与扩展。
+        composeRule.onNodeWithContentDescription("菜单").performClick()
+        composeRule.onNodeWithText("工具与扩展", substring = true).performClick()
         composeRule.onNodeWithText("模型管理").performClick()
 
         composeRule.onNodeWithText("测试当前编辑配置")
