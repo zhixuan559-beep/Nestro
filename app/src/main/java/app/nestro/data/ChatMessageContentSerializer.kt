@@ -37,9 +37,10 @@ internal object ChatMessageContentSerializer {
     fun openAiContent(message: ChatMessage, supportsAudioInput: Boolean = false): Any {
         val images = images(message)
         val audio = if (supportsAudioInput) openAiAudio(message) else emptyList()
-        if (images.isEmpty() && audio.isEmpty()) return message.content
+        val text = VoiceMessageMarker.strip(message.content)
+        if (images.isEmpty() && audio.isEmpty()) return text
         return JSONArray().apply {
-            put(JSONObject().put("type", "text").put("text", message.content))
+            put(JSONObject().put("type", "text").put("text", text))
             images.forEach { part ->
                 put(JSONObject().put("type", "image_url").put(
                     "image_url",
@@ -61,9 +62,10 @@ internal object ChatMessageContentSerializer {
 
     fun anthropicContent(message: ChatMessage): Any {
         val images = images(message)
-        if (images.isEmpty()) return message.content
+        val text = VoiceMessageMarker.strip(message.content)
+        if (images.isEmpty()) return text
         return JSONArray().apply {
-            put(JSONObject().put("type", "text").put("text", message.content))
+            put(JSONObject().put("type", "text").put("text", text))
             images.forEach { part ->
                 put(JSONObject()
                     .put("type", "image")
@@ -87,6 +89,6 @@ internal object ChatMessageContentSerializer {
                 .put("mimeType", part.mimeType)
                 .put("data", part.dataBase64)))
         }
-        put(JSONObject().put("text", message.content))
+        put(JSONObject().put("text", VoiceMessageMarker.strip(message.content)))
     }
 }
