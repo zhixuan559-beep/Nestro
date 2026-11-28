@@ -288,45 +288,38 @@ class NestroAppSmokeTest {
                 .fetchSemanticsNodes().size
             val emptyStateShown = composeRule.onAllNodesWithText("有什么可以帮忙？")
                 .fetchSemanticsNodes().isNotEmpty()
-            // 续诊（#1735）：历史页按 step c 设计只列专家/专家团归档会话，主对话永不进该列表——
-            // 无专家时列表项数=0 是预期行为，上轮探针看错了地方，回答不了“用户消息进没进保存记录”。
-            // 本轮直接读进程内 prefs 的 conversations_v1：当前会话记录里有没有用户文本。
-            // 记录里有用户消息 = 追加/保存侧没问题，问题在显示侧；记录里没有 = 保存侧就丢了。
-            var prefsProbe = "未取到"
+            // 续诊（#1736）：prefs 的 conversations_v1 在 Room 迁移后是冻结的旧快照——
+            // ConversationPreferencesStore.saveConversationList 在 room_storage_initialized 时直接 return，
+            // 所以“记录在场=false”量的是死快照，回答不了保存侧。本轮直接读 Room：当前会话在库里有没有用户文本。
+            // 库里有用户消息 = 追加/保存侧没问题，问题在显示侧；库里没有 = 保存侧就丢了。
+            // 持久化 effect 是 300ms 防抖，探针轮询最多 5 秒，等快照落库再下结论。
+            var roomProbe = "未取到"
             runCatching {
                 val prefs = composeRule.activity.getSharedPreferences("nestro_local", 0)
                 val activeId = prefs.getString("active_conversation_id", "").orEmpty()
-                val json = prefs.getString("conversations_v1", "[]").orEmpty()
-                val records = org.json.JSONArray(json)
-                var recordFound = false
-                var savedTitle = ""
-                var savedMessageCount = -1
-                var savedUserCount = 0
-                var savedTipCount = 0
-                for (i in 0 until records.length()) {
-                    val record = records.getJSONObject(i)
-                    if (record.optString("id") != activeId) continue
-                    recordFound = true
-                    savedTitle = record.optString("title")
-                    val messagesJson = record.optJSONArray("messages") ?: org.json.JSONArray()
-                    savedMessageCount = messagesJson.length()
-                    for (j in 0 until messagesJson.length()) {
-                        val message = messagesJson.getJSONObject(j)
-                        val content = message.optString("content")
-                        if (message.optString("role") == "user" && content.contains(userPrompt)) savedUserCount++
-                        if (content.contains("还没有配置模型")) savedTipCount++
-                    }
-                    break
+                val app = composeRule.activity.application as app.nestro.NestroApplication
+                var savedMessages = kotlinx.coroutines.runBlocking {
+                    app.conversationPersistenceService.loadMessages(activeId)
                 }
-                prefsProbe = "当前会话记录在场=$recordFound，标题=$savedTitle，保存消息数=$savedMessageCount，" +
+                val deadline = System.currentTimeMillis() + 5_000
+                while ((savedMessages == null || savedMessages.isEmpty()) && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(500)
+                    savedMessages = kotlinx.coroutines.runBlocking {
+                        app.conversationPersistenceService.loadMessages(activeId)
+                    }
+                }
+                val saved = savedMessages.orEmpty()
+                val savedUserCount = saved.count { it.role == "user" && it.content.contains(userPrompt) }
+                val savedTipCount = saved.count { it.content.contains("还没有配置模型") }
+                roomProbe = "当前会话id=$activeId，Room记录在场=${savedMessages != null}，保存消息数=${saved.size}，" +
                     "用户消息已保存=$savedUserCount，提示已保存=$savedTipCount"
-            }.onFailure { prefsProbe = "探针失败：${it.message}" }
+            }.onFailure { roomProbe = "探针失败：${it.message}" }
             throw AssertionError(
                 "发送三次均未落地：末次点击前草稿在场=$lastDraftPresentBeforeClick，" +
                     "占位文案重现=$lastPlaceholderShown，用户气泡出现=$lastPromptShown；" +
                     "无模型提示状态=$statusShown，用户文本节点数=$promptNodeCount，空态标题出现=$emptyStateShown；" +
                     "提示文本节点数=$tipNodeCount，未合并树用户文本节点数=$promptNodeCountUnmerged，" +
-                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；保存探针：$prefsProbe"
+                    "滑到底后用户文本节点数=$promptNodeCountAfterScroll；Room探针：$roomProbe"
             )
         }
 
