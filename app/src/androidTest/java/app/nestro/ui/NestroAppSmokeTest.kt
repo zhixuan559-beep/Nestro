@@ -308,7 +308,15 @@ class NestroAppSmokeTest {
                 }
                 val firstCount = composeRule.onAllNodesWithText("条消息", substring = true)
                     .fetchSemanticsNodes().firstOrNull()?.config
-                    ?.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text.orEmpty()
+                    // 本项目 Compose BOM 2024.12.01（1.7.x）的 SemanticsConfiguration 没有
+                    // getOrNull，改用 contains + 下标取值的老写法，否则编译报 Unresolved reference。
+                    ?.let { cfg ->
+                        if (cfg.contains(SemanticsProperties.Text)) {
+                            cfg[SemanticsProperties.Text].firstOrNull()?.text.orEmpty()
+                        } else {
+                            ""
+                        }
+                    }.orEmpty()
                 val titleHasPrompt = composeRule.onAllNodesWithText(userPrompt, substring = true)
                     .fetchSemanticsNodes().isNotEmpty()
                 historyProbe = "首项条数=$firstCount，标题含用户文本=$titleHasPrompt"
