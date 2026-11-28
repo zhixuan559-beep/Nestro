@@ -49,6 +49,8 @@ import app.nestro.data.ChatRequestStateStore
 import app.nestro.data.ModelUsageStats
 import app.nestro.data.ModelUsageStatsCodec
 import app.nestro.data.ChatRequestPolicy
+import app.nestro.data.VoiceMessageMarker
+import app.nestro.speech.AndroidTextToSpeechController
 import app.nestro.data.ChatContextRetrievalPolicy
 import app.nestro.data.ChatExecutionAuthorization
 import app.nestro.data.CapabilityRegistryStore
@@ -91,6 +93,7 @@ import app.nestro.ui.VoiceInputButton
 import android.content.Context
 import android.net.Uri
 import android.content.Intent
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -109,7 +112,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -120,6 +126,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -128,10 +136,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -304,7 +319,6 @@ fun NestroApp(initialPage: String = "home") {
     var config by modelUiState.config
     var taskModeEnabled by remember { mutableStateOf(true) }
     var reasoningEffort by remember(prefs) { mutableStateOf(prefs.getString("reasoning_effort_v1", "low") ?: "low") }
-    var showReasoningMenu by remember { mutableStateOf(false) }
     var modelProfiles by modelUiState.modelProfiles
     var modelRegistry by modelUiState.modelRegistry
     var activeModelProfileId by modelUiState.activeModelProfileId
@@ -325,12 +339,6 @@ fun NestroApp(initialPage: String = "home") {
         mutableStateOf(initialProjectResourceScopes.isFailure)
     }
     var activeProjectId by projectSpaceUiState.activeProjectId
-    var hasPhoneAgentTasks by remember { mutableStateOf(false) }
-    LaunchedEffect(activeProjectId, messages.size) {
-        hasPhoneAgentTasks = if (activeProjectId.isBlank()) false else withContext(Dispatchers.IO) {
-            runCatching { appRuntime.phoneAgentTaskService.loadTasks(activeProjectId, 10).isNotEmpty() }.getOrDefault(false)
-        }
-    }
     // 步骤 b：对话里的小窗读当前隔离屏会话；回对话页时重读（会话在手机任务页创建）。
     val virtualDisplayController = remember { appRuntime.mikaVirtualDisplayController }
     var conversationVirtualSession by remember { mutableStateOf(virtualDisplayController.currentSession()) }
@@ -391,6 +399,15 @@ fun NestroApp(initialPage: String = "home") {
     val chatExecutionUiState = remember { ChatExecutionUiState() }
     var draft by chatExecutionUiState.draft
     var busy by chatExecutionUiState.busy
+    // 改版新 a 步（设计图 01/01b/07）：输入胶囊与语音消息的状态。
+    // 助手显示名默认「小轩」（设计图 01 顶栏名字胶囊；首开取名在 06 号图，届时改这里）。
+    val assistantDisplayName by remember(prefs) { mutableStateOf(prefs.getString("assistant_display_name_v1", "小轩") ?: "小轩") }
+    var pendingVoiceDurationMs by remember { mutableLongStateOf(0L) }
+    var voiceRecordStartedAtMs by remember { mutableLongStateOf(0L) }
+    val inputFocusRequester = remember { FocusRequester() }
+    var showInputPlusMenu by remember { mutableStateOf(false) }
+    var showExpertPicker by remember { mutableStateOf(false) }
+    var showSkillPicker by remember { mutableStateOf(false) }
     var pendingCoworkbenchPrompt by remember { mutableStateOf("") }
     var coworkbenchGeneratedPatch by remember { mutableStateOf("") }
     var stopRequested by chatExecutionUiState.stopRequested
@@ -399,6 +416,18 @@ fun NestroApp(initialPage: String = "home") {
     var reuseLastUserOnSend by chatExecutionUiState.reuseLastUserOnSend
     var pendingAssistantRevision by chatExecutionUiState.pendingAssistantRevision
     var status by chatExecutionUiState.status
+    // 改版新 a 步：顶栏不再常驻状态文案，状态反馈改走底部 Snackbar（短暂浮现，不占常驻位）。
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(status) {
+        if (status.isNotBlank()) {
+            snackbarHostState.showSnackbar(status)
+        }
+    }
+    // 语音气泡点按回放：TTS 引擎按需创建（平时不初始化），播的是转写文本。
+    var voicePlaybackTts by remember { mutableStateOf<AndroidTextToSpeechController?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { voicePlaybackTts?.close() }
+    }
     val assistantRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         status = if (app.nestro.phone.AndroidAssistantRoleSupport.isHeld(context)) {
             "Nestro 已成为系统默认助手入口。"
@@ -809,7 +838,7 @@ fun NestroApp(initialPage: String = "home") {
     var showProjectPackageImportConfirm by remember { mutableStateOf(false) }
     var projectPackageStatus by remember { mutableStateOf("") }
     var voiceStatus by dataTransferUiState.voiceStatus
-    var chatMediaStatus by remember { mutableStateOf("") }
+    // chatMediaStatus 已并入 status（Snackbar）：素材导入的进度与结果不再占输入框下方的常驻行。
     fun canWriteExpertDependents(expertName: String): Boolean {
         val teamsAllowed = expertTeams.filter { expertName in it.members }
             .all { canWriteProjectResource(ProjectResourceKind.TEAM, it.id) }
@@ -916,9 +945,9 @@ fun NestroApp(initialPage: String = "home") {
             val importProjectId = activeProjectId
             val importConversationId = activeConversationId
             if (projectStorageReadOnly || importProjectId.isBlank()) {
-                chatMediaStatus = "当前项目不可写，未导入媒体素材。"
+                status = "当前项目不可写，未导入媒体素材。"
             } else {
-                chatMediaStatus = "正在导入媒体素材…"
+                status = "正在导入媒体素材…"
                 scope.launch {
                     val selectedUris = uris.take(10)
                     val results = withContext(Dispatchers.IO) {
@@ -946,7 +975,7 @@ fun NestroApp(initialPage: String = "home") {
                             .filter { it.isNotBlank() }.joinToString("\n\n") + "\n\n" + attachmentNote
                         prefs.edit().putString("draft_$importConversationId", draft).apply()
                     }
-                    chatMediaStatus = when {
+                    status = when {
                         imported.isEmpty() -> "媒体导入失败：未能导入所选文件。"
                         failedCount > 0 && attachedToCurrentDraft -> "已导入并附加 ${imported.size} 个素材，另有 ${failedCount} 个文件导入失败或超出 10 个文件限制。"
                         failedCount > 0 -> "已导入 ${imported.size} 个素材，但当前会话已切换，未附加到输入框；另有 ${failedCount} 个文件导入失败或超出限制。"
@@ -1387,8 +1416,6 @@ fun NestroApp(initialPage: String = "home") {
     val activeReasoningModelId = activeRegistryModelId.ifBlank {
         activeModelProfileId.takeIf { it.isNotBlank() }?.let { "legacy-model-$it" }.orEmpty()
     }
-    val activeModelSupportsReasoningEffort = modelRegistry.models
-        .firstOrNull { it.id == activeReasoningModelId }?.supportsReasoningEffort == true
     val requestModelConfigs = ModelRequestConfigurationSelector.buildRegistryRequestConfigs(
         registry = modelRegistry,
         activeModelId = activeReasoningModelId,
@@ -1441,7 +1468,11 @@ fun NestroApp(initialPage: String = "home") {
         pendingCoworkbenchPrompt = ""
         draft = ""
         prefs.edit().remove("draft_$activeConversationId").apply()
-        val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", prompt)
+        val voiceDurationMs = pendingVoiceDurationMs
+        pendingVoiceDurationMs = 0L
+        // 语音录完自动发：发出的用户消息带语音标记，展示层画蓝色波形气泡，发给模型前剥掉标记只留转写文本。
+        val userContent = if (voiceDurationMs > 0) VoiceMessageMarker.encode(voiceDurationMs, prompt) else prompt
+        val user = if (reuseLastUserOnSend && messages.lastOrNull()?.role == "user") messages.last() else ChatMessage(UUID.randomUUID().toString(), "user", userContent)
         reuseLastUserOnSend = false
         if (messages.lastOrNull()?.id != user.id) messages = messages + user
         conversations = ConversationPreferencesStore.saveConversationMessages(prefs, activeConversationId, messages, activeProjectId, conversations)
@@ -2077,42 +2108,66 @@ fun NestroApp(initialPage: String = "home") {
                         }
                     }
                     Column(Modifier.weight(1f).fillMaxHeight()) {
+                    // 改版新 a 步（设计图 01）：顶栏只剩三样——左白色圆钮抽屉、中间头像＋名字胶囊、右白色圆钮电话。
+                    // 旧标题/状态/手机任务/工具/设置入口移出顶栏：工具与设置走抽屉，模型走设置页，状态反馈走底部 Snackbar；
+                    // 专家团暂停与历史引用移到对话区（忙碌行与列表末尾）；手机任务页仍可从虚拟屏小窗的「展开」进入。
+                    // 头像说明：设计图 01 是黑底白 N；MEMORY 2026-11-28 新定版 Logo 为白底＋蓝色立体 N＋卡皮巴拉趴在 N 上、
+                    // 黑底白 N 版作废——新 Logo 素材尚未产出，这里先用白底蓝 N 扁平字作占位，素材到手后替换为 Logo 图。
+                    // 另：Adrian 16:18 定——吉祥物主场就是顶栏正中这个圆润框（第 f 步把这里换成卡皮巴拉软框＋大小档位/关闭）。
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = adaptiveContentPadding, vertical = 14.dp),
+                        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { showDrawer = !showDrawer }) {
-                                Icon(Icons.Outlined.Menu, contentDescription = "菜单", tint = Ink)
+                        Surface(
+                            onClick = { showDrawer = !showDrawer },
+                            modifier = Modifier.size(44.dp),
+                            shape = CircleShape,
+                            color = Bg,
+                            border = BorderStroke(1.dp, Line),
+                            shadowElevation = 2.dp
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.Menu, contentDescription = "菜单", tint = Ink, modifier = Modifier.size(20.dp))
                             }
-                            Column {
-                                Text("Nestro", color = Ink, style = MaterialTheme.typography.titleLarge)
-                                AnimatedStatusText(status, color = Muted, style = MaterialTheme.typography.labelSmall)
-                                if (busy && teamRunStatus.isNotBlank()) {
-                                    AnimatedStatusText(teamRunStatus, color = Mint, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                                    TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                                        Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                                if (recallSources.isNotEmpty() && (page == "home" || page == "chat")) {
-                                    TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
-                                        Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
-                                    }
+                        }
+                        val capsuleName = if (selectedExpert != "通用助手") selectedExpert else assistantDisplayName
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(44.dp).background(Bg, RoundedCornerShape(15.dp)).border(1.dp, Line, RoundedCornerShape(15.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("N", color = Color(0xFF2F7DF6), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold))
+                            }
+                            Surface(
+                                // 名字胶囊：点进专家页（资料页在第 c 步建成后接管这里）。
+                                onClick = { page = "experts" },
+                                modifier = Modifier.offset(y = (-7).dp),
+                                shape = RoundedCornerShape(13.dp),
+                                color = Bg,
+                                border = BorderStroke(1.dp, Line),
+                                shadowElevation = 2.dp
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 11.dp, vertical = 2.5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(capsuleName, color = Ink, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+                                    Text("›", color = Muted, style = MaterialTheme.typography.labelLarge)
                                 }
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if ((page == "home" || page == "chat") && hasPhoneAgentTasks) {
-                                TextButton(onClick = { page = "phone-agent" }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                                    Text("手机任务", color = Ink, style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            IconButton(onClick = { page = "tools" }) {
-                                Icon(Icons.Outlined.Extension, contentDescription = "工具与扩展", tint = Ink)
-                            }
-                            IconButton(onClick = { page = "settings" }) {
-                                Icon(Icons.Outlined.Settings, contentDescription = "设置", tint = Ink)
+                        Surface(
+                            onClick = { page = "voice" },
+                            modifier = Modifier.size(44.dp),
+                            shape = CircleShape,
+                            color = Bg,
+                            border = BorderStroke(1.dp, Line),
+                            shadowElevation = 2.dp
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.Call, contentDescription = "电话", tint = Ink, modifier = Modifier.size(21.dp))
                             }
                         }
                     }
@@ -2169,6 +2224,16 @@ fun NestroApp(initialPage: String = "home") {
                                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
+                                    // 设计图 01：对话顶部一条居中日期分隔（消息本身不带时间戳，只标今天）。
+                                    item {
+                                        Text(
+                                            SimpleDateFormat("今天 M月d日", Locale.CHINA).format(Date()),
+                                            color = Muted,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                     items(messages, key = { it.id }) { msg ->
                                         MessageBubble(
                     msg,
@@ -2183,7 +2248,8 @@ fun NestroApp(initialPage: String = "home") {
                     },
                     onEdit = if (msg.role == "user") ({
                         editMessageId = msg.id
-                        editMessageDraft = msg.content
+                        // 语音消息编辑的是转写文本，标记不进编辑框。
+                        editMessageDraft = VoiceMessageMarker.strip(msg.content)
                         showEditMessageDialog = true
                     }) else null,
                     onRegenerate = if (msg.role == "assistant" && !msg.content.startsWith("请求失败：")) ({
@@ -2215,6 +2281,16 @@ fun NestroApp(initialPage: String = "home") {
                         pendingOpenMediaAssetId = ""
                         page = "media-editor"
                     },
+                    // 语音气泡点按回放：TTS 引擎按需创建，播转写文本。
+                    onPlayVoice = { transcript ->
+                        val tts = voicePlaybackTts ?: AndroidTextToSpeechController(context, object : AndroidTextToSpeechController.Listener {
+                            override fun onReady(availableLanguages: Set<Locale>) {}
+                            override fun onStarted(utteranceId: String) {}
+                            override fun onCompleted(utteranceId: String) {}
+                            override fun onError(utteranceId: String, message: String) { status = message }
+                        }).also { voicePlaybackTts = it }
+                        tts.speak(transcript)
+                    },
                     onRetry = {
                                             if (messages.lastOrNull()?.id == msg.id) {
                                                 val lastUserIndex = messages.indexOfLast { it.role == "user" }
@@ -2241,7 +2317,36 @@ fun NestroApp(initialPage: String = "home") {
                                             enter = fadeIn(tween(NestroMotion.FADE_IN)) + expandVertically(animationSpec = tween(NestroMotion.FADE_IN)),
                                             exit = fadeOut(tween(NestroMotion.FAST_OUT)) + shrinkVertically(animationSpec = tween(NestroMotion.FAST_OUT))
                                         ) {
-                                            Text("正在思考…", color = Mint, modifier = Modifier.padding(10.dp))
+                                            // 忙碌行：顶栏搬下来的专家团状态与暂停按钮也落在这里（第 d 步再收成状态行）。
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text("正在思考…", color = Mint)
+                                                if (teamRunStatus.isNotBlank()) {
+                                                    Text(
+                                                        teamRunStatus,
+                                                        color = Mint,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        maxLines = 1,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    TextButton(onClick = { toggleExpertTeamPause() }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                        Text(if (teamExecutionPaused) "继续专家团" else "暂停专家团", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // 历史引用入口从顶栏移到列表末尾（对话内容的一部分，不占常驻位）。
+                                    if (recallSources.isNotEmpty()) {
+                                        item {
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                                                TextButton(onClick = { showRecallDialog = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
+                                                    Text("查看历史引用 · ${recallSources.size}", color = Mint, style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2257,71 +2362,136 @@ fun NestroApp(initialPage: String = "home") {
                                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                                     )
                                 }
-                                Row(
-                                    Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    AssistChip(onClick = { page = "spaces" }, label = { Text(projects.firstOrNull { it.id == activeProjectId }?.name ?: "默认空间") })
-                                    AssistChip(onClick = { page = "models" }, label = { Text(config.model.ifBlank { "配置模型" }) })
-                                    Box {
-                                        AssistChip(onClick = { showReasoningMenu = true }, label = { Text("思考：${when (reasoningEffort) { "none" -> "关闭"; "low" -> "轻量"; "medium" -> "中度"; else -> "重度" }}${if (activeModelSupportsReasoningEffort) "" else "（当前模型不支持）"}") })
-                                        DropdownMenu(expanded = showReasoningMenu, onDismissRequest = { showReasoningMenu = false }) {
-                                            listOf("none" to "关闭思考", "low" to "轻量思考", "medium" to "中度思考", "high" to "重度思考").forEach { (value, label) ->
-                                                DropdownMenuItem(text = { Text(label) }, onClick = { reasoningEffort = value; prefs.edit().putString("reasoning_effort_v1", value).apply(); showReasoningMenu = false })
+                                // 改版新 a 步（设计图 01/01b/07）：输入区只剩一根长胶囊——左＋、中占位/输入、右麦克风；
+                                // 打字后发送键冒出（01b），语音录完自动发；空间/模型/思考档位三个快捷片移出底栏
+                                // （空间与模型走抽屉/设置页，思考档位收进专家页与高级设置——第 c 步落位）。
+                                // 偏差说明：「＋」菜单按落位表只应有选专家/专家团、选技能两类；「添加素材」是 12 项功能之一，
+                                // 无处可放会丢功能，暂以第三行留在菜单里，等 Adrian 定夺再移。
+                                val inputPlaceholder = when (voiceStatus) {
+                                    "正在聆听，松开结束" -> "正在聆听，松开结束"
+                                    "正在识别语音…" -> "正在识别语音…"
+                                    else -> "长按说话，轻触输入"
+                                }
+                                val selectedTeamName = expertTeams.firstOrNull { it.id == selectedTeamId }?.name.orEmpty()
+                                Box(Modifier.fillMaxWidth()) {
+                                    Surface(
+                                        color = Card2,
+                                        shape = RoundedCornerShape(26.dp),
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                    ) {
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(start = 7.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(9.dp)
+                                        ) {
+                                            IconButton(onClick = { showInputPlusMenu = true }, modifier = Modifier.size(38.dp)) {
+                                                Icon(Icons.Outlined.Add, contentDescription = "更多操作", tint = Ink, modifier = Modifier.size(21.dp))
                                             }
-                                        }
-                                    }
-                                }
-                                if (chatMediaStatus.isNotBlank()) {
-                                    AnimatedStatusText(chatMediaStatus, color = Muted, style = MaterialTheme.typography.bodySmall)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(
-                                        enabled = !busy,
-                                        onClick = { chatMediaImportLauncher.launch(arrayOf("image/*", "audio/*", "video/*")) }
-                                    ) { Text("添加素材") }
-                                    VoiceInputButton(
-                                        enabled = !busy,
-                                        onPartialResult = { spoken ->
-                                            draft = spoken
-                                            if (activeConversationId.isNotBlank()) prefs.edit().putString("draft_$activeConversationId", spoken).apply()
-                                        },
-                                        onResult = { spoken -> draft = ""; sendPrompt(spoken) },
-                                        onStatus = { voiceStatus = it }
-                                    )
-                                    OutlinedTextField(
-                                        value = draft, onValueChange = { value ->
-                                            draft = value
-                                            if (activeConversationId.isNotBlank()) prefs.edit().putString("draft_$activeConversationId", value).apply()
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        placeholder = { Text("输入或按住说话…", color = Muted) },
-                                        trailingIcon = {
-                                            Crossfade(targetState = busy, animationSpec = tween(NestroMotion.FAST), label = "send-stop-transition") { isBusy ->
-                                                if (isBusy) {
-                                                    IconButton(onClick = {
+                                            Row(
+                                                Modifier.weight(1f)
+                                                    .clickable(
+                                                        interactionSource = remember { MutableInteractionSource() },
+                                                        indication = null
+                                                    ) { inputFocusRequester.requestFocus() },
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                if (selectedTeamId.isNotBlank() && selectedTeamName.isNotBlank()) {
+                                                    InputTagChip(label = selectedTeamName, onClear = {
+                                                        selectedTeamId = ""
+                                                        prefs.edit().putString("selected_team_id", "").apply()
+                                                    })
+                                                } else if (selectedExpert != "通用助手") {
+                                                    InputTagChip(label = selectedExpert, onClear = {
+                                                        selectedExpert = "通用助手"
+                                                        prefs.edit().putString("selected_expert", "通用助手").apply()
+                                                    })
+                                                }
+                                                if (selectedSkill.isNotBlank()) {
+                                                    InputTagChip(label = selectedSkill, onClear = { selectedSkill = "" })
+                                                }
+                                                BasicTextField(
+                                                    value = draft,
+                                                    onValueChange = { value ->
+                                                        draft = value
+                                                        if (activeConversationId.isNotBlank()) prefs.edit().putString("draft_$activeConversationId", value).apply()
+                                                    },
+                                                    modifier = Modifier.weight(1f).focusRequester(inputFocusRequester),
+                                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
+                                                    cursorBrush = SolidColor(Ink),
+                                                    maxLines = 5,
+                                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                                    keyboardActions = KeyboardActions(onSend = { if (draft.isNotBlank() && !busy) sendPrompt(draft) }),
+                                                    decorationBox = { innerTextField ->
+                                                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                                                            if (draft.isEmpty()) {
+                                                                Text(inputPlaceholder, color = Muted, style = MaterialTheme.typography.bodyLarge)
+                                                            }
+                                                            innerTextField()
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                            // 右端：生成中是停止键；打字后发送键冒出；平时是按住说话的麦克风。
+                                            if (busy) {
+                                                IconButton(
+                                                    onClick = {
                                                         stopRequested = true
                                                         status = "正在停止…"
                                                         appRuntime.chatExecutionService.cancel(activeRequestId)
-                                                    }) {
-                                                        Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop)
-                                                    }
-                                                } else {
-                                                    IconButton(enabled = draft.isNotBlank(), onClick = { sendPrompt(draft) }) {
-                                                        Icon(Icons.Outlined.Send, contentDescription = "发送", tint = Mint)
+                                                    },
+                                                    modifier = Modifier.size(38.dp)
+                                                ) {
+                                                    Icon(Icons.Outlined.Stop, contentDescription = "停止生成", tint = ColorStop, modifier = Modifier.size(20.dp))
+                                                }
+                                            } else if (draft.isNotBlank()) {
+                                                Surface(
+                                                    onClick = { sendPrompt(draft) },
+                                                    modifier = Modifier.size(38.dp),
+                                                    shape = CircleShape,
+                                                    color = Ink,
+                                                    shadowElevation = 3.dp
+                                                ) {
+                                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                        Icon(Icons.Outlined.ArrowUpward, contentDescription = "发送", tint = Bg, modifier = Modifier.size(17.dp))
                                                     }
                                                 }
+                                            } else {
+                                                VoiceInputButton(
+                                                    enabled = !busy,
+                                                    compact = true,
+                                                    onRecordingStarted = { voiceRecordStartedAtMs = SystemClock.elapsedRealtime() },
+                                                    onPartialResult = { spoken ->
+                                                        draft = spoken
+                                                        if (activeConversationId.isNotBlank()) prefs.edit().putString("draft_$activeConversationId", spoken).apply()
+                                                    },
+                                                    onResult = { spoken ->
+                                                        voiceStatus = ""
+                                                        val durationMs = (SystemClock.elapsedRealtime() - voiceRecordStartedAtMs).coerceIn(0L, 600_000L)
+                                                        pendingVoiceDurationMs = durationMs
+                                                        draft = ""
+                                                        sendPrompt(spoken)
+                                                    },
+                                                    onStatus = { message ->
+                                                        voiceStatus = when {
+                                                            message == "已取消语音输入" -> ""
+                                                            message.startsWith("需要麦克风权限") -> {
+                                                                status = message
+                                                                ""
+                                                            }
+                                                            else -> message
+                                                        }
+                                                    }
+                                                )
                                             }
-                                        },
-                                        shape = RoundedCornerShape(24.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = Mint, unfocusedBorderColor = Line,
-                                            focusedTextColor = Ink, unfocusedTextColor = Ink,
-                                            cursorColor = Mint
-                                        )
-                                    )
+                                        }
+                                    }
+                                    DropdownMenu(expanded = showInputPlusMenu, onDismissRequest = { showInputPlusMenu = false }) {
+                                        DropdownMenuItem(text = { Text("选专家 / 专家团") }, onClick = { showInputPlusMenu = false; showExpertPicker = true })
+                                        DropdownMenuItem(text = { Text("选技能") }, onClick = { showInputPlusMenu = false; showSkillPicker = true })
+                                        DropdownMenuItem(text = { Text("添加素材") }, onClick = { showInputPlusMenu = false; chatMediaImportLauncher.launch(arrayOf("image/*", "audio/*", "video/*")) })
+                                    }
                                 }
-                                AnimatedStatusText(voiceStatus, color = Muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp))
                             }
                             }
                             // 步骤 b：虚拟屏小窗嵌在对话里（学 Mika）：有隔离屏会话时才出现；
@@ -4341,29 +4511,16 @@ fun NestroApp(initialPage: String = "home") {
                         else -> SimplePage("Nestro", "本地优先的 AI 助手")
                     }
                     }
-                    // 底部双板块：对话框 / 工作台（定稿：黑白极简双板块导航；工作台为工具目录及下属页）
-                    NavigationBar(containerColor = Bg) {
-                        NavigationBarItem(
-                            selected = page == "home" || page == "chat",
-                            onClick = { page = "home" },
-                            icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "对话框") },
-                            label = { Text("对话框") }
-                        )
-                        NavigationBarItem(
-                            selected = page in setOf(
-                                "tools", "models", "comparison", "voice", "skills",
-                                "workflows", "tasks", "plugins", "mcp", "capabilities",
-                                "memory", "knowledge", "artifacts", "media-editor",
-                                "coworkbench", "git"
-                            ),
-                            onClick = { page = "tools" },
-                            icon = { Icon(Icons.Outlined.Dashboard, contentDescription = "工作台") },
-                            label = { Text("工作台") }
-                        )
-                    }
+                    // 改版新 a 步（设计图 01）：底部双板块（对话框 / 工作台）已删——主界面只剩顶栏、对话流、输入框；
+                    // 工作台（工具目录及下属页）改走左侧抽屉「工具与扩展」，对话框即首页。
                 }
                 }
                 }
+                // 状态反馈 Snackbar（改版新 a 步）：浮在输入胶囊上方，不占常驻位。
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 92.dp)
+                )
             }
         }
 
@@ -4544,6 +4701,87 @@ fun NestroApp(initialPage: String = "home") {
                 }) { Text("保存并重新发送", color = Mint) }
             },
             dismissButton = { TextButton(onClick = { showEditMessageDialog = false }) { Text("取消") } }
+        )
+    }
+
+    // 改版新 a 步：输入框「＋」选专家/专家团——选中后以标签贴在输入框里，发送时随请求生效（复用既有 selectedExpert/selectedTeamId）。
+    if (showExpertPicker) {
+        AlertDialog(
+            onDismissRequest = { showExpertPicker = false },
+            title = { Text("选专家 / 专家团") },
+            text = {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (expertTeams.isNotEmpty()) {
+                        Text("专家团", color = Muted, style = MaterialTheme.typography.labelSmall)
+                        expertTeams.forEach { team ->
+                            PickerOptionRow(
+                                title = team.name,
+                                subtitle = "${team.members.size} 位专家" + if (team.description.isNotBlank()) " · ${team.description}" else "",
+                                selected = selectedTeamId == team.id,
+                                onClick = {
+                                    selectedTeamId = team.id
+                                    selectedExpert = "通用助手"
+                                    prefs.edit().putString("selected_team_id", team.id).putString("selected_expert", "通用助手").apply()
+                                    showExpertPicker = false
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Text("专家", color = Muted, style = MaterialTheme.typography.labelSmall)
+                    PickerOptionRow(
+                        title = "通用助手",
+                        subtitle = "不指定专家，由主助手直接处理",
+                        selected = selectedTeamId.isBlank() && selectedExpert == "通用助手",
+                        onClick = {
+                            selectedTeamId = ""
+                            selectedExpert = "通用助手"
+                            prefs.edit().putString("selected_team_id", "").putString("selected_expert", "通用助手").apply()
+                            showExpertPicker = false
+                        }
+                    )
+                    experts.forEach { name ->
+                        PickerOptionRow(
+                            title = name,
+                            subtitle = expertProfiles[name]?.description.orEmpty(),
+                            selected = selectedTeamId.isBlank() && selectedExpert == name,
+                            onClick = {
+                                selectedTeamId = ""
+                                selectedExpert = name
+                                prefs.edit().putString("selected_team_id", "").putString("selected_expert", name).apply()
+                                showExpertPicker = false
+                            }
+                        )
+                    }
+                    if (experts.isEmpty()) {
+                        Text("还没有专家，去专家页创建一个。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showExpertPicker = false; page = "experts" }) { Text("去专家页", color = Mint) } },
+            dismissButton = { TextButton(onClick = { showExpertPicker = false }) { Text("取消") } }
+        )
+    }
+
+    // 改版新 a 步：输入框「＋」选技能——选中后以标签贴在输入框里，发送时随请求生效（复用既有 selectedSkill）。
+    if (showSkillPicker) {
+        AlertDialog(
+            onDismissRequest = { showSkillPicker = false },
+            title = { Text("选技能") },
+            text = {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val usableSkills = skills.keys.filter { it !in disabledSkills }
+                    PickerOptionRow(title = "不使用技能", subtitle = "", selected = selectedSkill.isBlank(), onClick = { selectedSkill = ""; showSkillPicker = false })
+                    usableSkills.forEach { name ->
+                        PickerOptionRow(title = name, subtitle = skills[name].orEmpty(), selected = selectedSkill == name, onClick = { selectedSkill = name; showSkillPicker = false })
+                    }
+                    if (usableSkills.isEmpty()) {
+                        Text("还没有可用技能，去技能库创建一个。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSkillPicker = false; page = "skills" }) { Text("去技能库", color = Mint) } },
+            dismissButton = { TextButton(onClick = { showSkillPicker = false }) { Text("取消") } }
         )
     }
 
