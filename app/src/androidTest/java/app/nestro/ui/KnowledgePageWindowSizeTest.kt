@@ -39,7 +39,10 @@ class KnowledgePageWindowSizeTest {
         database.close()
     }
 
-    @Test
+    // #1731：本用例在模拟器上挂起约 30 分钟后进程以 exit code 1 退出，
+    // 无失败名、无堆栈，146–176 号用例也没跑成。超时把挂起变成具名失败，
+    // 下次日志直接指出卡在哪一步；正常跑只需数秒，120 秒已留足余量。
+    @Test(timeout = 120_000)
     fun knowledgePageRemainsScrollableAcrossPhoneFoldableAndTabletWidths() {
         val windowSize = mutableStateOf(DpSize(320.dp, 640.dp))
         composeRule.setContent {
