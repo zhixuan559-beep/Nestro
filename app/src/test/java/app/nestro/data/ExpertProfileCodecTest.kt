@@ -36,4 +36,15 @@ class ExpertProfileCodecTest {
         assertNotNull(ExpertProfileCodec.validate(ExpertProfile(maxTokens=0), emptySet()))
         assertNull(ExpertProfileCodec.validate(ExpertProfile(skillNames=listOf("检索"), temperature=0.8, maxTokens=2048), setOf("检索")))
     }
+
+    @Test fun roundTripsMascotSelectionAndRejectsUnknownMascot() {
+        // 改版第 b 步：吉祥物形象随专家配置一起存取；旧数据缺省为卡皮巴拉。
+        val profile = ExpertProfile(mascot = "")
+        val decoded = ExpertProfileCodec.decode(ExpertProfileCodec.encode(mapOf("助手" to profile))).getValue("助手")
+        assertEquals(profile, decoded)
+        assertEquals("capybara", ExpertProfileCodec.decode("{\"旧专家\":{}}").getValue("旧专家").mascot)
+        assertNotNull(ExpertProfileCodec.validate(ExpertProfile(mascot = "团子"), emptySet()))
+        assertNull(ExpertProfileCodec.validate(ExpertProfile(mascot = "capybara"), emptySet()))
+        assertNull(ExpertProfileCodec.validate(ExpertProfile(mascot = ""), emptySet()))
+    }
 }
