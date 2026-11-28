@@ -6,11 +6,14 @@ import app.nestro.data.ModelProfileMetadata
 import app.nestro.data.ModelProfileCatalogCodec
 import app.nestro.data.ModelUsageStats
 import app.nestro.model.ModelRegistry
+import app.nestro.model.ModelRegistryCodec
 import app.nestro.model.ModelProvider
 import app.nestro.model.ModelApiKey
 import app.nestro.model.ModelDefinition
 import app.nestro.model.ModelModality
 import app.nestro.model.ModelProviderPresetCatalog
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -21,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalUriHandler
@@ -95,6 +99,25 @@ internal fun ModelManager(
     var discoveringModels by remember { mutableStateOf(false) }
     var discoveredModelCodes by remember { mutableStateOf(emptyList<String>()) }
     var discoveryStatus by remember { mutableStateOf("") }
+    // 改版第 c 步续（设计图 04）：第一层只问服务商＋Key＋用量，工程参数沉「高级设置」。
+    var showAdvanced by remember { mutableStateOf(false) }
+    BackHandler(enabled = showAdvanced) { showAdvanced = false }
+
+    if (!showAdvanced) {
+        ModelManagerFirstLayer(
+            profiles = profiles,
+            activeProfileId = activeProfileId,
+            activeConfig = activeConfig,
+            usage = usage,
+            registry = registry,
+            activeRegistryModelId = activeRegistryModelId,
+            loadApiKey = loadApiKey,
+            onSaveProvider = onSaveProvider,
+            onSaveApiKey = onSaveApiKey,
+            onOpenAdvanced = { showAdvanced = true }
+        )
+        return
+    }
 
     fun beginNew() {
         editingId = java.util.UUID.randomUUID().toString()
@@ -119,7 +142,9 @@ internal fun ModelManager(
         formError = ""
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("模型管理", color = Ink, style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = { showAdvanced = false }) { Text("‹ 返回模型与用量", color = Mint) }
+        Text("高级设置", color = Ink, style = MaterialTheme.typography.headlineSmall)
+        Text("角色、推理强度、上下文、备用模型、自定义服务商与模型目录都在这里；日常只用第一层就够了。", color = Muted)
         Text("支持官方服务商预置、自定义服务商、多 Key、多模型，以及 OpenAI 兼容、Claude 原生和 Gemini 原生模型目录发现与请求。", color = Muted)
         Text("新版模型目录 · 服务商 / API Key / 模型独立管理", color = Ink, style = MaterialTheme.typography.titleMedium)
         Text("新版目录与旧版配置并存兼容。密钥只进入加密存储，目录中仅保存 Key 标识。", color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -616,5 +641,269 @@ internal fun ModelManager(
         if (testStatus.isNotBlank()) Text(testStatus, color = if (testStatus.startsWith("连接失败")) ColorStop else Muted, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = { beginNew() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建另一组配置", color = Mint) }
         Text("当前实际调用的模型：${activeConfig.model.ifBlank { "未配置" }}", color = Muted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/**
+ * 改版第 c 步续（设计图 04）：「模型与用量」第一层。
+ * 只问三件事：用哪家服务商、它的 API Key、用量（真实请求次数，不编百分比）。
+ * 点服务商行只选服务商、不切模型——模型启用仍在高级设置里。
+ */
+@Composable
+private fun ModelManagerFirstLayer(
+    profiles: List<ModelProfileMetadata>,
+    activeProfileId: String,
+    activeConfig: ModelConfig,
+    usage: Map<String, ModelUsageStats>,
+    registry: ModelRegistry,
+    activeRegistryModelId: String,
+    loadApiKey: (String) -> String,
+    onSaveProvider: (ModelProvider) -> Unit,
+    onSaveApiKey: (ModelApiKey, String) -> Unit,
+    onOpenAdvanced: () -> Unit
+) {
+    // 默认选中当前模型的服务商；没有当前模型时取第一个已配置服务商。
+    val activeProviderId = registry.models.firstOrNull { it.id == activeRegistryModelId }?.providerId
+        ?: profiles.firstOrNull { it.id == activeProfileId }
+            ?.let { ModelRegistryCodec.legacyProviderId(it.baseUrl) }
+    var selectedProviderId by remember {
+        mutableStateOf(
+            activeProviderId?.takeIf { id -> registry.providers.any { it.id == id } }
+                ?: registry.providers.firstOrNull()?.id.orEmpty()
+        )
+    }
+    var editingKey by remember { mutableStateOf(false) }
+    var keyLabelDraft by remember { mutableStateOf("") }
+    var keyDraft by remember { mutableStateOf("") }
+    var keyMessage by remember { mutableStateOf("") }
+
+    val selectedProvider = registry.providers.firstOrNull { it.id == selectedProviderId }
+    val selectedKeys = registry.apiKeys.filter { it.providerId == selectedProviderId }
+    val activeKey = selectedKeys.firstOrNull { it.enabled && loadApiKey(it.id).isNotBlank() }
+        ?: selectedKeys.firstOrNull()
+    val activeSecret = activeKey?.let { loadApiKey(it.id) }.orEmpty()
+    val maskedKey = when {
+        activeSecret.isBlank() -> "未配置"
+        activeSecret.length > 7 -> activeSecret.take(3) + "••••••••" + activeSecret.takeLast(4)
+        else -> "••••••••"
+    }
+    val totalRequests = usage.values.sumOf { it.requests }
+
+    fun isConnected(presetId: String): Boolean {
+        val provider = registry.providers.firstOrNull { it.presetId == presetId } ?: return false
+        return registry.apiKeys.any { it.providerId == provider.id && it.enabled && loadApiKey(it.id).isNotBlank() }
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(Card2).verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp)
+    ) {
+        Text(
+            "用哪家模型",
+            color = Ink,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(start = 2.dp, top = 12.dp)
+        )
+        Text(
+            "第一层只问这一件事，其余的系统自己定",
+            color = Muted,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(start = 2.dp)
+        )
+        Text("服务商", color = Muted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 4.dp))
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp)) {
+                ModelProviderPresetCatalog.all.forEachIndexed { index, preset ->
+                    val existing = registry.providers.firstOrNull { it.presetId == preset.id }
+                    val selected = existing != null && existing.id == selectedProviderId
+                    if (index > 0) HorizontalDivider(color = Line)
+                    Surface(
+                        onClick = {
+                            if (existing == null) {
+                                val provider = ModelProvider(
+                                    id = "preset-provider-${preset.id}",
+                                    name = preset.displayName,
+                                    baseUrl = preset.baseUrl,
+                                    presetId = preset.id,
+                                    protocol = preset.protocol
+                                )
+                                onSaveProvider(provider)
+                                selectedProviderId = provider.id
+                            } else {
+                                selectedProviderId = existing.id
+                            }
+                            editingKey = false
+                            keyMessage = ""
+                        },
+                        color = Card,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 14.5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(13.dp)
+                        ) {
+                            Surface(
+                                color = Card2,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.size(33.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        if (selected) "✓" else preset.displayName.first().toString(),
+                                        color = if (selected) Mint else Ink,
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                }
+                            }
+                            Text(preset.displayName, color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            if (isConnected(preset.id)) {
+                                Text("已连接", color = Muted, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("›", color = Muted, style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+        }
+        Text("API Key", color = Muted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 4.dp))
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp)) {
+                Surface(
+                    onClick = {
+                        if (selectedProvider != null) {
+                            keyLabelDraft = activeKey?.label ?: "默认 Key"
+                            keyDraft = ""
+                            keyMessage = ""
+                            editingKey = !editingKey
+                        }
+                    },
+                    color = Card,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 14.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(13.dp)
+                    ) {
+                        Icon(Icons.Outlined.Key, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (selectedProvider == null) "请先选择服务商" else maskedKey,
+                                color = Ink,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            if (selectedProvider != null) {
+                                Text(
+                                    selectedProvider.name + if (activeSecret.isNotBlank()) " · 已保存" else " · 未配置 Key",
+                                    color = Muted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                        Text("›", color = Muted, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                if (editingKey && selectedProvider != null) {
+                    HorizontalDivider(color = Line)
+                    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            keyLabelDraft,
+                            { keyLabelDraft = it.take(60) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Key 名称") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            keyDraft,
+                            { keyDraft = it.take(4096) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("API Key 密钥") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true
+                        )
+                        Text("密钥只进加密存储，不进备份。", color = Muted, style = MaterialTheme.typography.bodySmall)
+                        Button(
+                            onClick = {
+                                val item = activeKey?.copy(label = keyLabelDraft.trim())
+                                    ?: ModelApiKey(
+                                        UUID.randomUUID().toString(),
+                                        selectedProviderId,
+                                        keyLabelDraft.trim()
+                                    )
+                                onSaveApiKey(item, keyDraft.trim())
+                                keyDraft = ""
+                                editingKey = false
+                                keyMessage = "已保存"
+                            },
+                            enabled = keyLabelDraft.isNotBlank() && keyDraft.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+                        ) { Text(if (activeKey == null) "保存 API Key" else "保存替换后的 API Key") }
+                        if (keyMessage.isNotBlank()) Text(keyMessage, color = Mint, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        Text("用量", color = Muted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 4.dp))
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 14.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(13.dp)
+                ) {
+                    Text("当前模型", color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(activeConfig.model.ifBlank { "未配置" }, color = Muted, style = MaterialTheme.typography.bodyMedium)
+                }
+                HorizontalDivider(color = Line)
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 14.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(13.dp)
+                ) {
+                    Text("累计成功请求", color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text("$totalRequests 次", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        Text("深层（一般不用打开）", color = Muted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 4.dp))
+        Surface(
+            color = Card,
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Surface(onClick = onOpenAdvanced, color = Card, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(13.dp)
+                ) {
+                    Icon(Icons.Outlined.Settings, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+                    Text("高级设置", color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text("角色 / 推理 / 备用模型", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Text("›", color = Muted, style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
