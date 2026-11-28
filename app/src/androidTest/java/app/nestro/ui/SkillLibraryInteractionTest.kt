@@ -33,9 +33,11 @@ class SkillLibraryInteractionTest {
         // 抽屉项文本带图标前缀（"⌘   工具与扩展"），精确匹配不到，必须用 substring。
         composeRule.onNodeWithText("工具与扩展", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("Skills").performScrollTo().performClick()
-        // #1748：切页后标题断言失败（"The component is not displayed!"，:36）——测试代码自 #1739 全绿后未变，
-        // step a 改了主界面结构后出现。标题本身没毛病（滚动列首项，过渡 160ms 后对真用户可见）；
-        // 与 SmokeTest 知识库标题 :140、本文件新建技能断言 :42 同款时序问题：先滚到可见，再等过渡跑完。
+        // #1749：performScrollTo() 本身要求节点已在语义树里；切页过渡未完成时节点还不存在，
+        // 直接滚会抛“could not find any node”（:39）。先等节点出现，再滚、再等可见。
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("本地技能库").fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithText("本地技能库").performScrollTo()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             runCatching { composeRule.onNodeWithText("本地技能库").assertIsDisplayed() }.isSuccess
