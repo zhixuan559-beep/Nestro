@@ -18,7 +18,9 @@ class ContentPageInteractionTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    @Test
+    // #1747：instrumented 套件在第 143 个用例开始后中断（/bin/sh exit code 1，无汇总、无失败码），
+    // 与 #1731 卡在知识库用例的形态相同——先给用例加 120 秒上限，挂起会变成具名失败而非杀死整轮。
+    @Test(timeout = 120_000)
     fun knowledgeSearchRequiresAnImportedDocumentAndAQuery() {
         val database = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext<Context>(),
