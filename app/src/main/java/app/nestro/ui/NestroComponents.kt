@@ -476,36 +476,8 @@ internal fun NavigationDrawerContent(
             label = "通讯应用",
             onClick = { onNavigate("phone-agent") }
         )
-        // 过渡组：第 c 步资料页建成后移除——在此之前，最近对话/项目空间/设置仍走抽屉进，
-        // 避免改版中途功能失联；工具与扩展已由「连接你的应用」接管，专家与专家团由顶栏名字胶囊接管。
-        DrawerSectionTitle("更多")
-        DrawerChatRow(
-            avatar = {
-                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
-                    Text("◷", color = Ink, style = MaterialTheme.typography.titleMedium)
-                }
-            },
-            label = "最近对话",
-            onClick = { onNavigate("conversations") }
-        )
-        DrawerChatRow(
-            avatar = {
-                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
-                    Text("▣", color = Ink, style = MaterialTheme.typography.titleMedium)
-                }
-            },
-            label = "项目空间",
-            onClick = { onNavigate("spaces") }
-        )
-        DrawerChatRow(
-            avatar = {
-                Box(Modifier.size(40.dp).background(Card2, CircleShape), contentAlignment = Alignment.Center) {
-                    Text("⚙", color = Ink, style = MaterialTheme.typography.titleMedium)
-                }
-            },
-            label = "设置",
-            onClick = { onNavigate("settings") }
-        )
+        // 改版第 c 步：过渡组已撤——最近对话/项目空间/设置改走资料页（点顶栏名字胶囊进），
+        // 抽屉回到设计图 02 的样子：搜索＋「＋」、主助手、我的专家、连接。
         Spacer(Modifier.height(12.dp))
         Text("本地优先 · 免注册", color = Muted, style = MaterialTheme.typography.labelSmall)
     }
