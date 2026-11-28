@@ -24,6 +24,14 @@ class RealtimeVoiceAudioController(
 ) : AutoCloseable {
     private val running = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
+    @Volatile private var microphoneMuted = false
+
+    /**
+     * 通话页静音开关（改版第 e 步）：静音时仍读取麦克风帧（保持录音器排空）但不发往会话。
+     */
+    fun setMicrophoneMuted(muted: Boolean) {
+        microphoneMuted = muted
+    }
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var player: AudioTrack? = null
     @Volatile private var captureThread: Thread? = null
@@ -124,7 +132,9 @@ class RealtimeVoiceAudioController(
                 while (running.get()) {
                     val count = input.read(frame, 0, frame.size, AudioRecord.READ_BLOCKING)
                     if (count > 0) {
-                        session.sendAudio(frame.copyOf(count), "audio/pcm;rate=$SAMPLE_RATE")
+                        if (!microphoneMuted) {
+                            session.sendAudio(frame.copyOf(count), "audio/pcm;rate=$SAMPLE_RATE")
+                        }
                     } else if (count != AudioRecord.ERROR_INVALID_OPERATION &&
                         count != AudioRecord.ERROR_BAD_VALUE &&
                         count != AudioRecord.ERROR_DEAD_OBJECT
