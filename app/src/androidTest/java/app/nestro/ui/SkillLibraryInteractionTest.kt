@@ -29,9 +29,8 @@ class SkillLibraryInteractionTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithContentDescription("菜单").performClick()
-        // 抽屉菜单已无“技能库”项：经“工具与扩展”→“Skills”进入技能库页。
-        // 抽屉项文本带图标前缀（"⌘   工具与扩展"），精确匹配不到，必须用 substring。
-        composeRule.onNodeWithText("工具与扩展", substring = true).performScrollTo().performClick()
+        // 改版第 b 步：抽屉里不再有“工具与扩展”行，工具目录改走底部「连接你的应用」。
+        composeRule.onNodeWithText("连接你的应用", substring = true).performScrollTo().performClick()
         // 先等工具目录页真正落位再点 “Skills”：抽屉关闭有 160ms 真实延时（LaunchedEffect delay），
         // 目录页未挂载时点入口会落空；“模型管理”只在目录页出现，可作落位信号。
         composeRule.waitUntil(timeoutMillis = 10_000) {
