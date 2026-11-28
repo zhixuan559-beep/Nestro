@@ -65,4 +65,42 @@ class ProjectPlanChecklistTest {
         assertEquals("work-1", items.single().title)
         assertEquals("waiting", items.single().status)
     }
+
+    @Test
+    fun statusLineShowsOnlyOneLineWhileWorking() {
+        // 改版第 d 步（设计图 05）：干活时对话里默认只显示状态行，清单默认收起。
+        assertEquals(
+            "正在处理 · 专家团干活中",
+            planStatusLineText(true, samplePlan(), mapOf("work-1" to "success"), "")
+        )
+        assertEquals(
+            "正在处理 · 正在订酒店",
+            planStatusLineText(true, samplePlan(), mapOf("work-1" to "success"), "正在订酒店")
+        )
+    }
+
+    @Test
+    fun statusLineWithoutPlanFallsBackToThinking() {
+        assertEquals("正在思考…", planStatusLineText(true, null, emptyMap(), ""))
+    }
+
+    @Test
+    fun statusLineShowsDoneCountAfterWorkFinishes() {
+        assertEquals(
+            "已完成 · 3/3 项",
+            planStatusLineText(
+                false, samplePlan(),
+                mapOf("work-1" to "success", "work-2" to "success", "work-3" to "success"), ""
+            )
+        )
+        assertEquals(
+            "计划清单 · 已完成 1/3 项",
+            planStatusLineText(false, samplePlan(), mapOf("work-1" to "success"), "")
+        )
+    }
+
+    @Test
+    fun statusLineIsNullWhenIdleAndNoPlan() {
+        assertEquals(null, planStatusLineText(false, null, emptyMap(), ""))
+    }
 }
